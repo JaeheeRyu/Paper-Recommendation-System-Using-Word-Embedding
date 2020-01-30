@@ -1,0 +1,1999 @@
+Robust Conditional GAN from Uncertainty-Aware Pairwise Comparisons
+
+Ligong Han1 , Ruijiang Gao2 , Mun Kim1 , Xin Tao3 , Bo Liu4 , Dimitris Metaxas1
+
+1Department of Computer Science, Rutgers University
+2McCombs School of Business, The University of Texas at Austin
+3Tencent YouTu Lab
+4 JD Finance America Corporation
+
+l.han@rutgers.edu ruijiang@utexas.edu mun.kim@rutgers.edu
+jiangsutx@gmail.com kfliubo@gmail.com dnm@cs.rutgers.edu
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+8
+9
+2
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Conditional generative adversarial networks have shown ex-
+ceptional generation performance over the past few years.
+However, they require large numbers of annotations. To ad-
+dress this problem, we propose a novel generative adversarial
+network utilizing weak supervision in the form of pairwise
+comparisons (PC-GAN) for image attribute editing. In the
+light of Bayesian uncertainty estimation and noise-tolerant
+adversarial training, PC-GAN can estimate attribute rating ef-
+ﬁciently and demonstrate robust performance in noise resis-
+tance. Through extensive experiments, we show both qualita-
+tively and quantitatively that PC-GAN performs comparably
+with fully-supervised methods and outperforms unsupervised
+baselines. Code can be found on the project website∗ .
+
+Introduction
+
+Generative adversarial networks (GAN) (Goodfellow et al.
+2014) have shown great success in producing high-quality
+realistic imagery by training a set of networks to gener-
+ate images of a target distribution via an adversarial set-
+ting between a generator and a discriminator. New architec-
+tures have also been developed for adversarial learning such
+as conditional GAN (CGAN) (Mirza and Osindero 2014;
+Odena, Olah, and Shlens 2016; Han, Murphy, and Ramanan
+2018) which feeds a class or an attribute label for a model to
+learn to generate images conditioned on that label. The su-
+perior performance of CGAN makes it favorable for many
+problems in artiﬁcial intelligence (AI) such as image at-
+tribute editing.
+However, this task faces a major challenge from the lack
+of massive labeled images with varying attributes. Many re-
+cent works attempt to alleviate such problems using semi-
+supervised or unsupervised conditional image synthesis (Lu-
+cic et al. 2019). These methods mainly focus on condi-
+tioning the model on categorical pseudo-labels using self-
+supervised image feature clustering. However, attributes are
+often continuous-valued, for example, the stroke thickness
+of MNIST digits. In such cases, applying unsupervised clus-
+tering would be difﬁcult since features are most likely to
+be grouped by salient attributes (like identities) rather than
+any other attributes of interest. In this work, to disentangle
+
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+∗ https://github.com/phymhan/pc- gan
+
+Figure 1: The generative process. Starting from a source image x,
+our model is able to synthesize a new image ˜x(cid:48) with the desired
+attribute intensity possessed by the target image x(cid:48) .
+
+the target attribute from the rest, we focus on learning from
+weak supervisions in the form of pairwise comparisons.
+Pairwise comparisons. Collecting human preferences on
+pairs of alternatives, rather than evaluating absolute indi-
+vidual intensities, is intuitively appealing, and more im-
+portantly, supported by evidence from cognitive psychol-
+ogy (F ¨urnkranz and H ¨ullermeier 2010). As pointed out
+by Yan (2016), we consider relative attribute annotation be-
+cause they are (1) easier to obtain than total orders, (2) more
+accurate than absolute attribute intensities, and (3) more re-
+liable in application like crowd-sourcing. For example, it
+would be hard for an annotator to accurately quantify the
+attractiveness of a person’s look, but much easier to decide
+which one is preferred given two candidates. Moreover, at-
+tributes in images are often subjective. Different annotators
+have different criteria in their mind, which leads to noisy
+annotations (Xu et al. 2019).
+Thus, instead of assigning an absolute attribute value
+to an image, we allow the model to learn to rank and
+assign a relative order between two images (Yan 2016;
+F ¨urnkranz and H ¨ullermeier 2010). This method alleviates
+the aforementioned problem of lacking continuously valued
+annotations by learning to rank using pairwise comparisons.
+
+Weakly supervised GANs. Our main idea is to substitute
+the full supervision with the attribute ratings learned from
+weak supervisions, as illustrated in Figure 1. To do so, we
+draw inspiration from the Elo rating system (Elo 1978) and
+design a Bayesian Siamese network to learn a rating function
+with uncertainty estimations. Then, for image synthesis, mo-
+
+Sourceℰ𝒢𝑦′𝒢𝑥′𝑥𝑥(cid:3556)′ℰ 
+ 
+ 
+ 
+ 
+ 
+tivated by (Thekumparampil et al. 2018) we use “corrupted”
+labels for adversarial training. The proposed framework can
+(1) learn from pairwise comparisons, (2) estimate the uncer-
+tainty of predicted attribute ratings, and (3) offer quantitative
+controls in the presence of a small portion of absolute anno-
+tations. Our contributions can be summarized as follows.
+• We propose a weakly supervised generative adversarial
+network, PC-GAN, from pairwise comparisons for image
+attribute manipulation. To the best of our knowledge, this
+is the ﬁrst GAN framework considering relative attribute
+orders.
+• We use a novel attribute rating network motivated from
+the Elo rating system, which models the latent score un-
+derlying each item and tracks the uncertainty of the pre-
+dicted ratings.
+• We extend the robust conditional GAN to continuous-
+value setting, and show that the performance can be
+boosted by incorporating the predicted uncertainties from
+the rating network.
+• We analyze the sample complexity which shows that this
+weakly supervised approach can save annotation effort.
+Experimental results show that PC-GAN is competitive
+with fully-supervised models, while surpassing unsuper-
+vised methods by a large margin.
+
+Related Work
+
+Learning to rank. Our work focuses on ﬁnding “scores”
+for each item (e.g. player’s rating) in addition to obtaining a
+ranking. The popular Bradley-Terry-Luce (BTL) model pos-
+tulates a set of latent scores underlying all items, and the Elo
+system corresponds to the logistic variant of the BTL model.
+Numerous algorithms have been proposed since then. To
+name a few, TrueSkill (Herbrich, Minka, and Graepel 2007)
+considers a generalized Elo system in the Bayesian view.
+Rank Centrality (Negahban, Oh, and Shah 2016) builds on
+spectral ranking and interprets the scores as the stationary
+probability under the random walk over comparison graphs.
+However, these methods are not designed for amortized in-
+ference, i.e. the model should be able to score (or extrapo-
+late) an unseen item for which no comparisons are given.
+Apart from TrueSkill and Rank Centrality, the most rele-
+vant work is the RankNet (Burges et al. 2005). Despite be-
+ing amortized, RankNet is homoscedastic and falls short of
+a principled justiﬁcation as well as providing uncertainty es-
+timations.
+
+Weakly supervised learning. Weakly-supervised learning
+
+focuses on learning from coarse annotations. It is useful
+because acquiring annotations can be very costly. A close
+weakly supervised setting to our problem is (Xiao and
+Jae Lee 2015) which learns the spatial extent of relative at-
+tributes using pairwise comparisons and gives an attribute
+intensity estimation. However, most facial attributes like at-
+tractiveness and age are not localized features thus cannot
+be exploited by local regions. In contrast, our work uses this
+relative attribute intensity for attribute transfer and manipu-
+lation.
+Uncertainty. There are two uncertainty measures one can
+model: aleatoric uncertainty and epistemic uncertainty. The
+
+epistemic uncertainty captures the variance of model pre-
+dictions caused by lack of sufﬁcient data; the aleatoric
+uncertainty represents the inherent noise underlying the
+data (Kendall and Gal 2017). In this work, we leverage
+Bayesian neural networks (Gal and Ghahramani 2016) as
+a powerful tool to model uncertainties in the Elo rating net-
+work.
+
+Robust conditional GAN (RCGAN). Conditioning on the
+
+estimated ratings, a normal conditional generative model can
+be vulnerable under bad estimations. To this end, recent re-
+search introduces noise robustness to GANs. Bora, Price,
+and Dimakis (2018) apply a differentiable corruption to the
+output of the generator before feeding it into the discrim-
+inator. Similarly, RCGAN (Thekumparampil et al. 2018)
+proposes to corrupt the categorical label for conditional
+GANs and provides theoretical guarantees. Both methods
+have shown great denoising performance when noisy ob-
+servations are present. To address our problem, we extend
+RCGAN to the continuous-value setting and incorporate un-
+certainties to guide the image generation.
+
+Image attribute editing. There are many recent GAN-
+
+style architectures focusing on image attribute editing. IPC-
+GAN (Wang et al. 2018b) proposes an identity preserving
+loss for facial attribute editing. Zhu et al. (2017) propose
+cycle consistency loss that can learn the unpaired transla-
+tion between image and attribute. BiGAN/ALI (Donahue,
+Kr ¨ahenb ¨uhl, and Darrell 2016; Dumoulin et al. 2016) learns
+an inverse mapping between image-and-attribute pairs.
+There exists another line of research that is not GAN-
+based. Deep feature interpolation (DFI) (Upchurch et al.
+2017) relies on linear interpolation of deep convolutional
+features. It is also weakly-supervised in the sense that it re-
+quires two domains of images (e.g. young or old) with inex-
+act annotations (Zhou 2017). DFI demonstrates high-ﬁdelity
+results on facial style transfer. While, the generated pixels
+look unnatural when the desired attribute intensity takes ex-
+treme values, we also ﬁnd that DFI cannot control the at-
+tribute intensity quantitatively. Wang et al. (2018a) consid-
+ers a binary setting and sets qualitatively the intensity of the
+attribute. Unlike prior research, our method uses weak su-
+pervision in the form of pairwise comparisons and leverages
+uncertainty together with noise-tolerant adversarial learning
+to yield a robust performance in image attribute editing.
+
+Pairwise Comparison GAN
+
+comparisons C (e.g., Ω (xi ) > Ω (xj ) or Ω (xi ) = Ω (xj ),
+
+In this section, we introduce the proposed method for pair-
+wise weakly-supervised visual attribute editing. Denote an
+image collection as I = {x1 , · · · , xn} and xi ’s underlying
+absolute attribute values as Ω (xi ). Given a set of pairwise
+where i, j ∈ {1, · · · , n}), our goal is to generate a realistic
+image quantitatively with a different desired attribute inten-
+sity, for example, from 20 years old to 50 years old. The pro-
+posed framework consists of an Elo rating network followed
+by a noise-robust conditional GAN.
+
+Attribute Rating Network
+
+The designed attribute rating module is motivated by the Elo
+rating system (Elo 1978), which is widely used to evalu-
+
+Figure 2: The Elo rating network. The comparison is performed by
+a given image pair. After training, the encoder E is used to train the
+feeding into a sigmoid function the difference of ratings (scalar) of
+PC-GAN, as illustrated in Figure 3.
+
+1
+
+ate the relative levels of skills between players in zero-sum
+games. Elo rating from a player is represented as a scalar
+value which is adjusted based on the outcome of games. We
+apply this idea to image attribute editing by considering each
+image as a player and comparison pairs as games with out-
+comes. Then we learn a rating function.
+Elo rating system. The Elo system assumes the perfor-
+mance of each player is normally distributed. For exam-
+ple, if Player A has a rating of yA and Player B
+has a rating of yB , the probability of Player A winning
+the game against Player B can be predicted by PA =
+1+10(yB −yA )/400 . We use SA to denote the actual score that
+Player A obtains after the game, which can be valued as
+
+SA (win) = 1, SA (tie) = 0.5, SA (lose) = 0. After each
+
+Image pair rating prediction network. Given an image
+
+game, the player’s rating is updated according to the differ-
+ence between the prediction PA and the actual score SA by
+y (cid:48)
+A = yA + K (SA − PA ), where K is a constant.
+pair (xA , xB ) and a certain attribute Ω, we propose to use a
+neural network for predicting the relative attribute relation-
+ship between Ω(xA ) and Ω(xB ). This design allows amor-
+tized inference, that is, the rating prediction network can
+provide ratings for both seen and unseen data. The model
+structure is illustrated in Figure 2.
+The network contains two input branches fed with xA
+yx ∼ N (cid:0)µ(x), σ2 (x)(cid:1), we employ the reparameterization
+and xB . For each image x, we propose to learn its rat-
+ing value yx by an encoder network E (x). Assuming the
+rating value of x follows a normal distribution, that is
+trick (Kingma and Welling 2013), yx = µ(x)+σ(x) (where
+ ∼ N (0, I )). After obtaining each image’s latent rating
+yA and yB , we formulate the pair-wise attribute compari-
+sigm(yA − yB ) where sigm is the sigmoid function. Then,
+the predictive probability of xA winning xB is obtained by
+integrating out the latent variables yA and yB ,
+
+son prediction as PA,y (Ω(xA ) > Ω(xB )|xA , xB , yA , yB ) =
+
+(cid:90)
+
+PA (Ω(xA ) > Ω(xB )|xA , xB ) =
+
+sigm(yA − yB )dyAdyB ,
+
+(cid:80)M
+
+(1)
+and PB = 1 − PA . The above integration is intractable,
+and can be approximated by Monte Carlo, PA ≈ P M C
+m=1 PA,y . We denote the ground-truth of PA and PB
+as SA and SB . The ranking loss Lrank can be formulated
+(cid:3). (2)
+with a logistic-type function, that is
+
+(cid:2)SA log P M C
+A + SB log P M C
+
+LM C
+rank = −ExA ,xB ∼C
+
+A =
+
+1
+M
+
+B
+
+Noticing that LM C
+rank is biased, an alternative unbiased upper
+bound can be derived as
+
+LU B
+rank = −ExA ,xB ∼C
+
+SA log PA,y + SB log PB ,y
+
+.
+
+(cid:35)
+
+(cid:34)
+
+M(cid:88)
+
+m=1
+
+1
+M
+
+(cid:125)
+
+T(cid:88)
+
+t=1
+
+LM C
+rank .
+
+(3)
+In practice, we ﬁnd that LU B
+rank performs slightly better than
+We further consider a Bayesian variant of E . The Bayesian
+neural network is shown to be able to provide the epistemic
+uncertainty of the model by estimating the posterior over
+network weights in network parameter training (Kendall
+and Gal 2017) . Speciﬁcally, let qθ (w) be an approxi-
+mation of the true posterior p(w|data) where θ denotes
+qθ (w) and p(w|data) with the KL-divergence. The over-
+the parameter of q , we measure the difference between
+all learning objective is the negative evidence lower bound
+(ELBO) (Kingma and Welling 2013; Gal and Ghahramani
+2016),
+
+LE = Lrank + DKL (qθ (w)(cid:107)p(w|data))
+
+.
+
+(4)
+
+(cid:124)
+
+(cid:123)(cid:122)
+
+KL
+
+Gal and Ghahramani (2016) propose to view dropout to-
+gether with weight decay as a Bayesian approximation,
+where sampling from qθ is equivalent to performing dropout
+and the KL term in Equation 4 becomes L2 regularization
+(or weight decay) on θ .
+The predictive uncertainty of rating y for image x can be
+approximated using:
+
+ˆσ2 (y) ≈ 1
+T
+
+t − (
+µ2
+
+1
+T
+
+µt )2 +
+
+1
+T
+
+σ2
+
+t
+
+(5)
+
+with {µt , σt}T
+t=1 a set of T sampled outputs: µt , σt = E (x).
+Transitivity. Notice that the transitivity does not hold be-
+cause of the stochasticity in y . If we ﬁx σ(·) to be zero
+and a non-Bayesian version is used, the Elo rating net-
+work becomes a RankNet (Burges et al. 2005), and tran-
+sitivity holds. However, one can still maintain transitiv-
+ity by avoiding reparameterization and modeling PA =
+). In practice, we ﬁnd that reparam-
+eterization works better.
+
+sigm( µ(xA )−µ(xB )
+σ2 (xA )+σ2 (xB )
+
+√
+
+Conditional GAN with Noisy Information
+
+We construct a CGAN-based framework for image synthe-
+sis conditioned on the learned attribute rating. The overall
+training procedure is shown in Figure 3: given a pair of im-
+ages x and x(cid:48) , the generator G is trained to transform x
+into ˜x(cid:48) = G (x, y (cid:48) ), such that ˜x(cid:48) possesses the same rating
+y (cid:48) = E (x(cid:48) ) as x(cid:48) . The predicted ratings can still be noisy,
+thus a robust conditional GAN is considered. While RC-
+GAN (Thekumparampil et al. 2018) is conditioned on dis-
+crete categorical labels that are “corrupted” by a confusion
+matrix, our model relies on the ratings that are continuous-
+valued and realizes the “corruption” via resampling.
+Adversarial loss. Given image x, the corresponding rating
+y can be obtained from a forward pass of the pre-trained
+
+T(cid:88)
+
+t=1
+
+T(cid:88)
+
+t=1
+
+sigmFigure 3: Overview of PC-GAN. Image ˜x(cid:48) is synthesized from x
+and y (cid:48) . y (cid:48) is then “corrupted” to ˜y (cid:48) by the transition T , where T
+is a sampling process ˜y (cid:48) ∼ N (y (cid:48) , ˆσ (cid:48)2 ). The reconstruction on at-
+tribute rating enforces mutual information maximization. The main
+difference between PC-GAN and a normal conditional GAN is that
+the conditioned rating of the generated sample is corrupted before
+feeding into the adversarial discriminator, forcing the generator to
+produce samples with clean ratings.
+
+encoder E . Thus E deﬁnes a joint distribution pE (x, y) =
+pdata (x)pE (y |x). Importantly, the output ˜x(cid:48) of G is paired
+with a corrupted rating ˜y (cid:48) = T (y (cid:48) ), where T is a sampling
+process ˜y (cid:48) ∼ N (y (cid:48) , ˆσ (cid:48)2 ). The adversarial loss is
+
+LCGAN =Ex,y∼p(x,y) log(D(x, y)) +
+Ex∼p(x),y (cid:48)∼p(y (cid:48) ), ˜y (cid:48)∼T (y (cid:48) ) log(1 − D(G (x, y (cid:48) ), ˜y (cid:48) )).
+
+(6)
+
+The discriminator D is discriminating between real data
+(x, y) and generated data (G (x, y (cid:48) ), T (y (cid:48) )). At the same
+time, G is trained to fool D by producing images that are
+both realistic and consistent with the given attribute rating.
+As such, the Bayesian variant of the encoder is required for
+considering robust conditional adversarial training.
+
+Mutual information maximization. Besides conditioning
+
+the discriminator, to further encourage the generative pro-
+cess to be consistent with ratings and thus learn a disentan-
+gled representation (Chen et al. 2016), we add a reconstruc-
+tion loss on the predictive ratings:
+
+Ly
+
+rec = Ex∼p(x),y (cid:48)∼p(y (cid:48) )
+
+2 ˆσ (cid:48)2 (cid:107)E (G (x, y (cid:48) )) − y (cid:48)(cid:107)2
+1
+2 +
+
+1
+2
+
+log ˆσ (cid:48)2 .
+
+(7)
+The above reconstruction loss can be viewed as the condi-
+tional entropy between y (cid:48) and G (x, y (cid:48) ),
+
+(cid:2)Ey∼(y | ˜x(cid:48) ) [log (y | ˜x(cid:48) )](cid:3)
+rec ∝ −Ey (cid:48)∼p(y (cid:48) ), ˜x(cid:48)∼G (x,y (cid:48) ) [log p(y (cid:48) | ˜x(cid:48) )]
+
+= −Ey (cid:48)∼p(y (cid:48) ), ˜x(cid:48)∼G (x,y (cid:48) )
+
+Ly
+
+= H(y (cid:48) |G (x, y (cid:48) )).
+
+(8)
+Thus, minimizing the reconstruction loss is equivalent to
+maximizing the mutual information between the conditioned
+rating and the output image.
+
+= arg max
+
+(9)
+G
+The cycle consistency constraint forces the image G ( ˜x(cid:48) , y)
+to be close to the original x, and therefore helps preserve
+
+Ly
+
+arg min
+
+G
+
+rec = arg max
+
+G
+
+= arg max
+
+G
+
+−H(y (cid:48) |G (x, y (cid:48) ))
+−H(y (cid:48) |G (x, y (cid:48) )) + H(y (cid:48) )
+I(y (cid:48) ; G (x, y (cid:48) )).
+
+the identity information. Following the same logic, the cycle
+loss can be also viewed as maximizing the mutual informa-
+tion between x and G (x, y (cid:48) ).
+Full objective. Finally, the full objective can be written as:
+(10)
+
+L(G , D) = LCGAN + λrecLy
+
+rec + λcycLcyc ,
+
+where λs control the relative importance of corresponding
+losses. The ﬁnal objective formulates a minimax problem
+where we aim to solve:
+
+G ∗ = arg minG maxD L(G , D).
+
+(11)
+
+Analysis of loss functions. Goodfellow et al. (2014) show
+that
+the adversarial
+training results in minimizing the
+Jensen-Shannon divergence between the true conditional
+and the generated conditional. Here, the approximated con-
+ditional will converge to the distribution characterized by the
+encoder E . If E is optimal, the approximated conditional will
+converge to the true conditional, we defer the proof in Sup-
+plementary.
+GAN training. In practice, we ﬁnd that the conditional gen-
+erative model trains better if equal-pairs (pairs with approxi-
+mately equal attribute intensities) are ﬁltered out and only
+different-pairs (pairs with clearly different intensities) are
+remained. Comparisons of training CGAN with or without
+equal-pairs can be found in Supplementary.
+
+Strategy
+rand+diff
+rand+all
+easy+diff
+easy+all
+hard+diff
+hard+all
+hard+pseudo-diff
+hard+pseudo-all
+
+Corr
+
+0.91
+0.95
+0.79
+0.81
+0.92
+0.95
+0.92
+0.95
+
+IS
+
+3.65 ± 0.05
+3.52 ± 0.03
+2.97 ± 0.05
+2.82 ± 0.03
+2.90 ± 0.03
+3.01 ± 0.04
+3.56 ± 0.02
+3.29 ± 0.03
+
+FID
+
+24.10 ± 0.24
+21.75 ± 1.34
+29.55 ± 1.00
+63.86 ± 1.32
+29.24 ± 1.07
+22.04 ± 1.05
+26.03 ± 0.39
+24.94 ± 1.17
+
+Acc (%)
+
+67.44
+58.10
+46.48
+51.46
+43.78
+32.22
+68.02
+51.96
+
+Table 1: Pair sampling strategies. Spearman correlations (Corr),
+Inception Scores (IS), Fr ´echet Inception Distances (FID), and clas-
+siﬁcation accuracies (Acc) evaluated on UTKFace are reported.
+hard+diff stands for training Elo rating with hard examples
+and training CGAN with different-pairs only, and pseudo-diff
+stands for the pairs augmented with pseudo-pairs but with equal
+pairs ﬁltered out. If the same active learning strategy is used (e.g.
+rand+diff and rand+all), CGANs are conditioned on the
+same ratings trained from all pairs (e.g. rand+all).
+
+Pair Sampling
+
+Active learning strategies such as OHEM (Shrivastava,
+Gupta, and Girshick 2016) can be incorporated in our Elo
+rating network. In hard example mining, only pairs with
+small rating differences are queried (hard+diff/all in
+Table 1). In addition, to maximize the number of different-
+pairs we also try easy example mining (easy+diff/all
+in Table 1). As shown, easy examples are inferior to hard
+examples in terms of both rating correlations and image
+qualities. The reason might be that easy example mining
+chooses pairs with drastic differences in attribute inten-
+sity, which makes the model hard to train. Hard examples
+help to learn a better rating function, however, provide less
+
+𝑦′𝑥𝑥(cid:3556)′𝑦(cid:3556)′𝑥𝑦𝒟reconstructionlossadversariallossℰ𝒢𝒯ℰ⋅amount of different-pairs for the generative model to cap-
+ture attribute transitions. We therefore augment hard exam-
+ples with pseudo-pairs (easy examples but with predicted la-
+bels, listed as hard+pseudo-diff/all in Table 1). The
+augmentation strategy works well, but in following experi-
+ments we use randomly sampled pairs because (1) the ran-
+dom strategy is simple and performs equally well, and (2)
+pseudo-labels are less reliable than queried labels.
+Number of pairs. Suppose there are n images in the dataset,
+then the possible number of pairs is upper bounded by n(n−
+1)/2. However, if O(n2 ) pairs are necessary, there is no ben-
+eﬁt of choosing pairwise comparisons over absolute label
+annotation. Using results from (Radinsky and Ailon 2011;
+Wauthier, Jordan, and Jojic 2013), the following proposition
+shows that only O(n) comparisons are needed to recover an
+approximate ranking.
+Proposition 0.1. For a constant d and any 0 < λ < 1,
+if we measure dn/λ2 comparisons chosen uniformly with
+repetition, the Elo rating network will output a permutation
+ˆπ of expected risk at most (2/λ)(n(n − 1)/2).
+We also provide an empirical study in the Supplementary
+that supports the above proposition.
+
+(a) t-SNE
+
+(b) Ratings
+
+(c) Samples
+
+Figure 5: Results on CACD. The target attribute is age. Values from
+Attr0 to Attr4 correspond to age of 15, 25, 35, 45 and 55,
+respectively.
+
+Figure 4: Results on Annotated MNIST. (a) t-SNE visualization of
+the MNIST dataset, different shapes correspond to different num-
+bers, and different colors represent various thickness levels. As
+shown, data is clustered by numbers rather than thickness. (b) Vi-
+sualization of ratings learned from pairwise comparisons (ground-
+truth labels are jittered for better visualization). (c) Samples of
+thickness editing results.
+
+Experiments
+
+In this section, we ﬁrst present a motivating experiment on
+MNIST. Then we evaluate the PC-GAN in two parts: (1)
+learning attribute ratings, and (2) conditional image synthe-
+sis, both qualitatively and quantitatively.
+Dataset. We evaluate PC-GAN on a variety of datasets for
+image attribute editing tasks:
+• Annotated MNIST (Kim 2017) provides annotations of
+stroke thickness for MNIST (LeCun et al. 1998) dataset.
+• CACD (Chen, Chen, and Hsu 2014) is a large dataset
+collected for cross-age face recognition, which includes
+2,000 subjects and 163,446 images. It contains multiple
+images for each person which cover different ages.
+• UTKFace (Zhang and Qi 2017) is also a large-scale face
+dataset with a long age span, ranging from 0 to 116 years.
+
+Figure 6: Results on UTKFace. The target attribute is age. Values
+from Attr0 to Attr4 correspond to age of 10, 30, 50, 70 and 90,
+respectively.
+
+This dataset contains 23,709 facial images with annota-
+tions of age, gender, and ethnicity.
+• SCUT-FBP (Xie et al. 2015) is speciﬁcally designed for
+facial beauty perception. It contains 500 Asian female
+portraits with attractiveness ratings (1 to 5) labeled by 75
+human raters.
+• CelebA (Liu et al. 2015) is a standard large-scale dataset
+for facial attribute editing. It consists of over 200k images,
+annotated with 40 binary attributes.
+For the MNIST experiment, stroke thickness is the desired
+attribute. As illustrated in Figure 4-a, the thickness infor-
+mation is still entangled. But in Figure 4-b, the thickness is
+correctly disentangled from the rest attributes.
+We use CACD and UTK for age progression, SCUT-FBP
+and CelebA for attractiveness experiment. Since no true rel-
+atively labeled dataset is publically available, pairs are sim-
+ulated from “ground-truth” attribute intensity given in the
+dataset. The tie margins within which two candidates are
+
+-40-2002040-30-20-100102030thinnormalthickthinnormalthick-303ThinNormalThickSourceSourceAttr0Attr1Attr2Attr3Attr4SourceAttr0Attr1Attr2Attr3Attr4Dataset
+CACD
+UTK
+SCUT-FBP
+Average Rank
+
+94.37(train) 49.00(val)
+98.19(train) 76.80(val)
+100.00(train) 58.00(val)
+
+Real
+
+–
+
+No Supervision
+
+Full Supervision
+
+Weak Supervision
+
+CycleGAN BiGAN Disc-CGAN Cont-CGAN
+20.52
+19.66
+46.02
+41.62
+19.46
+20.50
+71.44
+59.16
+19.75
+20.38
+29.63
+46.25
+5.67
+5.33
+2.00
+2.33
+
+DFI
+20.92
+22.90
+22.69
+4.00
+
+PC-GAN
+48.44
+63.88
+40.00
+
+1.67
+
+Table 2: Evaluation of classiﬁcation accuracies on synthesized images, higher is better.
+
+Loss
+
+CGAN
+
+
+
+
+
+
+
+
+
+rec
+
+
+
+
+
+
+
+
+
+cyc
+
+
+
+
+
+
+
+
+
+idt Acc (%)
+48.08
+39.50
+50.86
+48.60
+48.98
+24.28
+43.86
+20.08
+
+
+
+
+
+
+
+
+
+
+CACD
+
+IS
+2.87±0.04
+2.93±0.04
+3.10±0.04
+3.05±0.03
+3.01±0.03
+3.06±0.04
+2.94±0.05
+1.59±0.02
+
+FID
+27.90±0.44
+25.68±0.46
+25.93±0.55
+26.81±0.59
+26.90±0.67
+24.01±0.66
+24.27±0.58
+293.03±1.40
+
+Acc (%)
+62.74
+56.90
+60.56
+63.92
+66.34
+50.42
+62.42
+34.88
+
+UTKFace
+
+IS
+3.50±0.04
+3.38±0.05
+3.39±0.05
+3.60±0.05
+3.65±0.04
+3.02±0.04
+3.54±0.04
+2.16±0.04
+
+FID
+21.63±0.52
+24.98±0.88
+23.70±0.65
+27.65±0.75
+25.39±0.86
+48.80±1.70
+32.87±1.47
+187.98±2.17
+
+Table 3: Ablation studies of different loss terms in CGAN training. CGAN represents LCGAN , rec represents Lrec and so on.
+
+Figure 7: Results on SCUT-FBP. The target attribute is attractive-
+ness score (1 to 5). Values from Attr0 to Attr4 correspond to
+score of 1.375, 2.125, 2.875, 3.625 and 4.5, respectively.
+
+considered equal are 10, 10, and 0.4 for CACD, UTK, and
+SCUT-FBP, respectively. This also simpliﬁes the quantita-
+tive evaluation process since one can directly measure the
+prediction error for absolute attribute intensities. Notice that
+CelebA only provides binary annotations, from which pair-
+wise comparisons are simulated. Interestingly, the Elo rat-
+ing network is still able to recover approximate ratings from
+those binary labels.
+Furthermore, since CACD, UTKFace, SCUT-FBP, and
+CelebA are all human face dataset, we add an identity pre-
+serving loss term (Wang et al. 2018b) to enforce identity
+2 .
+Here, h(·) denotes a pre-trained convnet.
+Implementation. PC-GAN is implemented using Py-
+Torch (Paszke et al. 2017). Network architectures and train-
+ing details are given in Supplementary. For a fair evaluation,
+the basic modules are kept identical across all baselines.
+
+preservation: Lidt = Ex∼p(x),y∼p(y) (cid:107)h(G (x, y)) − h(x)(cid:107)2
+
+Figure 8: Results on CelebA. The target attribute is attractiveness.
+We take the cluster mean of ratings for “attractive” being -1 and
+1 as Attr0 and Attr4 respectively. Attr1 to Attr3 are then
+linearly sampled. Results show a smooth transition of visual fea-
+tures, for example, facial hair, aging related features, smile lines,
+and shape of eyes.
+
+Learning by Pairwise Comparison
+
+Rating visualization. Figure 10 presents the predicted rat-
+ings learned from CACD, UTKFace, and SCUT-FBP from
+left to right. The ratings learned from pairwise comparisons
+highly correlate with the ground-truth labels, which indi-
+cates that the rating resembles the attribute intensity well.
+The uncertainties v.s. ground-truth labels is visualized in
+Figure 11. The plots show a general trend that the model
+is more certain about instances with extreme attribute values
+than those in the middle range, which matches our intuition.
+Additional attention-based visualizations are given in Sup-
+plementary.
+Noise resistance. As mentioned previously, not only does
+pairwise comparison require less annotating effort, it tends
+to yield more accurate annotations. Consider a simple set-
+ting:
+if all annotators (annotating the absolute attribute
+
+SourceAttr0Attr1Attr2Attr3Attr4SourceAttr0Attr1Attr2Attr3Attr4Figure 9: Baselines: (left) Source images from different datasets; (right) target images with desired attribute intensity; (middle) synthesized
+images by different methods to the desired attribute intensity. Unsupervised baselines cannot effectively change the attribute to the desired
+intensity.
+
+Model
+CNN-CGAN
+BNN-CGAN
+BNN-RCGAN
+
+Acc (%)
+35.04
+37.64
+41.02
+
+CACD
+
+IS
+2.14±0.02
+2.38±0.04
+2.45±0.03
+
+FID
+31.08±0.54
+27.36±0.36
+30.22±0.51
+
+Acc (%)
+40.12
+38.54
+43.64
+
+UTKFace
+
+IS
+2.69±0.03
+2.72±0.03
+2.84±0.04
+
+FID
+26.58±0.51
+26.56±0.40
+25.25±0.39
+
+Table 4: Ablation study of Bayesian uncertainty estimation. CNN-CGAN is the normal non-Bayesian Elo rating network without uncertainty
+estimations; BNN-CGAN uses the average ratings for a single image; BNN-RCGAN is the full Bayesian model with a noise-robust CGAN.
+
+(a) CACD
+
+(b) UTKFace
+
+(c) SCUT-FBP
+
+(a) CACD
+
+(b) UTKFace
+
+(c) SCUT-FBP
+
+Figure 10: Visualization of learned ratings for different datasets. rs
+denotes the Spearman’s rank correlation coefﬁcient.
+
+value) exhibit the same random noise with a tie margin M ,
+then the corresponding pairwise annotation with the same
+tie margin would absorb the noise. We provide an empiri-
+cal study of the noise resistance of pairwise comparisons in
+Supplementary.
+
+Conditional Image Synthesis
+
+Baselines. We consider two unsupervised baselines Cy-
+cleGAN and BiGAN, two fully-supervised baselines Disc-
+CGAN and Cont-CGAN, and DFI in a similar weakly-
+supervised setting.
+• CycleGAN (Zhu et al. 2017) learns an encoder (or a “gen-
+erator” from images to attributes) and a generator between
+images and attributes simultaneously.
+• ALI/BiGAN(Donahue, Kr ¨ahenb ¨uhl, and Darrell 2016;
+Dumoulin et al. 2016) learns the encoder (an inverse map-
+ping) with a single discriminator.
+• Disc-CGAN/IPCGAN (Wang et al. 2018b) takes dis-
+cretized attribute intensities (one-hot embedding) as su-
+pervision.
+
+Figure 11: Visualization of the predictive uncertainty of learned
+ratings for different datasets (best viewed in color). Aleatoric
+(data-dependent) and epistemic (model-dependent) uncertainties
+are plotted separately.
+
+• Cont-CGAN uses the same CGAN framework as PC-
+GAN but ratings are replaced by true labels. It is an upper
+bound of PC-GAN.
+• DFI (Upchurch et al. 2017) can control the intensity of
+attribute intensity continuously, however, cannot change
+the intensity quantitatively. To transform x into ˜x(cid:48) , we as-
+
+sume φ( ˜x(cid:48) ) = φ(x) + αw and compute y (cid:48) = w · φ(x(cid:48) )
+(y (cid:48) − w · φ(x))/(cid:107)w(cid:107)2
+
+(w is the attribute vector), then α is given by α =
+2 .
+Qualitative results. In Figure 9, we compare our results
+with all baselines. For each row, we take a source and a
+target image as inputs and our goal is to edit the attribute
+value of the source image to be equal to that of the target
+image. PC-GAN is competitive with fully-supervised base-
+lines while all unsupervised methods fail to change attribute
+intensities.
+More results are shown in Figure 5, 7, 6, where the tar-
+get rating value is the average of (cluster mean) a batch
+of (10 to 50) labeled images. From Figure 5, we see ag-
+
+SourcePC-GANCont-cGANDisc-cGANCycleGANBiGANTarget AttrDFICACDUTKSCUT-FBPWeak SupervisionFull SupervisionNo Supervision1025405570-2-10120255075100-1.5-0.50.51.52.512345-4-202420406000.511.5210-300.20.40.60.805010024681012141610-300.20.40.60.8123450.0050.010.01500.10.20.30.40.50.6ing characteristics like receding hairlines and wrinkles are
+well learned. Figure 6 shows convincing indications of re-
+juvenation and age progression. Figure 7 shows results for
+SCUT-FBP, which is inherently challenging because of the
+size of the dataset. Compared to datasets such as CACD,
+SCUT-FBP is signiﬁcantly smaller, with only 500 images
+in total (from which we take 400 for training). Training on
+large datasets, as the CelebA experiment in Figure 8 shows,
+our model produces convincing results. We also ﬁnd that the
+model is capable of learning important patterns that corre-
+spond to attractiveness, such as in the hairstyle and the shape
+of the cheek shown in Figure 7. (The result does not repre-
+sent the authors’ opinion of attractiveness, but only reﬂects
+the statistics of the annotations.)
+Quantitative results. For quantitative evaluations, we re-
+port in Table 2 classiﬁcation accuracy (Acc) evaluated on
+synthesized images. In our experiments, we train classi-
+ﬁers to predict attribute intensities of images into discrete
+groups (CACD 11-20, 21-30, up to > 50; UTK 1-20, 21-40,
+up to > 80, SCUT-FBP 1-1.75, 1.75-2.5, up to > 4).
+PC-GAN demonstrates comparable performance with fully-
+supervised baselines and are signiﬁcantly better than un-
+supervised methods. Additional metrics are reported in the
+Supplementary.
+AMT user studies. We also conduct user study experiments.
+Workers from Amazon Mechanical Turk (AMT) are asked
+to rate the quality of each face (good or bad) and vote to
+which age group a given image belongs. Then we calculate
+the percentage of images rated as good and the classiﬁcation
+accuracy. Table 5 shows that PC-GAN is on a par with the
+fully-supervised counterparts. We conduct hypothesis test-
+ing of PC-GAN and Disc-CGAN for image quality rating,
+p-value = 0.31, which indicates they are not statistically
+different with 95% conﬁdence level.
+
+CACD
+
+UTKFace
+
+Method
+Real
+PC-GAN
+Cont-CGAN
+Disc-CGAN
+
+Quality (%) Acc (%) Quality (%) Acc (%)
+97
+36
+88
+52
+57
+33
+56
+50
+60
+31
+55
+37
+64
+30
+54
+45
+
+Table 5: AMT user studies. 100 images are sampled uniformly for
+each method with 20 images in each group.
+
+Ablation Studies
+
+Supervision. First, the comparisons in Table 2 serve as an
+ablation study of full, no, and weak supervision, where PC-
+GAN is on a par with fully-supervised and signiﬁcantly bet-
+ter than unsupervised baselines.
+GAN loss terms. Second, an ablation study of CGAN loss
+terms is provided in Table 3. Notice that setting some losses
+to zero is a special case of our full objective under different
+λs. Although we did not extensively tune λ’s values since it
+is not the main focus of this paper, we conclude that Lrec is
+the most important term in terms of image qualities.
+Uncertainty. The ablation study of the effectiveness of
+adding Bayesian uncertainties to achieve robust conditional
+adversarial training is given in Table 4. The three variants
+
+considered in the table differ in how much the Bayesian neu-
+ral net is involved in the whole training pipeline: CNN-CGAN
+is a non-Bayesian Elo rating network plus a normal CGAN,
+BNN-CGAN learns a Bayesian encoder and yields the aver-
+age ratings for a given image, and BNN-RCGAN trains a full
+Bayesian encoder with a noise-robust CGAN. Results con-
+ﬁrm that the performance can be boosted by integrating an
+uncertainty-aware Elo rating network and an extended ro-
+bust conditional GAN.
+
+Conclusion
+
+In this paper, we propose a noise-robust conditional GAN
+framework under weak supervision for image attribute edit-
+ing. Our method can learn an attribute rating function and
+estimate the predictive uncertainties from pairwise compar-
+isons, which requires less annotation effort. We show in ex-
+tensive experiments that the proposed PC-GAN performs
+competitively with the supervised baselines and signiﬁcantly
+outperforms the unsupervised baselines.
+
+Acknowledgments
+
+We would like to thank Fei Deng for valuable discussions
+on Elo rating networks. This research is supported in part by
+NSF 1763523, 1747778, 1733843, and 1703883.
+
+References
+
+[Bora, Price, and Dimakis 2018] Bora, A.; Price, E.; and Di-
+makis, A. G. 2018. Ambientgan: Generative models from
+lossy measurements. ICLR 2:5.
+[Burges et al. 2005] Burges, C.; Shaked, T.; Renshaw, E.;
+Lazier, A.; Deeds, M.; Hamilton, N.; and Hullender, G.
+2005. Learning to rank using gradient descent.
+In Pro-
+ceedings of the 22nd international conference on Machine
+learning, 89–96. ACM.
+[Chen et al. 2016] Chen, X.; Duan, Y.; Houthooft, R.; Schul-
+man, J.; Sutskever, I.; and Abbeel, P. 2016. Infogan: Inter-
+pretable representation learning by information maximizing
+generative adversarial nets. In Advances in neural informa-
+tion processing systems, 2172–2180.
+[Chen, Chen, and Hsu 2014] Chen, B.-C.; Chen, C.-S.; and
+Hsu, W. H. 2014. Cross-age reference coding for age-
+invariant face recognition and retrieval.
+In European con-
+ference on computer vision, 768–783. Springer.
+[Donahue, Kr ¨ahenb ¨uhl, and Darrell 2016] Donahue,
+J.;
+Kr ¨ahenb ¨uhl, P.; and Darrell, T. 2016. Adversarial feature
+learning. arXiv preprint arXiv:1605.09782.
+[Dumoulin et al. 2016] Dumoulin, V.; Belghazi, I.; Poole, B.;
+Mastropietro, O.; Lamb, A.; Arjovsky, M.; and Courville,
+A. 2016. Adversarially learned inference. arXiv preprint
+arXiv:1606.00704.
+[Elo 1978] Elo, A. E. 1978. The rating of chessplayers, past
+and present. Arco Pub.
+[F ¨urnkranz and H ¨ullermeier 2010] F ¨urnkranz,
+J.,
+and
+H ¨ullermeier, E. 2010. Preference learning and ranking by
+pairwise comparison.
+In Preference learning. Springer.
+65–82.
+
+[Gal and Ghahramani 2016] Gal, Y., and Ghahramani, Z.
+2016. Dropout as a bayesian approximation: Representing
+model uncertainty in deep learning. In international confer-
+ence on machine learning, 1050–1059.
+[Goodfellow et al. 2014] Goodfellow, I.; Pouget-Abadie, J.;
+Mirza, M.; Xu, B.; Warde-Farley, D.; Ozair, S.; Courville,
+A.; and Bengio, Y. 2014. Generative adversarial nets. In
+Advances in neural information processing systems, 2672–
+2680.
+[Han, Murphy, and Ramanan 2018] Han, L.; Murphy, R. F.;
+and Ramanan, D. 2018. Learning generative models of tis-
+sue organization with supervised gans. In 2018 IEEE Win-
+ter Conference on Applications of Computer Vision (WACV),
+682–690. IEEE.
+[He et al. 2016] He, K.; Zhang, X.; Ren, S.; and Sun, J. 2016.
+Deep residual learning for image recognition. In Proceed-
+ings of the IEEE conference on computer vision and pattern
+recognition, 770–778.
+[Herbrich, Minka, and Graepel 2007] Herbrich, R.; Minka,
+T.; and Graepel, T. 2007. TrueskillTM : a bayesian skill rat-
+ing system. In Advances in neural information processing
+systems, 569–576.
+[Heusel et al. 2017] Heusel, M.; Ramsauer, H.; Unterthiner,
+T.; Nessler, B.; and Hochreiter, S. 2017. Gans trained by
+a two time-scale update rule converge to a local nash equi-
+librium. In Advances in Neural Information Processing Sys-
+tems, 6626–6637.
+[Kendall and Gal 2017] Kendall, A., and Gal, Y. 2017. What
+uncertainties do we need in bayesian deep learning for com-
+puter vision? In Advances in neural information processing
+systems, 5574–5584.
+[Kim 2017] Kim, B.
+2017.
+Annotated mnist: Thick-
+ness and skew labeler for mnist handwritten digit dataset.
+https://github.com/1202kbs/Annotated MNIST.
+[Kingma and Welling 2013] Kingma, D. P., and Welling, M.
+2013. Auto-encoding variational bayes.
+arXiv preprint
+arXiv:1312.6114.
+[LeCun et al. 1998] LeCun, Y.; Bottou, L.; Bengio, Y.;
+Haffner, P.; et al.
+1998. Gradient-based learning ap-
+plied to document recognition. Proceedings of the IEEE
+86(11):2278–2324.
+[Liu et al. 2015] Liu, Z.; Luo, P.; Wang, X.; and Tang, X.
+2015. Deep learning face attributes in the wild.
+In Pro-
+ceedings of International Conference on Computer Vision
+(ICCV).
+[Lucic et al. 2019] Lucic, M.; Tschannen, M.; Ritter, M.;
+Zhai, X.; Bachem, O.; and Gelly, S.
+2019.
+High-
+ﬁdelity image generation with fewer labels. arXiv preprint
+arXiv:1903.02271.
+[Mirza and Osindero 2014] Mirza, M., and Osindero, S.
+2014.
+Conditional generative adversarial nets.
+arXiv
+preprint arXiv:1411.1784.
+[Negahban, Oh, and Shah 2016] Negahban, S.; Oh, S.; and
+Shah, D. 2016. Rank centrality: Ranking from pairwise
+comparisons. Operations Research 65(1):266–287.
+
+[Odena, Olah, and Shlens 2016] Odena, A.; Olah, C.; and
+Shlens, J. 2016. Conditional image synthesis with auxil-
+iary classiﬁer gans. arXiv preprint arXiv:1610.09585.
+[Paszke et al. 2017] Paszke, A.; Gross, S.; Chintala, S.;
+Chanan, G.; Yang, E.; DeVito, Z.; Lin, Z.; Desmaison, A.;
+Antiga, L.; and Lerer, A. 2017. Automatic differentiation in
+pytorch.
+[Radinsky and Ailon 2011] Radinsky, K., and Ailon, N.
+2011. Ranking from pairs and triplets: information quality,
+evaluation methods and query complexity. In Proceedings
+of the fourth ACM international conference on Web search
+and data mining, 105–114. ACM.
+[Salimans et al. 2016] Salimans,
+T.;
+Goodfellow,
+I.;
+Zaremba, W.; Cheung, V.; Radford, A.; and Chen, X.
+2016. Improved techniques for training gans. In Advances
+in Neural Information Processing Systems, 2234–2242.
+[Selvaraju et al. 2017] Selvaraju, R. R.; Cogswell, M.; Das,
+A.; Vedantam, R.; Parikh, D.; and Batra, D. 2017. Grad-
+cam: Visual explanations from deep networks via gradient-
+based localization. In Proceedings of the IEEE International
+Conference on Computer Vision, 618–626.
+[Shrivastava, Gupta, and Girshick 2016] Shrivastava,
+A.;
+Gupta, A.; and Girshick, R. 2016. Training region-based
+object detectors with online hard example mining.
+In
+Proceedings of the IEEE Conference on Computer Vision
+and Pattern Recognition, 761–769.
+[Thekumparampil et al. 2018] Thekumparampil, K. K.;
+Khetan, A.; Lin, Z.; and Oh, S.
+2018. Robustness of
+conditional gans to noisy labels.
+In Advances in Neural
+Information Processing Systems, 10271–10282.
+[Upchurch et al. 2017] Upchurch, P.; Gardner, J. R.; Pleiss,
+G.; Pless, R.; Snavely, N.; Bala, K.; and Weinberger, K. Q.
+2017. Deep feature interpolation for image content changes.
+In CVPR, 6090–6099.
+[Wang et al. 2018a] Wang, Y.; Wang, S.; Qi, G.; Tang, J.; and
+Li, B. 2018a. Weakly supervised facial attribute manipu-
+lation via deep adversarial network. In 2018 IEEE Winter
+Conference on Applications of Computer Vision (WACV),
+112–121. IEEE.
+[Wang et al. 2018b] Wang, Z.; Tang, X.; Luo, W.; and Gao,
+S. 2018b. Face aging with identity-preserved conditional
+generative adversarial networks. In Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition,
+7939–7947.
+[Wauthier, Jordan, and Jojic 2013] Wauthier, F.; Jordan, M.;
+and Jojic, N. 2013. Efﬁcient ranking from pairwise compar-
+isons.
+In International Conference on Machine Learning,
+109–117.
+[Xiao and Jae Lee 2015] Xiao, F., and Jae Lee, Y. 2015. Dis-
+covering the spatial extent of relative attributes. In Proceed-
+ings of the IEEE International Conference on Computer Vi-
+sion, 1458–1466.
+[Xie et al. 2015] Xie, D.; Liang, L.; Jin, L.; Xu, J.; and Li,
+M. 2015. Scut-fbp: A benchmark dataset for facial beauty
+perception. arXiv preprint arXiv:1511.02459.
+
+[Xu et al. 2019] Xu, Q.; Yang, Z.; Jiang, Y.; Cao, X.; Huang,
+Q.; and Yao, Y. 2019. Deep robust subjective visual property
+prediction in crowdsourcing.
+In Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition,
+8993–9001.
+[Yan 2016] Yan, S. 2016. Passive and active ranking from
+pairwise comparisons. Technical report, University of Cali-
+fornia, San Diego.
+[Zhang and Qi 2017] Zhang, Zhifei, S. Y., and Qi, H. 2017.
+Age progression/regression by conditional adversarial au-
+toencoder.
+In IEEE Conference on Computer Vision and
+Pattern Recognition (CVPR). IEEE.
+[Zhou 2017] Zhou, Z.-H.
+2017. A brief introduction
+to weakly supervised learning. National Science Review
+5(1):44–53.
+[Zhu et al. 2017] Zhu, J.-Y.; Park, T.; Isola, P.; and Efros,
+A. A. 2017. Unpaired image-to-image translation using
+cycle-consistent adversarial networks. In Proceedings of the
+IEEE international conference on computer vision, 2223–
+2232.
+
+Supplementary
+
+In Supplementary, we ﬁrst show the analysis of CGAN loss
+terms and give a proof of Proposition 0.1. Then we provide
+an empirical study of how the number of pairs varies with
+the size of the dataset. The preliminary results on noise resis-
+tance is also presented. Next, we show qualitative attention
+visualization of the Elo rating network and report additional
+quantitative IS and FID scores for baselines and list details
+of network architectures. Finally, we show additional results
+on conditional image synthesis.
+
+Analysis of Loss Terms
+
+As a standard recall in (Goodfellow et al. 2014), the ad-
+versarial training results in minimizing the Jensen-Shannon
+divergence between the true conditional and the generated
+conditional. We show that the following proposition holds:
+Proposition .2. The global minimum of L(G , D) is achieved
+if and only if qG ( ˜x(cid:48) |x, y (cid:48) ) = pE ( ˜x(cid:48) |x, y (cid:48) ), where p is the true
+distribution and qG is the distribution induced by G .
+Proof. (x(cid:48) , y (cid:48) ) is sampled from true distribution, x is in-
+dependently sampled and ˜x(cid:48) is sampled from Generator
+G(x, y (cid:48) ), rewrite Equation 5 in integral form,
+
+(cid:90)
+(cid:90)
+
+LCGAN =
+
+(cid:90)
+
+pE (x(cid:48) , y (cid:48) ) log(D(x(cid:48) , y (cid:48) ))dx(cid:48)dy (cid:48)+
+p(x)pE (y (cid:48) )qG ( ˜x(cid:48) |x, y (cid:48) ) log(1 − D( ˜x(cid:48) , y (cid:48) ))dxdy (cid:48)d ˜x(cid:48)
+pE (x, ˜x(cid:48) , y (cid:48) ) log(D( ˜x(cid:48) , y (cid:48) ))+
+=
+pE (x, y (cid:48) )qG ( ˜x(cid:48) |x, y (cid:48) ) log(1 − D( ˜x(cid:48) , y (cid:48) ))dxdy (cid:48)d ˜x(cid:48) ,
+
+(12)
+
+where we assume x and y (cid:48) are sampled independently.
+We get the optimal discriminator D∗ by applying Euler-
+
+Lagrange equation,
+D∗ =
+Finally plugging D∗ in LCGAN yields,
+
+pE ( ˜x(cid:48) |x, y (cid:48) )
+pE ( ˜x(cid:48) |x, y (cid:48) ) + qG ( ˜x(cid:48) |x, y (cid:48) )
+
+(cid:90)
+
+LCGAN (G , D∗ ) = −2 log 2 +
+pE (x, y (cid:48) )JSD(pE ( ˜x(cid:48) |x, y (cid:48) )||qG ( ˜x(cid:48) |x, y (cid:48) )) dxdy (cid:48) ,
+
+(14)
+
+2
+
+.
+
+(13)
+
+if qG ( ˜x(cid:48) |x, y (cid:48) ) = pE ( ˜x(cid:48) |x, y (cid:48) ) for (x, y (cid:48) ) ∈ {(x, y (cid:48) ) :
+
+where JSD is the Jensen-Shannon divergence. Since JSD is
+always non-negative and reaches its minimum if and only
+pE (x, y (cid:48) ) > 0}, G recovers the true conditional distribution
+pE ( ˜x(cid:48) |x, y (cid:48) ) when D and G are trained optimally.
+In addition, the reconstruction loss Ly
+rec , cycle loss Lcyc ,
+and identity preserving loss Lidt are all non-negative. Mini-
+mizing these losses will keep the equilibrium of LCGAN . If
+the encoder pE (y |x) and the feature extractor h(·) are trained
+properly, L(G , D∗ ) achieves its minimum when G is opti-
+mally trained.
+
+Proof of Proposition 0.1
+
+Proof. For ∀u, v ∈ V , we deﬁne π(u, v) = 1 if u < v and
+0 otherwise, w(u, v) measures the extent to which u should
+be prefered over v ,
+For any pair u, v , let
+
+Lu,v = π(u, v)w(u, v) + π(v , u)w(v , u)
+
+(15)
+where π(u, v) is the ground-truth and w(v , u) is prediction
+from Elo ranking network.
+Deﬁne
+
+L = Σu<v ,u,v∈V Lu,v
+
+(16)
+as our loss function and from results in (Radinsky and Ailon
+2011), we have the lemma:
+pairs uniformly with repetition from (cid:0)V
+(cid:1), with probability
+Lemma .1. For δ > 0, any 0 < λ < 1, if we sample dn/λ2
+1 − δ ,
+
+2
+
+(cid:34)
+
+(cid:115)
+
+L(V , w, ˆπ) ≤ λ
+
+c√
+
++
+
+E(L( ˆπ)) =
+
+P(L( ˆπ) > t)dt ≤ t1 +
+
+P(L( ˆπ) > t)dt
+
+0
+
+t1
+
+(20)
+
+Deﬁne
+
+t = λ
+
+log 1
+d
+dn
+2
+and let δ = 1, we get t1 and P(L( ˆπ) > t1 ) ≤ δ = 1
+
+c√
+
++
+
+,
+
+δ
+
+(cid:34)
+
+(cid:34)
+
+d
+
+(cid:115)
+
+(cid:114)
+
+t1 = λ
+
+c√
+
+d
+
++
+
+log 1
+dn
+
+(cid:90) ∞
+
+(cid:19)
+
+.
+
+δ
+
+2
+
+log 1
+dn
+
+(cid:35)(cid:18)n
+(cid:35)(cid:18)n
+(cid:19)
+(cid:35)(cid:18)n
+(cid:19)
+(cid:90) ∞
+
+2
+
+.
+
+(17)
+
+(18)
+
+(19)
+
+From Equation 18,
+
+n = λ2 (n(n−1))2
+4dn
+
+where σ2
+Plugging back in Equation 20,
+
+.
+
+√
+
+, µn = λn(n−1)c
+2
+d
+
+δ = exp(− 1
+n (t − µn )2 )
+σ2
+2
+E(L( ˆπ) ≤ t1 + (cid:112)2πσ2
+log 1
++
++ 2λ
+2π
+dn
+
+(cid:35)(cid:18)n
+
+(cid:114)
+
+(cid:19)
+
+n
+
+(a) n = 100
+
+(b) n = 500
+
+(c) n = 1000
+
+(21)
+
+n(n − 1)
+s
+dn
+
+√
+
+(d) n = 2000
+
+(e) n = 5000
+
+(f) n = 10000
+
+= λ
+
+(cid:34)
+(cid:34)
+
+c√
+
+d
+
+c√
+
+d
+
+√
+
+(cid:19)
+
+(cid:35)(cid:18)n
+
+2
+
+2
+
+√
+
+8π
+
+√
+
+√
+
+log 1 +
+dn
+
+= λ
+
++
+
+.
+
+(22)
+
+Set d = 16c2 , for λ/4 > 0 > 0, there is n0 so that if
+
+n > n0 ,
+
+E(L( ˆπ)) ≤ (λ/4 + 0 )
+
+≤ λ/2
+
+(23)
+
+(cid:18)n
+
+(cid:19)
+
+2
+
+(cid:18)n
+
+(cid:19)
+
+.
+
+2
+
+Number of Pairs
+
+To experimentally verify the number of pairs needed to learn
+a rating, we sampled from UTKFace (Zhang and Qi 2017)
+subsets of sizes 100, 500, 1000, 2000, 5000 and 10000, and
+train Elo rating networks with different number of pairs
+for each subset. As illustrated in Figure 12, to achieve a
+Spearman correlation above 0.9, approximately 2n pairs are
+needed, where n is the size of the subset. n log n compar-
+isons are needed for exact recovery of ranking between n
+objects. Through our ranking network, we need O(n) com-
+parisons to learn rating that is close enough to the true at-
+tribute strength and also keeping the space between objects.
+Annotation of absolute attribute strength is very noisy and
+usually takes O(n) annotations because of majority voting
+(e.g. 3n if 3 workers per instance), our method doesn’t re-
+quire more effort in annotation and pairwise comparisons are
+easier to annotate comparing to absolute attribute strength,
+which will lead to a faster ﬁnishing time in crowd-sourcing
+phase.
+
+Noise Resistance
+
+2 , M
+2
+
+Considering there is noise when annotating the absolute la-
+bels. Taking age annotation as an example, we assume an-
+Unif (cid:0)− M
+notators will give x an age Ω(cid:48) (x) that deviates from the
+(cid:1), where M is the tie margin in Figure 13. As
+true age Ω(x) by a random noise: Ω(cid:48) (x) = Ω(x) + z , z ∼
+shown, the correlation curve of ratings drops slowly until the
+noise level is too high. Although only the curve on SCUT-
+FBP shows superior results over the ground-truth label, the
+general trend is that the rating curves decrease slower than
+the absolute label curves. This demonstrates the Elo rating
+network’s potential of noise resistance.
+We choose UTKFace dataset to investigate how condi-
+tional synthesis results might be affected by margins. In Ta-
+ble 6, Spearman correlations and Inception Scores evaluated
+on UTKFace under different margin values are reported.
+
+Figure 12: Number of pairs m v.s. Spearman correlation rs . Dif-
+ferent subsets of images (of number n = 100, . . . , 10000) are ran-
+domly selected from the UTKFace dataset. For each subset, differ-
+ent number of pairs (denoted by m) are randomly sampled. The
+ﬁcient that exceeds 0.9 is marked by a red asterisk symbol ∗. To
+smallest number of pairs with a Spearman’s rank correlation coef-
+achieve high correlations between ratings and labels (in terms of
+|rs | ≥ 0.9), approximately 2n pairs are required.
+
+Margin Corr Acc (%)
+
+5
+15
+25
+35
+
+0.93
+0.91
+0.88
+0.85
+
+IS
+
+3.70±0.07
+3.56±0.06
+3.78±0.04
+3.50±0.06
+
+73.26
+64.18
+73.26
+60.74
+
+Table 6: Spearman correlations (Corr), Inception Scores (IS) eval-
+uated on UTKFace under different margin values. Pairs are ran-
+domly sampled and CGANs are trained using different pairs.
+
+Attention Visualization
+
+The proposed Elo rating network is visualized using Grad-
+CAM (Selvaraju et al. 2017). In Figure 14-a, local regions
+that are critical for decision making are highlighted: for
+CACD and UTKFace, aging indicators such as forehead
+wrinkles, crow’s feet eyes (babies usually have big eyes) are
+highlighted; for SCUT-FBP, the gradient map highlights fa-
+cial regions like eyes, nose, pimples etc. Similar to DFI, if
+viewing the rating as deep features, one can optimize over
+the input image to obtain a new image with desired attribute
+intensity. We thus invert the encoders to see what a “typi-
+cal” image with extreme attribute intensity would look like
+by optimizing the average face as shown in Figure 14-b.
+
+IS and FID Scores
+
+Additional Inception Scores (IS) (Salimans et al. 2016),
+Fr ´echet Inception Distances (FID) (Heusel et al. 2017) are
+reported in Table 7. Classiﬁers for evaluating classiﬁcation
+accuracies are also used to compute Inception Scores and as
+auxiliary classiﬁers in training Disc-CGAN/IPCGAN. The
+unsupervised baselines have high Inception Scores and low
+Fr ´echet Inception Distances but very low classiﬁcation accu-
+
+1021031040.80.911040.80.911041060.80.911041060.911041060.911041051060.91(a) Inception Score (higher is better)
+
+weak supervision
+
+full supervision
+
+Dataset
+CACD
+UTK
+SCUT-FBP
+
+Real
+3.89 ± 0.05
+4.29 ± 0.05
+4.20 ± 0.05
+
+PC-GAN
+2.89 ± 0.06
+3.55 ± 0.06
+2.88 ± 0.11
+
+DFI Cont-CGAN Disc-CGAN
+3.35 ± 0.06
+2.85 ± 0.03
+2.95 ± 0.04
+3.26 ± 0.06
+3.52 ± 0.04
+3.66 ± 0.04
+2.93 ± 0.07
+2.39 ± 0.14
+1.37 ± 0.02
+
+no supervision
+
+CycleGAN
+2.96 ± 0.03
+3.09 ± 0.06
+2.85 ± 0.15
+
+BiGAN
+3.27 ± 0.04
+3.20 ± 0.06
+3.05 ± 0.15
+
+Dataset
+CACD
+UTK
+SCUT-FBP
+
+weak supervision
+
+PC-GAN
+28.20 ± 0.65
+24.86 ± 0.84
+97.21 ± 2.81
+
+DFI
+25.18 ± 0.73
+28.32 ± 0.75
+48.67 ± 1.42
+
+(b) Fr ´echet Inception Distance (lower is better)
+
+full supervision
+
+no supervision
+
+Cont-CGAN
+28.53 ± 0.72
+28.42 ± 0.98
+114.89 ± 3.08
+
+Disc-CGAN
+28.13 ± 0.71
+33.26 ± 1.49
+188.09 ± 3.91
+
+CycleGAN
+26.76 ± 0.64
+23.16 ± 0.75
+87.07 ± 3.21
+
+BiGAN
+24.69 ± 0.62
+19.72 ± 0.79
+81.16 ± 2.93
+
+Table 7: Inception Scores (IS) and Fr ´echet Inception Distances (FID). IS and FID are computed from 20 splits with 1000 images in each split.
+Unsupervised baselines fail to edit source images to a desired attribute strength and show classiﬁcation accuracies close to a random guess
+(around 20%), however, they have misleadingly high IS and low FID scores (because changes are subtle compared to the source images).
+
+Layers
+Input image
+
+ResNet-18 features
+conv, pad 1, stride 1
+BatchNorm, LeakyReLU
+conv, pad 1, stride 1
+Global AvgPool
+
+Weights
+
+3 × 3 × 64
+3 × 3 × 1
+
+Activations
+
+224 × 224 × 3
+7 × 7 × 512
+7 × 7 × 64
+7 × 7 × 1
+1 × 1 × 1
+
+Table 8: Architecture of Elo ranking network. ResNet-18
+features are the CNN layers before its classiﬁer.
+
+Additional Results
+
+Additional results of our PC-GAN and two fully-supervised
+baselines Cont-CGAN and Disc-CGAN/IPCGAN (Wang et
+al. 2018b) on CACD, UTKFace, and SCUT-FBP datasets
+are given in Figure 15, 16, and 17 respectively. Results for
+unsupervised baselines are not shown since the changes in
+outputs are subtle. For CACD, attribute values (from Attr0
+to Attr4) correspond to ages of 15, 25, 35, 45 and 55; for
+UTK, attribute values correspond to ages of 10, 30, 50, 70
+and 90; for SCUT-FBP, attribute values correspond to scores
+
+of 1.375, 2.125, 2.875, 3.625 and 4.5, respectively.
+
+PC-GAN, Cont-CGAN and Disc-CGAN perform simi-
+larly on CACD. Disc-GAN performs much worse on UTK-
+Face and SCUT-FBP, presumably due to the discretization
+of attribute strength. For example, in SCUT-FBP, the num-
+ber of images are unevenly distributed across discretized
+attribute groups, that is, groups with least and largest at-
+tribute strength (attractiveness) have only limited images. In
+this case, we are more likely to see mode collapse in Disc-
+CGAN. As a result, Disc-CGAN is outputting same images
+for Attr0 and Attr4 in Figure 8. PC-GAN and Cont-
+CGAN have a similar quality in synthesized images in all
+three datasets, which shows PC-GAN can synthesize images
+of same qualities using pairwise comparisons.
+
+(a) CACD
+
+(b) UTKFace
+
+(c) SCUT-FBP
+
+Figure 13: Noise resistance. Spearman correlations between
+ground-truth labels and ratings or noisy labels under different tie
+margins (a tie margin is the range within which an agent is indif-
+ferent between two alternatives).
+
+(a) Attention via Grad-CAM
+
+(b) Inverting the encoder
+
+Figure 14: (a) Attention visualization for Elo rating network via
+Grad-CAM. (b) Inverting the Elo rating network by optimization
+over the input image (average faces) to match low/high attribute
+intensity.
+
+racies since their outputs are almost identical to source im-
+ages. Collectively, PC-GAN demonstrates comparable per-
+formance with fully-supervised baselines and are signiﬁ-
+cantly better than unsupervised methods.
+
+Network Architectures
+
+We show the architectures of our Elo ranking network as
+well as the spatial transformer network in Table 8. Facial
+attribute classiﬁers are ﬁnetuned ResNet-18 (He et al. 2016).
+
+51525350.60.8151525350.80.9100.511.520.70.80.91CACDUTKSCUT-FBPAverage FaceLowAttrHighAttrCACDUTKSCUT-FBPFigure 15: Comparison of PC-GAN with Cont-CGAN and Disc-CGAN on the CACD dataset. Attribute values from Attr0 to Attr4
+correspond to age of 15, 25, 35, 45 and 55, respectively.
+
+SourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANFigure 16: Comparison of PC-GAN with Cont-CGAN and Disc-CGAN on the UTKFace dataset. Attribute values from Attr0 to Attr4
+correspond to age of 10, 30, 50, 70 and 90, respectively.
+
+SourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANFigure 17: Comparison of PC-GAN with Cont-CGAN and Disc-CGAN on the SCUT-FBP dataset. Attribute values from Attr0 to Attr4
+correspond to score of 1.375, 2.125, 2.875, 3.625 and 4.5, respectively.
+
+SourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGANSourceAttr0Attr1Attr2Attr3Attr4PC-GANCont-cGANDisc-cGAN

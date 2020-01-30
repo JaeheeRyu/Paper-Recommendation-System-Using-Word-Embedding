@@ -1,0 +1,1270 @@
+TEINet: Towards an Efﬁcient Architecture for Video Recognition
+
+Zhaoyang Liu1 ∗ Donghao Luo2 ∗ Yabiao Wang2 Limin Wang1 †
+Ying Tai2 Chengjie Wang2
+Jilin Li2
+Feiyue Huang2 Tong Lu1
+
+1 State Key Lab for Novel Software Technology, Nanjing University, China
+2 Youtu Lab, Tencent
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+5
+3
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Efﬁciency is an important issue in designing video architec-
+tures for action recognition. 3D CNNs have witnessed re-
+markable progress in action recognition from videos. How-
+ever, compared with their 2D counterparts, 3D convolutions
+often introduce a large amount of parameters and cause high
+computational cost. To relieve this problem, we propose an
+efﬁcient temporal module, termed as Temporal Enhancement-
+and-Interaction (TEI Module), which could be plugged into
+the existing 2D CNNs (denoted by TEINet). The TEI mod-
+ule presents a different paradigm to learn temporal features
+by decoupling the modeling of channel correlation and tem-
+poral interaction. First, it contains a Motion Enhanced Mod-
+ule (MEM) which is to enhance the motion-related features
+while suppress irrelevant
+information (e.g., background).
+Then, it introduces a Temporal Interaction Module (TIM)
+which supplements the temporal contextual information in
+a channel-wise manner. This two-stage modeling scheme is
+not only able to capture temporal structure ﬂexibly and ef-
+fectively, but also efﬁcient for model inference. We conduct
+extensive experiments to verify the effectiveness of TEINet
+on several benchmarks (e.g., Something-Something V1&V2,
+Kinetics, UCF101 and HMDB51). Our proposed TEINet can
+achieve a good recognition accuracy on these datasets but still
+preserve a high efﬁciency.
+
+1
+
+Introduction
+
+Video understanding is one of the most important prob-
+lems in computer vision (Simonyan and Zisserman 2014;
+Tran et al. 2015; Wang et al. 2016). Action recognition is
+a fundamental task in video understanding, as it is able to
+not only extract semantic information from videos, but also
+yield general video representations for other tasks such as
+action detection and localization (Feichtenhofer et al. 2018;
+Zhao et al. 2017). Unlike static images, the core problem of
+action recognition is how to model temporal information ef-
+fectively. Temporal dimension typically exhibits a different
+property with respect to spatial domain. Modeling temporal
+information in a proper way is crucial for action recognition,
+which has aroused great interest of research.
+
+∗ indicates equal contribution.
+†Corresponding author (lmwang@nju.edu.cn).
+
+Figure 1: TEINet building block. We present an effective
+TEI module to decouple temporal modeling into a MEM to
+enhance motion-related features and a TIM capture temporal
+contextual information. This TEI module could be inserted
+into the 2D ResNet block to construct an efﬁcient video ar-
+chitecture of TEINet.
+
+Recently the convolutional networks (LeCun et al. 1998)
+have become the mainstream method in action recogni-
+tion (Simonyan and Zisserman 2014; Carreira and Zisser-
+man 2017; Tran et al. 2018). TSN (Wang et al. 2016) is an
+efﬁcient method which ignores the constraint on temporal
+order information and only aggregates temporal information
+at the ﬁnal classiﬁer layer. To capture temporal information
+slowly and earlier, some new efﬁcient 2D CNN based ar-
+chitectures are developed such as StNet (He et al. 2019) and
+TSM (Lin, Gan, and Han 2018). However, they involve some
+hand-crafted designs, which lacks a clear explanation and
+may be suboptimal for temporal modeling. 3D CNNs (Tran
+et al. 2015; Carreira and Zisserman 2017) are more princi-
+pled architectures for directly learning spatiotemporal fea-
+tures from RGB frames. Unfortunately, this simple exten-
+sion from a 2D convolution to its 3D version leads to a criti-
+cal issue: it causes high computational cost when densely re-
+placing 2D convolutions with 3D counterparts. Therefore we
+hope to devise a ﬂexible temporal modeling module which
+shares the capacity of learning spatiotemporal representa-
+tions yet still keeps the efﬁciency of 2D CNNs.
+
+TEI-ModuleMEM•TIMResConv+1*1, 2Dconv1*1, 2Dconv3*3, 2Dconv+ResNet-BlockResConvTEINet-Block 
+ 
+ 
+ 
+ 
+ 
+Intuitively, temporal structure in video can beneﬁt action
+recognition from multiple aspects. Firstly, motion informa-
+tion is able to help us focus on moving objects or people
+that are discriminative for action recognition. These discrim-
+inative features could be automatically determined for each
+input video. Secondly, the temporal evolution of visual fea-
+tures enables us to capture dynamic variation in videos and
+relate adjacent frame-level features for action recognition.
+Based on these analyses, we propose a new temporal mod-
+eling paradigm, termed as Enhance-and-Interact. This new
+design decouples the temporal module into two stages: ﬁrst
+enhance discriminative features and then capture their tem-
+poral interaction. This unique design enables us to separately
+capture the channel-level correlation and temporal relation
+in a more principled and efﬁcient way. It turns out that this
+separate modeling scheme is able to not only capture tem-
+poral structure ﬂexibly and effectively, but also keeps a high
+inference efﬁciency in practice.
+Speciﬁcally, we ﬁrst present the Motion Enhanced Mod-
+ule (MEM), which utilizes motion information as a guide
+to focus on important features. To make this enhancement
+more efﬁcient and effective, we squeeze the feature maps to
+only focus on channel-level importance and exploit temporal
+difference as an approximate motion map. Then, to capture
+the temporal interaction of adjacent frames, we present the
+Temporal Interaction Module (TIM), which model the local
+temporal variations of visual features. To control the model
+complexity and ensure the inference efﬁciency, we employ
+a temporal channel-wise convolution in a local time win-
+dow. These two modules are plugged sequentially to yield
+a novel temporal module, namely Temporal Enhancement-
+and-Interaction (TEI module), which is a generic building
+
+block and could be plugged into the existing 2D CNNs
+
+such as ResNets, as illustrated in Figure 1.
+In experiments, we verify the effectiveness of TEI block
+with the 2D ResNet on the large-scale datasets such as Ki-
+netics (Kay et al. 2017) and Something-Something (Goyal
+et al. 2017). The ﬁnal video architecture, coined as TEINet,
+obtains an evident performance improvement over previous
+approaches while is still able to keep fast inference speed.
+In particular, our TEINet achieves the state-of-the-art per-
+formance on the dataset of Something-Something, and com-
+parable performance to previous 3D CNN based methods
+at a lower computational cost on the dataset of Kinetics.
+We also demonstrate the generalization ability of TEINet by
+ﬁne-tuning on the datasets of UCF101 and HMDB51, where
+competitive recognition accuracy is also obtained. The main
+contribution in this work is summarized as follows:
+• We present a new temporal modeling module, termed as
+TEI module, by decoupling the task of temporal feature
+learning into channel-level enhancement and local tem-
+poral interaction.
+• The proposed TEINet is veriﬁed on various large-scale
+datasets, demonstrating that it is able to obtain an evident
+improvement over previous temporal modeling methods
+with a lower computational cost.
+
+2 Related Work
+
+2D CNNs in Action Recognition. Conventional 2D CNNs
+
+were extensively applied on action recognition in videos (Si-
+monyan and Zisserman 2014; Feichtenhofer, Pinz, and
+Wildes 2016; Wang et al. 2016; Lin, Gan, and Han 2018;
+Gan et al. 2015). Two stream methods (Simonyan and Zis-
+serman 2014; Feichtenhofer, Pinz, and Zisserman 2016;
+Zhang et al. 2016) regarded optical ﬂow or motion vector
+as motion information to make up a temporal stream CNN.
+TSN (Wang et al. 2016) utilized average pooling to aggre-
+gates temporal information from set of sparsely-sampled
+frames. To improve the temporal reasoning ability of TSN,
+the TRN (Zhou et al. 2018) was proposed by focusing on
+the multi-scale temporal relations among sampled frames.
+To model temporal structure efﬁciently, TSM (Lin, Gan, and
+Han 2018) proposed a temporal shift module on the original
+feature map. Sharing the same motivation with TSM, our
+TEINet is also based on 2D backbones with high efﬁciency,
+but better at capturing temporal clues for video recognition.
+
+3D CNNs in Action Recognition. 3D convolution (Tran
+
+et al. 2015; Carreira and Zisserman 2017) was a straight-
+forward extension over 2D versions to learn the spatiotem-
+poral representation directly from RGB. I3D (Carreira and
+Zisserman 2017) inﬂated all 2D convolution kernels into
+3D convolution kernels and directly utilized the pre-trained
+weights on ImageNet (Deng et al. 2009). ARTNet (Wang
+et al. 2018a) improved the original 3D convolutions with
+higher-order relation modeling to explicitly capture motion.
+3D convolution is natural and simple way for modeling tem-
+poral features, yet in practice with heavy computation. Un-
+like 3D CNNs, our TEINet resorts to a new temporal module
+purely based on 2D CNNs for video recognition.
+
+Efﬁcient Temporal Modules. Some efﬁcient
+
+temporal
+models were proposed by using combination of 2D and 3D
+convolutions. ECO (Zolfaghari, Singh, and Brox 2018) com-
+bined the 2D convolution and 3D convolution into one net-
+work to achieve a balance between 2D CNNs and 3D CNNs.
+To decompose the optimization of spatial and temporal fea-
+tures, pseudo-3D convolution, e.g., P3D (Qiu, Yao, and Mei
+2017), S3D (Xie et al. 2018) and R(2+1)D (Tran et al. 2018),
+decomposed the spatio-temporal 3D convolution into a spa-
+tial 2D convolution and a temporal 1D convolution. Our
+TEINet integrates a new temporal block into a purely 2D
+backbone to endow network with the ability to model tem-
+poral structure in videos.
+
+Attention in Action Recognition. The attention mecha-
+
+nism (Hu, Shen, and Sun 2018; Li, Hu, and Yang 2019) were
+widely used in image classiﬁcation, which can boost perfor-
+mance using a small portion of extra parameters. Similarly,
+there are some works (Wang et al. 2018b; Girdhar and Ra-
+manan 2017) related to attention in action recognition. Non-
+local network formulates the non-local mean operation as
+Non-local block to capture the long-range dependencies in
+video. Motion enhanced module (MEM) in our method dif-
+fers from these attention methods. MEM constructs the tem-
+poral attention weights by local motion tendency which can
+be trained by end-to-end without using extra supervision and
+give a sizable boost in accuracy.
+
+Figure 2: The pipeline of TEI module. We show motion enhanced module (MEM) in the left and temporal interaction module
+(TIM) in the right. The (cid:12) denotes element-wise multiplication, and (cid:9) denotes element-wise subtraction. Notably, in TIM, we
+use different box to represent kernel weights, which means each channel do not share kernel weights.
+
+3 Method
+
+We will introduce our proposed TEI module in this section.
+First, we describe motion enhanced module and explain how
+to learn a channel level attention weights. Then we present
+the technical details of temporal interaction module. Finally
+we combine these two modules as a TEINet building block
+and integrate this block into the off-the-shelf architecture of
+2D CNN.
+
+3.1 Motion Enhanced Module
+
+In action recognition, spatial features can only provide par-
+tial information for action recognition. It is well established
+that motion information is an crucial cue for understand-
+ing human behavior in videos. Consequently, we ﬁrst design
+a Motion Enhanced Module (MEM) to focus on motion-
+salient features while suppress the irrelevant information at
+background.
+Our method is to enhance the motion-related features
+in a channel-wise way by using the temporal difference
+of adjacent frame level features. To decrease the compu-
+tational cost, we ﬁrst construct a global representation for
+each channel and then perform feature enhancement in a
+quence X = {x1 , x2 , ..., xT } in which xt ∈ RC×H×W , We
+channel level. As depicted in Figure 2, given an input se-
+ﬁrst aggregate feature map xt across their spatial dimensions
+(H × W ) by using global average pooling, which produces
+ˆxt ∈ RC×1×1 . Then, these pooled features go through sub-
+sequent processing operations to generate the channel im-
+portance weights.
+Basically, we observe that the overall appearance infor-
+mation varies gradually and slowly over time. The pixel val-
+ues in motion salient regions would change more quickly
+than those in static regions. In practice, we exploit the fea-
+ture difference between adjacent frames to approximately
+represent the motion saliency. To reduce the model complex-
+ity, the ˆxt and ˆxt+1 are fed into two different 2D convolu-
+tions whose kernel size of 1 × 1 in which the channels of
+ˆxt will be compressed. This dimension reduction and differ-
+
+ence calculation can be formulated as:
+
+st = Conv1( ˆxt , Wθ ) − Conv2( ˆxt+1 , Wφ ).
+
+(1)
+Here Wθ and Wφ are learnable parameters of the convolu-
+tions that reduce the number of channels in ˆX from C to C
+r .
+In our experiments, the reduction ratio r is set to 8.
+Then another 2D convolution is applied on st , which aims
+to recover the channel dimension of st as same as input st .
+The attention weights are obtained by:
+
+ut = ˆst · xt ,
+
+ˆst = σ(Conv3(st , Wϕ )),
+
+(2)
+where σ(∗) denotes a sigmoid function and Wϕ are learn-
+able parameters of Conv3. Finally we obtain attention
+weights ˆs ∈ RC×1×1 for different channels. We utilize
+channel-wise multiplication to enhance motion-salient fea-
+tures:
+(3)
+where t ∈ [1, T − 1] and ut is our ﬁnal enhanced feature
+map. To keep the temporal scale consistent with input X ,
+we simply copy the xT as uT , namely, uT = xT .
+Discussion. We have noticed that our MEM is similar to
+SE module in (Hu, Shen, and Sun 2018). However, the es-
+sential difference between SE module and MEM is that SE
+module is a kind of self attention mechanism by using its
+own global feature to calibrate the different channels, while
+our MEM is a motion-aware attention module by enhanc-
+ing the motion-related features. To prove the effectiveness
+of MEM, we conduct the comparative experiments in sec-
+tion 4.3. Under the same setting, our MEM is better at en-
+hancing temporal features for action recognition than SE
+module in video dataset.
+
+3.2 Temporal Interaction Module
+
+In MEM, we enhance the motion-related features, but our
+model is still incapable of capturing temporal information
+in a local time window, namely the temporal evolution of
+visual pattern over time. Consequently, we propose the Tem-
+poral Interaction Module (TIM) which aims to capture tem-
+poral contextual information at a low computational cost.
+
+!"!#!$MEMC*H*W-•Conv1Conv2Conv3SigmoidC*H*WGAPC*1*1C*1*1C/r*1*1C/r*1*1C/r*1*1C*1*1C*1*1C*H*W000000000000•TIMMEMPadPadTemporal TTemporal TMEM•TEI-ModuleTIMChannel CMore speciﬁcally, we here use a channel-wise convolution
+to learn the temporal evolution for each channel indepen-
+dently, which preserves low computational complexity for
+model design.
+As
+illustrated in Figure2, given a input U =
+transform its
+shape
+from
+U T ×C×H×W to ˆU C×T ×H×W (denoted by ˆU to avoid
+ambiguity). Then we apply the channel-wise convolution to
+operate on ˆU as follows:
+
+{u1 , u2 , ..., uT }, we ﬁrst
+
+(cid:88)
+
+Yc,t,x,y =
+
+Vc,i · ˆUc,t+i,x,y ,
+
+(4)
+
+i
+
+where V is the channel-wise convolutional kernel and
+Yc,t,x,y is the output after
+temporal convolution. The
+channel-wise convolution tremendously decreases the com-
+putation costs comparing with 3D convolution. In our set-
+3×1×1, which implies the features are only interacting with
+ting, the kernel size of the channel-wise convolution is
+features in adjacent time, but the temporal receptive ﬁelds
+will gradually grow when feature maps pass through deeper
+layers of network. After convolution, we will transform the
+shape of output Y back to T ×C ×H ×W . The parameters of
+vanilla 3D convolution is Cout ×Cin × t× d× d, and the tem-
+poral 1D convolution in (Tran et al. 2018) is Cout × Cin × t,
+but the parameters of TIM is Cout × 1 × t. The number of
+parameters in TIM is greatly reduced when compared with
+other temporal convolutional operators.
+Discussion. We ﬁgure out our TIM is related to the re-
+cent proposed TSM (Lin, Gan, and Han 2018). In fact, TSM
+could be viewed as a channel-wise temporal convolution,
+where temporal kernel is ﬁxed as [0, 1, 0] for non shift,
+[1, 0, 0] for backward shift, and [0, 0, 1] for forward shift.
+Our TIM generalizes the TSM operation into a ﬂexible mod-
+ule with a learnable convolutional kernel. In experiment, we
+ﬁnd that this learnable scheme is more effective than random
+shift to capture temporal contextual information for action
+recognition.
+
+3.3 TEINet
+
+After introducing the MEM and TIM, we are ready to
+describe how to build the temporal enhancement-and-
+interaction block (TEI) and integrate it into the existing net-
+work architecture. As shown in Figure 1, the TEI module is
+composed of MEM and TIM introduced above, which could
+be implemented efﬁciently. First the input feature maps will
+be fed into MEM to learn attention weights for different
+channels, which aims to enhance the motion-related fea-
+tures. Then the enhanced features will be fed into the TIM
+to capture temporal contextual information. Our TEI module
+is a generic and efﬁcient temporal modeling module, which
+could be plugged into any existing 2D CNN to capture tem-
+poral information, and the resulted network is called Tempo-
+ral Enhancement-and-Interaction Network (TEINet).
+Our TEI module is directly inserted into the 2D CNN
+backbone, while other methods (Tran et al. 2018; Qiu, Yao,
+and Mei 2017; Xie et al. 2018) replace the 2D convolutions
+with more expensive 3D convolutions or (2+1)D convolu-
+tions. This new integration method is able to not only use the
+
+pre-trained ImageNet model for initialization but also bring
+a smaller number of extra computational FLOPs compared
+with 3D CNNs. In our experiments, to trade off between
+performance and computational cost, we instantiate the tem-
+poral enhancement-and-interaction network (TEINet) using
+ResNet-50 (He et al. 2016) as backbone. We conduct exten-
+sive experiments to ﬁgure out the optimal setting of TEINet
+for action recognition in Section. 4.
+Discussion. Our paper proposed enhancement-and-
+interaction is a factorized modeling method to endow net-
+work with a strong ability to learn the temporal features in
+videos. We ﬁnd that our module is effective for both types
+of video datasets: motion dominated one such as Something-
+Something V1&V2 and appearance dominated one such as
+Kinetics-400. MEM and TIM focus on different aspects
+when capturing temporal information, where MEM aims to
+learn channel level importance weights and TIM tries to
+learn temporal variation pattern of adjacent features. These
+two modules are cooperative and complementary to each
+other as demonstrated in Table 1a.
+
+4 Experiments
+
+4.1 Datasets
+
+Something-Something V1&V2.
+
+(Goyal et al. 2017) is a
+large collection of video clips containing daily actions in-
+teracting with common objects. It tries to focuses on mo-
+tion itself without differentiating manipulated objects. V1
+includes 108499 video clips, and V2 includes 220847 video
+clips. They both have 174 classes.
+Kinetics-400. (Kay et al. 2017) is a large-scale dataset in ac-
+tion recognition, which contains 400 human action classes,
+with at least 400 video clips for each class. Each clip is col-
+lected from YouTube videos and then trimmed to around
+10s. The newest version of Kinetics has updated to Kinetics-
+700 which approximately includes 650k video clips that
+covers 700 human action classes. For fair comparison with
+previous methods, we conduct experiments on Kinetics-400.
+UCF101 and HMDB51. Finally, to verify the generaliza-
+tion ability to transfer to smaller scale datasets, we report
+the results on the datasets of UCF101 (Soomro, Zamir,
+and Shah 2012) and HMDB51 (Kuehne et al. 2011). The
+UCF101 contains 101 categories with around 13k videos,
+while HMDB51 has about 7k videos spanning over 51 cat-
+egories. On UCF101 and HMDB51, we follow the common
+practice that reports the accuracy by averaging over three
+splits. Different from Something-Something, the datasets of
+Kinetics-400, UCF101 and HMDB51 are less sensitive to
+temporal relationship.
+
+4.2 Experimental Setup
+
+We here choose the ResNet-50 as our backbone for the trade
+off between performance and efﬁciency. Unless speciﬁed,
+our model is pre-trained on ImageNet (Deng et al. 2009).
+Training. We applied a similar pre-processing method
+to (Wang et al. 2018b): ﬁrst resizing the shorter side of raw
+images to 256 and then employing a center cropping and
+scale-jittering. Before being fed into the network, the im-
+ages will be resized to 224 × 224. In our model, We attempt
+
+model
+Top-1
+Top-5
+Res50+TSN
+19.7% 46.6%
+Res50+TSM
+43.4% 73.2%
+Res50+MEM
+33.5% 61.5%
+Res50+TIM
+46.1% 74.7%
+Res50+SE+TIM
+46.1% 75.2%
+Res50+MEM+TIM 47.4% 76.6%
+
+(a) Exploration on MEM and TIM, and
+comparison with other baseline methods.
+
+stage
+res2
+res3
+res4
+res5
+
+Top-1
+Top-5
+41.6% 70.1%
+43.1% 72.1%
+
+45.4% 74.6%
+
+45.3% 74.3%
+
+stages Blocks
+res5
+3
+res4−5
+9
+res3−5
+13
+res2−5
+16
+
+Top-1
+Top-5
+45.3% 74.3%
+46.7% 76.3%
+47.3% 75.2%
+
+47.4% 75.8%
+
+(b) The TEI blocks in different
+stage of ResNet-50
+
+(c) The number of TEI block inserted into
+ResNet-50.
+
+Table 1: Ablation studies on Something-Something V1.
+
+Method
+I3D (Carreira et al. 2017)
+ECO16f (Zolfaghari et al. 2018)
+TSN (Wang et al. 2016)
+TSM (Lin et al. 2018)
+TSM (Lin et al. 2018)
+Res50+TIM
+TEINet
+Res50+TIM
+TEINet
+
+Frame
+64
+16
+8
+8
+16
+8
+8
+16
+16
+
+Params
+FLOPs
+35.3M 360G
+47.5M
+64G
+24.3M
+33G
+24.3M
+33G
+24.3M
+65G
+24.3M
+33G
+30.4M
+33G
+24.3M
+66G
+30.4M
+66G
+
+Latency
+165.3ms
+30.6ms
+15.5ms
+17.4ms
+29.0ms
+20.1ms
+36.5ms
+34.9ms
+49.5ms
+
+Throughput
+6.1 vid/s
+45.6 vid/s
+81.5 vid/s
+77.4 vid/s
+39.5 vid/s
+61.6 vid/s
+46.9 vid/s
+31.4 vid/s
+24.2 vis/s
+
+Sthv1
+41.6%
+41.4%
+19.7%
+43.4%
+44.8%
+46.1%
+47.4%
+48.5%
+49.9%
+
+Table 2: Quantitatively analysis on latency and throughput Something-Something V1. ”vid/s” represents videos per second.
+The larger latency and the smaller throughput represent higher efﬁciency.
+
+to stack 8 frames or 16 frames as a clip. On the Kinetics
+dataset, we train our models for 100 epochs in total, start-
+ing with a learning rate of 0.01 and reducing to its 1
+10 at 50,
+75, 90 epochs. For fair comparisons with the state-of-the-
+art models, we follow the testing strategy in (Lin, Gan, and
+Han 2018), which uniformly samples 8 or 16 frames from
+the consecutive 64 frames randomly sampled in each video.
+We observe that the duration of most videos in Something-
+Something V1&V2 normally has less than 64 frames. Thus
+we use the similar strategy to TSN (Wang et al. 2016) to
+train our model. Speciﬁcally, we uniformly sample the 8
+or 16 frames from each video. On Something-Something
+V1&V2, We train the TEINet for 50 epochs starting with
+a learning rate 0.01 and reducing it by a factor of 10 at 30,
+40, 45 epochs. For all of our experiments, we utilize SGD
+with momentum 0.9 and weight decay of 1e-4 to train our
+TEINet on Tesla M40 GPUs using a mini batch size of 64.
+Inference. We follow the widely used settings in (Wang et
+al. 2018b; Lin, Gan, and Han 2018): resizing shorter side to
+256 and taking 3 crops (left, middle, right) in each frame.
+Then we uniformly sample 10 clips in each video and com-
+pute the classiﬁcation scores for all clips individually. The ﬁ-
+nal prediction will be obtained by utilizing the average pool-
+ing to aggregate the scores of 10 clips.
+
+4.3 Ablation Studies
+
+This section provides ablation studies on TEI module design
+and integration with ResNet50 on the Something-Something
+V1 dataset. In this section, we report the experimental results
+using the testing scheme of center crop and one clip, the
+results are summarized in Table 1.
+
+Study on MEM and TIM. We ﬁrst conduct a separate study
+on the effect of each individual module (MEM or TIM) on
+action recognition. We ﬁnd that the TIM is able to yield a
+better recognition accuracy than MEM (46.1% vs. 33.5%),
+indicating that temporal contextual information is more im-
+portant for action recognition in the Something-Something
+dataset. Then, we compare our TIM with other efﬁcient tem-
+poral modeling baselines such as TSN and TSM, which
+demonstrates that our TIM is more effective than these base-
+line methods. Finally, we compare the performance of MEM
+with SE on action recognition, and we see that MEM+TIM
+is better than SE+TIM by 1.3%, which conﬁrms our moti-
+vation that motion-aware attention is better at capturing dis-
+criminative temporal features for action recognition.
+
+Which stage to insert TEI blocks. As shown in Table 1b,
+
+we ﬁnd that a clear performance improvement will be ob-
+tained when inserting TEI block in the later stages. It is
+worth noting that res4 has 3 more blocks than res5 , but
+integration at both locations achieves a similar result. The
+temporal modeling based on higher level features may be
+more beneﬁcial to recognition, which agrees with the ﬁnd-
+ings from (Xie et al. 2018).
+
+The number of TEI block inserted into network. Efﬁ-
+
+ciency is an important issue and sometimes we may focus on
+improving recognition accuracy with a limited extra compu-
+tation consumption. We here expect to ﬁgure out how many
+TEI blocks can obtain a trade-off performance. Speciﬁcally,
+We attempt to gradually add TEI blocks from res5 to res2
+in ResNet50. As shown in Table 1c where we use the same
+inference settings as Table 1a, we can boost the performance
+by inserting more TEI blocks. We also see that res2−5 only
+
+Method
+TSN-RGB (Wang et al. 2016)
+TRN-Multiscale-RGB (Zhou et al. 2018)
+TRN-Multiscale-RGB (Zhou et al. 2018)
+TRN-Multiscale-2Stream (Zhou et al. 2018)
+S3D-G-RGB (Xie et al. 2018)
+I3D-RGB (Wang and Gupta 2018)
+NL I3D-RGB (Wang and Gupta 2018)
+NL I3D+GCN-RGB (Wang and Gupta 2018)
+ECO-RGB (Zolfaghari et al. 2018)
+ECO-RGB (Zolfaghari et al. 2018)
+ECOEnLite-2Stream (Zolfaghari et al. 2018)
+TSM-RGB (Lin, Gan, and Han 2018)
+TSM-RGB (Lin, Gan, and Han 2018)
+TSMEn -RGB (Lin, Gan, and Han 2018)
+TSM-2Stream (Lin, Gan, and Han 2018)
+
+Backbone
+ResNet2D-50
+BNInception
+ResNet2D-50
+BNInception
+Inception
+ResNet3D-50
+ResNet3D-50
+ResNet3D-50+GCN
+
+Pre-train
+ImgNet
+
+ImgNet
+
+ImgNet
+
+ImgNet+K400
+
+BNIncep+Res3D-18
+
+K400
+
+ResNet2D-50
+
+ImgNet+K400
+
+TEINet-RGB
+
+TEINetEn -RGB
+
+ResNet2D-50
+
+ResNet2D-50
+
+ImgNet
+
+ImgNet
+
+Frames
+
+8f
+8f
+8f
+8f + 8f
+64f
+32f × 2
+
+16f
+92f
+92f + 92f
+8f
+16f
+16f + 8f
+16f + 16f
+8f
+8f × 10
+16f
+16f × 10
+16f + 8f
+
+FLOPs
+33G
+33G
+33G
+-
+71G
+306G
+334G
+606G
+64G
+267G
+-
+33G
+65G
+98G
+-
+33G
+990G
+66G
+1980G
+99G
+
+Val
+Test
+Top-1
+Top-1
+19.7%
+-
+34.4% 33.6%
+38.9%
+-
+42.0% 40.7%
+48.2%
+-
+41.6%
+-
+44.4%
+-
+46.1% 45.0%
+41.6%
+-
+46.4%
+-
+49.5%
+43.9
+43.4%
+-
+44.8%
+-
+46.8%
+-
+50.2%
+47.0
+-
+-
+-
+51.0% 44.7%
+
+48.8%
+
+47.4%
+
+49.9%
+
+52.5% 46.1%
+
+Table 3: Comparison with the state-of-the-art on Something-Something V1. The gray rows represent that they use two stream
+method and can not directly compare with our method.
+
+Method
+TSN16f ×10 (Wang et al. 2016)
+TRN-RGB8f (Zhou et al. 2018)
+TRN-2Stream8f (Zhou et al. 2018)
+TSM-RGB8f ×10 (Lin et al. 2018)
+TSM-RGB16f ×10 (Lin et al. 2018)
+TSM-2Stream16f ×10 (Lin et al. 2018)
+TEINet-RGB8f
+TEINet-RGB8f ×10
+TEINet-RGB16f
+TEINet RGB16f ×10
+TEINet RGB16f +8f
+
+Val
+Test
+30.0%
+-
+48.8% 50.9%
+55.5% 83.1%
+59.1%
+-
+59.4% 60.4%
+64.0% 64.3%
+61.3%
+-
+64.0% 62.7%
+62.1%
+-
+64.7% 63.0%
+
+66.5% 64.6%
+
+Table 4: Comparison with the state-of-the-art on Something-
+Something V2. The subscript 8f × 10 denotes we sample 10
+clips and each clip contain 8 frames.
+
+outperforms res4−5 by 0.7%, but with extra 7 TEI blocks.
+Therefore, in practice, we recommend to use TEI block sim-
+ply in stages of res4−5 as it is more efﬁcient. But our default
+choice of the remaining experiments are ready to use the
+ResNet50 equipped with TEI blocks in all stages.
+Analysis on runtime. The runtime of model has also drawn
+considerable attention from researchers in recent years. Sev-
+eral experiments are conducted on Something-Something
+V1 to manifest the latency and throughput for our models.
+For the fair comparisons with other models, we follow the
+inference settings in (Lin, Gan, and Han 2018) by using
+a single NVIDIA Tesla P100 GPU to measure the latency
+and throughput. We use a batch size of 1 to measure the la-
+tency and a batch size of 16 to measure the throughput. Data
+
+loading time is not considered in this experiment. As shown
+in Table 2, Our models achieve the acceptable latency and
+Throughput comparing with other models.
+
+4.4 Comparison with the State of the Art
+
+Results on Something-Something V1. We compare our
+
+TEINet with the current state-of-the-art models in Table 3.
+It is worth noting that our proposed models are only pre-
+trained on ImageNet. For fair and detailed comparison, the
+results of TEINet apply center crop when sampling 1 clip,
+and 3 crops when sampling 10 clips. We notice that our
+TEINets dramatically outperform TSN (Wang et al. 2016),
+which demonstrates the effectiveness of TEI Block. When
+using 16 frames as input our proposed TEINet outperforms
+TSM (Lin, Gan, and Han 2018) by 5.1% on validation set
+and even achieves superior performance to TSMEn which
+ensembles the results of 8 frames and 16 frames. As man-
+ifested in Table 3, Our TEINetEn which has the same set-
+ting as TSMEn can surpass all existing RGB or RGB+Flow
+based models on Something-Something V1. When it comes
+to computational costs, we also list FLOPs for most models,
+We ﬁnd that our model achieves the superior performance
+with reasonable FLOPs during testing. More analyses on
+runtime comparing with other models have been mentioned
+in Section 4.3.
+
+Results on Something-Something V2. As shown in Ta-
+
+ble 4, We report the results on Something-Something V2
+which is a new release of V1. The training setting and in-
+ference protocol of Table 4 are consistent with Table 3.
+Our proposed TEINets obtain the similar performance gain
+on Something-Something V2 by only using RGB as in-
+put. The TEINet8f even achieves 61.3% and outperforms
+TSM16f ×10 as inputs by 1.9%. Furthermore, our proposed
+
+Method
+Backbone
+I3D64f (Carreira et al. 2017)
+Inception V1
+I3D64f +TSN (Wang et al. 2019)
+Inception V1
+ARTNet16f +TSN (Wang et al. 2018a)
+ResNet-18
+NL+I3D32f (Wang et al. 2018b)
+ResNet-50
+NL+I3D128f (Wang et al. 2018b)
+ResNet-101
+Slowfast (Feichtenhofer et al. 2018)
+ResNet-50
+Slowfast (Feichtenhofer et al. 2018)
+ResNet-101
+NL+Slowfast (Feichtenhofer et al. 2018)
+ResNet-101
+LGD-3D128f (Qiu et al. 2019)
+ResNet-101
+TSN (Wang et al. 2016)
+Inception V3
+ECOEn (Zolfaghari, Singh, and Brox 2018) BNIncep+Res3D-18
+R(2+1)D32f (Tran et al. 2018)
+ResNet-34
+S3D-G64f (Xie et al. 2018)
+Inception V1
+StNet25f (He et al. 2019)
+ResNet-50
+TSM16f (Lin, Gan, and Han 2018)
+ResNet-50
+TEINet8f
+ResNet-50
+TEINet16f
+ResNet-50
+
+Pre-train
+ImgNet
+ImgNet
+From Scratch
+ImgNet
+ImgNet
+From Scratch
+From Scratch
+From Scratch
+ImgNet
+ImgNet
+From Scratch
+Sports-1M
+ImgNet
+ImgNet
+ImgNet
+ImgNet
+ImgNet
+
+GFLOPs×views
+108×N/A
+108×N/A
+23.5×250
+70.5×30
+359×30
+36.1×30
+106×30
+234×30
+N/A×N/A
+3.2×250
+N/A×N/A
+152×10
+71.4×30
+189.3×1
+65×30
+33×30
+66×30
+
+Top-1
+Top-5
+72.1% 90.3%
+73.5% 91.6%
+70.7% 89.3%
+74.9% 91.6%
+77.7% 93.3%
+75.6% 92.1%
+77.9% 93.2%
+
+79.8% 93.9%
+
+79.4% 94.4%
+72.5% 90.2%
+70.7% 89.4%
+74.3% 91.4%
+74.7% 93.4%
+69.9%
+-
+74.7% 91.4%
+74.9% 91.8%
+76.2% 92.5%
+
+Table 5: Comparison with the state-of-the-art models on Kinetics-400. Similar to (Feichtenhofer et al. 2018), we report the
+inference cost by computing the GFLOPs (of a single view) × the number of views (temporal clips with spatial crops). The
+subscript 8f denotes each clip contains 8-frame and N/A denotes the numbers are not available for us.
+
+Method
+TSN-RGB (Wang et al. 2016)
+I3D-RGB (Carreira et al. 2017)
+P3D-RGB (Qiu, Yao, and Mei 2017)
+S3D-G-RGB (Xie et al. 2018)
+R(2+1)D-RGB (Tran et al. 2018)
+TSM-RGB (Lin et al. 2018)
+ECOEn (Zolfaghari et al. 2018)
+ARTNet-RGB (Wang et al. 2018a)
+StNet-RGB (He et al. 2019)
+TEINet-RGB
+
+UCF
+HMDB
+93.2%
+-
+95.6% 74.8%
+88.6%
+-
+96.8% 75.9%
+96.8% 74.5%
+96.0% 73.2%
+94.8% 72.4%
+94.3% 70.9%
+93.5%
+-
+96.7% 72.1%
+
+Table 6: Comparison with the state-of-the-art models on
+UCF101 and HMDB51. The results are followed common
+practice that reports accuracy by averaging over all 3 splits.
+For fair comparison, we only list the models using RGB as
+inputs.
+
+TEINet16f +8f which ensembles the models using 16 frames
+and 8 frames as inputs outperforms TSM-2Stream by 2.5%,
+and achieves superior performance to the previous state-of-
+the-art models, which demonstrates that our TEINet is able
+to capture temporal features on this motion sensitive dataset.
+Results on Kinetics-400. The Kinetics is currently the most
+popular dataset in action recognition, due to its large num-
+bers of videos and various categories. The results are sum-
+marized in Table 5. The upper part of Table 5 lists the current
+state-of-the-art models based on 3D convolutions, which are
+with expensive computational costs. The middle part of Ta-
+ble 5 lists several slightly lightweight models which are
+mainly composed of 2D convolutions or a few 3D convolu-
+tions in network. Notably, our models based on 2D ResNet-
+50 only utilize ImageNet as pre-training dataset. We here
+only list the models only using RGB as inputs to perform
+comparisons. As shown in Table 5, our TEINet obtain a
+better performance gain among lightweight models. Mean-
+
+while, our models even achieve competitive performance
+when comparing with computationally expensive models.
+For example, the TEINet using 16-frame as inputs outper-
+forms NL I3D using 32-frame as inputs by 1.3%.
+
+Transferring to UCF101 and HMDB51. To verify the gen-
+
+eralization of TEINet on smaller datasets, we evaluate the
+performance for our models on UCF101 and HMDB51. We
+ﬁne-tune our TEINet on the UCF10 and HMDB51 datasets
+using model pre-trained on Kinetics-400, and report the per-
+formance using 10 clips and 3 crops per video. We here only
+list our model using 16-frame as inputs. As shown in Table 6,
+our proposed TEINet also achieves competitive performance
+when comparing with I3D-RGB and R(2+1)D-RGB, which
+demonstrates the the generalization ability of our method.
+
+5 Conclusion
+
+In this work, we have proposed an efﬁcient temporal mod-
+eling method, i.e., TEINet, to capture temporal features in
+video frames for action recognition. The vanilla ResNet can
+be converted into TEINet by inserting the TEI blocks which
+are composed of a motion enhanced module (MEM) and a
+temporal interaction module (TIM). The MEM focuses on
+enhancing the motion-related features by calculating tem-
+poral attention weights, and TIM is to learn the temporal
+contextual features with a channel-wise temporal convolu-
+tion. We conducted a series of empirical studies to demon-
+strate the effectiveness of TEINet for action recognition in
+videos. The experimental results show that our method has
+achieved the state-of-the-art performance on the Something-
+Something V1&V2 dataset and competitive performance on
+the Kinetics dataset with a high efﬁciency.
+
+6 Acknowledgments
+
+This work is supported by the National Science Founda-
+tion of China (No. 61921006), and Collaborative Innovation
+Center of Novel Software Technology and Industrialization.
+
+References
+
+Carreira, J., and Zisserman, A. 2017. Quo vadis, action recogni-
+tion? A new model and the kinetics dataset. In 2017 IEEE Con-
+ference on Computer Vision and Pattern Recognition, CVPR 2017,
+4724–4733.
+Deng, J.; Dong, W.; Socher, R.; Li, L.; Li, K.; and Li, F. 2009. Im-
+agenet: A large-scale hierarchical image database. In 2009 IEEE
+Computer Society Conference on Computer Vision and Pattern
+Recognition CVPR 2009, 248–255.
+Feichtenhofer, C.; Fan, H.; Malik, J.; and He, K. 2018. Slowfast
+networks for video recognition. CoRR abs/1812.03982.
+Feichtenhofer, C.; Pinz, A.; and Wildes, R. P. 2016. Spatiotempo-
+ral residual networks for video action recognition. In Advances in
+Neural Information Processing Systems 29: Annual Conference on
+Neural Information Processing Systems 2016, 3468–3476.
+Feichtenhofer, C.; Pinz, A.; and Zisserman, A. 2016. Convolu-
+tional two-stream network fusion for video action recognition. In
+2016 IEEE Conference on Computer Vision and Pattern Recogni-
+tion, CVPR 2016, 1933–1941.
+Gan, C.; Wang, N.; Yang, Y.; Yeung, D.-Y.; and Hauptmann, A. G.
+2015. Devnet: A deep event network for multimedia event detec-
+tion and evidence recounting. In Proceedings of the IEEE Confer-
+ence on Computer Vision and Pattern Recognition, 2568–2577.
+Girdhar, R., and Ramanan, D. 2017. Attentional pooling for ac-
+tion recognition.
+In Advances in Neural Information Processing
+Systems 30: Annual Conference on Neural Information Processing
+Systems 2017, 34–45.
+Goyal, R.; Kahou, S. E.; Michalski, V.; Materzynska, J.; Westphal,
+S.; Kim, H.; Haenel, V.; Fr ¨und, I.; Yianilos, P.; Mueller-Freitag,
+M.; Hoppe, F.; Thurau, C.; Bax, I.; and Memisevic, R. 2017. The
+”something something” video database for learning and evaluating
+visual common sense. In IEEE International Conference on Com-
+puter Vision, ICCV 2017, 5843–5851.
+He, K.; Zhang, X.; Ren, S.; and Sun, J. 2016. Deep residual learn-
+ing for image recognition. In 2016 IEEE Conference on Computer
+Vision and Pattern Recognition, CVPR 2016, 770–778.
+He, D.; Zhou, Z.; Gan, C.; Li, F.; Liu, X.; Li, Y.; Wang, L.; and
+Wen, S. 2019. Stnet: Local and global spatial-temporal modeling
+for action recognition.
+In The Thirty-Third AAAI Conference on
+Artiﬁcial Intelligence, AAAI 2019, The Thirty-First Innovative Ap-
+plications of Artiﬁcial Intelligence Conference, IAAI 2019, 8401–
+8408.
+Hu, J.; Shen, L.; and Sun, G. 2018. Squeeze-and-excitation net-
+works. In 2018 IEEE Conference on Computer Vision and Pattern
+Recognition, CVPR 2018, 7132–7141.
+Kay, W.; Carreira, J.; Simonyan, K.; Zhang, B.; Hillier, C.; Vijaya-
+narasimhan, S.; Viola, F.; Green, T.; Back, T.; Natsev, P.; Suleyman,
+M.; and Zisserman, A. 2017. The kinetics human action video
+dataset. CoRR abs/1705.06950.
+Kuehne, H.; Jhuang, H.; Garrote, E.; Poggio, T. A.; and Serre, T.
+2011. HMDB: A large video database for human motion recogni-
+tion. In IEEE International Conference on Computer Vision, ICCV
+2011, 2556–2563.
+LeCun, Y.; Bottou, L.; Bengio, Y.; and Haffner, P. 1998. Gradient-
+based learning applied to document recognition. Proceedings of
+the IEEE 86(11):2278–2324.
+Li, X.; Hu, X.; and Yang, J. 2019. Spatial group-wise enhance: Im-
+proving semantic feature learning in convolutional networks. CoRR
+abs/1905.09646.
+Lin, J.; Gan, C.; and Han, S. 2018. Temporal shift module for
+efﬁcient video understanding. CoRR abs/1811.08383.
+
+Qiu, Z.; Yao, T.; Ngo, C.; Tian, X.; and Mei, T. 2019. Learn-
+ing spatio-temporal representation with local and global diffusion.
+CoRR abs/1906.05571.
+Qiu, Z.; Yao, T.; and Mei, T. 2017. Learning spatio-temporal repre-
+sentation with pseudo-3d residual networks. In IEEE International
+Conference on Computer Vision, ICCV 2017, 5534–5542.
+Simonyan, K., and Zisserman, A. 2014. Two-stream convolutional
+networks for action recognition in videos. In Advances in Neural
+Information Processing Systems 27: Annual Conference on Neural
+Information Processing Systems 2014, 568–576.
+Soomro, K.; Zamir, A. R.; and Shah, M. 2012. UCF101: A dataset
+of 101 human actions classes from videos in the wild. CoRR
+abs/1212.0402.
+Tran, D.; Bourdev, L. D.; Fergus, R.; Torresani, L.; and Paluri, M.
+2015. Learning spatiotemporal features with 3d convolutional net-
+works. In 2015 IEEE International Conference on Computer Vi-
+sion, ICCV 2015, 4489–4497.
+Tran, D.; Wang, H.; Torresani, L.; Ray, J.; LeCun, Y.; and Paluri,
+M. 2018. A closer look at spatiotemporal convolutions for action
+recognition.
+In 2018 IEEE Conference on Computer Vision and
+Pattern Recognition, CVPR 2018, 6450–6459.
+Wang, X., and Gupta, A. 2018. Videos as space-time region graphs.
+In Computer Vision - ECCV 2018, 413–431.
+Wang, L.; Xiong, Y.; Wang, Z.; Qiao, Y.; Lin, D.; Tang, X.; and
+Gool, L. V. 2016. Temporal segment networks: Towards good
+practices for deep action recognition. In Computer Vision - ECCV
+2016, 20–36.
+Wang, L.; Li, W.; Li, W.; and Gool, L. V. 2018a. Appearance-
+and-relation networks for video classiﬁcation. In 2018 IEEE Con-
+ference on Computer Vision and Pattern Recognition, CVPR 2018,
+1430–1439.
+Wang, X.; Girshick, R. B.; Gupta, A.; and He, K. 2018b. Non-local
+neural networks.
+In 2018 IEEE Conference on Computer Vision
+and Pattern Recognition, CVPR 2018, 7794–7803.
+Wang, L.; Xiong, Y.; Wang, Z.; Qiao, Y.; Lin, D.; Tang, X.;
+and Gool, L. V. 2019. Temporal segment networks for action
+recognition in videos.
+IEEE Trans. Pattern Anal. Mach. Intell.
+41(11):2740–2755.
+Xie, S.; Sun, C.; Huang, J.; Tu, Z.; and Murphy, K. 2018. Rethink-
+ing spatiotemporal feature learning: Speed-accuracy trade-offs in
+video classiﬁcation. In Computer Vision - ECCV 2018, 318–335.
+Zhang, B.; Wang, L.; Wang, Z.; Qiao, Y.; and Wang, H. 2016.
+Real-time action recognition with enhanced motion vector cnns. In
+2016 IEEE Conference on Computer Vision and Pattern Recogni-
+tion, CVPR 2016, 2718–2726.
+Zhao, Y.; Xiong, Y.; Wang, L.; Wu, Z.; Tang, X.; and Lin, D. 2017.
+Temporal action detection with structured segment networks.
+In
+IEEE International Conference on Computer Vision, ICCV 2017,
+2933–2942.
+Zhou, B.; Andonian, A.; Oliva, A.; and Torralba, A. 2018. Tem-
+poral relational reasoning in videos. In Computer Vision - ECCV
+2018, 831–846.
+Zolfaghari, M.; Singh, K.; and Brox, T. 2018. ECO: efﬁcient con-
+volutional network for online video understanding. In Computer
+Vision - ECCV 2018, 713–730.
+
+

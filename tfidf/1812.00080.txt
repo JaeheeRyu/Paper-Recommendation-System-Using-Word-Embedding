@@ -1,0 +1,2233 @@
+Sensitivity-driven adaptive sparse stochastic approximations in
+plasma microinstability analysis
+
+Ionut, -Gabriel Farcas,
+a , Tobias G¨orlerb , Hans-Joachim Bungartza , Frank Jenkob,a,c , Tobias
+Neckela
+
+aDepartment of Informatics, Technical University of Munich, Boltzmannstr. 3, 85748 Garching, Germany
+bMax Planck Institute for Plasma Physics, Boltzmannstr. 2, 85748 Garching, Germany
+cOden Institute for Computational Engineering and Sciences, University of Texas at Austin, 201 E 24th
+St, Austin, TX 78712, United States
+
+Abstract
+
+Quantifying uncertainty in predictive simulations for real-world problems is of paramount
+importance - and far from trivial, mainly due to the large number of stochastic parameters
+and signiﬁcant computational requirements. Adaptive sparse grid approximations are an
+established approach to overcome these challenges. However, standard adaptivity is based
+on global information, thus properties such as lower intrinsic stochastic dimensionality or
+anisotropic coupling of the input directions, which are common in practical applications, are
+not fully exploited. We propose a novel structure-exploiting dimension-adaptive sparse grid
+approximation methodology using Sobol’ decompositions in each subspace to introduce a
+sensitivity scoring system to drive the adaptive process. By employing sensitivity informa-
+tion, we explore and exploit the anisotropic coupling of the stochastic inputs as well as the
+lower intrinsic stochastic dimensionality. The proposed approach is generic, i.e., it can be
+formulated in terms of arbitrary approximation operators and point sets. In particular, we
+consider sparse grid interpolation and pseudo-spectral pro jection constructed on (L)-Leja
+sequences. The power and usefulness of the proposed method is demonstrated by applying
+it to the analysis of gyrokinetic microinstabilities in fusion plasmas, one of the key scientiﬁc
+problems in plasma physics and fusion research. In this context, it is shown that a 12D
+parameter space can be scanned very eﬃciently, gaining more than an order of magnitude in
+computational cost over the standard adaptive approach. Moreover, it allows for the uncer-
+tainty propagation and sensitivity analysis in higher-dimensional plasma microturbulence
+problems, which would be almost impossible to tackle with standard screening approaches.
+
+Keywords: uncertainty propagation, sensitivity analysis, adaptivity, sparse grid
+approximations, plasma microturbulence simulation
+2000 MSC: 62P35, 65C60, 65D05, 65D15, 65N25, 65Y05, 65Z05, 68U20
+
+Email addresses: farcasi@in.tum.de (Ionut, -Gabriel Farcas, ), tobias.goerler@ipp.mpg.de (Tobias
+G¨orler), bungartz@in.tum.de (Hans-Joachim Bungartz), frank.jenko@ipp.mpg.de (Frank Jenko),
+
+neckel@in.tum.de (Tobias Neckel)
+
+Preprint submitted to J. Comp. Phys.
+
+November 22, 2019
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+h
+p
+
+-
+
+p
+
+m
+
+o
+
+c
+
+.
+
+s
+
+c
+
+i
+
+s
+
+y
+h
+p
+
+[
+
+2
+v
+0
+8
+0
+0
+0
+
+.
+
+2
+1
+8
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+ 
+ 
+ 
+ 
+ 
+ 
+1. Introduction
+
+It has become well established that a proper quantiﬁcation of uncertainty is an important
+step towards predictive numerical simulations of real-world phenomena. Whether stemming
+from measurement errors, incomplete knowledge or inherent variabilities, uncertainty is in-
+trinsic to most real-world problems and it needs to be accounted for ab initio.
+In this paper, we assume the considered phenomenon is model-driven, i.e., represented
+using a mathematical model, such as a diﬀerential or an integral equation. Quantifying and
+reducing uncertainties in such problems is done within the framework of uncertainty quan-
+tiﬁcation (UQ). Speciﬁcally, we focus on uncertainty propagation, also known as forward
+UQ. In forward UQ, the input uncertainty is typically modelled via a probability density
+function stemming from e.g., estimations from measurement data or expert opinion. By
+sampling this density, the underlying model is evaluated once for each sample. These sam-
+ples can be, for example, pseudo-random numbers or deterministic collocation points. In
+this paper, we employ the latter. After performing all simulations, the ensemble of model
+evaluations is used to assess statistics such as expectation and standard deviation. Note that
+uncertainty propagation is an example of an outer-loop scenario, i.e., scenarios in which a
+speciﬁc quantity is computed using multiple evaluations of the underlying model (see [26]).
+To summarize, we focus on forward UQ in which the modelling of the uncertain parameters
+is based on expert opinion supported by experimental measurements.
+The real-world application under consideration here is the simulation of microturbulence
+in magnetized fusion plasmas. This problem is of high practical relevance for eﬀorts such
+as the ITER1 experiment, which will aim at creating – for the very ﬁrst time – a self-
+sustained (”burning”) plasma in the laboratory. This amounts to a milestone on the way
+towards a future fusion power plant. A physics obstacle on this route are small-scale ﬂuc-
+tuations which cause energy loss rates despite sophisticated plasma conﬁnements via strong
+and shaped magnetic ﬁelds. This microturbulence is driven by the free energy provided
+by the unavoidably steep plasma temperature and density gradients. Unfortunately, the
+measurement of these gradients, as well as further decisive physics parameters aﬀecting the
+underlying microinstabilities are sub ject to uncertainties, thus requiring a UQ framework.
+In this paper, we employ the established plasma microturbulence simulation code Gene
+[13, 19] and focus on linear gyrokinetic eigenvalue problems in 5D phase space. Even with-
+out the nonlinear terms, the signiﬁcant computational requirements and large number of
+stochastic parameters, typically referred to as the curse of dimensionality (see, e.g., [4]),
+render the quantiﬁcation of uncertainty in plasma problems challenging.
+Overcoming or delaying the curse of dimensionality is one of the grand challenges in
+UQ and in scientiﬁc computing in general. Approximations based on sparse grids [4] have
+been well established as suitable counter-measures. To this end, starting with works such as
+[21, 25, 37], sparse grid approximations have been extensively used in UQ. In recent years,
+signiﬁcant eﬀorts have been made towards designing enhanced approximation strategies for
+
+1 ITER was initially an acronym for International Thermonuclear Experimental Reactor. Nowadays it is
+mainly referred to the Latin word “iter”, meaning “the way”.
+
+2
+
+computationally expensive stochastic problems. A non-exhaustive list includes [5, 6], where
+the so-called sparse pseudo-spectral pro jection (PSP) method was proposed and analysed.
+With PSP, one constructs sparse approximations free of internal aliasing error by choosing
+the maximum degree of the pro jection basis such that the continuous and discrete inner
+products coincide when applied to the basis polynomials. Moreover, in [5], several adaptive
+strategies were proposed. In [34], two adaptive methods – a nested approach and a PSP
+approximation with directional reﬁnement – were studied in problems having multiple design
+and stochastic parameters.
+In addition, there is a growing interest in employing UQ in
+the numerical simulation of fusion plasmas.
+In [14, 31], a simple uniform, deterministic
+parameter scan was used in both linear and nonlinear gyrokinetic simulations.
+In both
+papers, the focus was on assessing the sensitivity to changes in the ions temperature gradient
+to validate the underlying simulation codes. Furthermore, in [32], nonintrusive collocation
+methods were used to quantify uncertainty in a drift-wave turbulence study from the CSDX
+linear plasma experiment. However, most existing UQ studies in numerical fusion plasma
+problems sample the underlying stochastic space using either dense grids, hence suﬀering
+from the curse of dimensionality, or a priori chosen sparse grids, whose number of points
+still grows prohibitively large with the dimensionality. Moreover, most existing adaptive
+sparse grid strategies employ deterministic or global information, thus not discriminating
+between individual directions nor exploiting the (usually) available sensitivity information.
+In addition, in most applications the intrinsic stochastic dimensionality is smaller than the
+given stochastic dimensionality, i.e., only a subset of stochastic inputs is important.
+To this end, in this paper we formulate and test a novel structure exploiting adaptive
+sparse approximation methodology, as follows. We build our strategy on the dimension-
+adaptive algorithms of [12, 17], in which the underlying sparse grid is constructed adaptively
+via a judiciously chosen linear combination of full subspaces with low-cardinality. However,
+we drive the adaptive process using sensitivity information to preferentially reﬁne the direc-
+tions rendered important. Speciﬁcally, we introduce a sensitivity scoring system to assess
+the importance of the individual stochastic input parameters as well as of their interaction.
+To obtain these scores, we perform Sobol’ decompositions in each subspace and compute
+variance surpluses which reveal the importance of each input and of their interaction. We
+note that the proposed approach is generic, in the sense that it can be formulated in terms
+of arbitrary approximation operators and point sets. In particular, we consider Lagrange
+interpolation (see, e.g., [2]), which requires the underlying model solution to be continu-
+ous, and PSP (see, e.g., [34, 36]), which requires square-integrability. Moreover, to deﬁne
+these two approximations, we employ two (L)-Leja point constructions (see, e.g., [24]). We
+remark that besides the formulation of a novel adaptive sparse approximation strategy for
+stochastic computations, another novelty of this paper is the undertaking, to the best of our
+knowledge, of one of the ﬁrst UQ studies in plasma microinstability analysis. In addition,
+the proposed methodology is model-agnostic, provided that certain smoothness assumptions
+such as continuity or square-integrability are fulﬁlled.
+The remainder of this paper is organized as follows. In Section 2, we introduce our nota-
+tion and provide a brief background on plasma microturbulence simulation and dimension-
+adaptive sparse grids, on which we construct our proposed approach based on sensitivity
+
+3
+
+scores. We present in detail our proposed algorithm in Section 3. We present our numerical
+results in two plasma mictroturbulence test cases in Section 4. In Section 4.1, we consider
+a modiﬁed version of the benchmark [7] with eight stochastic inputs.
+In Section 4.2, we
+investigate a more realistic test case based on the study from [9] with three or 12 uncertain
+inputs. Finally, we summarize and give an outlook in Section 5.
+
+2. Background
+
+2.1. Problem formulation
+In this work, we are interested in the quantiﬁcation of uncertainty of complex, real-
+world phenomena such as plasma microturbulence analysis. These problems are typically
+governed by a model F speciﬁed by a complex and nonlinear ODE/PDE system. However,
+the solution to this model is very rarely, if ever, available analytically, hence we resort to
+numerical approximations. Let us denote the discretized version of the underlying continuous
+model by Fh such that E (F − Fh ) can be made arbitrarily small, where E is a suitable
+error function. We assume Fh is a bounded and measurable function w.r.t. the Lebesgue
+measure and the Borel σ -algebra on R. Uncertainty enters Fh via a vector of d stochastic
+inputs θ := (θ1 , θ2 , . . . , θd ). We model θ as a multivariate random vector with independent
+components θi deﬁned in a probability space (Ω, A, P ) whose event space is Ω and is equipped
+with σ−algebra A and probability measure P . We assume that θ is a continuous random
+vector characterized by a probability density function π with a product structure, i.e.,
+
+d(cid:89)
+
+i=1
+
+d(cid:79)
+
+X :=
+
+Xi ,
+
+π(θ) :=
+
+πi (θi )
+
+with image X := π(Ω) have a product structure as well
+
+i=1
+
+E[Fh ] and standard deviation σ [Fh ] := (cid:112)Var[Fh ] of the output of Fh . When a single evalu-
+where Xi is the image of πi . The independence assumption on the components of θ can be
+relaxed if a suitable transformation, e.g., a transport map [22] is employed. In uncertainty
+propagation, we are interested in computing quantities of interest such as the expectation
+E[Fh ] and σ [Fh ] := (cid:112)Var[Fh ] become prohibitive. Addressing the challenges of quantifying
+ation of Fh is computationally expensive, as it is assumed in this work, the computation of
+uncertainty in computationally expensive, real world problems is the main goal of this work.
+
+2.2. Plasma microturbulence simulations
+Fusion devices are sub ject to plasma microturbulence which is driven by the intrinsically
+steep density and temperature gradients. The associated turbulent transport determines the
+energy conﬁnement time which in turn is a key parameter for creating a burning plasma.
+
+4
+
+Any insight into the nature of plasma microturbulence and ways for avoiding turbulence
+related conﬁnement degradations are therefore crucial for the design of fusion power plants.
+Unfortunately, even turbulence in ﬂuid systems is diﬃcult to assess and considered one
+of the most important problems in classical physics.
+In magnetically conﬁned plasmas –
+basically very hot but dilute ionized gases – the problem is further complicated by the low
+collisionality which renders ﬂuid descriptions insuﬃcient in many situations. An appropriate
+description is therefore given by a kinetic model, i.e., 6D Vlasov equations per species, which
+are coupled via Maxwell’s equations. Computing corresponding solutions in complex geome-
+tries is challenging even on present-day computational resources. Even more, performing
+tasks such as uncertainty propagation which require (large) ensembles of such simulations
+can quickly become computationally prohibitive. This therefore calls for using surrogate
+models. The following subsections summarize the most popular approach for plasma micro-
+turbulence analysis, emphasize the need for UQ in plasma mictroturbulence analysis, and
+introduce the employed plasma turbulence code.
+
+2.2.1. The gyrokinetic approach and its applications
+The most popular theory for assessing plasma microturbulence is the so-called gyrokinetic
+theory [3, 20]. Acknowledging a time-scale separation between the fast gyromotion of the
+particles around the magnetic ﬁeld lines and typical turbulence time scales, the knowledge
+of the exact position of the particles along their orbit is irrelevant. Gyrokinetics therefore
+eﬀectively removes the gyrophase information and yields a 5D system of equations which
+better ﬁts nowadays computational resources and is considered a valid approach for a wide
+range of plasma parameters.
+Several numerical implementations have been developed over the last two decades and
+encouraging progress has been made [11, 20]. Early gyrokinetic studies were often limited
+to restricted physics, e.g., adiabatic electrons and simpliﬁed geometries, which could only
+yield qualitative results and predictions. However, the complexity has meanwhile dramat-
+ically increased and ﬂagship codes aim for quantitative validation with various observables
+obtained from experimental measurements, see e.g., [33] and references therein. While some
+codes aim for a full ﬂux-driven setup, where proﬁles and turbulence are self-consistently
+developing in response to prescribed heat and particle source, these simulations are usually
+too costly for regular applications and therefore typically performed with reduced physics.
+An alternative scheme is to use the experimentally determined mean temperature and
+density proﬁles as well as the magnetic topology in a given time window as ﬁxed physics
+inputs to the gyrokinetic codes and compute the resulting turbulent ﬂuctuations. Natu-
+rally, all these physics inputs but also the experimental ﬂuctuation observables can only be
+measured within some uncertainty. This can be quite troublesome since plasma proﬁles are
+often found to be quite stiﬀ, i.e., a small increase in inputs such as the gradients may cause
+large diﬀerences in the resulting turbulent heat ﬂuxes. To this end, the standard practice is
+to identify the key parameters aﬀecting the scenario at hand and scan these within the error
+bars. Given the enormous computational eﬀorts associated to high-dimensional parameter
+scans, the former (identiﬁcation) step is often being performed without considering the non-
+linearities in the Vlasov equation which can take up to 50% of the run time. Such linear
+
+5
+
+simulations are still highly relevant to characterize the underlying microinstabilities such
+as ion or electron temperature gradient (ITG/ETG) driven modes, trapped electron modes
+(TEMs), micro-tearing modes (MTM), and many more. Determining their threshold values
+or transitions usually provides some guideline for input parameters scans in fully nonlin-
+ear simulations. However, many of such studies are only considering a subset of stochastic
+input parameters due to the tremendously large required computational cost. This clearly
+provides motivation to develop and apply modern UQ methods in plasma microinstability
+analysis, which we address in this paper.
+
+2.2.2. The plasma microturbulence code Gene
+The gyrokinetic solver employed in this publication is the Gene code – one of the ﬁrst
+grid-based codes in this ﬁeld which has now been under continuous development for almost
+two decades [19]. Gene computes the time evolution of gyrocenter distribution functions
+on a ﬁxed grid in a 5D (3D-2V) position-velocity space. The underlying nonlinear partial
+diﬀerential equations of gyrokinetic theory are solved via a mix of numerical methods also
+widely used in Computational Fluid Dynamics, including ﬁnite diﬀerence, spectral, ﬁnite
+element, and ﬁnite volume schemes. Details are described, e.g., in [13].
+Originally, Gene had been restricted to ﬂux-tube simulation domains [1], i.e., thin
+magnetic-ﬁeld-line following boxes which allow for highly eﬃcient simulations if the ra-
+dial correlation lengths of the turbulent ﬂuctuations are small compared to the proﬁle scale
+lengths. In this limit, the radial variations of the proﬁles (as well as their gradients) can
+be assumed to be constant across the simulation domain. Consequently, one may safely
+assume periodic boundary conditions in the directions perpendicular to the magnetic ﬁeld
+line and apply spectral methods which greatly simplify operators such as gyro-averages. For
+applications in small devices or with steep proﬁles, however, locality is not a safe assumption
+anymore and – by considering full radial proﬁles – periodicity is at least lost in the radial
+direction. Correspondingly modiﬁed numerical methods, e.g., ﬁnite-diﬀerences instead of
+spectral methods, have been added as another option in Gene which since then allows for
+radially global simulations [13] or full ﬂux-surface simulations [35] if toroidal instead of ra-
+dial background variations are considered, respectively. The ﬁeld-aligned non-orthogonal
+coordinate system has, however, been kept to exploit the high anisotropy of plasma turbu-
+lence which typically has correlation lengths of several meters along a magnetic ﬁeld line but
+only of a few centimeters in the perpendicular plane. Gene simulations are parallelized by
+domain decomposition in all ﬁve dimensions, typically using MPI [23]. Fully nonlinear simu-
+lations may require at least 10k CPU-hours which is why linear local (ﬂux-tube) simulations
+will be employed for testing the UQ framework. Linear local simulations have a runtime of
+up to at most a few hours. These simulations enable the quantiﬁcation of uncertainty of the
+microinstability character. Our long-term goal, however, is to quantify the uncertainty in
+fully nonlinear, turbulent simulations, which we will address in subsequent publications.
+
+2.3. Approximation with dimension-adaptive sparse grids
+In this section, we summarize dimension-adaptive sparse grid approximations [12, 17], on
+which we build our proposed methodology in Section 3. Let f : Xi → R denote a univariate
+6
+
+(cid:13)(cid:13)U i [f ] − U i
+
+(cid:96) [f ](cid:13)(cid:13) (cid:96)→∞−−−→ 0,
+
+function and let U i [f ] be a sequence of univariate linear continuous operators depending on
+the marginals πi . Moreover, let U i
+(cid:96) [f ] be approximations such that
+
+i = 1, 2, . . . , d,
+in a suitable norm (cid:107)·(cid:107), where 1 ≤ (cid:96) ∈ N is referred to as level. U i
+(cid:96) [f ] is obtained from discrete
+evaluations of U i [f ] at m((cid:96)) points in Xi , where m((cid:96)) : N → N is called the level-to-nodes
+function. In this work, U i [f ] is interpolation or PSP. In general, we assume that U i [f ] are
+global operators, i.e., their support is the entire domain Xi .
+that U i
+The key idea behind formulating sparse grid approximations is to make use of the fact
+(cid:96) [f ] converges to U i [f ] as (cid:96) → ∞ and write U i [f ] as a telescoping series of the form
+U i [f ] = U i
+1 [f ] + (U i
+2 [f ] − U i
+1 [f ]) + (U i
+3 [f ] − U i
+2 [f ]) + . . . =
+
+∞(cid:88)
+
+(cid:96) [f ].
+
+U i
+
+(cid:96) [f ] := U i
+(cid:96) [f ]−U i
+(cid:96)−1 [f ] the hierarchical surpluses, with the convention U i
+We denote by ∆i
+0 [f ] :=
+0. Therefore, the above telescoping series becomes
+
+(cid:96)=1
+
+∞(cid:88)
+
+(cid:96)=1
+
+U i [f ] =
+
+∆i
+(cid:96) [f ].
+
+(2.1)
+
+i=1
+
+(cid:96)1 ⊗
+
+∆1
+
+∞(cid:88)
+
+(cid:96)d=1
+
+∞(cid:88)
+
+(cid:96)2 ⊗ . . . ⊗
+∆2
+
+=(cid:0) (cid:88)
+
+U d [Fh ] =(cid:0) ∞(cid:88)
+
+We are interested in approximations that depend on d ≥ 2 stochastic parameters. A
+natural way to lift the 1D operators to d dimensions is via tensorization, i.e.,
+U d [Fh ] = (cid:0)U 1 ⊗ U 2 ⊗ . . . ⊗ U d(cid:1)[Fh ] = (cid:0) d(cid:79)
+U i(cid:1)[Fh ].
+(cid:1)[Fh ]
+Plugging the telescoping series (2.1) into the tensorized representation (2.2), we obtain
+
+∆d
+(cid:1)[Fh ] =
+where (cid:96) = ((cid:96)1 , (cid:96)2 , . . . (cid:96)d ) ∈ Nd denotes a multiindex and
+∆d
+(cid:96) [Fh ] =
+(−1)|z |1 U d
+(cid:96) [Fh ],
+(cid:96) [Fh ] = (cid:0) (cid:78)d
+(cid:1)[Fh ] and |z |1 := (cid:80)d
+where U d
+i=1 zi . However, (2.3) is a representation of
+U d [Fh ] with an inﬁnite number of terms, thus unsuitable for computations. Therefore, we
+restrict the multiindices (cid:96) to a ﬁnite set L ⊂ Nd and deﬁne
+U dL [Fh ] =
+(cid:96) [Fh ].
+∆d
+
+(cid:1)[Fh ] =
+
+(cid:96)2=1
+(cid:96)1 ⊗ ∆2
+
+(cid:96)2 ⊗ . . . ⊗ ∆d
+
+(cid:96)d
+
+(cid:0) d(cid:79)
+
+(cid:96) [Fh ],
+∆d
+
+(cid:88)
+
+(cid:88)
+
+(cid:96)∈Nd
+
+(cid:88)
+
+(cid:96)∈Nd
+
+i=1 U i
+(cid:96)i
+
+∆i
+
+(cid:96)i
+
+i=1
+
+(cid:96)1=1
+
+∆1
+
+(cid:96)∈Nd
+
+(2.2)
+
+(2.3)
+
+z∈{0,1}d
+
+(2.4)
+
+(cid:96)d
+
+(cid:88)
+
+(cid:96)∈L
+
+7
+
+L must be constructed such that the summation in (2.4) telescopes correctly. Such suitable
+sets are called admissible or downward closed (see [12]). In particular, for an admissible set
+L it holds that (cid:96) ∈ L ⇒ (cid:96) − ei ∈ L for i = 1, 2, . . . , d, where ei denotes the ith unit vector
+in Rd . Note that (2.4) can be rewritten as a combination scheme (see, e.g., [15, 27]),
+U dL [Fh ] =
+a(cid:96)U d
+(cid:96) [Fh ],
+where a(cid:96) = (cid:80)
+z∈{0,1}d (−1)|z |1 χL ((cid:96) + z ) and χL is the characteristic function on L, i.e.,
+χL ((cid:96)) = 1 if (cid:96) ∈ L and χL ((cid:96)) = 0 otherwise. Since (2.5) is computationally more convenient,
+we use it throughout our numerical experiments.
+
+(cid:88)
+
+(2.5)
+
+(cid:96)∈L
+
+2.3.1. Approximation operators
+Without loss of generality, we employ the same approximation operators in all d directions
+in (2.5). Therefore, for simplicity we drop the superscript i in U i and U i
+(cid:96) and use the notation
+U and U(cid:96) instead. In this work, we consider two approximation operators, interpolation and
+PSP. Let PP(cid:96) be the space of univariate polynomials of degree P(cid:96) ∈ N. Further, let C 0 (Xi )
+denote the space of continuous functions f : Xi → R and L2 (Xi ) be the separable Hilbert
+space of square-integrable functions f : Xi → R. To distinguish between interpolation and
+PSP, we use the superscripts in and psp.
+In addition, to refer to either one of the two
+approximations, we use the superscript op.
+A popular interpolation approach used in UQ is Lagrange interpolation (see, e.g., [2,
+6, 8, 24, 25]), which we also employ in this work. The univariate Lagrange interpolation
+operator is deﬁned as:
+
+U in
+(cid:96)
+
+: C 0 (Xi ) → PP(cid:96) , U in
+(cid:96) [f ] :=
+
+f (θn )Ln (θ),
+
+(2.6)
+
+m((cid:96))(cid:88)
+n=1
+
+P(cid:96)(cid:88)
+p=0
+
+where {θn}m((cid:96))
+n=1 are interpolation nodes computed w.r.t. the density πi and {Ln (θ)}m((cid:96))
+n=1 are
+Lagrange polynomials of degree n − 1 satisfying the interpolation condition Ln (θm ) = δnm ,
+where δnm is Kronecker’s delta function. For improved numerical stability, we implement
+(2.6) in terms of the barycentric formula (see, e.g., [2]).
+Another commonly used approximation operation in UQ is PSP (see, e.g., [5, 6, 36]).
+The PSP operator is deﬁned as a series expansion of the form:
+
+U psp
+(cid:96)
+
+: L2 (Xi ]) → PP(cid:96) , U psp
+
+(cid:96)
+
+[f ] :=
+
+cpφp (θ),
+
+(2.7)
+
+where {φp}P(cid:96)
+p=0 are orthonormal polynomials satisfying
+(cid:104)φp , φq (cid:105) :=
+
+(cid:90)
+
+φp (θ)φq (θ)π(θ)dθ = δpq .
+
+Xi
+
+8
+
+(cid:90)
+
+Xi
+
+Moreover, cp are the pseudo-spectral coeﬃcients deﬁned via pro jection and computed as:
+f (θ)φp (θ)πi (θ)dθ ≈ m((cid:96))(cid:88)
+n=1 are quadrature nodes and wn are normalized weights, i.e. (cid:80)m((cid:96))
+cp :=
+f (θn )φp (θn )wn ,
+where {θn}m((cid:96))
+P(cid:96) in (2.7) such that (cid:82) 1
+computed w.r.t. πi . In this work, the quadrature rule used to compute the coeﬃcients cp in
+0 φp (θ)φq (θ)du = (cid:80)m((cid:96))
+(2.8) is exact2 for polynomials of degree at most m((cid:96)) − 1. With this in mind, we choose
+n=1 φp (θn )φq (θn )wn for all p, q ≤ P(cid:96) , that is,
+there is no internal aliasing error in the underlying pro jection space (see [5, 6, 34]). The
+maximal degree that guarantees this is P(cid:96) = (cid:98)(m((cid:96)) − 1)/2(cid:99). No internal aliasing error
+in the pro jection spaces eliminates potential quadrature errors that drastically aﬀect the
+approximation quality of PSP, as has been numerically shown in [6] and later proved in [5].
+
+n=1 wn = 1
+
+(2.8)
+
+n=1
+
+2.3.2. (L)-Leja sequences
+In this section, we summarize weighted (L)-Leja sequences, which we use to construct
+the dimension-adaptive sparse grid interpolation and PSP. Since these approximations are
+constructed using tensorizations of one dimensional operators, it is suﬃcient to show how
+Leja points are constructed in 1D w.r.t. the marginal density πi for i = 1, 2, . . . , d.
+The choice of point sets to construct sparse grid interpolation or PSP for uncertainty
+propagation has a critical impact on the overall computational cost, since for each grid point
+an evaluation of the forward model is needed. When these evaluations are computationally
+expensive, we seek a point set that:
+• is nested – so that we can reuse computations from previous levels;
+• grows slowly with the level – so that m((cid:96)) is not very large;
+• has good approximation properties – so that we obtain accurate approximations.
+
+A point set having all aforementioned properties is the weighted (L)-Leja sequence (see, e.g.,
+[18]), which we consider in this paper.
+For interpolation, we employ standard weighted (L)-Leja points constructed as:
+
+θ in
+
+1 = argmax
+
+θ∈Xi
+
+θ in
+
+n = argmax
+
+θ∈Xi
+
+πi (θ)
+
+πi (θ)
+
+n−1(cid:89)
+
+m=1
+
+|(θ − θ in
+m )|, n = 2, 3, . . .
+
+(2.9)
+
+Note that the above point sequence is in general not uniquely deﬁned, because (2.9) might
+have multiple solutions. In that case, we simply pick one of the maximizers. In addition,
+
+2Up to the employed arithmetic precision
+
+9
+
+θ in
+
+1 , θ in
+
+(2.9) indicates that to increase the interpolation degree from j − 1 to j , we need to add only
+j to {θ in
+j , }. Therefore, we add one new (L)-Leja point per level, i.e., m((cid:96)) = (cid:96).
+2 , . . . , θ in
+For PSP, we need a quadrature node sequence to evaluate the PSP coeﬃcients (see
+(2.8)). When the input density is symmetric and compactly supported, which is the case,
+for example, for uniform densities which we consider in this work, (2.9) places the ﬁrst (L)-
+Leja point in the center of the domain, while the next two points are placed on the boundary
+of the weight function’s support. In this way, adding only one (L)-Leja point at a time will
+lead to a zero quadrature weight at level (cid:96) = 2, causing the employed adaptive algorithms
+to stop prematurely. Therefore, for PSP, we employ symmetrized (L)-Leja points [28]:
+
+θpsp
+1
+
+:= argmax
+
+θ∈Xi
+
+θpsp
+
+2n := argmax
+
+θ∈Xi
+
+πi (θ)
+
+| 2n−1(cid:89)
+
+(cid:96)=1
+
+(θ − θpsp
+
+(cid:96)
+
+)|,
+
+1 − θpsp
+θqu
+2n+1 = 2θpsp
+
+2n , n = 1, 2, . . . .
+
+(2.10)
+
+In this construction, we add two additional points per level. The ﬁrst point is obtained via
+the standard (L)-Leja construction (2.9) and the second is its symmetric point w.r.t. θpsp
+.
+Therefore, the level-to-nodes mapping is m((cid:96)) = 2(cid:96) − 1.
+
+1
+
+Remark 1. The symmetrized Leja construction (2.10) is designed for densities πi which are
+symmetric w.r.t. θpsp
+. If πi is not symmetric w.r.t. θpsp
+, we can instead employ, for example,
+standard (L)-Leja points (2.9) with level-to-nodes mapping m((cid:96)) = 2(cid:96) − 1.
+
+1
+
+1
+
+For more details on weighed (L)-Leja points and their properties, we refer to [18, 24].
+
+2.3.3. Standard dimension-adaptivity
+To deﬁne the sparse grid approximation (2.5), we need an approximation operator (in this
+work, this is interpolation or PSP), a (discrete) point set to compute these approximations
+(for this purpose, we employ weighted (L)-Leja points) and a ﬁnite multiindex set, L. To
+determine L, we employ dimension-adaptivity [12, 17]. In the following, we summarize the
+basics of this algorithm and refer the reader to [5, 12, 17, 24, 34] for more details.
+In the dimension-adaptive approach, the multiindex set L is split into two subsets, O
+(the old-index set) and A (the active set) such that L := O ∪ A is admissible. O comprises
+the already visited multiindices, while the multiindices in A are used to drive the adaptive
+process. In the ﬁrst step, O = {1d}, because the corresponding number of points is 1d = 1,
+and A = {1d + ei , i = 1, 2, . . . , d}. In the remaining steps, the algorithm employs the fol-
+lowing principle: if a multiindex (cid:96) ∈ A contributes signiﬁcantly to the current solution, its
+adjacent neighbours are likely to contribute as well. To this end, based on a reﬁnement
+indicator (·), ((cid:96)) is computed for each (cid:96) ∈ A. Afterwards, the multiindex with the largest
+sibility of L are added to the active set A. Additionally, a surrogate ρ := (cid:80)
+reﬁnement indicator is moved to O and all its forward neighbors that preserve the admis-
+(cid:96)∈A ((cid:96)) of the
+global error is computed at each step. Note that although ρ is a heuristic, it was proven
+to be an acceptable surrogate of the global error in a large number of numerical studies
+
+10
+
+(see, e.g., [5, 12, 34]). The adaptivity stops if ρ < tolop , for a user-deﬁned tolerance tolop , if
+A = ∅, or if a user-deﬁned maximum level, Lop
+The essential ingredient in dimension adaptivity is the reﬁnement indicator op (·). A
+max , is reached.
+standard indicator (see [5]) which we also employ in this work reads
+op ((cid:96)) := (cid:107)∆op
+(cid:96) [Fh ](cid:107)L2 /C op
+(cid:96) ,
+(2.11)
+(cid:96) [Fh ]. In
+where C op
+is the cost, usually the number of grid points, needed to compute ∆op
+Section 3, we explain why we use the L2 norm of the surplus ∆op
+(cid:96) [Fh ] in (2.11) and how
+does this lead to our proposed reﬁnement indicator based on sensitivity scores.
+
+(cid:96)
+
+(cid:88)
+
+2.4. Computing quantities of interest
+Our goal in this work is to propagate uncertainty in complex, computationally expensive
+real world problems such as plasma microturbulence analysis. To this end, we employ
+dimension-adaptive sparse grid approximations, summarized in Section 2.3. Although these
+approximations yield a surrogate for the forward model, Fh , in uncertainty propagation we
+are interested in computed quantities such as the expectation, standard deviation or Sobol’
+indices for sensitivity analysis corresponding to Fh . In this section, we summarize how these
+quantities can be estimated at no additional cost from PSP coeﬃcients. In Section 3, we
+show how PSP coeﬃcients are computed for interpolation as well.
+Let
+U psp [Fh ] :=
+cpΦp (θ)
+denote a multivariate PSP approximation, where P psp is a set containing the multivariate
+PSP polynomial degrees. For example, if dimension-adaptive sparse grid PSP based on
+symmetrized (L)-Leja points is employed (see Section 2.3), then
+P psp = {p ∈ Nd : 0 ≤ p ≤ pmax},
+where pmax = ((cid:96)1,max − 1, (cid:96)2,max − 1, . . . , (cid:96)d,max − 1), since for PSP the univariate degrees are
+P(cid:96)i = (cid:98)(m((cid:96)i ) − 1)/2(cid:99) = (cid:98)(2(cid:96)i − 2)/2(cid:99) = (cid:96)i−1,
+i = 1, 2, . . . , d, and ((cid:96)1,max , (cid:96)2,max , . . . , (cid:96)d,max )
+is the maximum reached multiindex by the dimension-adaptive algorithm.
+In [30, 36] it was shown that the expectation of the forward model, E[Fh ], its standard
+deviation, σ [Fh ], and total Sobol’ indices for variance-based global sensitivity analysis, S T
+i ,
+can be estimated from the pseudo-spectral coeﬃcients. We have
+E[Fh ] ≈ ˆE[Fh ] = c0
+σ [Fh ] ≈ ˆσ [Fh ] =
+
+p∈P psp
+
+(2.12)
+
+c2
+
+(cid:115) (cid:88)
+(cid:80)
+
+p∈P psp \{0}
+
+p
+
+i ≈ ˆS T
+S T
+i =
+σ 2 [Fh ]
+,
+where J psp
+:= {p ∈ P psp : pi (cid:54)= 0}. Total Sobol’ indices comprise the total contribution
+of a stochastic input to the resulting variance, i.e., its individual contribution as well as
+contributions due to interactions with other inputs. For more details on Sobol’ indices, we
+refer the reader to [30, 36].
+
+p
+
+i
+
+i
+
+p∈J psp
+
+c2
+
+11
+
+3. Sensitivity-driven adaptive reﬁnement
+
+In this section, we present in detail the ma jor algorithmic contribution of this work. We
+build our method on the adaptive algorithm of [12, 17]. Our novelty is a context-aware
+reﬁnement policy based on sensitivity information such that the important directions from
+a stochastic perspective are preferentially reﬁned. We show in Section 3.1 how we obtain
+directional variances from Sobol’ decompositions. In Section 3.2, we describe in detail our
+proposed adaptive strategy based on sensitivity scores. Finally, in Section 3.3, we showcase
+the proposed adaptive strategy in a simple example.
+
+3.1. Directional variances from Sobol’ decompositions
+The essential ingredient in the dimension adaptive algorithm [12, 17] is the reﬁnement
+indicator op (·). In this work, we propose a reﬁnement indicator based on sensitivity infor-
+mation: starting from the L2 norm of the surpluses ∆op
+(cid:96) [Fh ], we assess the importance of
+each stochastic parameter as well as of their interaction. We ﬁrst summarize how we obtain
+sensitivity information for PSP, and then we show how to connect interpolation and PSP.
+For a multiindex (cid:96) in the active set A, the surplus PSP expansion reads:
+
+∆psp
+(cid:96)
+
+[Fh ] :=
+
+∆cpΦp (θ),
+
+P (cid:96)(cid:88)
+p=0
+
+(3.1)
+
+z∈{0,1}d
+
+(cid:88)
+(cid:13)(cid:13)(cid:13)2
+
+where Φp (θ) := (cid:81)d
+P (cid:96) := ((cid:98)(2(cid:96)1 − 2)/2(cid:99) , (cid:98)(2(cid:96)2 − 2)/2(cid:99) , . . . , (cid:98)(2(cid:96)d − 2)/2(cid:99)) = ((cid:96)1 − 1, (cid:96)2 − 1, . . . , (cid:96)d − 1) is the
+i=1 Φpi (θi ) are the multivariate orthonormal PSP basis polynomials and
+total multivariate degree, since m((cid:96)) = 2(cid:96) − 1 for PSP (cf. Section 2.3.1). Moreover,
+(−1)|z |1 cp−z ,
+
+∆cp :=
+(cid:13)(cid:13)(cid:13)∆psp
+where ∆c0 := c0 . From Parseval’s identity, we have that
+In [30], it was shown that a PSP expansion is equivalent to a Sobol’ decomposition [29]
+of the same degree, i.e., the terms in the two decompositions are equivalent. A Sobol’ expan-
+sion is used to represent a d-variate function as a summation of the function’s expectation
+and variances due to each individual input, which reveal the relative importance of each in-
+put direction, and variances stemming from all possible interactions between inputs, which
+quantify the relative importance of input interactions. Using the equivalence between PSP
+and Sobol’ decompositions, we can rewrite (3.3) as
+(cid:13)(cid:13)(cid:13)∆psp
+
+∆c2
+
+p = ∆Varpsp,0
+(cid:96)
+
+[Fh ] + ∆Varpsp,inter
+(cid:96)
+
+[Fh ],
+
+P (cid:96)(cid:88)
+p=0
+
+∆Varpsp,i
+(cid:96)
+
+[Fh ] +
+
+(cid:13)(cid:13)(cid:13)2
+
+[Fh ]
+
+(cid:96)
+
+[Fh ]
+
+(cid:96)
+
+=
+
+L2
+
+=
+
+L2
+
+∆c2
+p .
+
+(3.4)
+
+(3.2)
+
+(3.3)
+
+P (cid:96)(cid:88)
+p=0
+
+d(cid:88)
+
+i=1
+
+12
+
+where ∆Varpsp,0
+
+(cid:96)
+
+[Fh ] := ∆c2
+0 is the expectation surplus, usually small (see, e.g., [34]),
+[Fh ] :=
+
+∆Varpsp,i
+(cid:96)
+
+∆c2
+p ,
+
+(cid:88)
+
+p∈I psp
+
+i
+
+(cid:96)
+
+inter = (cid:83)d
+
+[Fh ] := (cid:80)
+are the surplus contributions to the d individual directional variances for i = 1, 2, . . . , d,
+where I psp
+i = {0 < p ≤ P (cid:96) : pi (cid:54)= 0 ∧ pj = 0, ∀j (cid:54)= i}, and ∆Varpsp,inter
+∆c2
+p ,
+where P psp
+i=1{0 < p ≤ P (cid:96) : p (cid:54)∈ I psp
+i }, refers to the surplus variance due to all
+possible interactions. Therefore, using the L2 norm of the surplus in the standard indicator
+scalar index j = 1, 2, . . . , N(cid:96) := (cid:81)d
+(2.11) means using stochastic information to drive the adaptive process, which is desirable
+in UQ contexts. For more details on Sobol’ decompositions and Sobol’ indices, we refer to
+[8, 29, 30, 34] and the references therein. We can also write ∆psp
+[Fh ] in (3.1) in terms of a
+i=1 (cid:96)i representing the position of p in {0, . . . , P (cid:96)}.
+For Lagrange interpolation, there is no direct connection to Sobol’ expansions. To this
+end, we perform a transformation from the Lagrange basis to the orthonormal basis of the
+[8, 10]). Let U in
+same (multivariate) degree to obtain the equivalent pseudo-spectral coeﬃcients (see, e.g.,
+(cid:96) denote the full-grid interpolation operator for multiindex (cid:96). The change of
+basis from Lagrange interpolation and PSP is done as:
+
+p∈P psp
+
+inter
+
+(cid:96)
+
+I (cid:96)(cid:88)
+p=0
+
+U in
+
+(cid:96) [Fh ] =
+
+M(cid:96)(cid:88)
+j=1
+
+cpΦp (θ) =
+
+cjΦj (θ),
+where {Φp (θ)}I (cid:96)
+1, 2, . . . , M(cid:96) := (cid:81)d
+p=0 is the equivalent PSP basis, {cp (θ)}I (cid:96)
+p=0 are the PSP coeﬃcients and I (cid:96) =
+j=1 , we solve (cid:80)M(cid:96)
+((cid:96)1 − 1, (cid:96)2 − 1, . . . , (cid:96)d − 1), since m((cid:96)) = (cid:96) for interpolation. We also use the scalar index j =
+i=1 (cid:96)i . To obtain the PSP coeﬃcients {cj }M(cid:96)
+(cid:96) [Fh (θk )] for all line (L)-Leja points θk associated to the multiindex (cid:96) (see, e.g., [8]).
+j=1 cjΦj (θk ) =
+Then, we compute the surpluses (3.2) and the squared L2 norm (3.4).
+
+U in
+
+(3.5)
+
+Remark 2. For the employed level-to-nodes mappings, the bases for interpolation and PSP
+have the same size M(cid:96) = N(cid:96) , therefore, the number of pseudo-spectral coeﬃcients is the
+same in both cases. However, for PSP, m((cid:96)) = 2(cid:96) − 1, whereas m((cid:96)) = (cid:96) for interpolation.
+Therefore, to achieve the same accuracy, we expect interpolation to require fewer grid points.
+
+3.2. Sensitivity-driven dimension adaptivity
+Next, we present in detail our proposed adaptive strategy. In Section 3.2.1, we describe
+how to assess what we call sensitivity scores. We depart from standard adaptive techniques
+which use global information to guide the reﬁnement process and use instead sensitivity
+information in each subspace to preferentially reﬁne the directions rendered important. Since
+several sensitivity scores can be equal, we introduce a classiﬁcation algorithm in Section 3.2.2
+to ensure that one maximum score is found per reﬁnement step. We present the proposed
+dimension-adaptive algorithm based on sensitivity scores in Section 3.2.3.
+
+13
+
+3.2.1. Sensitivity scores
+The standard error indicator (2.11) employed in this work depends on the norm of the
+surpluses, (cid:107)∆op
+(cid:96) [Fh ](cid:107)L2 , which represents global information. In this way the adaptive algo-
+rithm does not discriminate between the individual directions nor their interactions. Having
+a ﬁner control over the individual input directions as well as their interaction is especially
+desired in problems in which these directions are anisotropically coupled. In addition, in the
+ma jority of practical applications, such as plasma mictroturbulence simulation, the intrinsic
+stochastic dimensionality is usually smaller than the total number of stochastic parameters,
+d, i.e., only a subset of inputs are important in the uncertainty propagation problem.
+To this end, we propose an adaptive approach to better exploit the structure of the under-
+lying problem. We introduce a sensitivity scoring system to quantify the contribution of each
+action. Speciﬁcally, for each multiindex (cid:96) in the active set A, we ﬁrst compute (cid:107)∆op
+subspace to the individual variances as well as to the variance due to the parameters’ inter-
+(cid:96) [Fh ](cid:107)2
+using (3.4)3 . Recall that the summation terms in (cid:107)∆op
+(cid:96) [Fh ](cid:107)2
+L2 comprise the directional
+variance surpluses for each input parameter as well as the contribution due to the inputs’
+interaction. Hence, using d+1 user-deﬁned tolerances τ op = (τ op
+2 , . . . , τ op
+d+1 ), we com-
+(cid:96) ∈ N. Initially, sop
+pute the sensitivity score of the multiindex (cid:96), sop
+(cid:96) = 0. For i = 1, 2, . . . , d,
+[Fh ] ≥ τ op
+we increase sop
+(cid:96) by one if the individual variance surpluses satisfy ∆Varop,i
+. Hence,
+after this step, sop
+(cid:96) can be at most d. Finally, if the variance surplus due to the interaction
+[Fh ], satisﬁes ∆V op,inter
+[Fh ] ≥ τ op
+of the stochastic parameters, ∆Varop,inter
+d+1 , we increase sop
+by one as well. Therefore, sop
+(cid:96) can take integer values between 0 and d + 1.
+Since the introduced sensitivity scoring system is based on the d individual stochastic
+input directions as well as their interaction, it ﬁlters the important directions and ensures
+that they are preferentially reﬁned. Therefore, when the underlying inputs are anisotropi-
+cally coupled or when the intrinsic stochastic dimensionality is smaller than d, the value of
+the sensitivity score will reﬂect these properties. Note, in addition, that our scoring system
+distinguishes between individual and interaction variance surpluses. In this way, we ensure
+that if the mixed directions are stochastically unimportant, we prevent the algorithm to
+reﬁne too much these directions, which are computationally expensive due to their larger
+number of grid points.
+In summary, when the underlying stochastic problem has a rich
+structure, the proposed sensitivity scoring system will explore and exploit that structure.
+We summarize the computation of the sensitivity scores in Algorithm 1.
+the input
+probability density, π , w.r.t. which all computations are performed, the tolerances, τ op and
+(cid:96) [Fh ]. Note that the choice of τ op is problem dependent. For
+the hierarchical surplus ∆op
+example, if, based on expert opinion or pre-existing knowledge, certain input parameters
+or their interaction are known to be more important, the corresponding tolerances in τ op
+should be chosen accordingly. However, when no such knowledge is available, we recommend
+a conservative choice in which all components of τ op are equal.
+
+d , τ op
+
+1 , τ op
+
+(cid:96)
+
+i
+
+(cid:96)
+
+(cid:96)
+
+L2
+
+(cid:96)
+
+3For interpolation, we do the basis transformation (3.5) and compute the squared L2 norm using (3.4).
+
+14
+
+Algorithm 1 Sensitivity Scores Computation
+1: procedure ComputeSensitivityScore(π , τ op , ∆op
+(cid:96) [Fh ])
+:= 0
+Compute (cid:107)∆op
+(cid:96) [Fh ](cid:107)2
+(cid:96) [Fh ] w.r.t. π
+(cid:96) [Fh ] via (3.4) to obtain all unnormalized Sobol’ indices
+L2 to obtain the variance ∆Varop
+Decompose ∆Varop
+
+2:
+3:
+4:
+
+sop
+(cid:96)
+
+(cid:96) [Fh ] =
+∆Varop
+
+∆Varop,i
+
+(cid:96)
+
+[Fh ] + ∆Varop,inter
+(cid:96)
+
+[Fh ]
+
+i=1
+
+5:
+6:
+7:
+
+8:
+9:
+
+10:
+
+for i ← 1, 2, . . . , d do
+if ∆Varop,i
+[Fh ] ≥ τ op
+(cid:96) + 1
+[Fh ] ≥ τ op
+d+1 then
+(cid:96) + 1
+return sop
+
+(cid:96)
+sop
+(cid:96) = sop
+if ∆Varop,inter
+(cid:96)
+sop
+(cid:96) = sop
+
+then
+
+i
+
+(cid:96)
+
+d(cid:88)
+
+d(cid:88)
+
+3.2.2. Maximum sensitivity score
+The adaptive process in our proposed approach is driven by the multiindex from the
+active set A with the largest sensitivity score. To this end, if several subspaces have equal
+scores we need an additional step to distinguish between them. Note that two or more
+subspaces have the same sensitivity score if the same number of directional variances are
+larger than the prescribed tolerances. However, these directions do not need to be necessarily
+the same. With this in mind, we distinguish between subspaces having equal sensitivity
+scores via the following classiﬁcation algorithm.
+First, we compute
+
+∆Varop,tot
+(cid:96)
+
+[Fh ] :=
+
+∆Varop,i
+
+(cid:96)
+
+[Fh ] + ∆Varop,inter
+(cid:96)
+
+[Fh ],
+
+i=1
+
+(cid:96)
+
+[Fh ]. In this way, if two or more
+and then select the subspace with the largest ∆Varop,tot
+subspaces contribute signiﬁcantly in the same number of directions, we select the subspace
+with the largest global contribution. We summarize the aforementioned strategy for ﬁnding
+the subspace with the maximum score in Algorithm 2. The inputs are two sets: S , comprising
+all current scores, and D , which contains all current surpluses. In lines 4 – 5, we ﬁnd the
+maximum sensitivity scores.
+If only one maximum score exists, then the algorithm ends
+(lines 7 – 9). In the case when several maximum scores exist, we select the subspace with
+the largest ∆Varop,tot
+(lines 11 – 16). In the unlikely case that ∆Varop,tot
+is the same for
+several scores, the algorithm returns the multiindex corresponding to the last score.
+
+(cid:96)
+
+(cid:96)
+
+3.2.3. Sensitivity-driven dimension-adaptive sparse grid approximations
+We hereby summarize our proposed dimension-adaptive strategy based on sensitivity
+scores in Algorithm 3. The inputs are the forward model, Fh , the input probability density,
+15
+
+Algorithm 2 Maximum Sensitivity Score Computation
+1: procedure FindIndexMaximumScore(S , D)
+I := []
+∆Varop
+max [Fh ] := 0,
+max := 1
+from S
+Find the maximum sensitivity scores sop
+Append to I the scalars n = 1, 2, . . . , nmax , where nmax is the number of max scores
+nmax := |I |
+if nmax = 1 then
+p := I [1]
+
+(cid:96)op
+
+(cid:96)n
+
+(cid:96)op
+max := (cid:96)p
+
+else
+for m ← 1, 2, . . . , nmax do
+q := I [m]
+[Fh ] from D and compute ∆Varop
+Take ∆op
+if ∆Varop
+[Fh ] ≥ ∆Varop
+max [Fh ] then
+max [Fh ] := ∆Varop
+[Fh ]
+∆Varop
+
+(cid:96)q
+
+(cid:96)q
+
+(cid:96)q
+
+(cid:96)q
+
+(cid:96)op
+max := (cid:96)q
+
+[Fh ]
+
+return (cid:96)op
+
+max
+
+2:
+3:
+4:
+5:
+6:
+7:
+8:
+9:
+10:
+11:
+12:
+13:
+
+14:
+
+15:
+16:
+
+17:
+
+2:
+3:
+4:
+5:
+6:
+7:
+8:
+9:
+10:
+11:
+12:
+13:
+14:
+15:
+16:
+
+17:
+18:
+19:
+
+20:
+
+max )
+
+sop
+
+S = S ∪ {sop
+
+Algorithm 3 Sensitivity-driven Dimension-adaptive Sparse Grid Algorithm
+1: procedure SensitivityDrivenAdaptiveSparseGridApprox(Fh , π , τ op , Lop
+1d := (1, 1, . . . , 1)
+O := ∅, A := {1d}
+S := ∅, D := ∅
+1 [Fh ])
+1 := ComputeSensitivityScore(π , τ op , ∆op
+1 }, D = D ∪ {∆op
+1 [Fh ]}
+while all(S ) (cid:54)= 0 or A (cid:54)= ∅ or max(L) < Lop
+k := FindIndexMaximumScore(S , D)
+k }, D = D \ {∆op
+k [Fh ]}
+for i ← 1, 2, . . . , d do
+r ← k + ei
+if r − eq ∈ O for all q = 1, 2, . . . , d then
+
+A = A \ {k}, O = O ∪ {k}
+S = S \ {sop
+
+max do
+
+sop
+
+A = A ∪ {r}
+S = S ∪ {sop
+L = O ∪ A
+
+r [Fh ])
+r := ComputeSensitivityScore(π , τ op , ∆op
+r }, D = D ∪ {∆op
+r [Fh ]}
+Determine the PSP coeﬃcients {c(cid:96)}(cid:96)∈L
+Compute ˆE[Fh ], ˆσ [Fh ], ˆS T
+d from {c(cid:96)}(cid:96)∈L using (2.12)
+1 , ˆS T
+2 , . . . , ˆS T
+return ˆE[Fh ], ˆσ [Fh ], ˆS T
+1 , ˆS T
+2 , . . . , ˆS T
+
+d
+
+16
+
+Lop
+
+π , the vector τ op of d + 1 tolerances and the maximum grid level that can be reached,
+max . At lines 2 – 3, we initialize O and A as in the standard algorithm.
+In addition,
+we initialize two new data structures, S and D , to store the scores and surpluses for all
+indices in the active set A (line 4). We proceed by computing the sensitivity score of the
+ﬁrst multiiindex in A using Algorithm 1 and update S and D accordingly. Afterwards, in
+each reﬁnement step, we determine the multiindex with the maximum score (line 8) based
+on Algorithm 2 and update A and O . Moreover, we also append the largest score and
+its associated surplus to S and D , respectively. The algorithm continues with adding the
+forward neighbours of the multindex with the largest sensitivity score provided that the
+total multiindex set remains admissible. Further, we assess the sensitivity score for each
+of these neighbours via Algorithm 1 and update the sets O , A, S and D accordingly. Our
+algorithm terminates if all scores in S are zero, i.e., if the contributions of all multiindices in
+A are rendered stochastically unimportant. Moreover, the algorithm stops as well if A = ∅
+or if the maximum level Lop
+max is reached. Note that we do not employ a surrogate for the
+global error as in the standard dimension-adaptive algorithm of Section 2.3.3, since, ﬁrst of
+all, our algorithm relies on error indicators in each subspace. Second of all, the algorithm
+stops, by design, when all subspaces from A have a zero sensitivity score, i.e., when their
+variance contribution in all directions becomes insigniﬁcant. At the end, we determine the
+PSP coeﬃcients c(cid:96) for all (cid:96) ∈ L and we use these coeﬃcients to assess the expectation,
+standard deviation, and total Sobol’ indices for global sensitivity analysis via (2.12).
+
+(cid:115)(cid:90)
+
+E 2 (F − U L [F ]) :=
+
+3.3. Il lustrative examples
+the proposed methodology in two problems in which the forward model, F , is available
+Before presenting our results in two plasma microturbulence test cases, we ﬁrst use
+analytically. We use dimension-adaptive sparse grid interpolation and compare our proposed
+reﬁnement indicator based on sensitivity scores with the standard indicator (2.11).
+For a fair comparison, we employ small tolerances (tol in = 10−8 in the standard version
+and τ in = 10−16 · 1d+1 in our approach) and compute the L2 approximation error
+(cid:0)F (θ) − U L [F (θ)](cid:1)2dθ
+and the relative error of the expectation approximation
+Erel (E[F ] − ˆE[F ]) := |1 − E[F ]/ ˆE[F ]|,
+where ˆE[F ] is estimated using the ﬁrst PSP coeﬃcient as shown in (2.12).
+First, we consider a ﬁve-dimensional model F : [0, 1]5 → R,
+F (θ) = 1 + cos (π + 1.5θ1 + 0.5θ2 + 0.05θ3 + 0.1θ4 + 0.002θ5 ),
+in which θ is uniformly distributed in the 5D hypercube, i.e., π(θ) = U (0, 1)5 . We estimate
+the ﬁve total Sobol’ indices as in (2.12) using 105 Gauss-Legendre nodes and obtain
+3 = 9.8216 ·10−4 ,
+4 = 3.9287 ·10−3 ,
+5 = 1.5714 ·10−6 .
+ˆS T
+ˆS T
+ˆS T
+17
+
+ˆS T
+1 = 0.9034,
+
+ˆS T
+2 = 0.0098,
+
+X
+
+(3.6)
+
+(3.7)
+
+(3.8)
+
+Therefore, the ﬁrst stochastic parameter is signiﬁcantly more important that all other four,
+while θ5 is the least important parameter. Since the L2 error E 2 (E[F ] − ˆE[F ]) (3.6) and
+relative error Erel (E[F ] − ˆE[F ]) cannot be estimated analytically, we estimate them numeri-
+cally using 1000 Monte Carlo samples for the L2 error and the expectation estimate on the
+Gauss-Legendre grid with 105 points for the relative error.
+We depict the results in Figure 1. In the left plot, we visualize the L2 approximation
+error for the two adaptive schemes and we observe that for similar L2 errors, our approach
+is cheaper than the standard scheme. For example, for an L2 error of around 3 · 10−8 , our
+approach requires 376 Leja points, whereas the standard approach needs 578 points. In the
+right ﬁgure, we depict the estimate for Erel (E[F ] − ˆE[F ]) using the same number of Leja
+points as for the L2 error. We observe again that our approach is, for a lower computational
+cost, as accurate as the standard adaptive method. Therefore, for the considered 5D test case
+
+Figure 1: Monte Carlo estimate of the L2 approximation error (3.6) (left) and the estimate of the relative
+error of the expectation approximation (3.7) (right) for the example in (3.8).
+
+(3.8), we showed that our approach is computationally cheaper than the dimension-adaptive
+approach based on the standard reﬁnement indicator (2.11).
+In general, we expect the proposed reﬁnement indicator based on sensitivity scores to be
+more accurate than the standard approach in high(er)-dimensional uncertainty propagation
+problems with anistropically coupled inputs and lower intrinsic dimensionality. In contrast,
+in problems with low stochastic dimensionality or problems in which the uncertain inputs
+are isotropically coupled, we generally do not obtain a signiﬁcant beneﬁt from using our
+approach. We illustrate this point by considering a test case in which we have two uncertain
+inputs such that (i) one of them is signiﬁcantly more important that the other and (ii) their
+interaction is stochastically insigniﬁcant. To this end, consider F : [0, 1]2 → R,
+F (θ) = cos (θ1 + 0.1θ2 ),
+
+(3.9)
+
+with π(θ) = U (0, 1)2 . The associated total Sobol’ indices estimated on a Gauss-Legendre
+
+18
+
+grid comprising 162 = 256 nodes are
+
+ˆS T
+1 = 0.9908,
+
+ˆS T
+2 = 0.0112,
+
+whose values tell us that θ1 is signiﬁcantly more important that θ2 .
+The two errors are estimated as in the previous example and depict the results in Fig-
+ure 2. We observe that in this example, our approach yields results of similar accuracy
+as the standard approach, for a similar cost both from an approximation or expectation
+estimation perspectives. Hence, this example, although relatively simplistic, underlines that
+
+Figure 2: Monte Carlo estimate of the L2 approximation error (3.6) (left) and the estimate of the relative
+error of the expectation approximation (3.7) (right) for the example in (3.9).
+
+our proposed sensitivity scores-based approach does not always outperform the standard
+method. The behaviour of our scheme depends on the structure of the underlying problem.
+Nevertheless, these two examples underline the beneﬁts of dimension-adaptive algorithms in
+uncertainty propagation: for a problem with ﬁve uncertain inputs, we needed at most 576
+Leja points to obtain accurate approximations, whereas for the 2D examples, at most 32
+points were suﬃcient to obtain accurate results as well.
+
+4. Application to plasma microinstability analysis
+
+In this section, we present results of the proposed UQ method applied to two plasma
+microinstability test cases.
+In addition, we also employ the standard adaptive strategy
+summarized in Section 2.3.3, which we compare with our method. Both test cases represent
+linear local (ﬂux-tube) simulations in which microinstabilities are characterised using the
+linear eigenvalue solver from the gyrokinetic code Gene (recall Section 2.2.2), hence, Fh is
+the linear eigenvalue solver from Gene. The uncertain inputs in both test cases are modelled
+as independent uniform random variables, i.e., π is a multivariate uniform density, with left
+and right bounds stemming from expert opinion supported by experimental measurements.
+
+19
+
+All linear eigenvalue simulations are performed using 32 cores on two Intel Xeon E5-2697
+nodes from the CoolMUC-2 cluster 4 at the Leibniz Supercomputer Center. The runtime of
+one simulation varies roughly between ﬁve and 90 minutes, depending on the used setup.
+In Section 4.1, we consider a modiﬁed gyrokinetic benchmark to obtain initial insights
+into the behaviour of the proposed approach. To test the usefulness of the proposed ap-
+proach in real-world plasma microinstability analysis problems, we consider in Section 4.2 a
+particular discharge of the ASDEX Upgrade experiment. For this second test case, the anal-
+ysis is performed step-wisely – ﬁrst, only three uncertain input parameters are considered
+in Section 4.2.1, whereas 12 stochastic parameters are taken into account in Section 4.2.2.
+
+4.1. Modiﬁed Cyclone Base Case
+The ﬁrst test case is based on the so-called Cyclone Base Case (CBC) of [7]. CBC has
+been selected since it is a popular benchmark in the gyrokinetic community and since its
+parameters are known to display a signiﬁcant sensitivity to changes of the temperature and
+density gradients, which calls for a UQ approach. The original CBC benchmarks have been
+restricted to one gyrokinetic ion (i ) species, assuming an adiabatic electron response and
+thus only electrostatic ﬂuctuations. However, we modify the setting to allow for more choices
+of stochastic parameters to better resemble realistic applications.
+The extensions and deviations from the parameters from [7] and the additionally edu-
+cated assumptions for the uncertainties are summarized in Table 1. The electrons (e ) are
+treated fully gyrokinetically such that their logarithmic temperature gradients, −Ls∂x ln Te ,
+and density gradients, −Ls∂x ln ne , need to be considered as well. While the former is
+taken in the same range as the ion temperature gradient, −Ls∂x ln Ti , but can be varied
+independently, the logarithmic density gradient is forced to the exact value of the ion coun-
+terpart due to the quasi-neutrality constraint in plasma physics. The logarithmic density
+gradient also ﬁxes the density ratio to 1 while the temperature ratio, Ti/Te , can be varied.
+Adding an electron species furthermore allows to consider electromagnetic eﬀects in the
+gyrokinetic simulations. Their strength is determined by the kinetic-to-magnetic pressure
+ratio, β , which is therefore taken as another stochastic input. Another important parameter
+which is often avoided in benchmarks due to rather diﬀerent implementations is the collision
+operator. Here, we employ a linearized Landau-Boltzmann collision operator and vary the
+corresponding normalized collision frequency, νc , as listed in Table 1. Uncertainties in the
+circular magnetic (ˆs − α) equilibrium can be considered by attributing lower and upper
+limits to the safety factor, q , the ratio of toroidal turns of a magnetic ﬁeld line per poloidal
+turn, and its normalized radial derivative, the magnetic shear, ˆs = r/q∂ q/∂ r, where r is the
+radial coordinate labeling ﬂux surfaces. To summarize, we consider eight uncertain input
+parameters: the ﬁrst six characterize the underlying particle species, ions and electrons,
+whereas the last two parameters are associated to the magnetic geometry.
+The bounds of the eight uniformly distributed stochastic parameters are found in the last
+two columns in Table 1 are symmetric around a nominal value employed in deterministic
+simulations. The output of interest is the growth rate, γ [cs/Ls ], of the dominant eigenmode,
+
+4https://www.lrz.de/services/compute/linux-cluster/
+
+20
+
+θ
+θ1
+θ2
+θ3
+θ4
+θ5
+θ6
+θ7
+θ8
+
+parameter name
+symbol
+plasma beta
+β
+collision frequency
+νc
+i log temperature gradient −Ls∂x ln Ti
+e log temperature gradient −Ls∂x ln Te
+temperature ratio
+Ti/Te
+−Ls∂x ln n
+i/e log density gradient
+ˆs = r
+magnetic shear
+safety factor
+q
+
+∂ q
+∂ r
+
+q
+
+left bound
+0.598 × 10−3
+0.238 × 10−2
+7.500
+7.500
+0.950
+1.665
+0.716
+1.330
+
+right bound
+0.731 × 10−3
+0.322 × 10−2
+12.500
+12.500
+1.050
+2.775
+0.875
+1.470
+
+Table 1: The eight stochastic parameters in the modiﬁed CBC test case. The ﬁrst six parameters characterize
+the two particle species, ions and electrons, whereas the last two inputs characterize the magnetic geometry.
+The temperature gradient is varied per species while the density gradients of the two particles ar always
+equal to each other due to the quasi-neutrality condition in plasma physics.
+
+where cs = (cid:112)Te/mi is the ion sound speed and Ls is the characteristic length, which we
+compute with six digits of precision. For a more in-depth overview of the inﬂuence of the
+eight stochastic parameters, we perform uncertainty propagation for multiple normalized
+perpendicular wavenumbers, ky ρs :
+
+ky ρs = 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9.
+
+(4.1)
+
+We treat ky ρs as a deterministic free-parameter and for each of its values in (4.1), we
+propagate the uncertainty in the eight parameters listed in Table 1 using Algorithm 3. Note
+that since simulations corresponding to diﬀerent ky ρs are independent of each other, they
+can be performed embarrassingly parallel, thus adding a second layer of parallelism.
+Prior to uncertainty propagation, a deterministic simulation using the nominal values
+of the eight parameters from Table 1 is performed in a ﬁrst step in order to obtain more
+insights into the underlying microinstabilities. We compute the linear growth rates and real
+frequencies, ω [cs/Ls ], of the dominant and ﬁrst subdominant eigenmodes for all for all ky ρs
+in (4.1). We depict the results in Figure 3. Around ky ρs = 0.6, a change in the frequency
+sign is clearly visible; the positive frequency indicates a microinstability propagating in
+the ion-diamagnetic drift direction, whereas negative frequency is associated to a mode
+with (opposite) electron-diamagnetic drift direction. For the CBC benchmark, it is well
+known that this mode transition is from ITG to a trapped-electron-mode(TEM)/ETG hybrid
+mode, see, e.g., [16] and the references therein. Given the steep increase of the latter
+at large wavenumbers, the transition is marked by a very sharp growth rate gradient at
+ky ρs = 0.6. Since in this work we employ sparse grid approximations formulated in terms of
+global polynomial basis functions, these approximations were ill-conditioned at ky ρs = 0.6.
+Therefore, we discard ky ρs = 0.6 and present in what follows results at the remaining values
+of the normalized perpendicular wavenumber in (4.1).
+We consider both interpolation and PSP to construct adaptive sparse grid surrogates for
+the 8D stochastic model. In addition, we compare our approach with the standard adaptive
+technique summarized in Section 2.3.3, which we use to obtain reference results.
+In our
+21
+
+Figure 3: Growth rate (left) and frequency spectra (right) for the CBC test case of the dominant and ﬁrst
+subdominant mode, obtained using the nominal values, i.e. the expectation of the uncertain parameters
+listed in Table 1.
+
+approach, we prescribe τ op = 10−6 · 19 and (cid:96)max,op = 20, whereas in the standard adaptive
+approach we employ tolop = 10−3 and (cid:96)max,op = 20. After computing the pseudo-spectral
+coeﬃcients, the expectation, standard deviation and total Sobol’ indices(recall Section 2.4)
+are evaluated in the postprocessing for each considered ky ρs .
+Figure 4 illustrates the expected value and one standard deviation of γ [cs/Ls ] for the
+diﬀerent adaptive surrogates as well as the deterministic growth rate results, for all consid-
+ered normalized perpendicular wavenumbers. On the one hand, a good agreement between
+all adaptive sparse approximation approaches can be stated. This demonstrates that for
+identical setups, interpolation and PSP perform equally well. In addition, our sensitivity
+scores approach is as accurate as the standard adaptive approach. On the other hand, the
+deterministic results overlap almost perfectly with the expectation of the stochastic results,
+which is no surprise, given the relative simplicity of this test case. Therefore, the most likely
+value of the growth rate yielded by uncertainty propagation is similar to the deterministic
+result. The novelty of using uncertainty propagation is that we also obtain uncertainty bars
+which represent a quantitative measure of the uncertainty associated to the expected value of
+each stochastic input. Based on these results, the ITG mode appears to be robust w.r.t. the
+uncertainty in the eight stochastic parameters while the onset of the TEM/ETG-branch
+could be quite diﬀerent given the much larger uncertainty bars. Already these results can
+be very interesting for physicists trying to compare and predict microturbulence in plasmas.
+However, the analysis can be taken even further. To quantitatively understand the total
+contribution of each stochastic input to this uncertainty, we analyse in a next step the total
+Sobol’ indices for global sensitivity analysis.
+We show the total Sobol’ indices in Figure 5. The top two subﬁgures contain the results
+using adaptive interpolation, whereas in the bottom subﬁgures total Sobol’ indices obtained
+by adaptive PSP are presented.
+In addition, the left ﬁgures correspond to the standard
+adaptive approach, whereas the right plots depict the results corresponding to the proposed
+sensitivity scores approach. The similarity of all results indicates again that interpolation
+and PSP perform similarly, and that our proposed adaptive approach has a similar accuracy
+
+22
+
+Figure 4: Expected value and one standard deviation as well as the deterministic growth rates for the CBC
+test case with eight uncertain parameters.
+
+Figure 5: Total Sobol’ indices for global sensitivity analysis via adaptive sparse grid interpolation (top two
+subﬁgures) and PSP (bottom two subﬁgures) based on the standard adaptive approach (left plots) and our
+proposed approach (right plots) for the CBC test case using ky ρs ∈ {0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.8, 0.9}.
+
+23
+
+as the standard adaptive method. Moreover, we observe that in all plots two stochastic pa-
+rameters show the largest total Sobol’ indices, the logarithmic ion and electron temperature
+gradients. The other inputs have negligible contributions. This indicates that although we
+considered a total of eight stochastic inputs, only two of them are important for uncertainty
+propagation in the considered ky ρs domain. Such ﬁndings are very important for the physics
+community. The other stochastic parameters are very well known to have an impact on the
+modes themselves but here apparently not within the assumed uncertainty bars. This could,
+for instance, motivate to restrict the much more costly nonlinear studies to the two temper-
+ature gradients if a compromise between computationally resources and sensitivity studies
+needs to be found. In addition, the two temperature gradients have complementary total
+Sobol’ indices: the ion temperature gradient dominates whereas the electron temperature
+gradient has a very small total Sobol’ index for ky ρs ≤ 0.5, and the other way around for
+ky ρs ≥ 0.7. In other words, except for ky ρs = 0.5, where the Sobol’ indices for both tem-
+perature gradients are non-negligible, the intrinsic stochastic dimensionality is one. The
+observed behaviour of the total Sobol’ indices is consistent with what is known in the de-
+terministic case: for ky ρs ≤ 0.5, the microinstability is driven by an ITG mode, whereas
+when ky ρs ≥ 0.7, it is driven by a TEM/ETG mode. Furthermore, at each ky ρs the sum of
+the total Sobol’ indices is close to 1.0, i.e., the stochastic model can be well approximated
+by a linear model. Such information can be extremely helpful in constructing reduced, e.g.,
+quasi-linear models in the plasma physics community.
+Finally, the cost in terms of total number of simulations for all four employed adaptive
+approaches is summarized in Figure 6. First, we observe that the most expensive problem
+required just 473 simulations in total; this was mainly possible because the stochastic inputs
+are anisotropically coupled and the intrinsic stochastic dimensionality is signiﬁcantly lower
+than eight. To put this in perspective, a standard parameter scan using 10 points in each
+direction would require a total of 108 simulations.
+In addition, as expected, for either
+standard or sensitivity scores adaptivity, PSP is more expensive than interpolation (see
+Remark 2); even the adaptive PSP based on sensitivity scores is generally more expensive
+than standard adaptive interpolation. Furthermore by far the cheapest approach is the
+adaptive interpolation using our proposed sensitivity scores approach. For example, at
+ky ρs = 0.7, it is 3.4 times cheaper than interpolation using standard adaptivity, 8.1 times
+cheaper that adaptive PSP based on the standard method, and 5.2 times cheaper than PSP
+with adaptivity based on sensitivity scores. As a conclusion, although PSP and interpolation
+have very similar accuracies, the signiﬁcantly lower cost of interpolation makes it our method
+of choice in the following realistic and computationally more expensive test case.
+
+4.2. Realistic test case
+While the CBC benchmark is a popular parameter set, corresponding nonlinear simula-
+tions are found to dramatically overestimate the transport levels obtained in the experiment
+that inspired this exercise. This can to some degree be explained by idealizations in the
+choice of parameters and by missing physics such as external shear ﬂows. The level of re-
+alism shall therefore be increased by considering a particular Gene validation study from
+[9], performed for the ASDEX Upgrade tokamak. Therein, nonlinear simulation results have
+
+24
+
+Figure 6: Total number of evaluations needed to construct the sparse interpolation and PSP surrogates
+using our proposed approach based on sensitivity scores vs. the standard adaptive approach.
+
+been confronted to experimentally determined ion and electron heat ﬂuxes as well as various
+turbulence observables such as electron temperature ﬂuctuation levels, radial correlation
+functions and cross phases with electron density ﬂuctuations which became accessible via a
+new diagnostic.
+Linear simulations furthermore revealed that the parameters associated to the discharge
+of interest are very close to the dominant mode transitions and therefore represent a chal-
+lenging set which could (a) be inﬂuenced by further stochastic parameters and (b) turn
+out to be sub ject to cross interactions among these parameters. We took these concerns as
+motivation to perform a two-step UQ analysis.
+
+4.2.1. Realistic test case with three stochastic parameters
+First, we perform uncertainty propagation using three stochastic parameters as listed in
+Table 2. The three stochastic parameters are the logarithmic density and temperature gradi-
+ents for ions and electrons. As for the CBC test case, the left and right bounds are symmetric
+around a nominal value used in deterministic simulations (see the last two columns in Table
+2). However, for this test case the nominal values stem from experimental measurements.
+
+θ
+θ1
+θ2
+θ3
+
+parameter name
+symbol
+−Ls∂x ln n
+i log temperature gradient −Ls∂x ln Ti
+i/e log density gradient
+e log temperature gradient −Ls∂x ln Te
+
+left bound right bound
+1.156
+1.927
+2.096
+3.494
+4.040
+6.733
+
+Table 2: Summary of the three stochastic parameters considered for the ASDEX Upgrade test case with
+ranges estimated from experimental measurements.
+
+We perform uncertainty propagation for multiple values of ky ρs . Because this test case
+is more representative for real-world problems, wave-numbers up to the hyper-ﬁne electron
+
+25
+
+gyroradius scales are considered:
+
+ky ρs = 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.9, 1.0,
+2.0, 3.0, 4.0, 5.0, 7.5, 10.0, 12.5, 15.0, 17.5, 20.0, 22.5, 25.0, 27.5, 30.0.
+
+(4.2)
+
+As in the CBC test case, we treat ky ρs as a deterministic free-parameter and perform un-
+certainty propagation using Algorithm 3 for each value in (4.2).
+To obtain some ﬁrst insights into the underlying microinstabilities, deterministic runs
+using the nominal values of all input parameters, which stem from experimental data, are
+performed to compute the growth rate, γ [cs/Ls ], and frequency spectra, ω [cs/Ls ], of the
+dominant eigenmode. Given the large wave number and amplitude range, the results are
+depicted in a logarithmic scale in Figure 7 (note the negative sign of the frequency). Both
+curves are smooth and monotonous, suggesting that the dominant mode does neither change
+its (electron diamagnetic) drift direction nor its character in a dramatic way for the param-
+eters at hand. The slightly diﬀerent slopes in frequency, i.e., dispersion relations, and the
+ﬁrst hump in growth rate imply that nevertheless two or more diﬀerent microinstabilities
+such as pure TEM and TEM/ETG-hybrids are excited.
+
+Figure 7: Growth rate (left) and frequency spectra (right) for the ASDEX Upgrade test case obtained using
+the nominal values of the input parameters. Note that for this test case, these values stem from experimental
+measurements.
+
+In Section 4.1, we concluded that adaptive sparse grid interpolation is our method of
+choice for this realistic test case. Hence, a surrogate for the 3D stochastic gyrokinetic model
+is constructed via adaptive interpolation using both the proposed methodology based on
+sensitivity scores as well as the standard adaptive technique summarized in Section 2.3.3. In
+our proposed approach we prescribe τ in = 10−6 · 14 and (cid:96)max,in = 20, whereas in the standard
+adaptive approach, tolin = 10−3 and (cid:96)max,in = 20 are employed. As in the CBC test case, the
+output of interest are the growth rate, γ [cs/Ls ], of the dominant eigenmode with six digits
+of precision. Additionally, we compute its expectation, standard deviation and total Sobol’
+indices for each ky ρs in postprocessing (recall Section 2.4). Due to the larger growth rates
+and more simple mode structure, the runtime signiﬁcantly decreased with ky ρs .
+The resulting expectation and one standard deviation as well as the deterministic growth
+rates are displayed in Figure 8. An overlap between the results obtained with the two adap-
+26
+
+tive interpolation approaches is observed, showing that our proposed approach is as accurate
+as the standard adaptive method for this test case as well. In addition, the deterministic
+result is similar to the expectation of the stochastic simulation; the absolute diﬀerence varies
+uniformly roughly between 0.01 and 0.1. However, these diﬀerences are more signiﬁcant for
+ky ρs ≤ 1.0 as in this region they represent a larger fraction of the growth rate’s magnitude.
+Since this wave number range is usually considered to be most important for a correct as-
+sessment of the ion heat ﬂux, results from corresponding nonlinear simulations with nominal
+values should be taken with care. The presented analysis implies that the more likely re-
+sults considering uncertainties may be somewhat diﬀerent which is an important piece of
+information for the plasma turbulence modeling community.
+
+Figure 8: Expected value and one standard deviation as well as the deterministic growth rates for the
+ASDEX Upgrade test case with three uncertain parameters and ky ρs as in (4.2).
+
+For a deeper understanding of the results, the total Sobol’ indices are furthermore de-
+picted in Figure 9 (top two subﬁgures: standard adaptive approach, bottom subplots: our
+proposed approach). For a clear illustration, we split the results in two ﬁgures correspond-
+ing to ky ρs ≤ 1 and ky ρs > 1, respectively. Again a good agreement between our pro-
+posed approach and the standard adaptive strategy is observed. On the one hand, when
+ky ρs ≤ 0.8, all three stochastic parameters have non-negligible total Sobol’ indices, whereas
+for ky ρs = 0.9, 1, the two logarithmic temperature gradients are the most important, i.e., the
+intrinsic stochastic dimensionality is two. For ky ρs ≤ 1, the stochastic model exhibits a non-
+linear behaviour due to the non-negligible interaction between the inputs. When ky ρs > 1,
+on the other hand, the uncertainty in the logarithmic electron temperature gradient is the
+most important stochastic parameter. Moreover, the sum of the total Sobol’ indices is close
+to 1, which shows that the stochastic model can be well approximated by a linear model. In
+other words, when ky ρs > 1 the intrinsic stochastic dimension is one. Figure 9 also provides
+information on the underlying microinstabilities. For ky ρs > 1, we clearly have an ETG
+mode: the electron temperature gradient is most important parameter. For ky ρs ≤ 1, on the
+other hand, the electron temperature gradient is more important than the ion temperature
+
+27
+
+gradient and the contribution of the density gradient decreases as ky ρs increases. Hence, we
+have a mixture of TEM/ETG mode for ky ρs ≤ 1 which is, however, also aﬀected by the ion
+temperature gradient and may be in competition with subdominant ITG modes.
+In Figure 10, we visualize the cost of the two adaptive strategies in terms of total num-
+ber of grid points, i.e., Gene evaluations (left: ky ρs ≤ 1, right: ky ρs ≥ 2). Note that the
+behaviour observed in the total Sobol’ indices is reﬂected in the cost as well. It is computa-
+tionally more expensive to perform uncertainty propagation for ky ρs ≤ 1 than for ky ρs > 1
+due to the higher intrinsic stochastic dimension. In addition, our approach requires fewer
+Gene runs than the standard adaptive approach for all normalized perpendicular wavenum-
+bers ky ρs . For example, at ky ρs = 3, we need about 3.3 times fewer Gene evaluations that
+the standard approach. However, for ky ρs ≥ 1 the savings yielded by our approach are
+not very signiﬁcant because both approaches are computationally cheap, requiring a small,
+roughly the same for all these ky ρs , number of Gene evaluations; this is mainly because the
+diﬀerence between the given stochastic dimensionality, three, is not signiﬁcantly larger than
+the intrinsic dimensionality, one.
+To further illustrate the computational savings due to our approach, we depict in Figure
+11 the multiindices and the associated sparse grids at ky ρs = 1.0 (left: standard adaptive
+approach, right: sensitivity scores approach). The three estimated total Sobol’ indices are
+ˆS T
+1 = 0.014, ˆS T
+2 = 0.120, and ˆS T
+3 = 0.900. Therefore, the logarithmic electron density
+gradient is the most important direction, the logarithmic ion density gradient is the second,
+while the third important direction is the logarithmic density gradient. The total Sobol’
+indices sum up to 1.033, which indicates that the interactions between the three inputs are
+negligible. The multiindex sets in the top subﬁgures in Figure 11 show that both algorithms
+detect the third direction as the most important. However, the standard adaptive algorithm
+adds many (unnecessary) interaction multiindices, while our approach better exploits the
+fact that one direction is signiﬁcantly more important than the other two combined and that
+the coupling between the three inputs is negligible. At the end of the reﬁnement process,
+the standard approach yields 83 grid points, whereas our approach needs a total of only 32
+points to produce similar results.
+
+4.2.2. Realistic test case with 12 stochastic inputs
+In a second uncertainty analysis step, we enhance the previous scenario with nine addi-
+tional stochastic terms shown in Table 3, resulting in a total of 12 stochastic inputs for the
+ASDEX Upgrade test case. The ﬁrst seven characterize the two particle species, ions and
+electrons, while the latter ﬁve parameters are associated to the magnetic geometry. As for
+the previous test case, the uniform bounds of the stocahstic inputs are symmetric around
+nominal values stemming from experimental measurements. Note that the deterministic
+growth rates and frequencies are the same as for the 3D case in Section 4.2.1 as we have the
+same nominal input parameters.
+We extend the stochastic setup from the 3D scenario for 12 uncertain inputs: τ in =
+10−6 · 113 , while the other tolerance and the maximum levels remain the same. We visualize
+the expectation, one standard deviation and the deterministic growth rates for both the 3D
+and 12D scenarios, for comparison, in Figure 12. On the one hand, we see that for this
+
+28
+
+Figure 9: Total Sobol’ indices for global sensitivity analysis via adaptive interpolation with the standard
+approach (top two subﬁgures) and our proposed approach (bottom two subﬁgures) for the ASDEX Upgrade
+test case with three uncertain parameters and ky ρs as in (4.2).
+
+29
+
+Figure 10: Total number of Gene evaluations needed to construct the sparse interpolation surrogate using
+our proposed approach based on sensitivity scores vs.
+the standard adaptive approach for the ASDEX
+Upgrade test case with three uncertain parameters.
+
+Figure 11: Multiindices and their associated sparse grids at ky ρs = 1.0 for adaptive interpolation for the 3D
+ASDEX Upgrade scenario (left: standard adaptive approach, right: our proposed approach).
+
+30
+
+θ
+θ1
+θ2
+θ3
+θ4
+θ5
+θ6
+θ7
+θ8
+θ9
+
+θ10
+θ11
+θ12
+
+parameter name
+plasma beta
+collision frequency
+i/e log density gradient
+i log temperature gradient
+temperature ratio
+e log temperature gradient
+eﬀective ion charge
+safety factor
+magnetic shear
+elongation
+elongation gradient
+triangularity
+
+symbol
+β
+νc
+−Ls∂x ln n
+−Ls∂x ln Ti
+Zeﬀ = (cid:80)
+i / (cid:80)
+Ti/Te
+−Ls∂x ln Te
+q
+ˆs = r
+k
+sk = r
+δ
+
+i niq 2
+
+∂ k
+∂ r
+
+i ni
+
+dq
+dr
+
+q
+
+k
+
+left bound
+0.488 × 10−3
+0.641 × 10−2
+1.156
+2.096
+0.610
+4.040
+1.280
+2.170
+1.992
+0.128
+0.200
+0.710
+
+right bound
+0.597 × 10−3
+0.867 × 10−2
+1.927
+3.494
+0.670
+6.733
+1.920
+2.399
+2.435
+0.141
+0.250
+0.870
+
+Table 3: Summary of the 12 stochastic parameters considered for the ASDEX Upgrade test case.
+
+scenario too, our proposed approach yields results very similar to the standard adaptive
+strategy. Moreover, the diﬀerence between the deterministic results and the error plots
+is quantitatively very similar to the 3D case. On the other hand, we observe that the
+expectations and standard deviations for the 12D case overlap almost perfectly with the
+3D results. Therefore, we assume that the the extra 9 uncertain parameters contribute
+insigniﬁcantly to the overall results which would be an important piece of information for on-
+going validation studies which may now mainly focus on the logarithmic gradient sensitivities
+in nonlinear turbulence simulations.
+
+Figure 12: Expected value and one standard deviation as well as the deterministic growth rates for the
+ASDEX Upgrade test case with 12 uncertain parameters and ky ρs as in (4.2).
+
+To ascertain the above assumption, we analyse the total Sobol’ indices for sensitivity
+analysis in Figure 13 (top: standard adaptive interpolation, bottom: adaptive interpolation
+31
+
+with our proposed sensitivity scores approach). Note that as for the 3D scenario, our pro-
+posed approach produces results very similar to the standard approach. We see that besides
+some small contributions due to the magnetic shear, ˆs, at ky ρs ≤ 0.5, the total Sobol’ indices
+associated to the logarithmic temperature and density gradients have the largest values for
+ky ρs ≤ 1.0 while the remaining 9 parameters have negligible Sobol’ indices. Moreover, when
+ky ρs ≥ 2.0, the logarithmic electron temperature gradient is the most important parame-
+ter and the other 11 are negligible. In addition, throughout the considered ky ρs domain,
+the total Sobol’ indices of the aforementioned important parameters are qualitatively and
+quantitatively very similar to the indices from the 3D scenario. Hence, we conclude that
+the 9 extra stochastic input parameters contribute insigniﬁcantly to the overall results. In
+addition, the underlying microinstabilities are the same as for the 3D scenario.
+In Figure 14, we visualize the cost comparison between our proposed approach and the
+standard adaptive approach (left: ky ρs ≤ 1, right: ky ρs ≥ 2). We observe that for all
+ky ρs the proposed method requires signiﬁcantly fewer Gene evaluations than the standard
+adaptive approach. For example, at ky ρs = 15 our approach requires 13.3 times fewer
+evaluations than the standard adaptive approach. Note, on the one hand, that for ky ρs > 1
+the cost of the sensitivity scores approach is similar for all ky ρs , which is due to having the
+intrinsic stochastic dimensionality one in this region: our methodology detects that only one
+stochastic direction is important, hence it reﬁnes predominantly that direction. To put the
+cost savings for this scenario into perspective, a full-tensor grid typically used in parameter
+scans constructed using 20 points in each direction, i.e., the number of points associated to
+the maximum level reached by the standard adaptive approach, would require 2012 ≈ O(1015 )
+Gene evaluations in total, which is computationally prohibitive. On the other hand, the
+standard adaptive strategy required at most 2283 Gene evaluations, whereas the largest
+number of simulations in the proposed approach was 546.
+To conclude the two stochastic scenarios considered for the ASDEX Upgrade test case,
+the presented adaptive sparse approximation strategies enable uncertainty propagation and
+sensitivity analysis in problems in which standard approaches would be almost impossible
+to use. In addition, our proposed approach proved to be as accurate as the standard adap-
+tive approach, but at signiﬁcantly reduced computational cost. Finally, when the intrinsic
+stochastic dimensionality is smaller than the total number of stochastic inputs, which is usu-
+ally the case in practice, our approach explores and exploits this structure to preferentially
+reﬁne the important directions.
+
+5. Conclusions and outlook
+
+In this work, we introduced a novel adaptive sparse grid approximation methodology for
+uncertainty propagation in computationally expensive real-world applications. We leveraged
+Sobol’ decompositions to introduce a sensitivity scoring system to drive the adaptive process.
+By employing sensitivity information, we explored and exploited the anisotropic coupling of
+the stochastic inputs as well as the lower intrinsic stochastic dimensionality which is typical
+in practical applications.
+
+32
+
+Figure 13: Total Sobol’ indices for global sensitivity analysis via adaptive interpolation with the standard
+approach (top two subﬁgures) and our proposed approach (bottom two subﬁgures) for the ASDEX Upgrade
+test case with 12 uncertain parameters and ky ρs as in (4.2).
+
+33
+
+Figure 14: Total number of Gene evaluations needed to construct the sparse interpolation surrogate using
+our proposed approach based on sensitivity scores vs. the standard adaptive approach.
+
+The proposed approach can be formulated in terms of arbitrary approximation operators
+and point sets. Here, we considered Lagrange interpolation and pseudo-spectral pro jection
+operators which we deﬁned using two (L)-Leja point constructions. Although the proposed
+methodology is model-agnostic, a real-world problem arising in plasma turbulence research
+has been considered. Besides introducing a novel adaptive methodology for quantifying
+uncertainty in computationally expensive problems, this work also represents, to the best
+of our knowledge, one of the ﬁrst uncertainty propagation studies in gyrokinetic plasma
+microinstability analysis.
+We tested and compared the proposed approach with a standard adaptive strategy in
+two plasma microturbulence simulation test cases. In both test cases, the gyrokinetic code
+Gene was employed to characterize the microinstabilities. The ﬁrst test case was based
+on the popular Cyclone Base Case benchmark of the gyrokinetic community. Therein, we
+considered eight uncertain inputs characterizing both the underlying particle species, and
+the magnetic geometry. The second test case was a real-world example stemming from a
+particular validation study for the ASDEX Upgrade tokamak device. For this test case we
+carried out a two step analysis, initially considering three uncertain inputs characterizing
+the ions and electrons, and then 12 stochastic parameters associated to the particle species
+and the magnetic geometry. Our results showed that the proposed approach is as accurate as
+the standard adaptive approach while requiring a signiﬁcantly reduced computational cost;
+for example, for the 12D scenario, we obtained factors of up to 13.3 fewer Gene evaluations.
+The presented adaptive sparse grid approximations enable the uncertainty propagation and
+sensitivity analysis in higher-dimensional plasma microturbulence problems, which would
+be almost impossible to tackle with standard screening approaches. It furthermore demon-
+strated its capability to provide deep and new insights on the parametric dependencies which
+will be very helpful for further comparison with experiments and construction of reduced
+plasma turbulence models.
+For future research, we want to extend the current methodology to a multiﬁdelity frame-
+work for uncertainty propagation (see [26]). Our long-term goal with respect to plasma
+turbulence research is to quantify uncertainty in fully nonlinear gyrokinetic simulations.
+
+34
+
+Acknowledgements
+
+The ﬁrst author thankfully acknowledges the support of the German Academic Exchange
+Service (http://daad.de/) and the support of the German Research Foundation and Tech-
+nical University of Munich through the TUM International Graduate School of Science and
+Engineering (http://igsse.tum.de/) within the pro ject 10.02 BAYES. Moreover, the au-
+thors gratefully acknowledge the compute and data resources provided by the Leibniz Super-
+computing Centre (www.lrz.de). Part of this research was performed while the ﬁrst, third
+and fourth authors were visiting the Institute for Pure and Applied Mathematics (IPAM),
+which is supported by the National Science Foundation.
+
+References
+
+[1] Beer, M. A., Cowley, S. C., Hammett, G. W., 1995. Field-aligned coordinates for nonlinear simulations
+of tokamak turbulence. Phys. Plasmas 2, 2687–2700.
+[2] Berrut, J.-P., Trefethen, L. N., 2004. Barycentric lagrange interpolation. SIAM Review 46 (3), 501–517.
+[3] Brizard, A. J., Hahm, T. S., 2007. Foundations of nonlinear gyrokinetic theory. Rev. Mod. Phys. 79,
+421–468.
+[4] Bungartz, H.-J., Griebel, M., 2004. Sparse grids. Acta Numer. 13, 147–269.
+[5] Conrad, P. R., Marzouk, Y. M., 2013. Adaptive smolyak pseudospectral approximations. SIAM
+J. Sci. Comput. 35 (6), A2643–A2670.
+[6] Constantine, P. G., Eldred, M. S., Phipps, E. T., 2012. Sparse pseudospectral approximation method.
+Comput. Methods in Appl. Mech. Eng. 229-232, 1–12.
+[7] Dimits, A. M., Bateman, G., Beer, M. A., Cohen, B. I., Dorland, W., Hammett, G. W., Kim, C.,
+Kinsey, J. E., Kotschenreuther, M., Kritz, A. H., Lao, L. L., Mandrekas, J., Nevins, W. M., Parker,
+S. E., Redd, A. J., Shumaker, D. E., Sydora, R., Weiland, J., 2000. Comparisons and physics basis of
+tokamak transport models and turbulence simulations. Phys. Plasmas 7 (3), 969–983.
+[8] Formaggia, L., Guadagnini, A., Imperiali, I., Lever, V., Porta, G., Riva, M., Scotti, A., Tamellini,
+L., 2013. Global sensitivity analysis through polynomial chaos expansion of a basin-scale geochemical
+compaction model. Comput. Geosci. 17 (1), 25–42.
+[9] Freethy, S. J., Grler, T., Creely, A. J., Conway, G. D., Denk, S. S., Happel, T., Koenen, C., Hennequin,
+P., White, A. E., 2018. Validation of gyrokinetic simulations with measurements of electron temperature
+ﬂuctuations and density-temperature phase angles on asdex upgrade. Phys. Plasmas 25 (5), 055903.
+[10] Gander, W., 2005. Change of basis in polynomial interpolation. Numer. Linear Algebra Appl. 12 (8),
+769–778.
+[11] Garbet, X., Idomura, Y., Villard, L., Watanabe, T. H., 2010. Topical Review: Gyrokinetic simulations
+of turbulent transport. Nucl. Fusion 50, 043002.
+[12] Gerstner, T., Griebel, M., 2003. Dimension–adaptive tensor–product quadrature. Computing 71 (1),
+65–87.
+[13] G¨orler, T., Lapillonne, X., Brunner, S., Dannert, T., Jenko, F., Merz, F., Told, D., 2011. The global
+version of the gyrokinetic turbulence code gene. J. Comput. Phys. 230 (18), 7053–7071.
+[14] G¨orler, T., White, A. E., Told, D., Jenko, F., Holland, C., Rhodes, T. L., 2014. A ﬂux-matched
+gyrokinetic analysis of diii-d l-mode turbulence. Phys. Plasmas 21 (12), 122307.
+[15] Griebel, M., Schneider, M., Zenger, C., 1992. A combination technique for the solution of sparse grid
+problems. In: de Groen, P., Beauwens, R. (Eds.), Iterative Methods in Linear Algebra. IMACS, Elsevier,
+North Holland, pp. 263–281.
+[16] G¨rler, T., Tronko, N., Hornsby, W. A., Bottino, A., Kleiber, R., Norscini, C., Grandgirard, V.,
+Jenko, F., Sonnendrcker, E., 2016. Intercode comparison of gyrokinetic global electromagnetic modes.
+Phys. Plasmas 23 (7), 072503.
+
+35
+
+[17] Hegland, M., 2003. Adaptive sparse grids. In: Burrage, K., Sidje, R. B. (Eds.), Proc. of 10th Compu-
+tational Techniques and Applications Conference CTAC-2001. Vol. 44. pp. C335–C353.
+[18] Jantsch, P., Webster, C. G., Zhang, G., 06 2018. On the Lebesgue constant of weighted Leja points for
+Lagrange interpolation on unbounded domains. IMA J. Numer. Anal. 39 (2), 1039–1057.
+[19] Jenko, F., Dorland, W., Kotschenreuther, M., Rogers, B. N., 2000. Electron temperature gradient
+driven turbulence. Phys. Plasmas 7 (5), 1904–1910.
+[20] Krommes, J. A., 2012. The Gyrokinetic Description of Microturbulence in Magnetized Plasmas.
+Annu. Rev. Fluid Mech. 44, 175–201.
+[21] Ma, X., Zabaras, N., 2009. An adaptive hierarchical sparse grid collocation algorithm for the solution
+of stochastic diﬀerential equations. J. Comput. Phys. 228 (8), 3084–3113.
+[22] Marzouk, Y., Moselhy, T., Parno, M., Spantini, A., 2016. Sampling via Measure Transport: An Intro-
+duction. Springer International Publishing, Cham, pp. 1–41.
+[23] MPI Forum, 2017. MPI: A Message-Passing Interface Standard. Version 4.0. Available at: http://www.
+
+mpi-forum.org.
+
+[24] Narayan, A., Jakeman, J. D., 2014. Adaptive Leja sparse grid constructions for stochastic collocation
+and high-dimensional approximation. SIAM J. Sci. Comput. 36 (6), A2952–A2983.
+[25] Nobile, F., Tempone, R., Webster, C. G., 2008. A sparse grid stochastic collocation method for partial
+diﬀerential equations with random input data. SIAM J. Numer. Anal. 46 (5), 2309–2345.
+[26] Peherstorfer, B., Willcox, K., Gunzburger, M., 2018. Survey of multiﬁdelity methods in uncertainty
+propagation, inference, and optimization. SIAM Review 60 (3), 550–591.
+[27] R¨uttgers, A., Griebel, M., 2018. Multiscale simulation of polymeric ﬂuids using the sparse grid combi-
+nation technique. Appl. Math. Comput. 319, 425–443.
+[28] Schillings, C., Schwab, C., 2013. Sparse, adaptive smolyak quadratures for bayesian inverse problems.
+Inverse Probl. 29 (6), 065011.
+[29] Sobol, I. M., 2001. Global sensitivity indices for nonlinear mathematical models and their monte carlo
+estimates. Math. Comput. Simul. 55 (1), 271–280.
+[30] Sudret, B., 2008. Global sensitivity analysis using polynomial chaos expansions. Reliab. Eng. Syst. Safe.
+93 (7), 964–979.
+[31] Told, D., Jenko, F., G¨orler, T., Casson, F. J., Fable, E., 2013. Characterizing turbulent transport in
+asdex upgrade l-mode plasmas via nonlinear gyrokinetic simulations. Phys. Plasmas 20 (12), 122312.
+[32] Vaezi, P., Holland, C., 2018. An improved approach to uncertainty quantiﬁcation for plasma turbulence
+validation studies. Fusion Sci. Technol. 74 (1-2), 77–88.
+[33] White, A. E., G¨orler, T., 2017. Special issue on comparing gyrokinetic simulations to experiments.
+Plasma Phys. Controlled Fusion 59 (5), 050101.
+[34] Winokur, J., Kim, D., Bisetti, F., Le Maˆıtre, O. P., Knio, O. M., 2016. Sparse pseudo spectral pro jection
+methods with directional adaptation for uncertainty quantiﬁcation. J. Sci. Comput. 68 (2), 596–623.
+[35] Xanthopoulos, P., Mynick, H. E., Helander, P., Turkin, Y., Plunk, G. G., Jenko, F., G¨orler, T.,
+Told, D., Bird, T., Proll, J. H. E., 2014. Controlling Turbulence in Present and Future Stellarators.
+Phys. Rev. Lett. 113 (15), 155001.
+[36] Xiu, D., 2010. Numerical methods for stochastic computations : a spectral method approach. Princeton,
+N.J. Princeton University Press.
+[37] Xiu, D., Hesthaven, J. S., 2005. High-order collocation methods for diﬀerential equations with random
+inputs. SIAM J. Sci. Comput. 27 (3), 1118–1139.
+
+36
+
+

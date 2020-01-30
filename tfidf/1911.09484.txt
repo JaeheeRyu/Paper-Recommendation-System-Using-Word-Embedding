@@ -1,0 +1,3222 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+E
+
+S
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+4
+8
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Analysing Time-Stamped Co-Editing Networks in Software Development
+Teams using git2net
+
+Christoph Gote1 , Ingo Scholtes2 , Frank Schweitzer3
+
+Abstract
+
+Data from software repositories have become an important foundation for the empirical study of software en-
+gineering processes. A recurring theme in the repository mining literature is the inference of developer networks
+capturing e.g. collaboration, coordination, or communication from the commit history of projects. Most of the
+studied networks are based on the co-authorship of software artefacts. Because this neglects detailed informa-
+tion on code changes and code ownership we introduce git2net, a scalable python software that facilitates the
+extraction of ﬁne-grained co-editing networks in large git repositories. It uses text mining techniques to anal-
+yse the detailed history of textual modiﬁcations within ﬁles. We apply our tool in two case studies using GitHub
+repositories of multiple Open Source as well as a commercial software projects. Speciﬁcally, we use data on more
+than 1.2 million commits and more than 25’000 developers to test a hypothesis on the relation between developer
+productivity and co-editing patterns in software teams. We argue that git2net opens up a massive new source
+of high-resolution data on human collaboration patterns that can be used to advance theory in empirical software
+engineering, computational social science, and organisational studies.
+
+1 Introduction
+
+Software repositories are a rich source of data facilitating empirical studies of software engineering processes.
+Methods to use meta-data from these repositories have become a common theme in the repository mining lit-
+erature. Thanks to the availability of massive databases, already simple means allow to query meta-data on the
+commits of developers (Gousios and Spinellis, 2012, 2017). Apart from the evolution of software artefacts, they
+also contain a wealth of ﬁne-grained information on the human and social aspects of software development teams.
+Speciﬁcally, the commit history of developers allows to construct social networks that proxy collaboration, co-
+ordination, or communication structures in software teams. These databases have therefore facilitated data-driven
+studies of social systems not only in empirical software engineering, but also in areas like computational social sci-
+ence, social network analysis, organisational theory, or management science (Carley and Wallace, 2001; Von Krogh
+and Von Hippel, 2006).
+The detailed record of ﬁle modiﬁcations contained in the commit log of, e.g. git repositories also enables more
+advanced network reconstruction techniques. In particular, from the micro-level analysis of textual modiﬁcations
+between subsequent versions of code we can infer time-stamped, weighted, and directed co-editing relationships.
+Such a relationship (A, B; t , w) indicates that at time t developer A modiﬁed w characters of code originally written
+by another developer B. Recent research has shown that such a ﬁne-grained analysis of co-editing networks in large
+software projects can provide insights that go beyond more coarse-grained deﬁnitions (Joblin et al., 2015; Scholtes
+et al., 2016). However, a tool to conveniently extract such rich, time-stamped collaboration networks for the large
+corpus of git repositories available, e.g. via public platforms like GitHub, is currently missing.
+
+1 cgote@ethz.ch; Chair of Systems Design, ETH Zurich, Zurich, Switzerland
+2 scholtes@uni-wuppertal.de; Data Analytics Group, Bergische UniversitÃd’t Wuppertal, Wuppertal, Germany
+3 fschweitzer@ethz.ch; Chair of Systems Design, ETH Zurich, Zurich, Switzerland
+
+1/44
+
+ 
+ 
+ 
+ 
+ 
+ 
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Addressing this gap, we present such a tool that facilitates the scalable extraction of time-stamped co-editing
+relationships between developers in large software repositories. The contributions of our work are as follows:
+
+(cid:217) We introduce git2net, a python tool that can be used to mine time-stamped co-editing relations between devel-
+opers from the sequence of ﬁle modiﬁcations contained in git repositories. Building on the repository mining
+framework pyDriller (Spadini et al., 2018), git2net can operate both on local and remote repositories. Provid-
+ing a command-line interface as well as an API, git2net can be used as stand-alone tool for standard analysis
+tasks as well as a framework for the implementation of advanced data mining scripts. Our tool is available as an
+Open Source project1 .
+
+(cid:217) Analysing all ﬁle modiﬁcations contained in the commit log, git2net generates a database that captures ﬁne-
+grained information on co-edited code either at the level of lines or contiguous code regions. Building on text
+mining techniques, it further analyses the overlap between co-edited code regions using (i) the Levenshtein edit
+distance (Levenshtein, 1966) and (ii) a text-based entropy measure (Shannon, 1948). These measures facilitate
+(a) a character-based proxy estimating the effort behind code modiﬁcations, and (b) an entropy-based correction
+for binary ﬁle changes that can have a considerable impact on text-based effort estimation techniques.
+
+(cid:217) We develop an approach to generate time-stamped collaboration networks based on multiple projections: (i)
+time-stamped co-editing networks, (ii) time-stamped bipartite networks linking developers to edited ﬁles, and
+(iii) directed acyclic graphs of code edits that allow to infer “paths” of consecutive edits building upon each
+other. All network projections are implemented in git2net and can be directly exported as HTML visualisations
+as well as formats readable by common network analysis tools.
+
+(cid:217) Thanks to a parallel processing model that utilises modern multi-core architectures, git2net supports the anal-
+ysis of massive software repositories with hundreds of thousands of commits and millions of lines of code.
+A scalability analysis proves that our parallel implementation yields a linear speed-up compared to a single-
+threaded implementation, thus facilitating the ﬁne-grained textual analysis even in massive projects with a long
+history.
+
+(cid:217) Utilizing git2net in a case study on two software projects, we show that the ﬁne-grained textual analysis of ﬁle
+modiﬁcations yields considerably different network structures compared to coarse-grained methods that analyse
+code co-authorship at the level of ﬁles or modules.
+
+(cid:217) We ﬁnally demonstrate how our tool can be used to segment developer effort into (a) the revision of code
+authored by the developer him- or herself vs. (b) the revision of code written by other team members. Using data
+on six large Open Source software projects, we take a microscopic view on coordination in software development
+teams. Our ﬁndings substantiate the hypothesis that the overhead of coordination is a key mechanism that drives
+the Ringelmann effect in collaborative software development.
+
+Providing a novel method to mine ﬁne-grained collaboration networks at high temporal resolution from any git
+repository, our work opens new perspective for empirical studies of development processes. It further contributes
+a simple method to generate data on temporal social networks that are of interest for researchers in computational
+social science, (social) network analysis and organisational theory.
+
+1 https://github.com/gotec/git2net
+
+2/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+The remainder of this paper is structured as follows: Section 2 provides an overview of works addressing the
+construction of social networks from software repository data. Section 3 introduces our proposed methodology to
+extract time-resolved and directed links between developers who subsequently edit each others’ code. Section 4
+presents a case study, in which we apply our tool to git repositories from (i) an Open Source Software project, and
+(ii) a commercial, closed-source project. In section 5, we present a large-scale analysis studying the coordination
+overhead in six Open Source Software projects. Finally, section 7 we draw conclusions from our work and highlight
+the next steps in our research.
+
+2 Related Work
+
+Given the large body of work using network analysis to study software development processes, we restrict our
+overview to related works that address the reconstruction of social networks from software repositories. A broader
+view on applications of graph-based data analysis and modelling techniques in empirical software engineering—
+including works on (technical) dependency networks that are outside the scope of our work—is, e.g., available in
+Wolf et al. (2009b); Xie et al. (2009); Cataldo et al. (2014).
+
+A number of studies use operational data on software projects to construct graphs or networks where nodes cap-
+ture developers while links capture social interactions and/or work dependencies between developers. To this end,
+a ﬁrst line of works has used data that directly capture communication (Geipel et al., 2014), e.g. via IRC chan-
+nels (Cataldo and Herbsleb, 2008), E-Mail exchanges (Bird et al., 2006; Wolf et al., 2009a; Bacchelli et al., 2011;
+Hong et al., 2011; Xuan and Filkov, 2014), mailing lists (Guzzi et al., 2013), or communication via issue track-
+ers (Long and Siau, 2007; Howison et al., 2006; Sureka et al., 2011; Zanetti et al., 2013a,b).
+
+While data on direct developer communication facilitate the construction of meaningful social networks, they are
+often not available, e.g. due to privacy concerns. To address such settings, researchers have developed methods
+to infer or reconstruct collaboration networks based on developer actions recorded in code repositories like CVS,
+SVN, or git. A common approach starts from code authorship or code ownership networks, which map the rela-
+tion between a developer and the artefacts (i.e. ﬁles, modules, binaries, etc.) that he or she contributed to (Fritz
+et al., 2007; Bird et al., 2011; Greiler et al., 2015; MacLean and Knutson, 2013). The resulting directed bipartite
+developer-artefact networks (Newman, 2018) can then be projected onto co-authorship networks, where undirected
+links between two developers A and B indicate that A and B have modiﬁed at least one common artefact. Geipel
+and Schweitzer (2009); Geipel (2012) have studied co-change based on a large corpus of CVS repositories of Open
+Source Software projects.
+
+The majority of works mining social networks from software repositories build on this general idea. In MacLean
+and Knutson (2013); Madey et al. (2002); Meneely et al. (2008); Ogawa and Ma (2010); Vijayaraghavan et al.
+(2015) a ﬁle-based notion of co-authorship is used to construct co-commit networks, where a link between two
+developers signiﬁes that they have committed the same ﬁle at least once. Lopez-Fernandez et al. (2004) adopt
+a module-based deﬁnition, assuming that two developers are linked in the co-authorship network if they have
+contributed to at least one common module. Taking a similar approach, Huang and Liu (Huang and Liu, 2005) use
+information on modiﬁed ﬁle paths in SourceForge repositories to infer relations between authors editing the same
+part of a project. Incorporating the time stamps of commits, Pohl and Diehl (Pohl and Diehl, 2008) used a ﬁle-
+based co-authorship deﬁnition to construct dynamic developer networks that can be analysed and visualised using
+methods from dynamic network analysis (Holme, 2015). Cohen and Consens (2018) recently developed a similar
+
+3/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+approach to study the ecosystem of software projects on GitHub. To this end, they deﬁne project-level co-commit
+networks, i.e. a projection of commits where two developers are linked if they committed to the same Open Source
+project. Schweitzer et al. (Schweitzer et al., 2014) provided a related study, analysing ten years of data from the
+Open Source project hosting platform SourceForge.
+These works have typically constructed undirected co-authorship networks based on joint contributions to ﬁles,
+modules, or projects. Such coarse-grained deﬁnitions of co-authorship networks introduce a potential issue: They
+do not distinguish between (i) links between developers that are due to independent contributions to the same arte-
+fact, and (ii) links that are due to commit sequences where one developer builds upon and/or redacts the particular
+lines of source code previously authored by another developer. Networks deﬁned based on the latter type of time-
+ordered co-editing of code regions are likely associated with a stronger need for coordination and communication
+than the mere fact that developers edited the same ﬁle or module (Cataldo et al., 2006). So far, few studies have
+adopted such ﬁne-grained approaches to create developer collaboration networks. Notable exceptions include the
+function-level co-editing networks constructed by Joblin et al. (2015). The authors further argue that, using ﬁle-
+based deﬁnitions of collaboration networks, network analytic methods fail to identify meaningful communities.
+Scholtes et al. (2016) constructed line-based co-editing networks, showing that such an analysis (i) yields insights
+into the coordination structures of software teams, and (ii) provides new ways to test long-standing hypotheses
+about cooperative work from social psychology.
+While such a ﬁne-grained analysis of the co-editing behaviour of developers has its advantages, it also introduces
+challenges that have so far limited its adoption. First and foremost, it requires a detailed analysis of ﬁle modi-
+ﬁcations and makes it necessary to identify the original author for every modiﬁed line of code affected in each
+commit. Requiring a potentially large number of git operations for every commit being analysed, such an analysis
+is both complicated to implement as well as time-consuming to perform. Compared to other approaches, which
+often merely require a suitable query in structured databases like ghTorrent (Gousios and Spinellis, 2012, 2017),
+a tool that facilitates this task for very large repositories is still missing.
+Closing this gap, our work introduces a practical and scalable solution for the construction of ﬁne-grained and time-
+stamped co-editing networks from git repositories. Our work extends the state-of-the-art and facilitates analyses of
+developer collaboration and coordination in software projects. Providing a new method to construct large, dynamic
+networks at high temporal resolution we further expect our work to be of interest for the community of researchers
+developing methods to analyse dynamic (social) networks (Holme, 2015; Berger-Wolf and Saia, 2006; Carley and
+Pfeffer, 2012).
+
+3 Mining Co-Editing Relations from git Repositories
+
+3.1 From Commit Logs to Co-Edits
+
+We ﬁrst outline our proposed method to extract co-editing relationships from git commits. An overview of the
+mining procedure, which we will explain in the following, is presented in Algorithm 1.
+git projects generally consist of multiple ﬁles that can be edited by a large number of developers. Sets of changes
+made by a developer to potentially multiple ﬁles are recorded as commits, where each commit is identiﬁed by a
+unique hash. Building on the package pydriller (Spadini et al., 2018), we ﬁrst extract the history of all commits
+in a repository and record the meta-data (author, time of commit, branch, etc.) for each commit. As the person
+
+4/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Algorithm 1 Simpliﬁed mining procedure of git2net
+1: procedure M IN E_G I T_R E PO(git_repo, output_db)
+for all commits in git_repo do
+commit_info ← parsed commit data
+for all modiﬁed ﬁles in commit do
+deleted_lines, added_lines ← parse diff of modiﬁcation
+blame_info ← git blame on ﬁle in parent commit
+for each line deleted lines do
+current_author ← modifying author from commit_info
+previous_author ← original author from blame_info
+coedits_info ← authors and metadata on changes
+output_db ← commit_info, coedits_info
+
+2:
+3:
+4:
+5:
+6:
+7:
+8:
+9:
+10:
+
+11:
+
+committing the changes is not necessarily the author of these changes (a different developer can commit code
+on behalf of the original author), both the committer and author of the changes are considered. Subsequently we
+analyse the changes made with the commit.
+
+As each commit can contain modiﬁcations of multiple ﬁles, we analyse each ﬁle modiﬁcation individually to
+associate every changed text region with its original author. In a ﬁrst step, select the modiﬁcations relevant for
+the current analysis. To this end, we have implemented a ﬁlter allowing to exclude speciﬁc ﬁles, ﬁle types as well
+as entire directories or sub-directories from the analysis. For all selected modiﬁcations, the associated diff is
+analysed, determining which lines have been added or deleted. In addition, we identify the original author of every
+edited line of code by executing git blame on the version of the analysed ﬁle before the current commit. By
+matching the author A of a modiﬁcation contained in the current commit with time stamp t to all original authors
+Bi of an edited line i, we obtain time-stamped and directed co-editing relations (A, Bi , t ).
+For each extracted relation, we record hashes of the original and modifying commit as well as meta-data capturing
+the location (ﬁle name, line number) of the associated co-edit. Naturally, such co-edits can be linked to vastly
+different development effort, ranging from a change of whitespaces to the complete rewriting of code. To capture
+to what extent developers edit each others’ code, we use a text mining approach to address these differences.
+We speciﬁcally use the Levenshtein edit distance (Levenshtein, 1966), which can be thought of as the minimum
+number of keystrokes required to transform the prior source code version into the version after the edit. This
+measure proxies the development effort associated with an edit, where single character changes, line deletions, or
+the commenting/uncommenting of lines are associated with a minimum effort while the writing of a new line of
+code is associated with maximum effort. This approach allows us to construct time-stamped and weighted co-edit
+relations (A, B; t , w), where the weight w captures the Levenshtein distance of the associated edit.
+
+An issue that we have encountered during the testing of our method in real-world repositories is associated with the
+embedding of text-encoded binary objects in source code, e.g. due to the inclusion of base64-encoded images in
+HTML or JavaScript. Notably, the modiﬁcation of a single pixel in a text-encoded image, can result in a completely
+different text encoding. Considering our approach to associate the weight of a co-edit relation with the Levensthein
+edit distance this can considerably distort our analysis, potentially leading to the issue that binary ﬁle modiﬁcations
+dominate the recorded weights. We take an information-theoretic approach to enable the detection (and potential
+exclusion) of such modiﬁcations. In particular, we compute the entropy S of code before and after the change,
+
+5/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+code
+
+a
+b
+c
+d
+
+for x in ’hello world’: print(x)
+for c in ’hello world’: print(c)
+d = {x[0]:x[1] for x in df[’d’]}
+Uatsffm+BC+s7kWKqVpMlrMEWk7nTfK1
+
+entropy
+3.94
+3.94
+3.80
+4.41
+
+Figure 1: Entropy of equal length strings based on discrete utf-8 (256 possible symbols) probability space. The
+entropy can take values between 0 and 8 bits. The entropy of base64 encoded image (d) is considerably higher
+than of typical lines of (python) code (a–c). In practice the effect is ampliﬁed as strings of binary encoded images
+are longer. Small changes within a line have a small or no effect on entropy as can be seen in the entropy difference
+between a and b.
+
+deﬁned as:
+
+S = − ∑
+
+k
+
+pk log2 (pk )
+
+(1)
+
+This computation is based on the utf-8 encoding space with 256 possible symbols. Entries of the vector p represent
+a symbol’s normalised frequency in a given string. Given this deﬁnition, the entropy S can take values between
+0 and 8 bits. Some examples for this measure are given in Figure 1. The resulting distribution of entropy for all
+co-edits can be used for a Bayesian classiﬁcation distinguishing, e.g. binary encoded images or hashes from natural
+language or source code changes.
+In the discussion above, we have considered a purely line-based approach, which treats every modiﬁed line of code
+as a separate entity. However, it is common that developers edit contiguous regions of code, consisting of multiple
+adjacent lines, with a single modiﬁcation. As illustrated in Figure 2, git2net therefore provides an option to anal-
+yse co-edits at the granularity of such contiguous code regions rather than lines. Compared to previous approaches,
+which have used programming language constructs like functions to identify co-edits at a granularity smaller than
+ﬁles (Joblin et al., 2015), this approach has the advantage that it is agnostic of the programming language. It further
+allows to analyse co-edit relations in ﬁles that do not represent source code, e.g. in text documents.
+
+line based
+deleted
+
+replaces
+
+replaces
+
+added
+
+replaces
+deleted
+
+added
+
+1
+2
+3
+4
+5
+
+6
+7
+8
+
+9
+
+10
+
+1
+
+2
+
+3
+4
+5
+6
+
+7
+8
+9
+10
+
+block based
+deleted
+
+replaces
+
+replaces
+
+added
+
+Figure 2: Identiﬁcation of replacements using line- and block-based analysis.
+
+6/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+METADATA
+
+EDITS
+
+created with
+repository
+date
+method
+
+COMMITS
+
+hash
+author email
+author name
+committer email
+committer name
+author date
+author timezone
+committer date
+committer timezone
+no of modiﬁcations
+commit message len
+project name
+parents
+merge
+in main branch
+branches
+
+str
+str
+date
+str
+
+str
+str
+str
+str
+str
+date
+int
+date
+int
+int
+int
+str
+str
+bool
+bool
+str
+
+id
+int
+commit hash
+str
+cyclomatic complexity of ﬁleint
+edit type
+str
+ﬁlename
+str
+levenshtein dist
+int
+lines of code in ﬁle
+int
+modiﬁcation type
+str
+new path
+str
+old path
+str
+post entropy
+ﬂoat
+post len in chars
+int
+post len in lines
+int
+post starting line no
+int
+pre entropy
+ﬂoat
+pre len in chars
+int
+pre len in lines
+int
+pre starting line no
+int
+total added lines
+int
+total removed lines
+int
+original commit addition
+str
+original commit deletion
+str
+original ﬁle path addition str
+original ﬁle path deletion str
+original line no addition
+str
+original line no deletion
+str
+
+Figure 3: Relations in the co-editing database.
+
+To explain our approach of identifying edited blocks of code, we distinguished between different cases contained
+in Figure 2: For deleted lines (e.g. line 2 in Fig. 2) a normal co-editing relationship is recorded. As the effort
+required for deletions can vary both between projects and the type of analysis performed, we mark these cases
+in the database but do not specify a Levenshtein edit distance. Edits exclusively consisting of added lines are
+recorded in the database but not considered as co-edits (neither by a line-based nor by a block-based approach) as
+no previous author exists. The Levenshtein edit distance for pure additions matches the number of characters that
+were added. For cases where a set D of deleted lines is replaced by a set A of added lines, the line-based approach
+matches each line di ∈ D with a line ai ∈ A for i ≤ min(|D|, |A|). If |D| < |A|, a line-based approach would thus
+treat the excess lines in A as added lines, thus not considering them as a co-edit. This is the case in line 4-5 in
+Fig. 2. With our block-based approach, we instead identify that a block of lines (lines 4-5) in the original ﬁle is
+replaced by a new block (lines 3-5) in the new ﬁle. If |D| > |A|, a line-based approach identiﬁes the excess lines
+in D as deleted lines (see line 7-8 in Fig. 2). Through a block-based analysis we are instead able to identify that a
+block of lines (lines 7-8) in the original ﬁle is replaced by a new block of lines (line 7) in the new ﬁle.
+
+While for the line-based approach, all editing statistics such as the Levenshtein edit distance or the entropy are
+computed on pairs of lines (di , ai ), the block based approach considers the set of lines in A as a replacement of the
+lines contained in D. Consequently all statistics are computed for the pair of code blocks (D, A).
+
+After evaluating each commit, results are written to an sqlite database. This allows to pause and resume an
+analysis at any point in time and helps to prevent data loss from system crashes. The resulting database scheme is
+
+7/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+shown in Figure 3.
+
+3.2 From Co-Edits to Networks
+
+A
+
+B
+
+C
+
+A
+
+B
+
+C
+
+4
+
+B
+
+2
+
+2
+
+2
+
+C
+
+2
+
+2
+
+A
+
+2
+
+2
+
+2
+
+2
+2
+
+2
+
+2
+
+2
+
+2
+
+time
+
+Figure 4: Process of generating a co-editing network from git commits. To enhance readability, each commits only
+modiﬁes a single ﬁle. Three different colour coded ﬁles are considered. Edited lines are shown in red. For all edits,
+edges to the commit containing the original line are shown on the left hand side. Link weights are determined
+based on the number of lines changed. A time stamped link between the authors of the modiﬁed lines is recorded
+once the edit takes place (cf. centre ﬁgure). The resulting set of time stamped edges can either be analysed itself
+or aggregated into co-editing networks via a sliding window analysis as shown on the right. Unless indicated
+otherwise, all edge weights are 1.
+
+Given the database of co-editing relationships generated by the approach described above, git2net provides pro-
+cedures to generate three different types of network projections: (i) co-editing networks, (ii) directed acyclic graphs
+of edit sequences for a given ﬁle, and (iii) bipartite networks linking developers to edited ﬁles.
+
+The process of generating co-editing networks is illustrated in an example shown in Figure 4. The left column
+shows three developers (A, B, and C) editing three colour-coded ﬁles. Modiﬁed lines are shown in red. Edges
+between ﬁles represent the number of overlapping lines, which for illustrative purposes we show instead of the more
+granular Levenshtein edit distance. Given these edges, we generate a temporal network connecting the developers
+(cf. Fig. 4, centre for a time-unfolded representation). A link (A, B; t , w) in this network represents a commit by
+developer A at time t in which w lines originally authored by developer B are modiﬁed. By the aggregation of
+time-stamped links over a (moving) time window we obtain co-editing networks as shown in the right column of
+Figure 4.
+
+8/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Apart from co-editing networks, git2net supports the construction of ﬁle-based directed acyclic graphs (DAGs) of
+commits based on co-editing relationships. Each path in this DAG represent a sequence of consecutive co-editing
+relationships of developers editing the given ﬁle, i.e. a sequence of commits containing ﬁle modiﬁcations that built
+upon each other. The nodes in this graph represent commits and edges represent co-editing relationships between
+the authors of the commits. An example for the construction of such a DAG from a set of ﬁve commits containing
+ﬁle modiﬁcations is shown in Figure 5. Individual connected components of the DAG represent proxies of knowl-
+edge ﬂow for this ﬁle. This has been highly valuable in our own research as it immediately allows the extraction of
+paths from the co-editing relationships. Analysing these paths with the methods provided by the software package
+pathpy (Scholtes, 2017a) allows to trace knowledge ﬂow within speciﬁc areas of the development—a topic we
+identiﬁed as highly relevant in discussions with practitioners from software development companies.
+
+To additionally facilitate coarse-grained analyses at the level of ﬁle-based co-authorship relations, git2net ﬁnally
+supports the construction of bipartite ﬁle-developer networks, where directed links (d , f ) ∈ D × F indicate that a
+developer d ∈ D has modiﬁed a ﬁle f ∈ F .
+
+3.3 Line-Editing Paths
+
+Editing a line of code in a project typically requires effort to coordinate with the previous author of the line.
+This can range from reminding oneself of the functionality of a line—e.g. when editing own code—or trying to
+understand the underlying rationale of code authored by other developers. We can thus interpret a co-edit as a
+ﬂow of information between developers. Previous literature has often made use of co-authorship networks to study
+this information exchange (MacLean and Knutson, 2013; Madey et al., 2002; Meneely et al., 2008; Ogawa and
+Ma, 2010; Vijayaraghavan et al., 2015). Through the introduction of co-editing networks, where two developers
+are connected if they edited the same line, git2net increases the granularity of such analyses to the level of the
+individual characters.
+
+1
+
+2
+
+3
+
+4
+
+5
+
+2
+
+time
+
+2
+
+2
+
+2
+
+2
+
+4
+
+3
+
+1
+
+5
+
+2
+
+1
+
+5
+
+3
+
+5
+
+4
+
+Figure 5: Process of creating ﬁle based directed acyclic co-editing graphs. The left hand side shows a set of commits
+modifying three colour coded ﬁles. For each ﬁle a directed acyclic graph is generated linking consecutive commits
+with overlapping changes.
+
+9/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+In Scholtes et al. (2014), the authors showed that not only the existence of interactions between developers matters,
+but that the order in which these interactions occur can have a crucial effect on dynamical processes such as
+knowledge diffusion. To facilitate the study of consecutive changes to lines git2net is capable of extracting time-
+ordered line-editing paths from git repositories.
+
+t0
+
+t1
+
+t2
+
+t3
+
+t4
+
+t5
+
+t6
+
+t7
+
+t8
+
+A
+
+B
+
+C
+
+(A, t0 )
+
+(A, t1 )
+
+(B, t2 )
+
+(A, t3 )
+
+(B, t5 )
+
+(B, t5 )
+
+(A, t7 )
+
+(B, t8 )
+
+time
+
+(A, t0 )
+
+(A, t1 )
+
+(B, t2 )
+
+(A, t3 )
+
+(A, t0 )
+
+(A, t0 )
+
+(B, t2 )
+
+(A, t3 )
+
+(C, t5 )
+
+(C, t6 )
+
+(B, t5 )
+
+(B, t5 )
+
+(A, t3 )
+
+(A, t3 )
+
+(C, t6 )
+
+(B, t8 )
+
+(C, t5 )
+
+(C, t5 )
+
+(B, t5 )
+
+(C, t6 )
+
+Figure 6: The extraction of line-editing DAGs from a code ﬁle edited by three developers (A, B, and C). Individual
+lines and their position in the ﬁle are colour coded. Forks and merges in the development process are indicated
+through the arrows between the versions of the ﬁle. Line editing paths are unique paths from a root to a leaf node
+in the individual DAGs.
+
+Figure 6 illustrates the extraction of line-editing DAGs—the ﬁrst step in the extraction of line-editing paths. Here,
+a single ﬁle is edited by developers A, B, and C. Lines are colour-coded and are modiﬁed over time and consecutive
+versions of the ﬁle are linked by edges.
+When editing a ﬁle, individual lines can change their position, e.g. when new lines are added/removed in the
+beginning of the ﬁle, or the source code is reorganised. Examples for this can be seen for the yellow line between
+t0 and t1 as well as the red line between t2 and t3 . By applying git blame with the -M option to every version of the
+ﬁle, git2net is able to detect and track the positions of lines through such changes. Lines can further be deleted
+as shown by the example of the blue line between t0 and t1 . When this occurs, an additional node indicating the
+removal is added to the respective DAG.
+Particularly challenging to track are cases when developers fork a repository to work on multiple different versions
+(branches), later merging the combined changes back to a single version. An example for this is shown between
+t3 and t6 . Here, both developer B and C create a personal copy of the version last modiﬁed by A, proceeding to
+
+10/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+make individual changes as shown in t5 . In the line-editing DAGs, this can result in multiple concurrent versions
+of a line as shown by the example of the yellow line where at t5 both a version by B and C exists. In other cases
+lines can be removed from one branch while still remaining in the alternative version (cf. the green and red line).
+When merging two versions of a ﬁle, the author of the merge decides which changes to adopt from each branch. In
+addition to this selection, we found a number of cases in which developers contributed additional code to a project
+while performing a merge. An example for this is the purple line introduced in the merge commit by C at t6 . To
+allow the extraction of line-editing paths, we added the functionality to mine changes made in merges to git2net.
+Note that, with development taking place on both branches before a merge, all ﬁles modiﬁed on either branch
+since the original fork need to be analysed. Given that in most cases no active changes are made during a merge,
+the relative computational effort compared to other commits is very high when analysing co-editing relationships.
+However, in the case of line editing paths their consideration is crucial as, by design, merges contain a large number
+of ending paths in the line-editing DAGs. Examples for this are the green and red lines that are not adopted when
+making the merge at t6 .
+Finally, using the -C option of git blame, git2net allows to detect if a line added to a ﬁle was copied from any
+other version of any ﬁle in the repository. In the ﬁgure, two examples for this are shown with the green and red line
+in t8 neither of which existed in the version of the ﬁle at t7 . Tracking copies of lines is very powerful as it allows
+the analysis of reorganisation efforts, e.g. when a functions in a ﬁle are distributed to potentially multiple other
+locations.
+After the extraction of line-editing DAGs, line-editing paths can be obtained as the set of unique paths from any
+root node to any leaf node in the set of line-editing DAGs. We expect line-editing paths to provide highly valuable
+insights into information exchange and knowledge transfer, e.g. the adoption of new coding techniques, in both
+open-source as well as commercial software development teams.
+
+3.4 Usage of git2net
+
+git2net comes as a python package that can be installed via the python package manager pip. During the
+installation, all dependencies, which consist of the python packages pandas, python_Levenshtein, pyDriller,
+tqdm, and pathpy, will be installed automatically. git2net runs on all major operating systems and has been tested
+under Windows, Mac OS X, and Linux. Assuming that the git repository that shall be examined has been cloned
+to a directory repo, our tool can be launched by the command
+
+./git2net.py mine repo database
+
+where database indicates the sqlite database ﬁle where the results will be stored. An optional parameter
+--exclude can be used to pass a text ﬁle that contains paths of ﬁles or directories in the repository tree that
+shall be excluded from the analysis. In our own analyses of a large commercial software project, this function has
+proven crucial to exclude directories containing large binary ﬁles or external Open Source software dependencies
+that would considerably distort the analysis. While the analysis of co-edited code uses the line-based approach
+described above by default, an optional command line switch --use-blocks can be used to use the block-based
+extraction of co-editing relations instead.
+In addition to the command line interface outlined above, git2net provides an API that can be used for the
+development of custom repository mining scripts. In particular, the API provides methods that allow to extract co-
+edit relations from individual commits that can be passed as PyDriller objects. It can further be used to augment
+
+11/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+the analysis of edited code blocks by advanced text mining and code analysis techniques. We provide detailed
+inline documentation as well as a tutorial detailing how to get started using git2net.
+
+In order to generate network projections based on a database of co-edits, git2net can be launched with the com-
+mand
+
+./git2net.py graph [type] database csvfile
+
+where type can be coedit, coathor, bipartite, line_editing, or commit_editing. Depending on the choice,
+
+git2net generates a projection of the co-editing database in terms of a temporal co-editing network (cf. Fig. 4), a
+bipartite network linking authors to ﬁles, or a directed acyclic co-editing graph (cf. Fig. 5) respectively.
+
+All networks can be exported in a csv-based format that can be read by popular network analysis packages like
+igraph (Csardi and Nepusz, 2006), graphtool2 , Gephi (Bastian et al., 2009), and NetworkX (Hagberg et al.,
+2008). Time-stamped co-editing networks can further be exported in a format that can be read by the dynamic
+network analysis and visualisation packages ORA (Carley and Pfeffer, 2012) and pathpy (Scholtes, 2017a) via
+the provided API. Moreover, all networks can be exported in terms of dynamic and interactive d3js visualisations,
+which directly run in any HTML5-compliant browser.
+
+3.5 Experimental Evaluation of Scalability
+
+We conclude this section by an experimental evaluation of the scalability of git2net. In particular, our tool facili-
+tates the analysis of large repositories thanks to the automatic utilisation of multiple processing cores. By default,
+git2net uses all available processing core, creating multiple child processes that extract co-edits from independent
+commits in parallel. An optional command line parameter --numprocesses N further allows to limit multi-core
+processing to at most N processing cores. By setting N to one, multi-core processing can be deactivated entirely.
+Similarly, the API exposed by git2net provides parameters that can be used to control multi-core processing.
+
+In order to evaluate the scalability gains provided by the parallel processing model, we performed an experiment
+using real-world data. We speciﬁcally cloned the git repository of the Open Source software igraph (Csardi and
+Nepusz, 2006) and used git2net to extract line-based co-editing relationships. We then measured the time needed
+to analyse the full git history with close to 6’000 commits and approximately 35’000 ﬁle edits over a period of
+14 years. We repeated this experiment multiple times, using different numbers of processing cores on a recent 16
+core desktop processor3 .
+Figure 7 shows the time required to extract all co-editing relationships from the repository of igraph (y-axis)
+plotted against the number of processing threads (x-axis). Up to the number of physical processing cores of the
+machine (16) we observe an almost perfect linear scaling of processing time, cutting down processing time from
+close to one hour (single-threaded) to less than 5 minutes. Starting from 16 processing cores we observe deviations
+from the linear scaling that are likely due to the synchronised writing to the sqlite database. This deviation
+from the linear scaling is naturally intensiﬁed as we exceed the number of physical processing cores, additionally
+utilising logical cores exposed through Intel’s implementation of HW-based multi-threading.
+
+2 https://graph- tool.skewed.de/
+
+3 Intel® Core™ i9 7960X, 16C/32T, 2.80GHz base, 4.2GHz boost
+
+12/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+4 Exemplary Co-Editing Analysis of an Open Source and Commercial
+Project
+
+Having discussed the implementation, usage, and scalability of our tool, we now demonstrate its usefulness through
+four short exemplary studies of real-world software projects. We apply git2net to (i) the GitHub repository of
+the Open Source network analysis software igraph (Csardi and Nepusz, 2006), and (ii) a large git repository of a
+commercial software project obtained via an industry collaboration with the software company G ENUA. We specif-
+ically demonstrate (A) the construction of different static network projections capturing co-editing, co-authorship,
+and code-ownership relations, (B) a comparative study of ﬁne-grained co-editing networks vs. coarse-grained co-
+authorship networks generated at the level of ﬁles, (C) the analysis of dynamic co-editing networks by means of
+temporal network analysis techniques, and (D) a comparison of temporal co-editing patterns between an Open
+Source and a commercial software project. These case studies should be seen as seeds for future work that demon-
+strate the usefulness of our approach rather than as conclusive analyses. To support such future studies, the co-
+editing relationships extracted from the Open Source project igraph are available on zenodo.org (Gote et al.,
+2019).
+
+59:26
+
+s
+
+e
+
+t
+
+u
+n
+
+i
+
+m
+
+n
+
+i
+
+e
+
+m
+
+i
+
+t
+
+30
+
+15
+
+5
+
+3:06
+
+1:51
+
+1
+
+2
+
+4
+8
+number of threads
+
+16
+
+32
+
+Figure 7: Time required to analyse the git repository of the software package igraph (Csardi and Nepusz, 2006)
+for different numbers of parallel processing threads. Both axes are logarithmic. Bars show the mean and standard
+deviation of three runs. The grey line shows a perfect linear scaling based on the time required by a single-threaded
+analysis.
+Note that the time required to mine a repository with git2net is subject to change with future feature additions as
+well as performance improvements. The shown results are therefore to be interpreted as indicative for scaling not
+for absolute times.
+
+13/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+4.1 Static Network Projections
+
+To demonstrate our tool, we illustrate the three different network projections introduced in 3, using the co-edit
+information extracted from the public git repository of the network analysis package igraph (Csardi and Nepusz,
+2006). The resulting networks are shown in Figure 8.
+
+Figure 8a shows a static co-editing network where nodes represent developers. For this initial demonstration we
+employ a time-aggregated projection, i.e. we use time-stamped co-editing relations (v, w; t ) capturing that at time
+t a developer v edited code originally written by developer w to construct a time-aggregated graph G(V , E ) where
+(v, w) ∈ E iff ∃τ : (v, w; τ ). The directionality of links in this projection allows us to distinguish between team mem-
+bers with different roles: Nodes with zero in-degree, i.e. developers with no incoming co-edit relations, have never
+contributed code that was subsequently revised by other developers. Nodes with zero out-degree, i.e. developers
+with no outgoing co-edit relations, have never revised code that was originally authored by other developers. Such
+a maximally simple static projection can thus give a ﬁrst “birds-eye” view of the collaboration and coordination
+structures in a software developing team. It highlights pairs of developers who exhibit strong mutual co-editing re-
+lations as well as pairs of developers working independently. This analysis can be reﬁned by taking into account the
+time stamps of co-editing events, which we will do in section 4.3. In section 4.2 we further discuss the difference
+between ﬁle-based co-authorship networks considered in prior works and the static projection of a ﬁne-grained
+line-based deﬁnition.
+
+Apart from co-editing relations between developers, in section 3 we have argued that git2net also provides a new
+perspective on the history of commits modifying a given ﬁle in the repository. In particular, this information can
+be used to a construct a directed acyclic graph of commits, where a link (v, w) in the graph indicates that commit
+w edited a region of source code originally contributed in commit v. Hence, each path from a root node r to a
+leaf node l in the resulting directed acyclic graph can be interpreted as a time-ordered sequence of commits that
+transforms code originally introduced in commit r into the “ﬁnal” version contained in l . We highlight that this
+projection is different from commonly studied commit graphs, which link each commit to their parent commit
+independent of whether there is an overlap in the edited code. Fig. 8b illustrates this idea. It shows the directed
+acyclic graph of commits for the source code ﬁle flow.c in igraph (Csardi and Nepusz, 2006). Root nodes (with
+in-degree zero) in which the original version of a region of source code was committed are shown in red, while the
+commits containing the “ﬁnal” version of code regions (out-degree zero) are highlighted in green. Intermediary
+nodes (yellow) represent commits that have both (a) edited code originally contributed in a previous commit and
+(b) contributed new code that is being revised in a subsequent commit. The analysis of such directed acyclic graphs
+can give insights into the complexity of code edits and their distribution across the team or across time. They further
+provide a novel abstraction that can be useful for the comparison of software artefacts, development processes, or
+projects.
+
+In order to make it easy to reproduce ﬁle-based deﬁnitions of co-authorships used in the literature, git2net ﬁnally
+supports the construction of networks linking developers with the ﬁles that they have edited. The time-aggregated
+bipartite network resulting from the ﬁle edits made in the year 2016 for the project igraph is shown in Fig. 8c.
+Apart from being a basis for the construction of ﬁle-based co-authorship networks, this simple representation can
+give a coarse-grained view of code ownership and the distribution of contributions across the development team.
+
+14/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+a
+
+b
+
+c
+
+Figure 8: Three examples for time-aggregated collaboration networks generated by git2net based on co-editing
+relations in igraph project: a shows a time-aggregated, static, directed network of co-editing relations. Each node
+represents one developer, while a directed link (A, B) indicates that at some point in the development history
+developer A edited at least one line of code previously written by developer B. b shows a directed acyclic graph
+of edits of the source code ﬁle flow.c. Nodes represent commits by developers. Root nodes with in-degree zero
+are marked in red, leaf nodes with out-degree zero are marked in green, intermediary nodes are marked in red. c
+shows a bipartite network linking developers (lightblue) to the ﬁles that they edited (blue).
+
+15/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+a
+
+Open Source
+
+commercial
+
+network
+
+nodes
+
+edges
+
+δ
+
+co-authorship
+co-editing
+
+co-authorship
+co-editing
+
+24
+24
+
+84
+84
+
+67
+55
+
+2551
+1211
+
+1.22
+
+2.11
+
+2012
+
+2014
+
+2016
+
+2018
+
+b
+
+e
+c
+
+r
+
+u
+o
+S
+
+n
+
+e
+
+p
+
+O
+
+δ
+
+3
+
+2
+
+1
+
+0
+
+2
+
+l
+
+a
+c
+
+i
+
+r
+
+e
+
+m
+m
+
+o
+c
+
+δ
+
+1
+
+0
+
+2006
+
+2008
+
+2010
+
+2012
+
+2014
+
+2016
+
+2018
+
+Figure 9: Comparative analysis of ﬁle-based co-authorship vs. line-based co-editing networks. a Number of nodes
+and edges of networks aggregated over the entire project duration. Here, the co-authorship network overcounts
+relationships as editing the same ﬁle does not require a co-editing relationship on a line basis. b Proportion of
+edges in both networks over a moving 90 day window. Here, the co-authorship network frequently does not display
+links present in the co-editing network, as with co-editing links interactions with developers not contributing code
+in the present time window can be considered.
+
+4.2 Co-editing vs. co-authorship networks
+
+As outlined in section 2, the analysis of co-authorship networks that capture which developers have contributed to
+the same ﬁles has received signiﬁcant attention. At the same time, recent works have argued for more ﬁne-grained
+deﬁnitions of collaboration networks, using e.g. function points or code lines (Joblin et al., 2015; Scholtes et al.,
+2016). We contribute to this discussion and investigate the differences between a line- and a ﬁle-based approach
+to construct developer collaboration networks. Our results show that (i) this choice of granularity has considerable
+inﬂuence on the resulting network topologies, (ii) that the resulting differences are project-dependent, and (iii) that
+the differences between the resulting networks exhibit temporal inhomogeneities.
+
+16/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+For our analysis, we ﬁrst use git2net to extract (a) a ﬁle-based co-editing network G f (which for simplicity we
+call co-authorship network), and (b) a line-based co-editing network Gl for the Open Source project igraph as
+well as for a large commercial software project. For both networks, we compare the time-aggregated projections
+(constructed as described in 4.1) and the sequence of networks obtained via a rolling window analysis. For each
+time window (as well as for the time-aggregated network), we then quantitatively assess the difference between
+Gl and G f . We ﬁrst observe that the set of nodes in both networks is necessarily the same. As a maximally simple
+approach to assess the difference between the two networks, we can thus calculate δ :=
+, where m f and ml are
+the number of links in the ﬁle-based co-authorship network and the line-based co-editing networks, respectively.
+
+m f
+ml
+
+Figure 9 shows the result of this analysis. Fig. 9a conﬁrms that the ﬁle-based co-authorship network does not
+resolve where in the ﬁle edits take place, leading to a signiﬁcantly higher number of links compared to the co-
+editing network in both projects. We expect many of these additional links to be false positives, in the sense
+that despite two developers having made edits to the same ﬁle no actual collaboration on the same code actually
+occurred.
+
+Fig. 9b highlights the temporal dimension of these differences. It shows the time-evolving difference between the
+two network abstractions, using a 90 day moving window. For each window, the difference δ between the two
+networks is reported. Importantly, we observe time windows where δ < 1, which indicates that the line-based
+co-editing networks feature additional links over the ﬁle-based co-authorship network. This is due to the fact that
+a ﬁle-based (temporal) co-authorship network does not consider commits to ﬁles made outside the time window
+currently analysed. However, our detailed analysis of co-edit relations can nevertheless identify that at time t
+within the time window developer A has edited code originally authored by developer B in a commit outside the
+time window. We argue that neglecting this relation introduces the risk of false negatives, in the sense that we
+would omit the need of collaboration or coordination associated with a commit occurring at time t . This subtle
+but important difference highlights the limitations of a simple ﬁle-based extraction of collaboration networks and
+showcases the advantage of our approach.
+
+4.3 Analysis of Temporal Co-Editing Networks
+
+A major advantage of git2net is its support for the extraction of dynamic co-editing networks with high temporal
+resolution. To showcase the beneﬁts of such a temporal analysis for the two projects mentioned above, we have
+used git2net’s python API to extract a time-stamped co-editing network from the repositories of the two projects
+mentioned above. We then used the temporal network analysis package pathpy (Scholtes, 2017a) to apply a rolling
+window analysis, which provided us with a time series of network analytic measures. Figure 10 shows the resulting
+time series for four measures both for the Open Source project igraph as well as the commercial software project.
+The ﬁrst row gives the number of developers working on the projects in a 365-day sliding window. The number of
+unique co-editing relations between these developers, shown in the second row, can be used to proxy the amount of
+collaboration on joint code regions taking place in a project in a given time window. We observe that the number of
+such collaborations relative to the number of developers is considerably higher for the commercial software project
+compared to the Open Source project. This ﬁnding is further corroborated by the mean out-degree of nodes shown
+in the third row. This suggests that on average developers in igraph edit the code of one to two other developers,
+while for the commercial software project each developer has to coordinate his or her changes with four to eight
+other team members. It is a remarkable ﬁnding for the commercial software project that both the number of unique
+directed edges and the mean out-degree decline from 2013 onwards, despite the growing number of developers.
+
+17/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Open Source project
+
+commercial project
+
+40
+
+20
+
+300
+
+200
+
+100
+
+8
+
+6
+
+4
+
+2
+
+0.6
+
+0.4
+
+0.2
+
+0
+
+f
+
+o
+
+#
+
+s
+r
+
+e
+
+l
+
+p
+o
+e
+v
+e
+
+d
+
+e
+
+u
+q
+n
+u
+
+i
+
+#
+
+s
+
+e
+g
+d
+
+e
+
+d
+
+e
+
+t
+
+c
+e
+
+r
+
+i
+
+d
+
+n
+a
+e
+
+m
+
+e
+e
+
+r
+
+g
+e
+
+d
+
+t
+
+u
+o
+
+10
+
+8
+
+6
+
+4
+
+15
+
+10
+
+5
+
+2.5
+
+2
+
+1.5
+
+1
+
+e
+e
+
+r
+
+g
+e
+
+d
+
+e
+v
+
+i
+
+t
+
+a
+e
+
+l
+
+r
+
+0.6
+
+0.4
+
+0.2
+
+n
+o
+
+i
+
+t
+
+a
+
+s
+
+i
+l
+
+a
+
+r
+t
+
+n
+
+e
+c
+
+0
+
+2012
+
+2013
+
+2014
+
+2015
+
+2016
+
+2017
+
+2018
+
+2006
+
+2008
+
+2010
+
+2012
+
+2014
+
+2016
+
+2018
+
+Figure 10: Time series of different (network-analytic) measures for the time-stamped co-editing networks of an
+Open Source (left) and commercial software project (right). Results were generated using a rolling window analysis
+with a window size of 365 days and 30 day increments.
+
+This could mark a change in the software development processes and/or the social organisation of teams. While a
+ﬁrst feedback from the project managers suggests that this could be related to a change in the adoption of an agile
+development model, testing this hypothesis requires a separate in-depth study. Finally, in the fourth row in Figure
+10 we report the evolution of normalised (total) degree centralisation over time (Freeman, 1978). A minimum value
+of zero indicates that all nodes in the network have the same degree, while a maximum value of one corresponds to a
+perfect star network where all nodes except a hub node have degree one. We ﬁnd that igraph exhibits considerably
+larger degree centralisation than the commercial software project, which is likely related to previous ﬁndings of
+
+18/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+highly skewed distributions of code contributions in Open Source projects (Scholtes et al., 2016; Mockus et al.,
+2002; Lin and Whitehead, 2015).
+
+4.4 Editing of Own vs. Foreign Code
+
+In a ﬁnal experiment, we showcase how git2net can be used to analyse temporal co-editing patterns in software
+development teams. To this end, we extend our analysis of the mere topological dimension of co-editing relations
+performed in previous sections, to use additional information on the Levenshtein distance associated with these
+relations. The Levenshtein distance between two source code versions captures the number of characters one has
+to type to transform one string into another string. It has been used as a proxy for development effort associated
+with commits (Scholtes et al., 2016). Extending this approach, an interesting aspect of our methodology is that it
+allows us to distinguish between (i) the cumulative Levenshtein distance of code edits made in a developer’s own
+code and (ii) the cumulative Levenshtein distance of edits made in foreign code, i.e. code originally written by
+other developers. This enables us to calculate, for each time window in the commit history of a project, the relative
+proportion of development effort falling into these two categories.
+Figure 11 shows the result of this analysis for the two projects introduced above, where the top-part of the ﬁgure
+reports the total number of (unweighted) co-edit relations, while the bottom part shows the relative proportion of
+the total Levenshtein distance of own code changes vs. foreign code changes. This analysis highlights considerable
+project- and time-dependent differences. For the Open Source project igraph, during a ﬁrst phase from 2006 to
+2015, the majority of code edits take place in code previously written by the same developer. This indicates a strict
+notion of code “ownership”, where developers rarely touch code written by others. For the commercial software
+
+Open Source project
+
+commercial project
+
+own code
+
+foreign code
+
+s
+t
+
+i
+
+d
+
+e
+
+-
+
+o
+c
+
+f
+
+o
+
+#
+
+7000
+
+4000
+
+1000
+1
+
+l
+
+a
+
+t
+
+o
+
+t
+
+f
+
+o
+
+%
+
+n
+
+i
+
+e
+
+t
+
+h
+
+s
+
+n
+
+e
+v
+e
+
+L
+
+e
+c
+
+n
+a
+
+t
+s
+
+i
+
+d
+
+t
+
+i
+
+d
+
+e
+
+0.5
+
+0
+
+2006
+
+2008
+
+2010
+
+2012
+
+time
+
+2014
+
+2016
+
+2018
+
+2006
+
+2008
+
+2010
+
+2012
+
+time
+
+2014
+
+2016
+
+2018
+
+Figure 11: Editing of own and foreign code for Open Source and commercial project over time. The total number
+of edited blocks is shown above whereas the bottom ﬁgures show proportions of the total Levenshtein edit distance.
+Results are computed on a 90 day rolling window with 30 day increments.
+
+19/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+project we observe a completely different dynamics, where for the majority of time windows development effort is
+dominated by foreign code edits. We hypothesise that this ﬁnding is likely related to code changes triggered by the
+speciﬁc implementation of the code review process in the commercial software project (Beller et al., 2014). This
+ﬁnding highlights a speciﬁc research question that can be addressed with our tool in future work.
+
+5 A large-scale analysis of coordination overhead in software teams
+
+Leveraging ﬁne-grained co-editing networks and code ownership information generated by git2net, we conclude
+our article with an empirical study of factors that inﬂuence the productivity of developers in collaborative software
+projects. We particularly focus on mechanisms that can explain the so-called Ringelmann effect, i.e. the ﬁnding
+that the individual productivity of co-workers in a group tends to decrease as the group grows larger (Ringelmann,
+1913). The Ringelmann effect was originally discovered in a 19th century human experiment that is now frequently
+cited as one of the classical experiments in social psychology (Kravitz and Martin, 1986). Studying the effect
+in collaborative software development, a recent work by Scholtes et al. (2016) has tested the hypothesis that
+the productivity of individual developers is negatively correlated with group size. Through a large-scale study
+analysing the git repositories of 58 major Open Source software projects with more than 30’000 developers and
+more than 500’000 commits, this work has presented evidence for a strong Ringelmann effect. At the same time, it
+provides a quantitative underpinning for Brooks’ law of software project management, which is often paraphrased
+as “adding manpower to a late software project makes it later” (Brooks, 1975).
+
+A number of potential mechanisms that could explain a decrease in productivity with growing team sizes have
+been considered in social psychology, organisational theory, and empirical software engineering. An exhaustive
+review of this research is beyond the scope of our article, therefore we refer the interested reader to the summary
+of related works in (Scholtes et al., 2016). Here, we limit our discussion to two dominant explanations for the
+effect, namely (i) psychological factors that negatively impact the motivation of individuals in a group (Latané
+et al., 1979), and (ii) the growing overhead associated with the coordination of work between contributors as teams
+grow in size. Investigating the latter mechanism, Scholtes et al. (2016) have employed a macroscopic study of
+co-editing networks in major Open Source software projects. The key idea behind this analysis is that the density
+of co-editing networks—extracted from the developers’ commit log as explained in section 3.2—yields a proxy
+for the coordination overhead that results from the pattern in which developers are required to edit and revise
+code previously written by other team members. The results show that the strength of the Ringelmann effect is
+statistically related to the “densiﬁcation” of co-editing networks as teams grow in size (Scholtes et al., 2016). In
+particular, co-editing networks that are more densely connected correspond to situations where developers need to
+coordinate their changes with a larger number of other developers (Scholtes et al., 2016).
+
+This prior study points to growing coordination overhead as one factor that drives the Ringelmann effect in software
+teams. However, this interpretation of the results is also relying on the (untested) hypothesis that the editing of code
+from other developers imposes an actual overhead that is associated with a (measurable) decrease in productivity.
+With the following study, we take a next step in understanding the causal link between (i) co-editing patterns and
+code-ownership and (ii) developer productivity in software teams. Speciﬁcally, we take a microscopic perspective
+that leverages detailed information on co-edited lines and commits provided by git2net. In particular, we base
+our study on the following hypothesis about the link between code ownership on developer productivity:
+
+20/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Hypothesis: Developer productivity is higher when developers edit code previously written by themselves com-
+pared to code written by other developers.
+
+In the remainder of this section we will use statistical methods to test this research hypothesis in six OSS projects
+developed on GitHub. The selected projects cover a wide range of sizes (cf. Table S1) and topics ranging from the
+network visualisation and analysis library igraph to the Linux kernel. An overview of the six projects is given in
+Table 1. In total, our data set covers more than 1.2 million commits by more than 25’000 developers. Referring to
+the analysis laid out in section 4.4, we ﬁrst use git2net to extract the temporal co-editing patterns from the time-
+ordered sequence of all commits. Moreover, for each edited line within the ﬁles contained in a commit, git2net
+enables us to infer whether the line in question was previously edited by a different developer. By calculating the
+Levenshtein edit distance of each edited line we can associate the relative fraction of the Levenshtein edit distance
+in own vs. foreign code for each individual commit. Finally, the sequence of time-stamped commits of individual
+developers allows us to give an upper bound for the development time of a commit. We are particularly interested
+in the question to what extent the editing of code previously written by one or more other developers takes, on
+average, longer than the editing of own code—i.e. code written by the author of the edit her- or himself.
+
+Table 1: Short description of the Open Source Software projects used in the case study. All projects are developed
+on GitHub and can be found under the given repositories.
+
+Repository
+
+igraph/igraph
+
+Description
+A network visualisation and analysis library.
+bitcoin/bitcoin The source code enabling the digital currency Bitcoin.
+Cross-platform audio and video processing tools
+Cross-platform solution to record, convert and stream audio and video.
+The Gentoo Linux distribution
+The kernel of the GNU/Linux family of operating systems.
+
+libav/libav
+FFmpeg/FFmpeg
+gentoo/gentoo
+torvalds/linux
+
+The remainder of this study is structured as follows: First, we discuss factors inﬂuencing productivity, deriving
+features that we need to obtain to measure them. Second, we discuss how we apply git2net to collect the required
+data. Subsequently, we describe the data cleaning before, ﬁnally discussing the results.
+
+5.1 Feature selection
+
+Productivity:
+
+In our research hypothesis we state that productivity (which in the following we refer to as prod )
+is higher if the developer making an edit is also the author of the original (edited) code. To quantitatively test this
+hypothesis we deﬁne productivity as an input-output relationship (Tangen, 2005), deﬁning output as the amount of
+code written by a developer. As we are speciﬁcally interested only in situations where existing code was edited or
+extended, we measure the output as the Levenshtein edit distance for each edit (l ev). With a set of multiple edits
+forming a single commit, the inter-commit time between two consecutive commits (ict ) serves as upper bound for
+the time required to produce the edits. With this, we deﬁne developer productivity as prod = l ev/ict .
+
+Own code: To determine if the edit was made on own or foreign code, we compare the current and previous
+author of the code as identiﬁed by git2net. In addition to code ownership, there are multiple other factors that
+
+21/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+could inﬂuence the productivity of a developer. Particularly, we want to control for the complexity and the type of
+the change, as well as the developer’s experience and the type of the project.
+
+Complexity: We expect the complexity of an edit to have a—supposedly negative—impact on productivity.
+Moreover, we can imagine situations where code with higher complexity is more likely to be edited by multiple
+developers, resulting in a confounding factor that could explain an observed negative correlation between produc-
+tivity and the editing of foreign code that we must control for. To this end, we proxy the complexity of the change
+by looking at the cyclomatic complexity (cyc) (McCabe, 1976) of the ﬁle the edit was made in. We additionally
+measure the length of the ﬁle in terms of the number of lines (nol ) as well as the size of project in terms of the
+number of commits (noct ), correcting for all three measures in our analysis.
+
+Type of change: During the development of git2net, we observed that those changes that are made in multiple
+ﬁles within a single commit are often similar. As these are often relatively simple operations we can expect those
+edits to be generally faster, which highlights another possible confounding factor that we must control for. For this,
+we include the number of ﬁles edited in a commit (no f ) in our analysis. In addition, a commit can be made to
+ﬁx bugs in a recently introduced feature or to change the functionality of code already present in the project for a
+longer period of time. We aim to capture this difference by considering the time since the previous edit of a line
+before the current edit (t pe).
+
+Developer experience: An important factor that is likely to inﬂuence the productivity of a developer is her or
+his experience. Since we have no information about developers outside the current project, we measure developer
+experience with respect to the project in question. We proxy the experience through the number of commits the
+developer successfully made to the project (nocd ) at the time of the current commit. In addition, the time since the
+developer’s ﬁrst commit to the project (t f c) is considered as an additional control variable.
+
+Type of project: Finally, there are Open Source Software projects like Linux on which many developers work
+as full-time job, whereas others are side projects that developers mainly work on during their free time, e.g. on
+weekends. We account for these differences through a binary variable indicating if an edit was made during a
+weekday (wkd ).
+
+Many of the features introduced above can be measured at the level of individual lines of code. However, inter-
+commit times are only available on the commit level. Therefore, all edits relating to a single commit need to be
+aggregated, which we can achieve either through a simple sum or a weighted summation that accounts for the
+Levenshtein edit distances of individual edits. Wherever multiple weights are possible all options were explored.
+Overall, this leads to the set of features shown in Table 2.
+
+5.2 Data collection
+
+The data was collected by cloning the six repositories and subsequently applying git2net to mine the relevant co-
+editing relationships. git2net employs a parallel processing model, nevertheless, a git blame operation needs to
+
+22/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Table 2: Description of all features obtained for the analysis.
+
+Feature Description
+Total Levenshtein distance (in characters) though code replacement in commit
+Time (in hours) since last commit made by the current developer
+Developer productivity computed as prod = l ev/ict
+
+l ev
+ict
+prod
+
+own
+
+cycl
+cyc f
+noll
+nol f
+noct
+no f
+t pel
+t pee
+nocd
+n f c
+
+wkd
+
+Fraction of l ev made on own code
+
+Cyclomatic complexity of edits weighted by Levenshtein edit distance
+Cyclomatic complexity of edits weighted by number of unique ﬁles in commit
+Number of lines in edited ﬁles weighted by Levenshtein edit distance
+Number of lines in edited ﬁles weighted by number of unique ﬁles in commit
+Total number (in thousands) of commits in the project at the time of the commit
+
+Number of unique ﬁles edited with the commit
+Time (in years) since previous edit of line weighted by Levenshtein edit distance
+Time (in years) since previous edit of line weighted by number of edits in commit
+
+Number commits (in thousands) made by the developer at time of the commit
+Time (in years) since the ﬁrst commit of the developer making the commit
+
+Logical variable indicating if the commit was made on a weekday
+
+be executed and the result must be analysed for each ﬁle modiﬁed in a commit. This makes processing large com-
+mits particularly expensive, which is why we needed to ﬁlter out a small number of commits that were modifying
+more than 1000 ﬁles each. These large commits primarily fall into two classes: The majority are merge commits,
+which unlike commits with a single predecessor cannot be processed through a single diff. Therefore, all ﬁles in the
+diffs of both parents need to be analysed for all line edits in the merge commit. As merges are often made between
+different branches of a repository, this can lead to a very large number of ﬁles included in the diffs. We argue that
+excluding large merges from our analysis will not affect our results as, generally, merge commits serve to combine
+different versions of commits made in previous commits and do not contain any new contributions. Through direct
+inspection of the other ﬁltered commits we found that these are mostly the result of search and replace operations
+across a large number of ﬁles—e.g. replacing http through https4 . As these are only a small fraction of commits
+and such changes often do not take any signiﬁcant understanding of the code in which they take place, we have
+opted to not consider them.
+As shown in Table S1, the commits removed based on the ﬁltering procedure mentioned above represent less than
+5% of the total commits of the six projects individually. In the following, the data required to test the hypothesis
+was selected from the databases generated by git2net. We further perform an additional data cleaning step, which
+we describe in detail in the supplementary material (see section 8.1). In particular, we discuss which edits were
+used in our analysis, how name disambiguation was considered for commit authors, as well as additional steps
+necessary due to project-dependent differences in the usage of git. We describe that especially linux developers
+frequently make multiple commits with very small inter-commit times—often less than one second—at the end of
+
+4 c.f. commit eaaface92ee81f30a6ac66fe7acbcc42c00dc450 in gentoo
+
+23/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+a development process. In order to avoid that such near-zero inter-commit times distort our analysis, we aggregate
+the corresponding commits into a single contribution, which is the subject of the following analysis (details in
+section 8.1).
+
+5.3 Results
+
+As a precursor for the more sophisticated analyses that we will perform in later steps, we ﬁrst check whether
+commits in which the majority of edited lines are in own code are developed faster than those for which the
+majority of edited code was previously written by other developers. In this ﬁrst step of our analysis, we merely test
+whether the data contains a pattern that justiﬁes advanced tests in which we will control for potential confounding
+factors. We use a Wilcoxon signed-rank test to compare the productivity distributions of those contributions with
+own ≥ 0.5 to the productivity distribution of contributions with own < 0.5 The results in Table 3 shows that, for all
+of the six considered projects, we can safely reject the null hypothesis that both samples are drawn from the same
+distributions against the one-sided alternative hypothesis that the productivity is higher for contributions in which
+the majority of edits occur in own code.
+
+In the following, we provide a more thorough analysis of the multiple factors that inﬂuence the productivity of
+developers based on a multiple linear regression model. We ﬁrst deﬁne the regression model that we will use. In
+section 5.1, we have explained all features as well as the motivation why we include them as control variables.
+Ideally, we aim to include all potential confounding effects as controls parameters in our statistical analysis, hence
+isolating the effects of code-ownership and co-editing patterns that are of interest in the context of this study.
+However, some of the features introduced above only differ by their aggregation weights and thus bear a large
+potential for collinearity, which can invalidate the results of the regression analysis. As a ﬁrst step, we thus perform
+a feature selection process, which we illustrate in the following using data from the linux project. Figure 12 shows
+the Spearman’s rank-order correlations for all pairs of available features.
+We ﬁnd that cycl and cyc f , noll and nol f , as well as t pel and t pee , exhibit high levels of correlation. This is due to
+the fact that those features only differ by the method by which the line-level measures are aggregated at the level
+of commits. Moreover, the cyclomatic complexity (cycl and cyc f ) of code is strongly correlated with the number
+of lines in the edited ﬁle (noll and nol f ). This is expected, as cyclomatic complexity is deﬁned as the number of
+linearly independent paths through the ﬁle’s source code (McCabe, 1976). Finally, we ﬁnd a strong correlation
+between a developer’s number of commits and the time since the developer’s ﬁrst commit. Regarding the method
+used to aggregate line-level measures at the commit level, we decide to always use a method that weights the
+
+Table 3: Results of Wilcoxon signed-rank test. Alternative hypothesis: productivity on own code is higher.
+
+igraph
+
+bitcoin
+
+libav
+
+FFmpeg
+
+gentoo
+
+linux
+
+p-value (greater)
+
+0.0000
+
+0.0000
+
+0.0000
+
+0.0000
+
+0.0000
+
+0.0000
+
+median speed own
+median speed foreign
+mean speed own
+mean speed foreign
+
+12.92
+2.37
+91.10
+53.09
+
+7.57
+3.38
+77.82
+62.44
+
+7.21
+3.40
+79.23
+67.29
+
+7.54
+4.61
+68.56
+61.58
+
+6.97
+5.51
+47.42
+41.36
+
+1.54
+0.79
+38.94
+29.56
+
+24/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Figure 12: Spearman’s rank-order correlations of pairs of features (indicated in the diagonal entries) for the linux
+project before feature selection.
+
+Table 4: Regression models. Formulas are given in the notation of the R mixed effect model library lme4 (Bates
+et al., 2014). The variable aut hor is a factor variable distinguishing authors.
+
+Name Formula
+LM
+ME-
+ME+
+
+prod ∼ own + cycl + no f + nocd + noct + t pel + n f c + wkd
+prod ∼
+cycl + no f + nocd + noct + t pel + n f c + wkd + (1 + nocd | aut hor)
+prod ∼ own + cycl + no f + nocd + noct + t pel + n f c + wkd + (1 + nocd | aut hor)
+
+measures by the Levenshtein edit distance. For the remaining results, we thus exclude cyc f , nol f , and t pee . We
+further decided to include cyclomatic complexity rather than the number of lines, since cyclomatic complexity
+is an established metric that carries additional information about the complexity of code. Lastly, we include the
+number of commits, nocd rather that the mere time since the ﬁrst commit, as we expect the latter measure to contain
+less information about the actual development experience in a project. Figure 13 shows the pair-wise Spearman’s
+rank-order correlations of the remaining features for the linux project.
+
+To test our original research hypothesis while accounting for potential confounding effects, we deﬁne three multiple
+regression models that include the set of features selected as described above. We then employ a statistical model
+selection based on Aikake’s Information Criterion (AIC) to determine the most suitable model (Akaike, 1974).
+In Table 4 we provide detailed deﬁnitions of the three multiple linear regression models that we consider in the
+following.
+
+The ﬁrst model is a standard multiple linear model (LM) capturing a linear relationship between developer pro-
+
+25/44
+
+llllllllllllllllllllllllllllllllllllllllllllllllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lcyc_fnol_lnol_fnofnoc_dnoc_twkdtfcowntpe_ltpe_e0.980.860.830.0100.060.020.030.020.080.080.840.86−0.0100.060.020.030.020.080.080.97−0.0200.070.020.030.020.070.07−0.0300.080.020.040.040.070.070.02−0.040−0.010.10.080.080.16−0.010.720.180.060.060.060.43−0.040.230.240.030.01000.110.170.17−0.28−0.280.99C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Table 5: AIC as well as Chi-squared test for the three candidate models for linux.
+
+linux Df
+
+LM
+9
+ME-
+11
+ME+ 12
+
+AIC
+11745.96
+117.75
+0.00
+
+Chisq Chi Df Pr(>Chisq)
+—
+—
+—
+11632.21
+2.0
+0.0
+119.75
+1.0
+0.0
+
+ductivity and the fraction of own code edited, while controlling for other features. In the other two models, we
+additionally correct for the fact that we have multiple contributions by multiple developers that are likely to have
+heterogeneous characteristics (e.g. talent, intelligence, education, etc.) that we may not directly observe in our data.
+We control for this effect by means of a mixed effects model ME− that models the differences between developers
+by including an individual base productivity. To additionally account for the observed heterogeneity of developers
+in our data, we further include the developer experience (in terms of number of commits nocd ) as an additional
+developer-dependent feature in our mixed effects model (see Table 4). Finally, we consider a mixed effects model
+ME+ that additionally includes own as an independent variable.
+
+We ﬁt each of the three linear models to the data from each of the six projects individually and calculate the AIC
+to select the model that provides the best balance between explained variance and model complexity. To illustrate
+our approach, we show the detailed results of the model selection for linux in Table 5. The results for other
+projects are included in the supplementary material. For all projects, ME+ is clearly selected as the best model
+
+Figure 13: Spearman’s rank-order correlations of pairs of features (indicated in the diagonal entries) for the linux
+project after feature selection.
+
+26/44
+
+lllllllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lnofnoc_dnoc_twkdowntpe_l0.0100.060.020.020.080.02−0.0400.10.080.16−0.010.180.060.06−0.040.230.010−0.28C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Table 6: Regression results of ME+ for all projects. Note that we do not correct for multiple hypothesis testing
+since own is the only independent variable for which interpret the p-value in terms of statistical signiﬁcance, while
+all other features are merely included as control variables. The asterisks indicate p < 0.05 (*), p < 0.01 (**), and
+p < 0.001 (***).
+
+igraph
+
+bitcoin
+
+libav
+
+FFmpeg
+
+gentoo
+
+linux
+
+own
+
+intercept
+cycl
+noct
+no f
+t pel
+nocd
+wkd
+
+27.02**
+
+21.43
+0.05***
+3.68
+2.17***
+0.11
+0.28
+4.21
+
+10.99*
+36.59***
+0.01*
+-0.53
+1.23***
+1.64
+4.23***
+1.63
+
+15.86***
+46.73***
+0.0
+-0.71***
+1.44***
+4.99***
+2.15**
+-8.58***
+
+5.76***
+41.12***
+-0.0
+-0.24***
+1.72***
+2.19***
+1.46***
+-3.91**
+
+6.28***
+31.88***
+-0.35***
+-0.04***
+1.32***
+14.13***
+0.28***
+-4.99***
+
+5.01***
+19.14***
+0.0**
+-0.02***
+1.46***
+1.11***
+1.82***
+-2.16***
+
+that minimises the AIC. This shows that despite the larger complexity of the mixed effects model, controlling for
+developer-speciﬁc features is essential even for projects like igraph with a small number of developers. Moreover,
+we ﬁnd that including the feature own (in ME+) considerably improves the model ﬁt for all of the six projects,
+even when account for the additional model complexity.
+
+Table 6 shows the estimated parameters in the selected mixed effects multiple linear model ME+ in all six projects
+included in our case study. The results provide strong evidence for our hypothesis that the need to edit code pre-
+viously written by other developers negatively affects developer productivity, even when controlling for potential
+confounds like code complexity, the type of a change, developer experience and project characteristics. In particu-
+lar, we reject the null hypothesis that there is no effect of the feature own code (i.e. own = 0), assuming all other
+factors are equal for all projects. In summary, these ﬁndings substantiate the theory that the need to coordinate the
+efforts of increasingly large number of team members is a driving factor behind the Ringelmann effect in software
+teams. Moreover, the ﬁtted parameters of our model allow us to estimate the size of the effect. As an example, for
+the linux project commits exclusively consisting of edits in code previously written by the same developer (i.e.
+own = 1) has – on average – a productivity value that is larger by 5.01 characters per hours compared to com-
+mits exclusively consisting of code previously written by other developers (i.e. own = 1), assuming that all other
+factors are equal. Considering the intercept value of 19.14 characters per hour for the limux project, this yields a
+relative productivity increase of more than 25%. For the ﬁve other projects we obtain relative increases in produc-
+tivity between 14% (FFmpeg) and 128% (igraph). We thus ﬁnd large project-speciﬁc differences in terms of how
+code ownership affects developer productivity. This potentially provides an additional microscopic explanation for
+the ﬁnding in (Scholtes et al., 2016) that the magnitude of the Ringelmann effect widely varies across different
+projects.
+
+27/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+6 Threats to validity
+
+In the following, we will discuss some treats to validity, speciﬁcally focusing on the large-scale analysis of coordi-
+nation overhead in software teams presented in section 5.
+
+Construct validity First, we refer to potential threats to validity with regard to our measures. For our study, we
+measure developer productivity with respect to edits made to previously developed code. Deﬁning productivity as
+Levenshtein edit distance per commit, we use the time between two consecutive commits by a developer as upper
+bound for the time a developer spent on these changes. While we argue that this is the best proxy available in
+our data, inter-commit times also include other developer activities such as the simple addition of code (without
+modifying existing code), deletion of existing code, eating, sleeping, etc. By aggregating over a large number of
+commits, these activities should, however, have little impact on our conclusions. Further, we found cases, partic-
+ularly for limux, where the the assumption that inter-commit times represent an upper boundary for the time in
+which the corresponding edits were made was violated. We addressed this issue by aggregating commits to con-
+tributions (cf. section 8.1). We therefore argue that our measure is a meaningful proxy of developer productivity
+within the context of our study.
+
+Internal validity Due to the large computational requirements of git blame, we could not extract some commits
+(mostly merges) from the respective databases (cf. section 5.2). While we do not expect that the small fraction of
+commits exclused from our analysis has a considerable impact on the ﬁnal results, we cannot conclusively rule out
+this possibility.
+
+Further, during the data cleaning process, we have selected thresholds for the aggregation of commits to contribu-
+tions as well as the subsequent removal of outlier observations present due to automated changes and search/replace
+operations. To address this potential issue, we have performed robustness checks on our results in which we test
+the impact of these parameters (cf. section 8.4). This analysis shows that none of our conclusion changes when
+varying the parameters. In all cases, the inclusion of own signiﬁcantly improves the model based on AIC as ME+ is
+selected as optimal model in all cases. Further for larger projects the signiﬁcance of our ﬁndings does not change.
+However, due to the smaller size of the data for igraph and bitcoin, we ﬁnd that an excessive aggregation of
+commits might lead to an increase in the p-value. In future works, we will develop more granular ﬁlters to allow
+project speciﬁc data cleaning.
+
+A further threat to validity originates from omitted-variable bias, i.e. unobserved features that might inﬂuence de-
+veloper productivity. Examples could, e.g., be approaching deadlines (Costello, 1984), developer emotions (Garcia
+et al., 2013), internal team challenges such as changes in the team structure, working environments, or resource
+constraints (Alliger et al., 2015) that were not considered in this study. Similarly, we did not further explore poten-
+tial interactions between the considered controls.
+
+External validity Finally, we want to discuss the threats to the generalisability of our results. The six projects
+involved in our study represented a variety of project sizes as well as topics. We ﬁnd strong evidence for our
+hypothesis in all six projects. Despite this ﬁnding, we cannot conﬁdently rule out that other sets of projects could
+yield different ﬁndings. In future work, we will aim to address this by considering additional projects selected based
+on predeﬁned sets of criteria. We speciﬁcally intend to repeat our analysis on the 58 projects used in Scholtes et al.
+
+28/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+(2016), testing whether the project-speciﬁc differences in the magnitude of the Ringelmann effect can be explained
+by the variations in the impact of co-editing patterns on developer productivity discovered in the present work.
+
+7 Conclusion and Outlook
+
+Over the past two decades, the analysis of co-authorship, co-commit, or co-editing networks in software devel-
+opment teams has experienced huge interest from the empirical software engineering and repository mining com-
+munity. Exemplary studies have shown that the analysis of such collaboration networks helps to assess the time-
+evolving social structure of teams (Scholtes et al., 2016; Madey et al., 2002), predict software defects (Meneely
+et al., 2008), categorise developer roles (Pohl and Diehl, 2008), identify communities (Joblin et al., 2015), or study
+knowledge spillover across individuals, teams, and projects (Von Krogh and Von Hippel, 2006; Vijayaraghavan
+et al., 2015; Huang and Liu, 2005; Cohen and Consens, 2018). Most of these studies have employed deﬁnitions of
+co-authorship networks which assume that developers are linked if they edited a common ﬁle, module, or binary.
+However, such coarse-grained deﬁnitions have been shown to neglect information on the microscopic patterns of
+collaborations contained in the time-ordered sequence of lines of code edited by developers (Joblin et al., 2015;
+Scholtes et al., 2016).
+
+To facilitate data-driven studies of developer networks that take advantage of this detailed information, we intro-
+duce git2net, a python package for the mining of ﬁne-grained and time-stamped collaboration networks from
+large git repositories. Going beyond previous works, we adopt text mining techniques to assess (a) the develop-
+ment effort of an edit in terms of the Levenshtein distance between the version before and after the commit, and
+(b) the entropy of ﬁle modiﬁcations, which can be used to ﬁlter out changes in text-encoded binary data. Thanks to
+a parallel processing model our tool exhibits a linear speed up for an increasing number of processing cores. This
+makes git2net suitable to analyse git repositories with hundreds of thousands of commits and millions of lines
+of code.
+
+Apart from a description of our tool, we demonstrate that our tool simpliﬁes the construction and analysis of
+dynamic developer collaboration networks and co-editing behaviour in real data on Open Source and commercial
+software projects. Extending the analysis presented by Joblin et al. (2015), in section 4.2 we perform a comparative
+study of a ﬁle- vs. line-based construction of co-editing networks. In section 4.4 we further demonstrate that the
+information extracted by our tool can be used to generate a time-resolved breakdown of developer effort into (a)
+the revision of code authored by the developer her- or himself vs. (b) the revision of code written by other team
+members.
+
+Building on this information, we perform a large-scale study on coordination as a driving factor of the Ringelmann
+effect in six Open Source Software projects. Using ﬁne-grained co-editing networks extract from repository data
+that covers more than 1.2 million commits from more than 25’000 developers, we ﬁnd strong evidence for the
+hypothesis that the editing of code previously written by other developers negatively impacts the individual pro-
+ductivity of developers. We further ﬁnd that the negative impact of coordination on developer productivity exhibits
+strong variation across different projects. With this, we provide a potential additional explanation for the variation
+in the magnitude of the Ringelmann effect across projects found in prior studies.
+
+Apart from these insights into social determinants of developer productivity, with the tool presented in this article
+we provide a novel method to extract ﬁne-grained collaboration networks at high temporal resolution from any
+
+29/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+git repository. Publicly available repositories cover a variety of different collaborative tasks, like software devel-
+opment, manuscript editing, web content management, etc. (Kalliamvakou et al., 2016). Our tool efﬁciently utilises
+the large number of such repositories and thus opens up a massive new source of high-resolution data on human
+collaboration patterns. The fact that the resulting dynamic collaboration networks can be cross-referenced with
+project-related information (project success, organisational structures and project culture, developer roles, etc.) is
+likely to be of value for researchers in computational social science and organisational theory. We further expect
+the resulting corpus of data to be of considerable interest for the network science and social network analysis com-
+munity, which have recently moved beyond moving window analyses, developing techniques that incorporate the
+chronological ordering of interactions in high-resolution time series data (Newman, 2018; Holme, 2015; Scholtes,
+2017b). We thus hope that the tool and analyses presented in our work will serve the growing community of inter-
+disciplinary researchers working at the intersection of data science, (social) network analysis, computational social
+science and empirical software engineering.
+
+Tool availability, archival, and reproducibility
+
+The tool presented in this work is available as Open Source software package on GitHub5 . git2net is further
+available via the python package index pypi, enabling users to simply install and update it via the package man-
+agement tool pip. To support the reproducibility of our work, we have permanently archived the version of our
+tool that was used to obtain the results presented in this paper on the open-access repository zenodo.org (Gote
+et al., 2019).
+git2net comes with unit tests and a comprehensive in-line documentation. To support users in developing their
+ﬁrst analysis, we further provide access to interactive jupyter notebooks, which allow to reproduce our approach.
+
+Acknowledgements
+
+Ingo Scholtes acknowledges ﬁnancial support from the Swiss National Science Foundation through grant 176938.
+We thank Alexander von Gernler as well as all other members of the software company G ENUA for allowing us to
+validate our tool in a large commercial software project.
+
+References
+
+Akaike, H. (1974). A new look at the statistical model identiﬁcation. In: Selected Papers of Hirotugu Akaike, Springer. pp.
+215–222.
+
+Alliger, G. M.; Cerasoli, C. P.; Tannenbaum, S. I.; Vessey, W. B. (2015). Team resilience. Organizational Dynamics 44,
+176–184.
+
+Bacchelli, A.; Lanza, M.; D’Ambros, M. (2011). Miler: A toolset for exploring email data.
+International Conference on Software Engineering. ACM, pp. 1025–1027.
+
+In: Proceedings of the 33rd
+
+5 https://github.com/gotec/git2net
+
+30/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Bastian, M.; Heymann, S.; Jacomy, M.; et al. (2009). Gephi: an open source software for exploring and manipulating networks.
+Icwsm 8(2009), 361–362.
+
+Bates, D.; Mächler, M.; Bolker, B.; Walker, S. (2014). Fitting linear mixed-effects models using lme4. arXiv preprint
+arXiv:1406.5823 .
+
+Beller, M.; Bacchelli, A.; Zaidman, A.; Juergens, E. (2014). Modern Code Reviews in Open-source Projects: Which Problems
+Do They Fix? In: Proceedings of the 11th Working Conference on Mining Software Repositories. MSR 2014, New York,
+NY, USA: ACM, pp. 202–211.
+
+Berger-Wolf, T. Y.; Saia, J. (2006). A framework for analysis of dynamic social networks. In: Proceedings of the 12th ACM
+SIGKDD international conference on Knowledge discovery and data mining. ACM, pp. 523–528.
+
+Bird, C.; Gourley, A.; Devanbu, P.; Gertz, M.; Swaminathan, A. (2006). Mining email social networks. In: Proceedings of the
+2006 international workshop on Mining software repositories. ACM, pp. 137–143.
+
+Bird, C.; Nagappan, N.; Murphy, B.; Gall, H.; Devanbu, P. (2011). Don’T Touch My Code!: Examining the Effects of Own-
+ership on Software Quality. In: Proceedings of the 19th ACM SIGSOFT Symposium and the 13th European Conference on
+Foundations of Software Engineering. ESEC/FSE ’11, New York, NY, USA: ACM, pp. 4–14.
+
+Brooks, F. P. (1975). The Mythical Man-Month. Addison-Wesley.
+
+Carley, K. M.; Pfeffer, J. (2012). Dynamic network analysis (DNA) and ORA. Advances in Design for Cross-Cultural Activities
+Part I , 265–274.
+
+Carley, K. M.; Wallace, W. A. (2001). Computational organization theory.
+Management Science, Springer. pp. 126–132.
+
+In: Encyclopedia of Operations Research and
+
+Cataldo, M.; Herbsleb, J. D. (2008). Communication networks in geographically distributed software development. In: Pro-
+ceedings of the 2008 ACM conference on Computer supported cooperative work. ACM, pp. 579–588.
+
+Cataldo, M.; Scholtes, I.; Valetto, G. (2014). A Complex Networks Perspective on Collaborative Software Engineering. Ad-
+vances in Complex Systems 17(7-8).
+
+Cataldo, M.; Wagstrom, P. A.; Herbsleb, J. D.; Carley, K. M. (2006). Identiﬁcation of coordination requirements: implications
+for the Design of collaboration and awareness tools. In: Proceedings of the 2006 20th anniversary conference on Computer
+supported cooperative work. ACM, pp. 353–362.
+
+Cohen, E.; Consens, M. P. (2018). Large-Scale Analysis of the Co-commit Patterns of the Active Developers in GitHub’s Top
+Repositories. In: 2018 IEEE/ACM 15th International Conference on Mining Software Repositories (MSR). pp. 426–436.
+
+Costello, S. H. (1984). Software engineering under deadline pressure. ACM SIGSOFT Software Engineering Notes 9(5), 15–19.
+
+Csardi, G.; Nepusz, T. (2006). The igraph software package for complex network research. InterJournal Complex Systems,
+1695.
+
+Freeman, L. C. (1978). Centrality in social networks conceptual clariﬁcation. Social networks 1(3), 215–239.
+
+Fritz, T.; Murphy, G. C.; Hill, E. (2007). Does a Programmer’s Activity Indicate Knowledge of Code? In: Proceedings of
+the the 6th Joint Meeting of the European Software Engineering Conference and the ACM SIGSOFT Symposium on The
+Foundations of Software Engineering. ESEC-FSE ’07, New York, NY, USA: ACM, pp. 341–350.
+
+Garcia, D.; Zanetti, M. S.; Schweitzer, F. (2013). The role of emotions in contributors activity: A case study on the Gentoo
+community. In: 2013 International Conference on Cloud and Green Computing. IEEE, pp. 410–417.
+
+31/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Geipel, M. M. (2012). Modularity, dependence and change. Advances in Complex Systems 15(06), 1250083.
+
+Geipel, M. M.; Press, K.; Schweitzer, F. (2014). Communication In Innovation Communities: An Analysis Of 100 Open Source
+Software Projects. ACS - Advances in Complex Systems 17(07n08), 1550006.
+
+Geipel, M. M.; Schweitzer, F. (2009). Software change dynamics: evidence from 35 java projects. In: Proceedings of the the
+7th joint meeting of the European software engineering conference and the ACM SIGSOFT symposium on The foundations
+of software engineering. ACM, pp. 269–272.
+
+Gote, C.; Scholtes, I.; Schweitzer, F. (2019). git2net - An Open Source Package to Mine Time- Stamped Collaboration Networks
+from Large git Repositories.
+
+Gousios, G.; Spinellis, D. (2012). GHTorrent: GitHub’s data from a ﬁrehose. In: Mining software repositories (msr), 2012 9th
+ieee working conference on. IEEE, pp. 12–21.
+
+Gousios, G.; Spinellis, D. (2017). Mining software engineering data from GitHub.
+(ICSE-C), 2017 IEEE/ACM 39th International Conference on. IEEE, pp. 501–502.
+
+In: Software Engineering Companion
+
+Greiler, M.; Herzig, K.; Czerwonka, J. (2015). Code Ownership and Software Quality: A Replication Study.
+IEEE/ACM 12th Working Conference on Mining Software Repositories. pp. 2–12.
+
+In: 2015
+
+Guzzi, A.; Bacchelli, A.; Lanza, M.; Pinzger, M.; Deursen, A. v. (2013). Communication in open source software development
+mailing lists. In: Proceedings of the 10th Working Conference on Mining Software Repositories. IEEE Press, pp. 277–286.
+
+Hagberg, A.; Swart, P.; S Chult, D. (2008). Exploring network structure, dynamics, and function using NetworkX. Tech. rep.,
+Los Alamos National Lab.(LANL), Los Alamos, NM (United States).
+
+Holme, P. (2015). Modern temporal network theory: a colloquium. The European Physical Journal B 88(9), 234.
+
+Hong, Q.; Kim, S.; Cheung, S. C.; Bird, C. (2011). Understanding a developer social network and its evolution .
+
+Howison, J.; Inoue, K.; Crowston, K. (2006). Social dynamics of free and open source team communications.
+International Conference on Open Source Systems. Springer, pp. 319–330.
+
+In: IFIP
+
+Huang, S.-K.; Liu, K.-m. (2005). Mining Version Histories to Verify the Learning Process of Legitimate Peripheral Participants.
+In: Proceedings of the 2005 International Workshop on Mining Software Repositories. MSR ’05, New York, NY, USA: ACM,
+pp. 1–5.
+
+Joblin, M.; Mauerer, W.; Apel, S.; Siegmund, J.; Riehle, D. (2015). From Developer Networks to Veriﬁed Communities: A
+Fine-grained Approach. In: Proceedings of the 37th International Conference on Software Engineering - Volume 1. ICSE
+’15, Piscataway, NJ, USA: IEEE Press, pp. 563–573.
+
+Kalliamvakou, E.; Gousios, G.; Blincoe, K.; Singer, L.; German, D. M.; Damian, D. (2016). An in-depth study of the promises
+and perils of mining GitHub. Empirical Software Engineering 21(5), 2035–2071.
+
+Kravitz, D. A.; Martin, B. (1986). Ringelmann rediscovered: The original article. .
+
+Latané, B.; Williams, K.; Harkins, S. (1979). Many hands make light the work: The causes and consequences of social loaﬁng.
+Journal of personality and social psychology 37(6), 822.
+
+Levenshtein, V. I. (1966). Binary codes capable of correcting deletions, insertions, and reversals. In: Soviet physics doklady.
+vol. 10, pp. 707–710.
+
+32/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Lin, Z.; Whitehead, J. (2015). Why Power Laws? An Explanation from Fine-Grained Code Changes. In: 2015 IEEE/ACM 12th
+Working Conference on Mining Software Repositories. pp. 68–75.
+
+Long, Y.; Siau, K. (2007). Social network structures in open source software development teams. Journal of Database Man-
+agement (JDM) 18(2), 25–40.
+
+Lopez-Fernandez, L.; Robles, G.; Gonzalez-Barahona, J. M.; et al. (2004). Applying social network analysis to the information
+in CVS repositories. In: International Workshop on Mining Software Repositories. IET, pp. 101–105.
+
+MacLean, A. C.; Knutson, C. D. (2013). Apache commits: social network dataset.
+Conference on Mining Software Repositories. IEEE Press, pp. 135–138.
+
+In: Proceedings of the 10th Working
+
+Madey, G.; Freeh, V.; Tynan, R. (2002). The open source software development phenomenon: An analysis based on social
+network theory. AMCIS 2002 Proceedings , 247.
+
+McCabe, T. J. (1976). A complexity measure. IEEE Transactions on software Engineering (4), 308–320.
+
+Meneely, A.; Williams, L.; Snipes, W.; Osborne, J. (2008). Predicting Failures with Developer Networks and Social Network
+Analysis. In: Proceedings of the 16th ACM SIGSOFT International Symposium on Foundations of Software Engineering.
+SIGSOFT ’08/FSE-16, New York, NY, USA: ACM, pp. 13–23.
+
+Mockus, A.; Fielding, R. T.; Herbsleb, J. D. (2002). Two case studies of open source software development: Apache and
+Mozilla. ACM Transactions on Software Engineering and Methodology (TOSEM) 11(3), 309–346.
+
+Newman, M. (2018). Networks. Oxford university press.
+
+Ogawa, M.; Ma, K.-L. (2010). Software evolution storylines. In: Proceedings of the 5th international symposium on Software
+visualization. ACM, pp. 35–42.
+
+Pohl, M.; Diehl, S. (2008). What dynamic network metrics can tell us about developer roles. In: Proceedings of the 2008
+international workshop on Cooperative and human aspects of software engineering. ACM, pp. 81–84.
+
+Ringelmann, M. (1913). Recherches sur les moteurs animes: Travail de l’homme. Annales de l’Institut National Agronomique
+12(1), 1–40.
+
+Scholtes, I. (2017a). Software Package pathpy. http://pathpy.net. [Online].
+
+Scholtes, I. (2017b). When is a Network a Network?: Multi-Order Graphical Model Selection in Pathways and Temporal
+Networks. In: Proceedings of the 23rd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining.
+KDD ’17, New York, NY, USA: ACM, pp. 1037–1046.
+
+Scholtes, I.; Mavrodiev, P.; Schweitzer, F. (2016). From Aristotle to Ringelmann: a large-scale analysis of team productivity
+and coordination in Open Source Software projects. Empirical Software Engineering 21(2), 642–683.
+
+Scholtes, I.; Wider, N.; Pﬁtzner, R.; Garas, A.; Tessone, C. J.; Schweitzer, F. (2014). Causality-driven slow-down and speed-up
+of diffusion in non-Markovian temporal networks. Nature communications 5, 5024.
+
+Schweitzer, F.; Nanumyan, V.; Tessone, C. J.; Xia, X. (2014). How do OSS projects change in number and size? A large-scale
+analysis to test a model of project growth. ACS - Advances in Complex Systems 17(07n08), 1550008.
+
+Shannon, C. E. (1948). A mathematical theory of communication. Bell system technical journal 27(3), 379–423.
+
+Spadini, D.; Aniche, M.; Bacchelli, A. (2018). PyDriller: Python Framework for Mining Software Repositories.
+
+33/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Sureka, A.; Goyal, A.; Rastogi, A. (2011). Using social network analysis for mining collaboration data in a defect tracking
+system for risk and vulnerability analysis.
+In: Proceedings of the 4th india software engineering conference. ACM, pp.
+195–204.
+
+Tangen, S. (2005). Demystifying productivity and performance. International Journal of Productivity and performance man-
+agement 54(1), 34–46.
+
+Vijayaraghavan, V. S.; Noël, P.-A.; Maoz, Z.; Dâ ˘A ´ZSouza, R. M. (2015). Quantifying dynamical spillover in co-evolving
+multiplex networks. Scientiﬁc reports 5, 15142.
+
+Von Krogh, G.; Von Hippel, E. (2006). The promise of research on open source software. Management science 52(7), 975–983.
+
+Wolf, T.; Schroter, A.; Damian, D.; Nguyen, T. (2009a). Predicting Build Failures Using Social Network Analysis on Developer
+Communication. In: Proceedings of the 31st International Conference on Software Engineering. ICSE ’09, Washington, DC,
+USA: IEEE Computer Society, pp. 1–11.
+
+Wolf, T.; Schröter, A.; Damian, D.; Panjer, L. D.; Nguyen, T. H. (2009b). Mining task-based social networks to explore
+collaboration in software teams. IEEE Software 26(1), 58–66.
+
+Xie, T.; Thummalapenta, S.; Lo, D.; Liu, C. (2009). Data mining for software engineering. Computer 42(8).
+
+Xuan, Q.; Filkov, V. (2014). Building It Together: Synchronous Development in OSS. In: Proceedings of the 36th International
+Conference on Software Engineering. ICSE 2014, New York, NY, USA: ACM, pp. 222–233.
+
+Zanetti, M. S.; Scholtes, I.; Tessone, C. J.; Schweitzer, F. (2013a). Categorizing bugs with social networks: a case study on
+four open source software communities.
+In: D. Notkin; B. H. C. Cheng; K. Pohl (eds.), 35th International Conference
+on Software Engineering, ICSE ’13, San Francisco, CA, USA, May 18-26, 2013. IEEE / ACM, pp. 1032–1041. http:
+
+//dl.acm.org/citation.cfm?id=2486930.
+
+Zanetti, M. S.; Scholtes, I.; Tessone, C. J.; Schweitzer, F. (2013b). The rise and fall of a central contributor: Dynamics of
+social organization and performance in the Gentoo community. In: CHASE/ICSE ’13 Proceedings of the 6th International
+Workshop on Cooperative and Human Aspects of Software Engineering. pp. 49–56.
+
+34/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+8 Supplementary Material
+
+In the following we provide additional information and supporting results for the large scale analysis of coordination overhead
+in software teams presented in section 5.
+First, in section we describe in detail the data cleaning process underlying our results. Subsequently, feature correlations before
+and after feature selection are shown for igraph, bitcoin, libav, FFmpeg, and gentoo in section 8.2. Further, we show all
+results from the model selection step in section 8.3. Finally, additional results supporting the robustness of our ﬁndings with
+regard to the parameters set during the data cleaning step are presented in section 8.4.
+
+8.1 Data cleaning
+
+As discussed in section 5.1, to test our research hypothesis, only edits in which existing code was modiﬁed are relevant.
+Therefore, any commits that are not labelled as “replacement” by git2net are dropped. Any edits that originated from or
+resulted in an empty line are dropped for the same reason. Additionally, we do not consider any edits to ﬁles for which no
+cyclomatic complexity can be computed. These are generally data ﬁles, images, etc. which are not part of this analysis. The
+exact number of disregarded edits per project are shown in Table S1.
+While cleaning the data, we discovered a large number of commits with inter-commit times of 0 and 1 seconds, particularly
+for linux. Further analysis revealed that developers often make multiple consecutive commits after working on a section of
+code. In doing so, individual commit messages can be assigned to different sets of edits, facilitating the tracking of changes
+in the project. This behaviour invalidates our assumption that the inter-commit time represents an upper boundary of the time
+a developer spent on the edits is violated. As illustrated in Figure S1 we thus aggregate commits with inter-commit times
+of less than a given threshold ∆ to a single code contribution. While the threshold needs to be sufﬁciently high to avoid the
+cases mentioned above, setting it too high will merge commits that belong to adjacent contributions. After discussions with
+professional software developers, we aggregated consecutive commits with inter-commit times of less that ∆ = 5 minutes6 .
+Subsequently, we perform all analyses at the level of (aggregated) code contributions rather than commits.
+The GitHub repository of gentoo only exists since August 2015, whereas development started as early as 1999. When creating
+the git repository, an initial commit was made that includes the entire history of the project until this point. To not falsely
+
+6We highlight that our results are robust with regard to different parameters ∆. Results for ∆ of 1 and 10 minutes are shown in the supple-
+mentary material.
+
+Table S1: Overview of data collection and cleaning process. Only commits with less than 1000 modiﬁed ﬁles were
+originally mined. Edits were dropped due to not being replacements or not relating to code.
+
+# of authors
+# of commits
+# mined
+% mined
+# of replacements
+# dropped
+% dropped
+
+igraph
+36
+5’919
+5’885
+99.43
+85’650
+13’877
+13.94
+
+bitcoin
+803
+21’196
+20’545
+96.93
+338’733
+70’060
+17.14
+
+libav FFmpeg
+965
+1’785
+45’232
+94’942
+45’232
+90’197
+100.00
+95.00
+551’468
+835’141
+23’045
+31’319
+4.01
+3.61
+
+gentoo
+964
+265’453
+264’559
+99.66
+376’102
+3’464
+0.91
+
+linux
+20’581
+855’283
+814’535
+95.24
+6’985’866
+227’007
+3.15
+
+35/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+commit
+
+contribution
+
+Figure S1: Aggregation of commits to contributions.
+
+time
+
+attribute all previous development efforts to the author making this ﬁrst commit, we drop all edits to lines initially added with
+the ﬁrst commit. This amounts to almost 25% of the remaining edits in the database.
+
+The distribution of developer productivity reveals a small number of outliers with very large values. A manual inspection
+showed that these are mostly due to automated changes of code style, or search and replace operations7 . We argue that such
+commits are not representative of typical software development and thus consider them as outliers. To not bias our analysis
+we removed them from the dataset by excluding the top ε quantile of contributions with respect to productivity. Similar to the
+aggregation time window, the removal threshold cannot be set too low, but setting it too high will also result in the removal of
+the most productive contributions in the respective project. After discussion with professional developers, we decided to remove
+the top ε = 5% contributions with regard to developer productivity from the dataset8 .
+
+7 cf commit 4be44fcd3bf648b782f4460fd06dfae6c42ded4b in linux or commit eaaface92ee81f30a6ac66fe7acbcc42c00dc450 in gentoo
+8 The results are robust with regard to the removal threshold. Results for ε = 1% and 10% are shown in the supplementary material.
+
+36/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+8.2 Feature correlations
+
+Figure S2: Spearman’s rank-order correlations for igraph before feature selection.
+
+Figure S3: Spearman’s rank-order correlations for bitcoin before feature selection.
+
+37/44
+
+llllllllllllllllllllllllllllllllllllllllllllllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lcyc_fnol_lnol_fnofnoc_dnoc_twkdtfcowntpe_ltpe_e0.980.750.730.07−0.22−0.01−0.03−0.13−0.220.140.140.730.750.04−0.220−0.02−0.13−0.210.150.150.950.03−0.050.05−0.02−0.01−0.150.20.20.01−0.040.05−0.01−0.01−0.140.20.2−0.03−0.210.01−0.09−0.060.020.020.560.020.920.280.060.07−0.030.73−0.110.30.310.020000.150.170.17−0.31−0.310.99llllllllllllllllllllllllllllllllllllllllllllllllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lcyc_fnol_lnol_fnofnoc_dnoc_twkdtfcowntpe_ltpe_e0.980.860.840.10.01−0.0200.04−0.050.110.110.850.860.080.01−0.0200.04−0.060.110.110.980.090.01−0.0400.04−0.030.10.10.060.01−0.0300.04−0.040.10.10.05−0.05−0.03−0.010.120.080.080.060.070.730.220.030.030.110.37−0.190.310.320.09−0.02000.040.170.17−0.37−0.370.98C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Figure S4: Spearman’s rank-order correlations for libav before feature selection.
+
+Figure S5: Spearman’s rank-order correlations for FFmpeg before feature selection.
+
+38/44
+
+lllllllllllllllllllllllllllllllllllllllllllllllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lcyc_fnol_lnol_fnofnoc_dnoc_twkdtfcowntpe_ltpe_e0.980.80.78−0.010.03−0.070−0.020.030.140.150.790.8−0.020.04−0.070−0.020.040.140.140.98−0.030.02−0.10−0.020.030.080.08−0.050.03−0.10−0.020.040.070.080.020.01−0.01−0.010.020.090.080.2200.710.170.10.10.040.49−0.150.250.250.01−0.020.020.020.020.180.18−0.4−0.390.99llllllllllllllllllllllllllllllllllllllllllllllllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lcyc_fnol_lnol_fnofnoc_dnoc_twkdtfcowntpe_ltpe_e0.980.780.76−0.030.05−0.0200.050.020.170.170.770.78−0.050.05−0.0200.060.020.170.170.98−0.04−0.01−0.040.010.010.020.120.12−0.05−0.01−0.040.010.010.020.110.12−0.02−0.030−0.040.030.070.070.25−0.020.820.110.060.060.010.37−0.090.160.16−0.02−0.020.010.010.010.120.13−0.33−0.330.99C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Figure S6: Spearman’s rank-order correlations for gentoo before feature selection.
+
+Figure S7: Spearman’s rank-order correlations for igraph after feature selection.
+
+39/44
+
+llllllllllllllllllllllllllllllllllllllllllllllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lcyc_fnol_lnol_fnofnoc_dnoc_twkdtfcowntpe_ltpe_e0.970.720.70.070.060−0.010.01−0.05−0.1−0.10.70.720.10.050−0.010.01−0.03−0.1−0.10.970.020.02−0.01−0.010−0.01−0.13−0.140.060.01−0.01000.01−0.14−0.140.180.08−0.030.05−0.130.060.060.45−0.060.61−0.0700−0.020.85−0.050.170.17−0.030.04−0.04−0.030.030.140.14−0.16−0.150.99llllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lnofnoc_dnoc_twkdowntpe_l0.07−0.22−0.01−0.03−0.220.14−0.03−0.210.01−0.060.020.560.020.280.06−0.03−0.110.300−0.31C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Figure S8: Spearman’s rank-order correlations for bitcoin after feature selection.
+
+Figure S9: Spearman’s rank-order correlations for libav after feature selection.
+
+40/44
+
+lllllllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lnofnoc_dnoc_twkdowntpe_l0.10.01−0.020−0.050.110.05−0.05−0.030.120.080.060.070.220.030.11−0.190.31−0.020−0.37lllllllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lnofnoc_dnoc_twkdowntpe_l−0.010.03−0.0700.030.140.020.01−0.010.020.090.2200.170.10.04−0.150.25−0.020.02−0.4C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Figure S10: Spearman’s rank-order correlations for FFmpeg after feature selection.
+
+Figure S11: Spearman’s rank-order correlations for gentoo after feature selection.
+
+41/44
+
+lllllllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lnofnoc_dnoc_twkdowntpe_l−0.030.05−0.0200.020.17−0.02−0.0300.030.070.25−0.020.110.060.01−0.090.16−0.020.01−0.33llllllllllllllllll−1−0.8−0.6−0.4−0.200.20.40.60.81cyc_lnofnoc_dnoc_twkdowntpe_l0.070.060−0.01−0.05−0.10.180.08−0.03−0.130.060.45−0.06−0.070−0.02−0.050.170.04−0.04−0.16C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+8.3 Model selection
+
+Table S2: AIC as well as Chi-squared test for the three candidate models for igraph.
+
+igraph Df
+
+LM
+ME-
+ME+
+
+9
+11
+12
+
+AIC Chisq Chi Df Pr(>Chisq)
+16.75
+—
+—
+—
+11.39
+9.36
+2.0
+0.01
+0.00
+13.39
+1.0
+0.00
+
+Table S3: AIC as well as Chi-squared test for the three candidate models for bitcoin.
+
+bitcoin Df
+
+LM
+ME-
+ME+
+
+9
+11
+12
+
+AIC Chisq Chi Df Pr(>Chisq)
+69.40
+—
+—
+—
+8.69
+64.71
+2.0
+0.0
+0.00
+10.69
+1.0
+0.0
+
+Table S4: AIC as well as Chi-squared test for the three candidate models for libav.
+
+libav Df
+
+LM
+9
+ME-
+11
+ME+ 12
+
+AIC
+362.64
+38.31
+0.00
+
+Chisq Chi Df Pr(>Chisq)
+—
+—
+—
+328.33
+2.0
+0.0
+40.31
+1.0
+0.0
+
+Table S5: AIC as well as Chi-squared test for the three candidate models for FFmpeg.
+
+FFmpeg Df
+
+LM
+ME-
+ME+
+
+9
+11
+12
+
+AIC
+787.62
+13.95
+0.00
+
+Chisq Chi Df Pr(>Chisq)
+—
+—
+—
+777.67
+2.0
+0.0
+15.95
+1.0
+0.0
+
+Table S6: AIC as well as Chi-squared test for the three candidate models for gentoo.
+
+gentoo
+
+Df
+LM
+9
+ME-
+11
+< ME+ 12
+
+AIC
+1364.22
+36.72
+0.00
+
+Chisq Chi Df Pr(>Chisq)
+—
+—
+—
+1331.50
+2.0
+0.0
+38.72
+1.0
+0.0
+
+42/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+8.4 Results for alternative cleaning parameters
+
+Table S7: Regression results of ME+ for all projects in the case study for ∆ = 1 minute and ε = 5%. The asterisks
+indicate p < 0.05 (*), p < 0.01 (**), and p < 0.001 (***).
+
+igraph
+
+bitcoin
+
+libav
+
+FFmpeg
+
+gentoo
+
+linux
+
+own
+
+(IC)
+cycl
+noct
+no f
+t pel
+nocd
+wkd
+
+-20.72
+178.63*
+0.1*
+2.16
+3.68**
+-2.44
+-0.15
+-12.06
+
+22.11**
+63.24***
+0.01
+-0.78
+2.04***
+4.1
+7.3*
+4.93
+
+33.11***
+115.12***
+0.0
+-2.11***
+1.22***
+11.48***
+5.39**
+-9.56*
+
+11.95***
+99.37***
+-0.0
+-0.59***
+1.6***
+4.91***
+3.8***
+-6.94*
+
+4.43*
+85.98***
+-1.16***
+-0.11***
+4.17***
+47.65***
+1.52***
+-10.26***
+
+11.04***
+91.27***
+0.0
+-0.09***
+3.09***
+4.35***
+5.18***
+-13.59***
+
+Table S8: Regression results of ME+ for all projects in the case study for ∆ = 10 minutes and ε = 5%. The asterisks
+indicate p < 0.05 (*), p < 0.01 (**), and p < 0.001 (***).
+
+igraph
+
+bitcoin
+
+libav
+
+FFmpeg
+
+gentoo
+
+linux
+
+own
+
+(IC)
+cycl
+noct
+no f
+t pel
+nocd
+wkd
+
+25.28**
+
+15.47
+0.04**
+2.99
+1.98***
+-0.01
+-0.09
+2.81
+
+3.9
+26.67***
+0.01*
+-0.39
+0.71***
+-0.75
+3.88.
+5.94.
+
+9.28***
+28.53***
+-0.0
+-0.45***
+1.12***
+3.05***
+1.69***
+-4.24**
+
+4.17***
+24.28***
+-0.0
+-0.12***
+1.34***
+1.53***
+0.97***
+-2.26*
+
+5.02***
+18.7***
+-0.2***
+-0.04***
+0.86***
+7.6***
+0.2***
+-1.98**
+
+3.25***
+10.65***
+0.0***
+-0.01***
+1.07***
+0.57***
+1.03***
+-0.74*
+
+43/44
+
+C. Gote, I. Scholtes, F. Schweitzer:
+Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net
+(Submitted for publication)
+
+Table S9: Regression results of ME+ for all projects in the case study for ∆ = 5 minutes and ε = 1%. The asterisks
+indicate p < 0.05 (*), p < 0.01 (**), and p < 0.001 (***).
+
+igraph
+
+bitcoin
+
+libav
+
+FFmpeg
+
+gentoo
+
+linux
+
+own
+
+(IC)
+cycl
+noct
+no f
+t pel
+nocd
+wkd
+
+-23.15
+111.24**
+0.09*
+-4.07
+6.01***
+-3.91
+2.36
+9.05
+
+22.41
+45.09*
+0.06**
+-0.1
+4.35***
+9.95*
+10.6***
+6.74
+
+30.08***
+89.25***
+-0.0
+-1.36**
+2.79***
+14.54***
+3.16*
+-14.2*
+
+10.93*
+82.3***
+-0.01.
+-0.37**
+3.54***
+5.48***
+2.59***
+-7.4.
+
+18.39***
+83.09***
+-1.28***
+-0.12***
+2.52***
+32.17***
+0.67*
+-9.55**
+
+12.57***
+62.14***
+0.01**
+-0.08***
+6.39***
+4.67***
+4.7***
+-12.5***
+
+Table S10: Regression results of ME+ for all projects in the case study for ∆ = 5 minutes and ε = 10%. The
+asterisks indicate p < 0.05 (*), p < 0.01 (**), and p < 0.001 (***).
+
+igraph
+
+bitcoin
+
+libav
+
+FFmpeg
+
+gentoo
+
+linux
+
+own
+
+(IC)
+cycl
+noct
+no f
+t pel
+nocd
+wkd
+
+12.36*
+25.66***
+0.0
+0.86
+1.08***
+-0.22
+28.26
+1.83
+
+3.71.
+22.49***
+0.0
+-0.62**
+0.37***
+0.65
+2.45**
+3.78.
+
+8.47***
+27.07***
+-0.0
+-0.49***
+0.77***
+2.5***
+1.79***
+-3.84**
+
+3.58***
+21.05***
+-0.0
+-0.12***
+0.91***
+1.2***
+1.08***
+-1.96**
+
+2.61***
+19.19***
+-0.19***
+-0.03***
+0.7***
+6.7***
+0.25***
+-1.84***
+
+1.71***
+7.67***
+0.0*
+-0.01***
+0.62***
+0.34***
+0.76***
+-0.33.
+
+44/44
+
+

@@ -1,0 +1,1212 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+7
+0
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Patch-level Neighborhood Interpolation:
+A General and Effective Graph-based Regularization Strategy
+
+Ke Sun∗ 1 , Bing Yu∗∗ 2 , Zhouchen Lin3 5 , Zhanxing Zhu†† 1 2 4
+1Center for Data Science, Peking University
+2School of Mathematical Sciences, Peking University
+3 Key Lab. of Machine Perception (MOE), School of EECS, Peking University
+4 Beijing Institute of Big Data Research
+5 Samsung Research China - Beijing (SRC-B)
+
+{ajksunke,byu,zlin,zhanxing.zhu}@pku.edu.cn
+
+Abstract
+
+Regularization plays a crucial role in machine learning mod-
+els, especially for deep neural networks. The existing regular-
+ization techniques mainly reply on the i.i.d. assumption and
+only employ the information of the current sample, without
+the leverage of neighboring information between samples. In
+this work, we propose a general regularizer called Patch-level
+Neighborhood Interpolation (Pani) that fully exploits the re-
+lationship between samples. Furthermore, by explicitly con-
+structing a patch-level graph in the different network layers
+and interpolating the neighborhood features to reﬁne the rep-
+resentation of the current sample, our Patch-level Neighbor-
+hood Interpolation can then be applied to enhance two popular
+regularization strategies, namely Virtual Adversarial Training
+(VAT) and MixUp, yielding their neighborhood versions. The
+ﬁrst derived Pani VAT presents a novel way to construct non-
+local adversarial smoothness by incorporating patch-level in-
+terpolated perturbations. In addition, the Pani MixUp method
+extends the original MixUp regularization to the patch level
+and then can be developed to MixMatch, achieving the state-
+of-the-art performance. Finally, extensive experiments are
+conducted to verify the effectiveness of the Patch-level Neigh-
+borhood Interpolation in both supervised and semi-supervised
+settings.
+
+1
+
+Introduction
+
+In statistical learning theory, regularization techniques are
+typically leveraged to achieve the trade-off between empiri-
+cal error minimization and the control of the model complex-
+ity [26]. In contrast to classical convex empirical risk min-
+imization where regularization can rule out trivial solutions,
+regularization plays a rather different role in deep learning due
+
+∗ Equal contributions.
+†Corresponding author.
+
+to the highly non-convex optimization property [29]. In this
+paper, we ﬁrstly review two effective and prestigious regular-
+ization branches for deep neural networks that can elegantly
+generalize from supervised learning to semi-supervised set-
+ting.
+Adversarial Training [5, 16] can provide an additional reg-
+ularization beyond that provided by other generic regulariza-
+tion strategies, such as dropout, pretraining and model av-
+eraging. However, recent works [31, 25] demonstrated that
+this kind of training method holds a trade-off between the
+robustness and accuracy, limiting the efﬁcacy of the adver-
+sarial regularization. In addition, Virtual Adversarial Train-
+ing (VAT) [19] can be regarded as a natural extension of ad-
+versarial training to semi-supervised setting without the lever-
+age of label information by imposing local smoothness on
+the classiﬁer. This strategy has achieved great success in im-
+age classiﬁcation [19], text classiﬁcation [17] as well as node
+classiﬁcation [22]. Tangent-Normal Adversarial Regulariza-
+tion (TNAR) [28] extended VAT by taking the data manifold
+into consideration and applied VAT along the tangent space
+and the orthogonal normal space of the data manifold, outper-
+forming other state-of-the-art semi-supervised approaches.
+MixUp [30] augmented the training data by incorporating
+the prior knowledge that linear interpolation of input vectors
+should lead to linear interpolation of the associated targets, ac-
+complishing consistent improvement of generalization on im-
+age, speech and tabular data. MixMatch [1] extended MixUp
+to semi-supervised tasks by guessing low-entropy labels for
+data-augmented unlabeled examples and mixing labeled and
+unlabeled data using MixUp.
+In contrast with VAT, Mix-
+Match [1] utilizes one speciﬁc form of consistency regular-
+ization, i.e., using the standard data augmentation for images,
+such as random horizontal ﬂips and crops, rather than com-
+puting adversarial perturbations to smooth the posterior dis-
+tribution of the classiﬁer.
+Nevertheless, most methods for the design of regulariza-
+tion, including the aforementioned approaches, assume that
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+the training samples are drawn independently and identically
+from an unknown data generating distribution. For instance,
+Support Vector Machine (SVM), Back-Propagation (BP) for
+Neural Networks, and many other common algorithms im-
+plicitly make this assumption as part of their derivation. How-
+ever, this i.i.d. assumption is commonly violated in realis-
+tic scenarios where batches or sub-groups of training samples
+are likely to have internal correlations.
+In particular, Dun-
+dar et al. [4] demonstrated that accounting for the correla-
+tions in real-world training data leads to statistically signiﬁ-
+cant improvements in accuracy. Similarly, Peer-Regularized
+Networks (PeerNet) [23] applied graph convolutions [9, 27]
+to harness information from a graph of peer samples so as to
+improve the adversarial robustness of deep neural networks.
+The resulting non-local propagation in the new model acted
+as a strong regularization that dramatically reduce the vulner-
+ability against adversarial attacks. Inspired by these ideas, we
+aim to design a general regularization strategy that can fully
+utilize the internal relationship between samples by explicitly
+constructing a graph within a batch in order to further im-
+prove the generalization in both supervised classiﬁcation and
+semi-supervised settings.
+In this paper, we propose the Patch-level Neighborhood In-
+terpolation (Pani) for deep neural networks, serving as a sim-
+ple yet effective regularization to improve the generalization
+of classiﬁers.We ﬁrstly construct a graph in each batch during
+mini-batch stochastic gradient decent training for deep neu-
+ral networks, according to the correlation between the patch-
+level features in the different layers of networks rather than
+among samples directly. The constructed graph is expected
+to capture the relationship of each patch features in both in-
+put and hidden layers. Then we apply linear interpolation on
+the neighbors of current patch element to reﬁne its represen-
+tation by additionally leveraging the neighborhood informa-
+tion. Furthermore, we customize our Neighbor Interpolation
+Method into Virtual Adversarial Regularization and MixUp
+regularization respectively, resulting in Pani VAT and Pani
+
+MixUp.
+
+For the Pani VAT, we reformulate the construction of ad-
+versarial perturbation, transforming from solely depending
+on the current sample to the linear combination of neighbor-
+ing patch features. The resulting adversarial perturbation can
+leverage the information of neighboring features for all sam-
+ples within a batch, thus providing more informative adver-
+sarial smoothness in semi-supervised setting. Similarly, in
+the Pani MixUp, we extend MixUp from image level to patch
+level by imposing random interpolation between patches in a
+neighborhood to better leverage more ﬁne-grained supervised
+signal. We conduct extensive experiments to demonstrate that
+both of the two derived regularization strategies can outper-
+form other state-of-the-art approaches in both supervised and
+semi-supervised tasks.
+Our contributions can be summarized as follow:
+• To the best of our knowledge, we are the ﬁrst to pro-
+
+pose a general regularization method by explicitly con-
+structing a patch-level graph that focuses on leveraging
+the information of correlations between samples in order
+to improve the generalization.
+• The resulting Patch-level Neighborhood Interpolation
+can provide a framework that can extend the current
+main branches of regularization, i.e., adversarial regu-
+larization and MixUp, achieving the-state-of-the-art per-
+formance over both supervised and semi-supervised set-
+tings.
+• Patch-level Neighborhood Interpolation paves a way to-
+ward better leveraging the neighborhood information on
+the design of machine learning modules.
+
+2 Preliminary
+
+2.1 Virtual Adversarial Training
+
+VAT [19] extends the adversarial
+training by utilizing
+“virtual” adversarial perturbations to construct adversarial
+smoothness, obtaining effective improvement on accuracy in
+semi-supervised learning (SSL). Particularly, VAT replaces
+true labels y of samples in the formulation of adversarial train-
+ing by current estimate p(y |x; ˆθ) from model:
+
+min
+
+θ
+
+max
+
+r,(cid:107)r(cid:107)≤
+
+D
+
+p(y |x; ˆθ), p(y |x + r ; θ)
+
+,
+
+(1)
+
+(cid:104)
+
+(cid:105)
+
+where D [q , p] measures the divergence between two distribu-
+tions q and p. r is the adversarial perturbation depending on
+current sample x than can further provide the smoothness in
+SSL. Then the VAT regularization could be derived from the
+inner maxization:
+
+Rvadv (x, y , r) = max
+
+r,(cid:107)r(cid:107)≤
+
+D
+
+p(y |x; ˆθ), p(y |x + r ; θ)
+
+(2)
+
+(cid:104)
+
+(cid:105)
+
+One elegant part of VAT is that it utilized the second-order
+Taylor’s expansion of virtual adversarial loss to compute the
+perturbation r , which can be computed efﬁciently by power
+iteration with ﬁnite difference. Once the desired perturba-
+tion r∗ has been computed, we can conduct forward and back
+propagation to optimize the full loss function:
+
+min
+
+θ
+
+L0 + βEx∼DRvadv (x, y , r∗ ),
+
+(3)
+where L0 is the original supervised loss and β is the hyper-
+parameter to control the degree of virtual adversarial smooth-
+ness.
+
+2.2 MixUp
+
+Mixup [30] augmented the training data with linear interpola-
+tion on both input features and target. The resulting feature-
+
+2
+
+target vectors are shown as follow:
+
+˜x =λxi + (1 − λ)xj
+˜y =λyi + (1 − λ)yj ,
+
+(4)
+
+where (xi , yi ) and (xj , yj ) are two feature-target vectors
+drawn randomly from the training data. λ ∼ Beta(a, a) and
+a ∈ (0, ∞). MixUp can be understood as a form of data
+augmentation that encourages decision boundaries to transit
+linearly between classes. It is a kind of generic regularization
+that provides a smoother estimate of uncertainty, yielding the
+improvement of generalization.
+
+2.3 Peer-Regularized Networks (PeerNet)
+
+The centerpiece of PeerNet [23] is the learnable Peer Regu-
+larization (PR) layer designed to focus on improving the ad-
+versarial robustness of deep neural networks. PR layer can be
+ﬂexibly added into the feature maps of deep models.
+Let Z1 , ..., ZN be n × d matrices as the feature maps of
+N images, where n is the number of pixels and d represents
+the dimension of each pixel. The core of PeerNet is to ﬁnd
+the K nearest neighboring pixels for each pixel among all the
+pixes of N peer images via constructing a K nearest neighbor
+graph in the d-dimensional space. Particularly, for the p-th
+pixel in the i-th image zi
+p , the k-th nearest pixel neighbor can
+be denoted as zjk
+qk taken from the pixel qk of the peer image
+jk . Then the learnable PR layer is constructed by a variant of
+
+˜zi
+p =
+
+Graph Attention Networks (GAT) [27]:
+LeakyReLU (cid:0)exp (cid:0)a (cid:0)zi
+k(cid:48)=1 LeakyReLU
+
+K(cid:88)
+(cid:80)K
+
+αijk pqk zjk
+qk
+
+αijk pqk =
+
+exp
+
+a
+
+(cid:16)
+
+k=1
+
+,
+
+(cid:1)(cid:1)(cid:1)
+
+(cid:16)
+
+(cid:16)
+
+p , zjk
+qk
+
+p , zjk(cid:48)
+
+qk(cid:48)
+
+zi
+
+(5)
+
+(cid:17)(cid:17)(cid:17) ,
+
+where αijk pqk is the attention score determining the impor-
+tance of the qk -th pixel of the j -th peer image on the repre-
+sentation of current p-th pixel ˜zi
+p taken from the i-th image.
+Therefore, the resulting learnable PR layer involves non-local
+ﬁltering by leveraging the wisdom of pixel neighbors from
+peer images, yielding robustness against adversarial attacks.
+
+3 Patch-level Neighborhood Interpola-
+tion
+
+Inspired by the pixel-level nearest neighbor graph in PeerNet,
+we propose a more general patch-level regularization that can
+easily extend from pixel to the whole image by adjusting the
+corresponding patch size. For instance, when we set patch
+size as 1, we in fact construct a graph based on features of
+each pixel, which is the same as the way of constructing a
+graph in PeerNet. Another ﬂexible part of our method is that
+we can choose the arbitrary layer in a deep neural networks
+including the input layer and hidden layers. In the different
+layers, a ﬂexible patch size can be chosen according to the
+
+Figure 1: Pipeline of our Patch-level Neighborhood Interpolation followed by two derived regularization, i.e., Pani VAT and
+Pani MixUp. r represents the perturbation constructed by our method and (λ, 1 − λ) is the mixing coefﬁcient pair.
+
+3
+
+(cid:1878)(cid:2868)(cid:1870)(cid:1878)=(cid:1878)(cid:2868)+(cid:3533)(cid:2015)(cid:3036)(cid:1878)(cid:3036)(cid:1878)(cid:2869)(cid:1878)(cid:2870)(cid:1878)(cid:2870)(cid:1877)(cid:2870)(cid:1878)(cid:2871)(cid:1877)(cid:2871)(cid:1878)(cid:2869)(cid:1877)(cid:2869)((cid:2019),1−(cid:2019))size of receptive ﬁeld in order to capture the different semantic
+information.
+Concretely, for our Patch-level Neighborhood Interpolation
+(Pani) shown in Figure 1, in the ﬁrst step we deploy ﬁltering
+operation for the whole images in a batch to determine the
+candidate peer images set S for each image. For example, af-
+ter the ﬁltering, the candidate set Si can be established for the
+i-th image. The speciﬁc way of ﬁltering can be achieved by
+retrieving the semantically nearest peer images or by random
+matching. In the meantime, we construct the whole patches
+set Pi in the candidate peer images set Si by applying one
+special convolution to extract the corresponding patch in the
+different locations in an input or feature map Z.
+Following the establishment of patch set Pi , we construct
+K nearest neighbor graph based on the cosine distance of
+patch features in order to ﬁnd the neighbors of each patch in
+patch set Pi for i-th image, ∀i = 1, .., N with respect to its
+candidate set Si . Mathematically, following the deﬁnition in
+the PeerNet, let zi
+p be the p-th patch on the input or feature
+map Zi for the i-th image within one batch. Then denote the
+k-th nearest patch neighbor for zi
+qk taken from the patch
+qk of the peer image jk in the candidate set Si .
+Next, in order to leverage the knowledge from neighbors,
+different from graph attention mechanism in PeerNet, we ap-
+ply more straightforward linear interpolation on the neighbor-
+ing patches for the current patch zi
+p . Then, the general formu-
+lation of our Patch-level Neighborhood Interpolation can be
+presented as follow:
+
+p as zjk
+
+K(cid:88)
+
+˜zi
+p = zi
+p +
+
+ηipk (zjk
+qk
+
+− zi
+p ),
+
+(6)
+
+k=1
+
+where ηipk is the combination coefﬁcient for the p-th patch of
+i-th image w.r.t its k-th patch neighbor. The choice of linear
+interpolation or combination is natural and simple yet effec-
+tive, as shown in our experimental part. Additionally, Eq. 6
+enjoys great computational advantage compared with the ex-
+pensive cost of GAT in PeerNet. Finally, after the deconvo-
+lution on all the patches with new features, we can obtain the
+reﬁned representation ˜Zi for i-th image, ∀i = 1, ..., N .
+Note that our proposed method can explicitly combine the
+advantage of manifold regularization and non-local ﬁltering
+in a ﬂexible way, elaborated in the following.
+
+Manifold Regularization There are a ﬂurry of papers in-
+troducing regularization from the classical manifold learning
+based on the assumption that the data can be modeled as a
+low-dimensional manifold in the data space. More impor-
+tantly, Hinton et al. [6] and Ioffe et al. [7] demonstrated regu-
+larizers that work well in the input space can also be applied
+to the hidden layers of a deep network, which could further
+improve generalization performance. Our Patch-level Neigh-
+borhood Interpolation can be easily extended from input to
+
+4
+
+the hidden layers, enjoying the beneﬁts of manifold regular-
+ization.
+
+Non-local Filtering Non-local ﬁlters have achieved great
+success image processing ﬁeld by additionally encoding the
+knowledge of neighboring pixels and their relative locations.
+Same as the pixel-level neighboring correlations established
+in PeerNet [23], our patch-level approach can still capture
+the knowledge of other neighboring patches within a batch,
+therefore yielding improvement of performance for the de-
+rived methods on various kinds of settings. Moreover, our
+Patch-level Neighborhood Interpolation can also serve as a
+novel non-i.i.d. regularization and can reasonably generalize
+well to broader settings especially when the natural correla-
+tion in the sub-group exists.
+Now we customize our Patch-level Neighborhood Interpo-
+lation into adversarial and Mixup that can signiﬁcantly boost
+their performance.
+
+3.1 Pani VAT
+
+Based on our patch-level framework, we can construct a novel
+Pani VAT that utilizes the combination or interpolation of
+patch neighbors for each sample to manipulate the “neighbor-
+ing” perturbations, thus providing more informative adversar-
+ial smoothness in semi-supervised setting. Combining Eq. 2
+and Eq. 6, we reformulate our Pani VAT with perturbations on
+L layers in a deep neural network as follows:
+
+D [g(y |z ), g(y | ˜z (η))]
+
+max
+
+η
+
+s.t.
+
+L(cid:88)
+
+l=1
+
+(cid:107)η (l)(cid:107)2
+
+m2
+
+l
+
+≤ 2 ,
+
+(7)
+
+where f (x) = g(h(x)) represents the classiﬁer and z = h(x)
+denotes the input or hidden feature of input x. η (l) indicates
+the perturbations in l-th layer of network.
+In particularly,
+when L = 1, we denotes the perturbations are only imposed
+on input feature, which is similar to the traditional (virtual)
+adversarial perturbations. ˜z (η) represents the feature map im-
+posed by perturbation η in the way shown in Eq. 6. ml adjusts
+the importance of perturbations η (l) in different layers with
+the overall perturbations restrained in a -ball.
+Next, we can still utilize the similar power iteration and ﬁ-
+nite difference proposed in VAT [18] to compute the desired
+perturbation η∗ . Then the resulting full loss function is de-
+ﬁned as:
+
+L0 + βEx∼DRvadv (x, y , η∗ ),
+min
+where Rvadv (x, y , η∗ ) = D [g(y |z ), g(y | ˜z (η∗ ))] can be at-
+
+(8)
+
+θ
+
+tained after solving the optimization problem in Eq. 7.
+
+Procedure For the speciﬁc instantiation of our framework
+exhibiting in Figure 1 for our derived Pani VAT method, we
+present the procedure in the following:
+• Firstly, we construct the K1 nearest neighbor graph on
+the images based on the cosine distance of second last
+feature through the classiﬁer f in the ﬁlter process. Con-
+struct the patch set P through the convolution operation
+deﬁned in a standard way.
+• Secondly, for the feature map on each considered layer,
+we still incorporate the K2 nearest patch neighbors for
+each patch of each image among all the patches from the
+K2 peer patches, i.e., the candidate set S .
+• Conduct interpolation in the way shown in Eq. 6 as the
+non-local forward propagation.
+• We perform VAT to compute the desired η∗ under the
+the constraints in Eq. 7. Then we can obtain the full
+objective function in Eq. 8.
+
+Remark. As shown in the adversarial part of Figure 1, the
+rationality of our Pani VAT method lies in the fact that the
+constructed perturbations can entail more non-local informa-
+tion coming from the neighbors of current sample. Through
+the delicate patch-level interpolation among neighbors of each
+patch, the resulting virtual adversarial perturbations are ex-
+pected to construct more informative directions of smooth-
+ness, thus enhancing the performance of classiﬁer in semi-
+supervised setting.
+
+3.2 Pani MixUp
+
+To derive a ﬁne-grained Mixup, we conduct patch-based
+neighborhood method from our framework. The core formu-
+lation of Pani MixUp (PMU) can be formulated as:
+
+˜zi
+p = zi
+p +
+
+ηipk (zjk
+qk
+
+− zi
+p )
+
+K(cid:88)
+P(cid:88)
+
+k=1
+
+K(cid:88)
+
+s.t.
+
+ηipk
+
+= 1 − λ, ∀i = 1, ..., N
+P
+ηipk ∈ [0, 1], ∀i, p, k
+
+p=1
+
+k=1
+
+(9)
+
+where P denote the number of patches after ﬁltering operation
+for each image and λ ∼ Beta(a, b) represents the importance
+of current element, such as image or patch while conducting
+MixUp. It should be noted that due to the unsymmetric prop-
+erty of λ in our framework, we should tune both the a and b in
+our experiments. For simplicity, we ﬁx b = 1 and only con-
+sider the a as the hyper-parameter to pay more attention to the
+importance of current patch, which is inspired by the similar
+approach in MixMatch [1]. For the ﬁrst restraint in Eq. 9, we
+can achieve it through normalization according to the ratio of
+
+5
+
+ηipk )zi
+
+p +
+
+ηipk zjk
+qk
+
+(10)
+
+K(cid:88)
+
+k=1
+
+yjk ,
+
+p = (1 − K(cid:88)
+˜zi
+
+˜yi = λyi +
+
+k=1
+
+K(cid:88)
+P(cid:88)
+(cid:80)P
+
+p=1
+
+ηipk
+
+P
+
+λ for the current element and 1 − λ for all the neighbors. Con-
+sidering the physical meanings of ηipk in MixUp, we impose
+extra convex combination restraint, i,e, the second restriction
+in Eq. 9. Then the mixing patch-target vectors in the Pani
+MixUp method can be presented as:
+
+p=1
+
+k=1
+
+k=1
+
+ηipk
+
+P = 1 − λ.
+
+tribution, subject to (cid:80)K
+where ηipk ∈ [0, 1] from a uniform distribution or a beta dis-
+Procedure The Pani MixUp applies the following proce-
+dures:
+• Construct the candidate set Si for the i-th image by ran-
+and then construct the patch set P through the convolu-
+dom matching among all the images within one batch
+tion operation mentioned before.
+• For the feature map on each target layer, we consider the
+K nearest patch neighbors for each patch of each image
+among all the patches from the candidate set S .
+• Conduct MixUp in the way shown in Eq. 10 among the
+neighbors of each patch over all the patches and their
+targets.
+• Conduct deconvolution operation on the patch set P to
+return new representation of original input with the cor-
+responding mixed target. Optimize the parameters of
+classiﬁer on the attained data representation.
+
+Remark. Different from the role of η in the aforementioned
+Pani VAT where η serves as the “combinational” perturba-
+tions, in our Pani MixUp approach, the physical meaning of
+η is the linear interpolation coefﬁcient to conduct MixUP.
+However, all the two customizations can be derived from one
+framework, namely our Patch-level Neighborhood Interpola-
+tion .
+
+4 Experiments
+
+To demonstrate the superiority of our Patch-level Neigh-
+borhood Interpolation, we conduct extensive experiments
+for both our Pani VAT and Pani MixUp Method on semi-
+supervised and supervised settings, respectively.
+
+4.1 Pani VAT
+
+Implement Details For fair comparison especially with
+VAT and its variants, such as VAT + SNTG [15] and
+
+TNAR [28], we choose the standard large convolutional net-
+work as classiﬁer as in [19]. For the option of dataset, we
+focus on the standard semi-supervised setting on CIFAR-10
+with 4,000 labeled data. Unless otherwise noted, all the ex-
+perimental settings in our method are the identical with those
+in the Vanilla VAT [19]. In particular, we conduct our Pani
+VAT on input layer and one additional hidden layer, yielding
+two variants Pani VAT (input) and Pani VAT (+hidden). In
+Pani VAT (input), we choose patch size as 2, K1 = 10 peer
+images as the candidate set S for each image, K2 = 10 to
+construct the patch nearest neighbor graph, perturbation size
+ and adjustment coefﬁcient m1 as 2.0 and 1.0, respectively.
+For our Pani VAT (+hidden) method, we let K1 = 10, patch
+size as 2 and overall perturbation size  = 2.0. On the con-
+sidered two layers, we set K2 as 10 and 50, the adjustment
+coefﬁcient m as 1 and 0.5, respectively.
+
+Method
+
+VAT [18]
+VAT + SNTG [15]
+Π model [11]
+Mean Teacher [24]
+CCLP [8]
+ALI [3]
+Improved GAN [21]
+Tripple GAN [14]
+Bad GAN [2]
+LGAN [20]
+Improved GAN + JacobRegu + tangent [10]
+Improved GAN + ManiReg [12]
+TNAR [28]
+Pani VAT (input)
+Pani VAT (+hidden)
+
+CIFAR-10
+4,000 labels
+
+13.15
+12.49
+16.55
+17.74
+18.57
+17.99
+18.63
+16.99
+14.41
+14.23
+16.20
+14.45
+12.06
+
+12.20
+
+11.94
+
+Table 1: Classiﬁcation errors (%) of compared methods on
+CIFAR-10 datasets without data augmentation.
+
+Our Results Table 1 presents the state-of-the-art perfor-
+mance achieved by Pani VAT (+hidden) compared with other
+baselines on CIFAR-10. We focus on the baseline meth-
+ods especially along the direction of variants of VAT and
+refer to the results from TNAR method [28], the previous
+state-of-the-art variant of VAT that additionally leverages the
+data manifold to decompose the directions of virtual adver-
+sarial smoothness. It is worthy of remarking that the perfor-
+mance of relevant GAN-based approaches, such as Localized
+GAN (LGAN) [20] as well as TNAR, in Table 1 mainly rely
+on the modeling data manifold by a generative model. By
+contrast, our approach does not additionally depend on this
+requirement and can still outperform these baselines. In ad-
+dition, our Pani VAT (+hidden) achieves slight improvement
+compared with Pani VAT (input), verifying the superiority
+of manifold regularization mentioned in our framework. Al-
+
+though Pani VAT (input), serving as an ablation study, obtains
+the comparable performance with TNAR, it still outperforms
+other baselines without the additional leverage of the model-
+ing of data manifold.
+
+Analysis of Computation Cost Another noticeable advan-
+
+tage of our approach is the negligible increase of computa-
+tion cost compared with Vanilla VAT. In particular, one crucial
+operation in our approach is the construction of patch set P ,
+which can be accomplished efﬁciently by the convolution op-
+eration. The restoration of images from constructed patches
+can be easily achieved by the corresponding deconvolution
+similarly. Additionally, the index of K nearest neighbor graph
+can be efﬁciently attained through topk operation in Tensor-
+ﬂow or Pytorch. We conduct further sensitivity analysis on
+the computational cost of our method with respect to other
+parameters, i.e., K1 (number of peer images in the ﬁlter pro-
+cess), K2 (number of patch neighbors), L (number of layers
+imposed by “neighboring” perturbations) and patch size s.
+As shown in Figure 2, the variation of all parameters has
+negligible impact on the training time each epoch compared
+with Vanilla VAT except the number of perturbed layers. The
+increasing of computational cost presents an almost linear ten-
+dency with the increasing of the number of perturbed layer as
+the amount of ﬂoating-point calculation is proportional to the
+number of perturbation elements, i.e., η , if we temporarily ne-
+glect the difference of time in the backpropagation process for
+different layers. Combined with results from Table 1 and Fig-
+ure 2, we argue that the better performance can be expected if
+we construct perturbations on more hidden layers at the cost
+of more computation.
+
+Figure 2: Average training time each epoch with respect to
+parameters K1 , K2 , L and patch size.
+
+6
+
+'%'# K2 '# K2 '# K2 %7,33%20,.54. 8 K2'# K1 '# K1 '# K1 '# K1 %7,33%20,.54. 8 K1'# ,07 '# ,07  '# ,07   %7,33%20,.54. 8 ,07'# !,9.$0 '# !,9.$0 '# !,9.$0 %7,33%20,.54. 8 !,9.$0Dataset
+
+Model
+
+PreAct ResNet-18
+
+CIFAR-10
+
+PreActResNet-34
+
+WideResNet-28-10
+
+PreAct ResNet-18
+
+CIFAR-100
+
+PreActResNet-34
+
+WideResNet-28-10
+
+Aug
+
+(cid:88)
+
+(cid:88)
+
+(cid:88)
+
+5.43 ± 0.16
+12.81 ± 0.46
+5.15 ± 0.12
+12.67 ± 0.26
+4.59 ± 0.06
+8.78 ± 0.20
+(cid:88) 24.96 ± 0.51
+39.64 ± 0.65
+(cid:88) 24.85 ± 0.14
+39.41 ± 0.80
+(cid:88) 21.00 ± 0.09
+31.91 ± 0.77
+
+×
+×
+×
+×
+×
+×
+
+ERM Mixup(a = 1)
+
+4.24 ± 0.16
+9.88 ± 0.25
+3.72 ± 0.20
+10.60 ± 0.57
+3.21 ± 0.13
+8.08 ± 0.39
+22.15 ± 0.72
+41.96 ± 0.27
+21.49 ± 0.68
+41.96 ± 0.24
+18.58 ± 0.16
+35.16 ± 0.33
+
+Ours(input)
+
+3.93 ± 0.12
+8.12 ± 0.09
+3.36 ± 0.15
+8.13 ± 0.32
+3.02 ± 0.11
+5.79 ± 0.03
+20.90 ± 0.21
+32.03 ± 0.34
+19.46 ± 0.29
+34.48 ± 0.86
+17.39 ± 0.16
+27.71 ± 0.63
+
+Table 2: Test error in comparison with ERM, MixUp and Pani MixUp (input) across three deep neural network architectures
+with and without data augmentation. All results are the average ones under 5 runs. Results of MixUp on the settings without
+data augmentation are based on our implementation on the original code from MixUp.
+
+4.2 Pani MixUp
+
+Implementation Details The experimental settings in this
+section are strictly followed by those in Vanilla MixUp [30]
+and Vanilla MixMatch [1] to pursue fair comparison. We
+conduct supervised image classiﬁcation on CIFAR-10 and
+CIFAR-100 datasets to further evaluate the generalization
+performance of Pani MixUp.
+In particular, we compare
+ERM (Empirical Risk Minimization,
+i.e,, normal
+train-
+ing), MixUp training and our approach for different neu-
+ral architectures: PreAct ResNet-18, PreAct ResNet-34 and
+WideResNet-28-10. For fair comparison with input MixUp,
+we conduct our approach only on input layer and the better
+performance can be expected naturally if we consider more
+layers. More speciﬁcally, in our Pani MixUp method for all
+neural architectures, we uniformly choose patch size 16, pa-
+rameter a in Beta distribution as 2.0 for the data augmenta-
+tion setting while we opt patch size 8, a = 2.5 on the settings
+without data augmentation.
+
+Mask Mechanism To extend the ﬂexibility of Pani MixUp,
+we additionally introduce the mask mechanism on the inter-
+polation coefﬁcient η to random drop ηipk with certain ratio.
+The mask mechanism can be viewed as dropout or enforcing
+sparsity , which can help to abandon redundant information
+while conducting patch-level MixUp. We set the mask ratio
+as 0.6 in the data augmentation setting while ﬁxing the ratio
+as 0.4 in the scenario without data augmentation.
+
+Our Results Table 2 presents the consistent superiority of
+Pani MixUp over ERM (normal training) as well as Vanilla
+MixUp over different deep neural network architectures. It
+is worthy of noting that the superiority of our approach in
+the setting without data augmentation can be more easily ob-
+served than that with data augmentation. Another interesting
+
+phenomenon is that MixUp suffers from one kind of collapse
+for some deep neural networks without data augmentation as
+the performance of MixUp is even inferior to the ERM on
+CIFAR-100 without data augmentation. By contrast, our ap-
+proach exhibits consistent advantage over various settings.
+
+Analysis of Computation Cost To provide a comprehen-
+
+sive understanding about the computation cost of our method,
+we plot the tendency between training time under 200 epoch
+and the test accuracy as shown in Figure 3, in which we can
+better observe the computational efﬁciency as well as the bet-
+ter performance of our approach. To be more speciﬁc, we
+choose ResNet-18 as the basic test model and conduct the ex-
+periment about the variation of test accuracy while training to
+compare the efﬁcacy of different approaches. We can easily
+observe the consistent advantage of performance of our ap-
+proach and comparable training time under the same number
+of epochs. One interesting point about the “collapse” phe-
+nomenon shown in the fourth subplot of Figure 3 reveals the
+process of this issue. After the complete of learning rate decay
+around 50-th epoch, the performance of MixUp surprisingly
+drops steadily to the ﬁnal result that is even inferior to original
+ERM. By contrast, Neighborhood Method achieves consistent
+improvement on the generalization without any “collapse” is-
+sue.
+
+Further Extension to the MixMatch To further demon-
+
+strate the superiority of our Neighborhood Interpolation
+MixUp, we embed our approach into MixMatch [1], the cur-
+rent state-of-the-art approach that naturally extends MixUp to
+semi-supervised setting. The resulting approach, Pani Mix-
+Match, elegantly replaces the MixUp part in the MixMatch
+with our Pani MixUp, thus imposing patch neighbor Mixup by
+additionally incorporating patch neighborhood information.
+Results shown in Table 3 demonstrate that Pani MixMatch can
+
+7
+
+Figure 3: Test accuracy with respect to the training time over ERM, MixUp and our approach. m indicates minutes and the
+leap in the middle of training comes from the learning rate decay. “with Aug” and “without Aug” denote the settings with
+data augmentation and without augmentation, respectively.
+
+further improve the performance of MixMatch in the standard
+semi-supervised setting, thus verifying the effectiveness and
+ﬂexibility of our Patch-level Neighborhood Interpolation.
+
+Methods
+PiModel [11]
+PseudoLabel [13]
+Mixup [30]
+VAT [18]
+MeanTeacher [24]
+MixMatch [1]
+MixMatch(ours)
+Pani MixMatch
+
+CIFAR-10
+
+17.41 ± 0.37
+16.21 ± 0.11
+13.15 ± 0.20
+11.05 ± 0.31
+10.36 ± 0.25
+6.24 ± 0.06
+6.26 ± 0.078
+6.08 ± 0.074
+
+Table 3: Performance of our Pani MixMatch in semi-
+supervised setting on CIFAR with 4000 labels. The reported
+result of MixMatch(ours) and Pani MixMatch is under the
+same random seed, coming from the median of last 20 epoch
+while training.
+
+5 Discussion
+
+The recent tendency of the design of regularization attaches
+more importance on the consistency and ﬂexibility on various
+kinds of settings. For instance, Virtual Adversarial Training
+is a natural extension for Adversarial Training to the semi-
+supervised setting by constructing virtual adversarial smooth-
+ness. MixMatch uniﬁed the dominant approaches relevant
+to MixUp and then achieved remarkable performance on the
+
+8
+
+semi-supervised scenario by simultaneously considering the
+MixUp operation on both labeled and unlabeled data. Along
+this way, we focus on the proposal of a general regularization
+motivated by additional leverage of neighboring information
+existing in the sub-group of samples, e.g., within one batch,
+which can elegantly extend previous prestigious regulariza-
+tion approaches and generalize well over both supervised and
+semi-supervised setting.
+
+6 Conclusion
+
+In this paper, we ﬁrstly analyze the beneﬁt of leveraging
+non-i.i.d information while developing more efﬁcient regu-
+larization for deep neural networks, thus proposing a gen-
+eral and ﬂexible patch neighbor regularizer called Patch-level
+Neighborhood Interpolation by interpolating the neighbor-
+hood representation. Furthermore, we customize our Patch-
+level Neighborhood Interpolation into VAT and MixUp, re-
+spectively. Extensive experiments have veriﬁed the effec-
+tiveness of the two derived approaches, therefore demonstrat-
+ing the beneﬁt of our Patch-level Neighborhood Interpolation.
+Our work paves a way toward better understanding and lever-
+aging the knowledge of relationship between samples to de-
+sign better regularization and improve generalization over a
+wide range of settings.
+Since the proposed Pani framework is general and ﬂexible,
+more applications could be considered in the future, such as
+adversarial training for improving model robustness and natu-
+ral language processing tasks. Also, the theoretical properties
+of Pani should also be analyzed.
+
+%20 2 %089..:7,.  #9:#&5 :78%20 2 #94:9:#&5 :78%20 2 #9:#&5 :78%20 2 #94:9:#&5 :78References
+
+[1] David Berthelot, Nicholas Carlini, Ian Goodfellow, Nicolas Pa-
+pernot, Avital Oliver, and Colin Raffel. Mixmatch: A holistic
+approach to semi-supervised learning. Conference on Neural
+Information Processing Systems, 2019. 1, 5, 7, 8
+[2] Zihang Dai, Zhilin Yang, Fan Yang, William W Cohen, and
+Ruslan R Salakhutdinov. Good semi-supervised learning that
+requires a bad gan.
+In Advances in Neural Information Pro-
+cessing Systems, pages 6510–6520, 2017. 6
+[3] Vincent Dumoulin, Ishmael Belghazi, Ben Poole, Olivier
+Mastropietro, Alex Lamb, Martin Arjovsky, and Aaron
+Courville. Adversarially learned inference. arXiv preprint
+arXiv:1606.00704, 2016. 6
+[4] Murat Dundar, Balaji Krishnapuram, Jinbo Bi, and R Bharat
+Rao. Learning classiﬁers when the training data is not iid. In
+IJCAI, pages 756–761, 2007. 2
+[5] Ian J Goodfellow, Jonathon Shlens, and Christian Szegedy. Ex-
+plaining and harnessing adversarial examples.
+International
+Conference on Learning Representations, 2014. 1
+[6] Geoffrey E Hinton, Nitish Srivastava, Alex Krizhevsky, Ilya
+Sutskever, and Ruslan R Salakhutdinov. Improving neural net-
+works by preventing co-adaptation of feature detectors. arXiv
+preprint arXiv:1207.0580, 2012. 4
+[7] Sergey Ioffe and Christian Szegedy. Batch normalization: Ac-
+celerating deep network training by reducing internal covariate
+shift. International Conference on Machine Learning, 2015. 4
+[8] Konstantinos Kamnitsas, Daniel C Castro, Loic Le Folgoc,
+Ian Walker, Ryutaro Tanno, Daniel Rueckert, Ben Glocker,
+Antonio Criminisi, and Aditya Nori. Semi-supervised learn-
+ing via compact
+latent space clustering.
+arXiv preprint
+arXiv:1806.02679, 2018. 6
+[9] Thomas N Kipf and Max Welling. Semi-supervised classiﬁca-
+tion with graph convolutional networks. International Confer-
+ence on Learning Representations, 2016. 2
+[10] Abhishek Kumar, Prasanna Sattigeri, and Tom Fletcher. Semi-
+supervised learning with gans: Manifold invariance with im-
+proved inference. In Advances in Neural Information Process-
+ing Systems, pages 5540–5550, 2017. 6
+[11] Samuli Laine and Timo Aila. Temporal ensembling for semi-
+supervised learning. arXiv preprint arXiv:1610.02242, 2016.
+6, 8
+[12] Bruno Lecouat, Chuan-Sheng Foo, Houssam Zenati, and
+Vijay R Chandrasekhar.
+Semi-supervised learning with
+gans: Revisiting manifold regularization.
+arXiv preprint
+arXiv:1805.08957, 2018. 6
+[13] Dong-Hyun Lee. Pseudo-label: The simple and efﬁcient semi-
+supervised learning method for deep neural networks. In Work-
+shop on Challenges in Representation Learning, ICML, vol-
+ume 3, page 2, 2013. 8
+[14] Chongxuan Li, Kun Xu, Jun Zhu, and Bo Zhang. Triple gener-
+ative adversarial nets. arXiv preprint arXiv:1703.02291, 2017.
+6
+[15] Yucen Luo, Jun Zhu, Mengxi Li, Yong Ren, and Bo Zhang.
+Smooth neighbors on teacher graphs for semi-supervised learn-
+ing. arXiv preprint arXiv:1711.00258, 2017. 5, 6
+[16] Aleksander Madry, Aleksandar Makelov, Ludwig Schmidt,
+Dimitris Tsipras, and Adrian Vladu. Towards deep learning
+
+models resistant to adversarial attacks. International Confer-
+ence on Learning Representations, 2017. 1
+[17] Takeru Miyato, Andrew M Dai, and Ian Goodfellow. Adver-
+sarial training methods for semi-supervised text classiﬁcation.
+International Conference on Learning Representations, 2016.
+1
+[18] Takeru Miyato, Shin-ichi Maeda, Masanori Koyama, and Shin
+Ishii. Virtual adversarial training: a regularization method
+for supervised and semi-supervised learning. arXiv preprint
+arXiv:1704.03976, 2017. 4, 6, 8
+[19] Takeru Miyato, Shin-ichi Maeda, Masanori Koyama, and Shin
+Ishii. Virtual adversarial training: a regularization method for
+supervised and semi-supervised learning. IEEE transactions on
+pattern analysis and machine intelligence, 41(8):1979–1993,
+2018. 1, 2, 6
+[20] Guo-Jun Qi, Liheng Zhang, Hao Hu, Marzieh Edraki, Jingdong
+Wang, and Xian-Sheng Hua. Global versus localized genera-
+tive adversarial nets. In Proceedings of IEEE Conference on
+Computer Vision and Pattern Recognition (CVPR), 2018. 6
+[21] Tim Salimans, Ian Goodfellow, Wojciech Zaremba, Vicki Che-
+ung, Alec Radford, and Xi Chen.
+Improved techniques for
+training gans. In Advances in Neural Information Processing
+Systems, pages 2234–2242, 2016. 6
+[22] Ke Sun, Zhouchen Lin, Hantao Guo, and Zhanxing Zhu. Vir-
+tual adversarial training on graph convolutional networks in
+node classiﬁcation. In Chinese Conference on Pattern Recog-
+nition and Computer Vision (PRCV), pages 431–443. Springer,
+2019. 1
+[23] Jan Svoboda, Jonathan Masci, Federico Monti, Michael M
+Bronstein, and Leonidas Guibas. Peernets: Exploiting peer
+wisdom against adversarial attacks. International Conference
+on Learning Representations, 2018. 2, 3, 4
+[24] Antti Tarvainen and Harri Valpola. Mean teachers are bet-
+ter role models: Weight-averaged consistency targets improve
+semi-supervised deep learning results. In Advances in neural
+information processing systems, pages 1195–1204, 2017. 6, 8
+[25] Dimitris Tsipras, Shibani Santurkar, Logan Engstrom, Alexan-
+der Turner, and Aleksander Madry. Robustness may be at odds
+with accuracy. International Conference on Learning Repre-
+sentations, 2018. 1
+[26] Vladimir N Vapnik and A Ya Chervonenkis. On the uniform
+convergence of relative frequencies of events to their probabil-
+ities. In Measures of complexity, pages 11–30. Springer, 2015.
+1
+[27] Petar Veli ˇckovi ´c, Guillem Cucurull, Arantxa Casanova, Adri-
+ana Romero, Pietro Lio, and Yoshua Bengio. Graph attention
+networks. International Conference on Learning Representa-
+tions, 2017. 2, 3
+[28] Bing Yu, Jingfeng Wu, Jinwen Ma, and Zhanxing Zhu.
+Tangent-normal adversarial regularization for semi-supervised
+learning. In Proceedings of the IEEE Conference on Computer
+Vision and Pattern Recognition, pages 10676–10684, 2019. 1,
+5, 6
+[29] Chiyuan Zhang, Samy Bengio, Moritz Hardt, Benjamin Recht,
+and Oriol Vinyals. Understanding deep learning requires re-
+thinking generalization. International Conference on Learning
+Representations, 2016. 1
+
+9
+
+[30] Hongyi Zhang, Moustapha Cisse, Yann N Dauphin, and David
+Lopez-Paz. mixup: Beyond empirical risk minimization. Con-
+ference on Neural Information Processing Systems, 2017. 1, 2,
+7, 8
+[31] Hongyang Zhang, Yaodong Yu, Jiantao Jiao, Eric P Xing, Lau-
+rent El Ghaoui, and Michael I Jordan. Theoretically principled
+trade-off between robustness and accuracy. International Con-
+ference on Machine Learning, 2019. 1
+
+10
+
+

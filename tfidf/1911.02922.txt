@@ -1,0 +1,1545 @@
+Persistent Homology as Stopping-Criterion
+for Natural Neighbor Interpolation
+
+Luciano Melodia, Richard Lenz
+
+Abstract—In this study the method of natural neighbours is
+used to interpolate data that has been drawn from a topological
+space with higher homology groups on its ﬁltration. A particular
+difﬁculty with this algorithm are the boundary points. Its core
+is based on the Voronoi diagram, which induces a natural dual
+map to the Delaunay triangulation. Advantage is taken from this
+fact and the persistent homology is therefore calculated after
+each iteration to capture the changing topology of the data. The
+Bottleneck and Wasserstein distance serve as a measure of quality
+between the original data and the interpolation. If the norm of
+two distances exceeds a heuristically determined threshold, the
+algorithm terminates. The theoretical basis for this procedure is
+given and the validity of this approach is justiﬁed with numerical
+experiments.
+Index Terms—Interpolation, Natural Neighbors, Persistent
+Homology, Machine Learning.
+
+I . IN TRODUC T ION
+
+M OST interpolation techniques ignore global properties
+of the underlying topological space where data has
+been drawn from. The topology of an augmented point set
+depends entirely on the choice of the interpoland. However, it
+does not depend on the topological structure of the data set or
+its sub-level sets.
+The method of natural neighbors is an interpolation tech-
+nique considering these issues. Using Delaunay triangulation
+or the Voronoi tesselation to determine the position of a new
+data point respects the topology in terms of simple-homotopy
+equivalence [1]. The Delaunay triangulation and the Voronoi
+tesselation behave dual.
+For the Voronoi
+tessellation an implicit restriction to a
+closed subset of the imbedded space is used, see Fig. 2. The
+closure of this subset depends on the metric, in Euclidean
+space it is ﬂat. This restriction, also called clipping, leads to
+different weightings for the interpolation varying according
+to the particular choice of clip. The clip does not represent
+the intrinsic geometry of the data, but that of the surrounding
+space. This can lead to an undesired topology during inter-
+polation, since the target space that is interpolated does not
+reﬂect the topology nor the geometry of the data. This paper
+does not deal with the correct selection of the clip, but with
+the detection of topological changes during interpolation.
+
+Chair of Computer Science 6, Friedrich-Alexander University, Erlangen-
+N ¨urnberg, 91058 Deutschland. E-Mail: {name.surname@fau.de}.
+Luciano Melodia is responsible for the experimental implementation, the
+elaboration of the theoretical background and the written form.
+Richard Lenz mentored, supervised and guided the development of the
+proposed methods and the research.
+It is hereby conﬁrmed that there is no conﬂict of interest with third parties.
+It is conﬁrmed that this work is not funded by any other charity.
+Manuscript received November 20, 2019; revised December 18, 2019.
+
+Up to this point it is an open problem to detect these errors
+and to terminate the algorithm in time. Our contribution to
+solve this problem is divided into three parts:
+1) We introduce persistent homology as a stopping-
+criterion for interpolation methods. The distance be-
+tween two persistence diagrams is an indicator of
+changes within the topology of certain sub-level sets of
+a point set during augmentation. It can be used to vary
+geometric precision.
+2) We cover the theoretical connection of the Voronoi
+tesselation via duality to the Delaunay triangulation. It
+is shown that the Delaunay complex is simple-homotopy
+equivalent to the ˇCech complex by the Theorem of Sim-
+plicial Collapse. The connection is extended to homo-
+logy groups to prove that the Delaunay triangulation
+from the natural neighbors method is already sufﬁcient
+to calculate a suitable persistence diagram, under the
+restrictions for Hurewicz isomorphism.
+3) We investigate the method on a handwritten signature
+data set. It provides interesting and visually interpretable
+topological features due to the topography of the letters.
+Higher homology groups such as H1 and H2 may appear
+on the ﬁltration of a signature. This often represents an
+insurmountable hurdle for other interpolation methods.
+The paper is structured as follows: Related work on the
+development of interpolation using natural neighbours is pre-
+sented in Sect. II, as well as on persistent homology. The
+theory of simplicial complexes and ﬁltrations is discussed in
+Sect. III. Sect. IV is an outline of the theory of simplicial
+homology. In Sect. V the Bottleneck and Wasserstein distance
+and their stability properties are discussed followed by the
+algorithm of natural neighbors in Sect. VI. The paper closes
+with numerical experiments Sect. VII and a bottom line on
+the ﬁndings presented in Sect. VIII.
+
+I I . R ELAT ED WORK
+
+The algorithm of natural neighbors has been invented in its
+vanilla form by Sibson [1]. In the early development of the
+method only C 1 interpolands were known for the coordinate
+representation of multidimensional data using this algorithm.
+It became generalized in 2004 to C k interpolands for a
+representation of k-times differentiable coordinate systems [2].
+Using efﬁcient algorithms and exploiting the duality of
+Delaunay triangulations and Voronoi diagrams, it was possible
+to make the natural neighbors method available for real-
+time applications [3]. Thus the method was made scalable
+and implemented so efﬁciently that it found application to
+superresolution in the ﬁeld of image reconstruction [4].
+
+Deﬁnition 3.2 (Simplicial Complex): A ﬁnite simplicial
+complex denoted by K and imbedded into Euclidean space
+is a ﬁnite set of simplices with the following properties [12]:
+1) Each face of a simplex of K is again a simplex of K.
+2) The intersection of two simplices is either empty or a
+common face of both.
+Deﬁnition 3.3 (Filtration): A ﬁltration is a decomposition
+of a ﬁnite simplicial complex K into a nested sequence of
+sub-complexes, starting with the empty set.
+
+∅ = K0 ⊂ K1 ⊂ · · · ⊂ Kn = K,
+for t ∈ {0, . . . , n − 1}.
+
+Kt+1 = Kt ∪ σt+1 ,
+
+(2)
+(3)
+
+It is convention to mention the empty set as it is part of
+every set [13]. Considering the topological properties of each
+sub-level set of a tame function (Def. 5.4), it is possible to
+reconstruct this function up to isomorphism. Therefore a step
+size for the parameterization of a ﬁltration is determined, i.e.
+the radius r of a closed Ball for the ˇCech complex (Def.
+3.4), to approximate all sub-level sets as good as possible.
+This can be thought as a lens which indicates the granularity
+of the ﬁltration and on which basis the homology classes
+are calculated. In the following, variants of the simplicial
+complexes and their connection to each other are presented,
+which are decisive for our method.
+Deﬁnition 3.4 ( ˇCech Complex [14]): Let r ≥ 0 be a real
+number and Br (x) = {y ∈ Rd | ||x − y|| ≤ r} the closed ball
+with radius r centered around the point x ∈ X ⊆ Rd . The
+ˇCech complex for a ﬁnite set of points X is deﬁned by
+ˇCechr (X) = (cid:14)U ⊆ X
+
+(cid:12)(cid:12)(cid:12)(cid:12)
+
+The Delaunay triangulation is used to take into account the
+topology of the data. Up to this point, however, there are still
+problems as degenerated points occur after frequent use of
+the algorithm. In order to measure topological changes, ﬁrst
+developments were made to calculate the homology groups
+of ﬁltrations over the data set. Speaking about homology,
+we refer to simplicial homology. The consideration of the
+topology of a ﬁltration representing the topology of different
+sub-level sets leads to the concept of persistence [5]. It is called
+persistent homology, because it measures which homology
+classes arise on the ﬁltration of the data set during a particular
+parametrization and at which point they disappear.
+Persistent homology encodes the topological properties of
+a sub-level set of a function in arbitrary granularity and
+can be calculated in high dimensions [6]–[8]. In particular,
+this measurement of topological properties behaves Hausdorff
+stable, i.e. small changes in the function value also cause small
+changes in the persistent homology [9]. Efﬁcient data struc-
+tures and algorithms have been designed for the construction
+of topologically accurate complexes [10] and scalable ways
+to compare persistence diagrams using a Wasserstein distance
+have been developed [11].
+
+I I I . S IM P L IC IA L COM P LEX E S AND F I LTRAT ION S
+
+To interpolate data with higher homology groups, infor-
+mally a point cloud which forms evidend loops in different
+dimensions within its structure, it is difﬁcult to ﬁnd a suitable
+interpoland. A parametric polynomial
+interpolation is not
+always feasible due to the necessity of representing a more
+complex topological structure.
+Simplicial complexes are therefore introduced to obtain an
+object encoding the topology of the data. By implication, a
+meaning is assigned to the distribution of the points in space.
+The mutual arrangement of the points forms a shape. From
+this basic assumption it is concluded that if the data changes
+its shape through a transformation, it is no longer identiﬁable
+as the original data set, see Sect. IV for a precise deﬁnition
+in terms of homology groups.
+Imbedded simplicial complexes are suitable data structures
+to detect the change of shape, by computing their homology
+classes. Primer to the introduction of the concept of simplicial
+complexes,
+the elements of which they are composed are
+considered.
+Deﬁnition 3.1 (Simplex): Simplices, denoted by σ, are the
+set of permuted span of X = {x0 , x1 , . . . , xk } ⊂ Rd with
+k + 1 points, which are not contained in any afﬁne subspace
+of dimension smaller than k [12]. A simplex forms the convex
+hull
+
+σ := (cid:14)x ∈ X
+
+(cid:12)(cid:12)(cid:12)(cid:12) k(cid:88)i=0
+
+λixi with
+
+λi = 1 and λi ≥ 0(cid:15) .
+
+(1)
+
+k(cid:88)i=0
+
+Simplices are well-deﬁned imbeddings of polyhedra. It is
+possible to construct complex objects out of them, which are
+composed of simple components, glueing simplices together
+at their edges. Edges are meant to be h-dimensional simplices
+or h-simplices. Informally, the glueing results in a simplicial
+complex consisting of a series of k-simplices, which are
+connected by h-simplices, satisfying h < k.
+
+distance measures to be obtained. The Vietoris-Rips complex
+spans the same 1-skeleton as the ˇCech complex [16].
+Lemma 3.5.1: For the imbedding of the Vietoris-Rips and
+the ˇCech complex into any metric space, the following rela-
+tionship holds [16]:
+Ripsr (X) ⊆ ˇCechr (X) ⊆ Rips2r (X).
+(6)
+Proof: Choose a simplex σ = {x0 , x1 , . . . , xk } ∈
+Ripsr (X). The norm of the selected distance parameter is less
+or equal to the radius of a closed ball around x0 . Therefore
+
+k
+
+x0 ∈
+
+(a) ˇCechr (X).
+
+(b) ˇCechDelr (X).
+
+(c) Delr (X).
+
+(d) Wit(L, W )
+
+(e) Wrapr (X).
+
+Fig. 1: Four of ﬁve geometric complexes appearing in the collapsing sequence of the ˇCech-Delaunay Collapsing Theorem 34
+from (a)-(c) and (e), according to [17]. (a) A high dimensional ˇCech complex projected onto the plane. (b) The ˇCech-Delaunay
+complex, (c) the Delaunay complex, (d) the witness complex, which is an outlier in the row due to the changing shape by
+different witness sets (white bullets) and (e) the wrap complex.
+
+uniformly distributed in its convex hull or initialized com-
+pletely outside the data set. In addition to equally distributed
+initialization, strategies such as sequential MaxMin can lead
+to a more accurate estimate of homology groups [18].
+The time bound for the construction of a witness complex is
+O (|W |log|W | + k|W |) [16], which makes it suitable for high
+dimensional data.
+
+IV. S IM P L IC IA L HOMO LOGY TH EORY
+
+Our perspective on data is based on a hypothesis known
+as manifold assumption [19]. It is supposed that the data is
+drawn from a topological manifold.
+A manifold describes the space from which points are
+drawn. Drawing enough equally distributed points from it one
+can obtain its shape by triangulation.
+Computationally feasible invariants of topological spaces in
+terms of its connected components and holes shall be consid-
+ered. In topology one is particularly interested in whether a
+space can be transformed into another by stretching, twisting
+or tearing. Remember that a circle cannot be continuously
+transformed into a straight line without cutting it up. For
+this purpose k-dimensional holes play a central role. They
+characterize a topological space decisively.
+Deﬁnition 4.1 (Homotopy Equivalence): Let M and N be
+two topological spaces. If there exists a continuous map h :
+M × I → N, which deforms M over time I into N, they are
+said to be homotopy equivalent or having the same homotopy
+type.
+Homotopy classes and groups are topological
+invariants
+(preserved under bijective transformations) and describe a
+topological space. But it is notoriously difﬁcult to obtain a
+homotopy.
+Considering the holes within a simplicial complex for
+changing r, a good estimate of the homotopy groups can be
+obtained. An algebraic way to compute something strongly re-
+lated, which counts these holes is homology. The connection is
+established by the Hurewicz Theorem 4.1. For an introduction
+to homotopy theory it is referred to [20]–[22].
+
+Theorem 4.1 (Hurewicz Homomorphism [23]): Let πk (x, X)
+be the kth homotopy group of a topological space X in x ∈
+X. There exists a homomorphism h : πk (x, X) → Hk (x, X)
+into the kth homology group at x. The homomorphism is an
+isomorphism if X is (n− 1)-connected and k ≤ n when n ≥ 2
+with abelianization for n = 1.
+Homology groups are not only a topological invariant, they
+are also isomorphic under the conditions of Theo. 4.1 to the
+equal dimensional homotopy groups. In this particular case
+one is able to use an easier to calculate invariant to describe
+the feature space up to homotopy. The Betti numbers are such
+an invariant deﬁned by the rank of the k-th homology group.
+The k-th homology group is a vector space whose rank gives
+the number of k-dimensional holes of a topological space X.
+The invariants of simplicial complexes spanned over a point
+set are calculated. To compute the rank of the kth homology
+group the chain groups are introduced.
+Deﬁnition 4.2 (Chain Group): Let σk be a k-simplex of
+K := K(X) over a set of points X. Further let k ∈ N. The
+linear combinations of k-simplices span a vector space
+
+Ck := Ck (K) = span (cid:0)σk
+1 , . . . , σk
+
+(cid:1) .
+
+n
+
+k(cid:88)i=0
+
+(k − 1)th .
+
+(9)
+This vector space is called kth chain group of K and contains
+all linear combinations of k-simplices.
+The coefﬁcients of the group lie in Z2 and the group
+structure is established by (Ck , +), with eCk = 0 being the
+neutral element and addition as group operation. A linear map
+∂ : Ck → Ck−1 is induced from the kth chain group into the
+Using such an algebraic structures yields unsatisfactory
+geometrical intuitions, but on the other hand an efﬁcient way
+to express the concept of a boundary.
+Deﬁnition 4.3: The boundary operator ∂k (σk ) : Ck →
+Ck−1 is deﬁned by
+(10)
+
+(−1)i (v0 , . . . , (cid:98)vi , . . . , vk ) .
+
+∂k (σk ) =
+
+The vertex set of the k-simplex is named v0 , . . . , vk . The
+boundary of a line segment should be described by its two end-
+
+points, the boundary of a triangle, or 2-simplex by the union
+of the edges and the boundary of a tetrahedron, or 3-simplex
+by the union of the triangular faces. Furthermore, a boundary
+itself shall not have a boundary of its own. This implies, that
+the property to be boundaryless is equivalent to the concept
+of a loop, i.e. the possibility to return from a starting point to
+the same point via the k-simplices, by not entering a simplex
+twice and by not leaving a simplex unentered. This group
+oriented k-simplex (v0 , . . . , vk ) one element (cid:98)vi is omitted.
+homomorphism contains the alternating sum, thus for each
+The boundary operators can be composed ∂2 := ∂ ◦ ∂ and
+one observes that every chain, which is a boundary of higher-
+dimensional chains, is boundariless, which means in return that
+an even composition of boundary maps is zero, i.e. ∂2Z
+For a proof it is referred to [23].
+Deﬁnition 4.4 (Kernel of a Chain Group): The kernel of a
+chain group (Ck , +) with neutral element eCk = 0 is given
+by
+
+= 0.
+
+k (eCk−1 ) =
+
+ker ∂k = ∂−1
+= (cid:12)σk ∈ Ck
+
+(cid:12)(cid:12)(cid:12)(cid:12) ∂k (σk ) = eCk−1 (cid:13) .
+
+(11)
+
+(12)
+
+All elements of the chain group are mapped in this way by the
+boundary operator to the neutral element of the lower chain
+group.
+Deﬁnition 4.5 (Group of Cycles): A group of k-cycles Zk
+is deﬁned as
+
+Zk := ker ∂k ⊆ Ck .
+
+(13)
+
+Every k-simplex mapped to zero by the boundary operator
+is considered to be a loop and the collection of loops is the
+group of k-cycles Zk . The k-boundaries are therefore Bk =
+
+Im ∂k+1 ⊂ Zk .
+
+Deﬁnition 4.6 (Homology Group): The kth homology group
+Hk is the quotient group of Zk and the group of k-boundaries:
+
+Hk := Zk/Bk = ker ∂k/ Im ∂k+1 .
+
+(14)
+
+Taking the rank of the homology group one gets its Betti
+number. In a certain sense the Betti numbers count
+the
+amount of holes in a topological space, i.e. β0 the connected
+components, β1 tunnels, β2 voids and so forth.
+Deﬁnition 4.7 (Betti Numbers): The kth Betti number is
+deﬁned as
+
+βk = rank Hk .
+
+(15)
+
+Using Betti numbers, the persistence diagrams are deﬁned,
+representing the birth and death of homology classes from the
+respective kth homology group within a ﬁltration.
+The ﬁltration of a simplicial complex deﬁnes a sequence
+of homology groups connected by homomorphisms for each
+dimension. For the following maps the notation is slightly
+addapted to guarantee readability.
+Lemma 4.7.1: The kth homology group over a simplicial
+complex Kr with parameter r is denoted by Hr
+The following sequence results from the group homomorphism
+[24]:
+
+k = Hk (Kr ).
+
+: Hr
+
+gr,r+1
+k
+
+0 = H0
+
+k
+
+g0,1
+
+k → Hr+1
+k
+k
+
+k−−−→ H1
+
+g1,2
+
+k−−−→ · · ·
+
+gn,r
+
+k
+
+k−−−→ Hr
+
+k = 0
+
+gr,r+1
+
+k−−−−→ Hr+1
+
+k
+
+The image Im gr,r+1
+consists of all k-dimensional homo-
+logy classes which are born in the Kr -complex or appear
+before and die after Kr+1 .
+Deﬁnition 4.8 (kth Persistent Homology Group): The di-
+mension k persistent homology group is the image of the
+homomorphisms induced by inclusion
+
+Hn,r
+
+k = Im fn,r
+k ,
+
+for 0 ≤ n ≤ r ≤ r + 1 [24].
+For each dimension k there is an index pair n ≤ r. The
+following multiplicity (see Def. 5.6) is calculated from this,
+since elements of one and the same homology group can occur
+several times at the same time of birth or death and form
+therefore a multiset [24]:
+
+)
+
+(cid:125)
+
+µn,r
+k = (βn,r−1
+k
+
+− βn,r
+
+k )
+
+− (βn−1,r−1
+k
+
+− βn−1,r
+k
+
+(16)
+
+Birth in Kr−1 , death at Kr .
+
+Birth before Kr , death at Kr .
+
+(cid:124)
+
+(cid:123)(cid:122)
+
+(cid:125)
+
+(cid:124)
+
+(cid:123)(cid:122)
+
+According to Edelsbrunner et al.,
+this equation is to be
+interpreted as follows [24]: The ﬁrst difference counts the
+homology classes born in Kr−1 and dying when Kr is entered.
+The second difference counts the homology classes born
+before Kr−1 and dying by entering Kr . It follows that µn,r
+counts the k-dimensional homology classes born in Kn and
+dying in Kr .
+Deﬁnition 4.9 (kth Persistence Diagram): The persistence
+diagram for the kth dimension of a ﬁltration, denoted as
+, is the set of points (n, r) ∈ R2 with µn,r
+Deﬁnition 4.10 (Persistence Diagram): We deﬁne the per-
+sistent diagram as the disjoint union of all k-dimensional
+persistence diagrams
+
+P (dimk)
+
+k = 1.
+
+K
+
+k
+
+(cid:71)
+
+PK =
+
+k∈Z P (dimk)
+
+K
+
+.
+
+(17)
+
+In this work k ∈ {0, 1, 2} is chosen, up to the second
+homology group. The next section introduces distances for
+comparison of two persistence diagrams. In particular, it is
+important to resolve the multiplicity in a meaningful way. Note
+that the multiplicities are only deﬁned for n < r and that no
+values are below the diagonal. This is to be interpreted such
+as a homology class can’t disappear before it arises.
+
+V. M EA SUR E S O F D I STANC E
+
+In order to use persistence diagrams as a stopping-criterion,
+the change in persistent homology must be measurable in
+each iteration step of the interpolation. From this measurement
+it must also be possible to deduce when a sufﬁciently high
+change occurs to terminate the algorithm.
+These changes can generally be measured by a distance in
+a metric space. In this section two distances for persistence
+diagrams are presented:
+1) The Bottleneck distance, which is the coarser of both,
+but ultimately leads to more stable results.
+2) The Wasserstein distance, which is more sensitive to
+outliers and therefore requires additional conditions to
+be stable.
+The Wasserstein and Bottleneck distance have been choosen
+for this method due to their stability properties.
+
+can be mapped to the nearest point in another. The proof of
+Cohen-Steiner et al. is structured as follows [25]:
+1) Proof of Hausdorff stability:
+
+dH (Pf , Pg ) ≤ ||f − g||∞ .
+dB (Pf , Pg ) ≤ ||f − g||∞ .
+
+2) Strenghten Hausdorff stability to proof:
+
+The proof is recaptured in terms of a tame 1-dimensional
+function to provide better intuitions. Note that the theorem has
+not been proven yet to the best of our knowledge for more
+general functions than tame functions. Therefore our analysis
+is also restricted to point sets drawn from manifolds with tame
+functions as coordinate representation.
+a) Preliminary Deﬁnitions:
+Deﬁnition 5.5 (Hausdorff distance): The Hausdorff distance
+between two multisets X and Y is deﬁned by
+
+dH (X, Y ) = max (cid:14) sup
+
+x∈X
+
+inf
+
+y∈Y
+
+||x − y||∞ , sup
+
+inf
+
+x∈X
+
+y∈Y
+
+||y − x||∞(cid:15) .
+
+Deﬁnition 5.6 (Multiplicity): A multiplicity is deﬁned as
+the number of values occurring in a multiset and is denoted
+as #(X). The multiplicity of a persistence diagram without its
+diagonal ∆ is given by
+
+(21)
+
+µr
+n .
+
+#(Pf − ∆) = (cid:88)n<r
+dH (Pf , Pg ) ≤ ||f − g||∞ = α
+
+b) Main Theorem: From the results of Cerri and Landi
+[9] it is known that the Hausdorff inequality
+
+(22)
+holds and that there must exist a point (x1 , x2 ) ∈ Pf which
+has a maximum distance α to a second point (y1 , y2 ) ∈ Pg .
+In particular, (y1 , y2 ) must be within the square
+
+[x1 − α, x1 + α] × [x2 − α, x2 + α].
+
+(23)
+
+From the Hausdorff stability more general inequalities are
+derived, considering the inﬁnity norm.
+Lemma 5.6.1 (Box-Lemma): Let x1 ≤ x2 ≤ x3 ≤ x4 be
+points in the extended plane ¯R2 . Further let R = [x1 , x2 ] ×
+α] another shrinked square by some parameter α. Then the
+following inequality holds:
+# (Pf
+
+[y1 , y2 ] be a square and Rα = [x1 + α, x2 − α] × [y1 + α, y2 −
+
+K1
+r , K2
+
+A. Bottleneck Distance
+Let X be a set of points imbedded in Euclidean space and
+r two simplicial complexes forming a ﬁltration over the
+points. Both simplicial complexes are ﬁnite and have in all
+their sub-level sets homology groups of ﬁnite rank. Note that
+values. Furthermore, the L∞ -norm between two points x =
+these groups change due to a ﬁnite set of homology-critical
+deﬁned by
+
+(x1 , x2 ) and y = (y1 , y2 ) for x ∈ PK1 and y ∈ PK2 is
+||x − y||∞ = max {|x1 − y1 |, |x2 − y2 |} .
+||x − y||∞ = |x1 − y1 |.
+
+(18)
+By convention it is assumed that if x2 = y2 = +∞, then
+Deﬁnition 5.1 (Bottleneck Distance): If PK1 and PK2 are
+such two persistence diagrams and x := (x1 , x2 ) ∈ PK1 and
+y := (y1 , y2 ) ∈ PK2 , respectively, their Bottleneck distance
+is deﬁned as
+
+||x − ϕ(x)||∞ ,
+
+(19)
+
+dB (PK1 , PK2 ) = inf
+
+ϕ
+
+sup
+
+x∈PK1
+
+where ϕ is the set of all bijections from the multiset PK1 to
+PK2 [16], [24].
+
+B. Bottleneck Stability
+The Bottleneck stability has been derived, proven and
+discussed by Cohen-Steiner et al. [25]. We explain it and
+recapture the basic properties of Hausdorff stability. To do
+so, a smooth function f : R → R is considered as an example.
+Deﬁnition 5.2 (Critical Values): A point x ∈ R of the
+smooth function f is called critical and f(x) is called critical
+value of f if f (cid:48) (x) = 0. The critical point
+is also not
+degenerated if f (cid:48)(cid:48) (x) (cid:54)= 0.
+The terms f (cid:48) (x) and f (cid:48)(cid:48) (x) refer to the total ﬁrst and second
+derivatives, respectively. The term shall further be specialized
+to homology critical value of a smooth function f.
+Deﬁnition 5.3 (Homology Critical Values): Im f(x) is a
+homology critical value, if there is a real number y for which
+an integer k exists, such that for a sufﬁciently small α > 0
+the following map is not an isomorphism:
+Deﬁnition 5.4 (Tame Functions): Consider a smooth func-
+(cid:0)f−1 ((−∞, y])(cid:1) is ﬁnite-dimensional for all k ∈ Z and
+tion f as in Def. 5.3. Then f is called tame if it has a ﬁnite
+number of homology critical values and the homology group
+Considering tame functions, it is also well known that a
+persistence diagram can be generated by pairing their critical
+values with each other and transferring corresponding points
+(depending on the functions value) to the persistence diagram.
+Note that this is an example of the dependence of persistent
+homology on the given metric or afﬁne connection of the
+imbedding space.
+The Bottleneck distance of the persistence diagram of two
+tame functions f, g is restricted to a norm between a point and
+its bijective projection. Therefore not all points of a multiset
+
+(cid:0)f−1 ((−∞, y + α])(cid:1) (20)
+
+(cid:0)f−1 ((−∞, y − α])(cid:1)
+
+→ Hk
+
+y ∈ R.
+
+Hk
+
+Hk
+
+of f outside the diagonal ∆ or the distance between a point
+outside the diagonal and the diagonal itself:
+
+δf = min (cid:12)||x − y||∞ (cid:12)(cid:12)(cid:12)(cid:12) Pf − ∆ (cid:51) x (cid:54)= y ∈ Pf(cid:13) .
+||f − g||∞ ≤
+δf
+2
+.
+
+(26)
+Choose a second tame function g : X → R, which satisﬁes
+Like in the deﬁnition of persistence diagrams (see Def. 4.9),
+the multiplicity of the point x ∈ Pf − ∆ is denoted by µ.
+The box Rα (x) is centered at x and has radius α = ||f −
+g||∞ . Applying the Box-Lemma 5.6.1 the following inequality
+results:
+
+µ ≤ #(Pg
+
+The natural neighbor algorithm preserves local topological
+properties, which solve these kind of problems [30]. It has
+a direct connection to the Voronoi
+tesselation leading to
+an almost
+topology preserving representation [1]. Almost,
+because before this paper there was no stopping condition
+deﬁned giving satisfactory topological results.
+The idea of the algorithm is to re-weight the coordinates
+of the data for each point by using the change in volume of
+Voronoi regions with an added point relative to the volume of
+the Voronoi regions without the additional point. The Voronoi
+diagram (see Def. 6.1) is based on the Delaunay triangulation,
+which is in return dual to the Voronoi tesselation. Hence it is
+not needed to construct the Voronoi diagram explicitly, since
+all operations can take place on the Delaunay triangulation.
+The letter is well understood and supported by various efﬁcient
+data structures [31]. This interpolation method generalizes by
+its deﬁnition to arbitrary dimensions.
+
+A. The Voronoi Tesselation
+
+Boissonnat and Cazals have shown that for a set of points
+X ⊂ Rd distributed over an imbedded manifold M the natural
+neighboring points behave like a local coordinate system for
+M by increasing their density [32]. This local coordinate
+system represents the manifold from which the collected data
+is sampled. The investigation of invariants of a coordinate
+representation of such a manifold should provide information
+about its structure. For this purpose the Voronoi diagram is
+deﬁned, cf. Sect. III.
+Deﬁnition 6.1 (Voronoi Diagram): A Voronoi diagram
+dgmVor over a set of points X is deﬁned by the union of the
+Voronoi regions and assigns a polyhedron to each point, see
+Fig. 2:
+
+(cid:91)
+
+x∈X
+
+dgmVor (X) :=
+
+Vor(x),
+
+for all x ∈ X.
+
+(30)
+
+The Voronoi diagram builds a convex union of polyhedra.
+The Voronoi cells have no common interior and intersect
+at their boundaries. Because every point in Euclidean space
+belongs to a Voronoi region, the Voronoi diagram covers the
+entire Rd . All points of the surrounding space in which the
+data set is imbedded and which are closest to the respective
+data point from X are assigned to its Voronoi region. This is
+also called Voronoi tesselation. The combinatorial complexity
+of the Voronoi diagram of n points of Rd is at most the
+combinatorial complexity of a polyhedron deﬁned as the inter-
+section of n half-spaces of Rd+1 [33]. Considering the duality,
+one can deduced that the overall time for the construction of
+2 ) ) [33].
+The resulting polygons can then be divided into Voronoi
+edges and vertices. Using Sibson’s terminology [1], the natural
+neighbors of a point are deﬁned by the points of the neighbor-
+ing Voronoi polygons. It can be stated that the natural neighbor
+is the closest point x to two other points y and z within a
+collection of points X being the signature.
+
+dgmVor (X) takes O(n log n + n( d
+
+(a) dgmVor (X).
+
+(b) Inserting a point.
+
+(c) Cells Vor(xi ).
+
+(d) dgmVor (X ∪ x• ).
+
+Fig. 2: (a) Clipped version of the Voronoi tesselation. For
+arbitrary manifolds the curvature must be considered for
+a correct clip. (b) Tesselation with an added point, which
+creates a new Voronoi region, stealing parts of the neigh-
+boring regions x1 , . . . , x5 ∈ Rd . (c) The determined weights
+w1 , . . . , w5 ∈ R+ by the fractional amount of occupied
+volume. (d) Tesselation with an added point.
+
+To yield the position of the new point one has to calculate
+the Voronoi diagram of the original signature dgmVor (X) and
+the one with an added point
+dgm•
+
+(cid:91)
+
+Vor(x).
+
+(31)
+
+Vor (X ∪ x• ) :=
+
+x∈X∪x•
+
+The Voronoi diagram dgm•
+Vor (X ∪ x• ) consists of one
+Voronoi region more than dgmVor (X), see Fig. 2 (a) and (d).
+This polygon being part of dgm•
+Vor (X ∪ x• ) contains a cor-
+responding portion of its area. The weights of the coordinate
+representation of the new point can be determined by the ratio
+of the volume stolen from its Voronoi regions [34]:
+
+^x• =
+
+λlx•l ,
+
+(32)
+
+L(cid:88)l=1
+
+λl = (cid:14) vol(Vor(xl )
+
+B. The Duality of Delaunay Complex and Voronoi Diagram
+The result that the Delaunay triangulation Del(X) and the
+Voronoi diagram dgmVor (X) behave dual is used, formulated
+by Chazal et al. [33], Chap. 4. This duality gives a bijective
+correspondence between the faces of one complex and the
+faces of the other one, including incidence and reversibility
+of operations. Due to duality, both complexes have the same
+homotopy type.
+Theorem 6.1 (Duality of Del(X) and dgmVor (X)): The
+Delaunay triangulation Del(X) of a point set X ⊂ Rd , which
+is one extremal of the Delaunay complex, behaves dual to the
+Voronoi diagram dgmVor (X) of this point set.
+Thus the Delaunay complex is particularly suitable to be
+used for persistent homology, because of its lower calculation
+effort in comparison to the Voronoi tesselation or the ˇCech
+complex.
+It remains to be investigated to what extent suitable char-
+acteristics in the form of homology groups are preserved
+when persistent homology is calculated on the Delaunay
+triangulation.
+
+C. The Simplicial Collapse
+The Delaunay triangulation of the data set is calculated
+during Voronoi interpolation. This complex could be suitable
+to calculate persistent homology on it. It would avoid the
+burden of computing an additional simplicial structure. To
+achieve this, the Theorem of the Simplicial Collapse is used,
+established by Bauer and Edelsbrunner [14]. The argument is
+structured as follows:
+1) The simplicial collapse shows the simple-homotopy
+equivalence of the ˇCech complex, the Delaunay- ˇCech
+complex, the Delaunay complex and the Wrap complex.
+2) Simple-homotopy equivalence is a stronger condition
+than homotopy equivalence. An elementary simplicial
+collapse determines a strong deformation retraction up to
+homotopy. Hence, simple-homotopy equivalence implies
+homotopy equivalence.
+3) Under the conditions of the Hurewicz Theorem there is
+an isomorphism between homotopy groups and homo-
+logy groups, thus also a correspondence of structures.
+The complete proof of the simplicial collapse is not pre-
+sented, therefore we refer to the work of Bauer and Edels-
+brunner [14].
+The ˇCech complex is related to the Delaunay complex by
+the simplicial collapse. In a combinatorial sense this property
+can be given by looking at an abstract simplicial complex ˜K.
+Deﬁnition 6.2 (Abstract Simplicial Complex): A family of
+simplices σ of a non-empty ﬁnite subset of a set
+˜K is an
+abstract simplicial complex if, for every set σ (cid:48) in σ and every
+non-empty subset σ (cid:48)(cid:48)
+⊂ σ (cid:48) the set σ (cid:48)(cid:48) also belongs to σ.
+Assuming σ and σ (cid:48) are two simplices of ˜K so σ ⊂ σ (cid:48) and
+dim σ < dim σ (cid:48) . Furthermore, if σ (cid:48) is a maximal face of ˜K
+and no other maximal face of ˜K contains σ, then σ (cid:48) is called
+free face.
+Deﬁnition 6.3 (Simplicial Collapse): A simplicial collapse
+(cid:38) of ˜K is the removal of all σ (cid:48)(cid:48) simplices, where σ ⊆ σ (cid:48)(cid:48)
+σ (cid:48) , σ being a free face.
+
+⊆
+
+(cid:1)
+(cid:1)
+
+(cid:8)τk+1 > σ : f(τ) ≤ f(σ)(cid:9)
+(cid:8)νk−1 < σ : f(ν) ≥ f(σ)(cid:9)
+
+Now it is possible to deﬁne the simple-homotopy type based
+on the concept of simplicial collapse.
+Deﬁnition 6.4 (Simple-Homotopy Equivalence): Two ab-
+stract simplicial complexes ˜K and ˜G are said to have the same
+simple-homotopy type, if there exists a ﬁnite sequence
+˜K = ˜K0 (cid:38) ˜K1 (cid:38) · · · (cid:38) ˜Kn = ˜G,
+with each arrow representing a simplicial collapse or expan-
+sion, the latter being the inverse to the former.
+Intuitively
+speaking,
+two
+simplicial
+complexes
+are
+combinatorial-equivalent,
+if it
+is possible to deform one
+complex into the other with a ﬁnite number of moves.
+Following the proof of Bauer and Edelsbrunner discrete
+Morse functions and critical simplices shall be deﬁned at this
+point.
+Deﬁnition 6.5 (Discrete Morse Function): Let K be a
+Morse function f : K → R is a function that has the following
+simplicial complex and σ, τ, ν ∈ K simplices, then a discrete
+1) # (cid:0)
+properties for each k-simplex σ:
+2) # (cid:0)
+≤ 1,
+≤ 1.
+The Morse functions help to understand the topology of
+the underlying space, as the sub-level set of the function only
+changes when it passes a critical value. Informally, it can be
+said that a discrete Morse function is a weakly increasing
+function and whenever f(σ) = f(τ) one of the simplices is
+a maximum coface of the other [35].
+1) # (cid:0)
+Deﬁnition 6.6 (Critical Simplices [35]): A critical simplex
+(cid:1) = 0,
+2) # (cid:0)
+(cid:1) = 0.
+of f is a simplex σ satisfying the following conditions:
+If σ is a critical simplex the number f(σ) ∈ R is a critical
+value.
+The critical simplices establish the relation to the critical
+values, which can trigger a topological change in a collapse.
+For the main theorem it is important to show that these critical
+simplices are also contained in the lower simplicial complexes
+to which the ˇCech complex is supposed to collapse.
+Theorem 6.2 ( ˇCech-Delaunay Collapse [17].): Let X be a
+ﬁnite set of points in general position in Rd . Then
+ˇCechr (X) (cid:38) Del ˇCechr (X) (cid:38) Delr (X) (cid:38) Wrapr (X)
+(34)
+for all r ∈ R. This establishes the simple-homotopy equiva-
+lence of the ˇCech- and Delaunay complex.
+Proof: Let be E = ∅ and F = X, then the ﬁrst two relations
+are obtained with the Selective Delaunay Collapse, see [14]
+Delr (X) for every r ∈ R. Be VX the gradient of the Delaunay
+Theo. 5.9. To get the third, use the fact that Wrapr (X) ⊆
+radius function sX : Del(X) → R, cf. Vertex Gradient Lemma
+5.1 [14]. Each interval in VX is either disjoint from Delr (X)
+or a subset of Delr (X), similar is true for Wrapr (X). All
+critical simplices of Delr (X) are also contained in Wrapr (X).
+It follows that Delr (X) \ Wrapr (X) is the disjoint union of
+non-singular intervals of VX and according to the Generalized
+Gradient Collapsing Theorem, cf. [14] Theo. 2.2, this implies
+Delr (X) (cid:38) Wrapr (X).
+
+(cid:8)τk+1 > σ : f(τ) ≤ f(σ)(cid:9)
+(cid:8)νk−1 < σ : f(ν) ≥ f(σ)(cid:9)
+
+The simple-homotopy equivalence of the four different
+complexes is established, a particular type of homotopy equiv-
+alence that admits a purely combinatorial description in terms
+of elementary collapses and expansions [14], [36].
+We are only interested in whether simple-homotopy equiv-
+alence implies homotopy equivalence. Since elementary sim-
+plicial collapses form a strong deformation retraction that is
+unique up to homotopy, see [36] §2, it can be concluded that
+they preserve the homotopy type.
+This shows that all four complexes are suitable for calculat-
+ing persistent homology as a result of the simplicial collapse
+up to homotopy equivalence. Is the underlying space (n − 1)-
+connected, i.e. if it is not empty and path-connected and the nth
+homotopy groups vanish identically, then for the kth homotopy
+group for a k ≤ n and n ≥ 2 with abelianization for n = 1,
+according to the Hurewicz Theorem 4.1, the homomorphism
+into the kth homology group is an isomorphism. This isomor-
+phism allows to determine an estimate of the homotopy groups
+from the persistence diagram.
+
+V I I . NUM ER ICA L EX PER IM EN T S
+
+The experiments were conducted on a NVIDIA Quadro
+RTX 4000. All source code is written in Python 3.7. The
+library Geometry Understanding in Higher Dimensions is
+used for the calculation of the simplicial complexes, ﬁl-
+trations and persistent homology [38]. All experiments in
+the context of this paper are published on GitHub under
+https://karhunenloeve.github.io within the ∂SIML project.
+
+A. Parametrization
+1) The Natural Neighbor Method: In all experiments as
+many new points are added as are already in the respective
+example of a signature for each interpolation step. This means
+that the number of data points is doubled per iteration. The
+points are inserted uniformly into a clipped region, see Fig. 2.
+Then it is proceeded as described in Sect. VI.
+2)
+ˇCech and Vietoris-Rips Complex: The Vietoris-Rips
+complex is expanded up to the third dimension. This creates
+edges, triangles and tetrahedra as faces.
+Another parameter speciﬁed as maximum edge length is set
+to the average edge length between two points within the data
+set to obtain a more sparse representation of the simplicial
+complex. Although the Vietoris-Rips complex has the same
+1-skeleton as the ˇCech complex, the 1-skeleton is restricted
+in these experiments to one of its subsets. Since it is our
+intention to test the performance of parametrization that are
+as adequate as really necessary, the same r is used for the
+ˇCech and the Vietoris-Rips complex, so that the Vietoris-Rips
+complex is topologically farther away from the union of closed
+balls around each data point, but faster to compute.
+To the best of our knowledge the problem of ﬁnding an
+optimal radius or distance threshold for these complexes is
+considered open [39], [40]. Thus empirical heuristics are used:
+
+r = max
+
+x,y∈X
+
+||x − y||.
+
+(35)
+
+Fig. 3: Bottleneck and ﬁrst Wasserstein distances between the
+persistence diagrams of the ﬁltration in iteration t and t + 1.
+The persistent homology has been computed on the ˇCech
+complex, Vietoris-Rips complex and the witness complex, re-
+spectively. A total of 250 examples from a signature collection
+are represented [37]. Each line corresponds to a single sample
+and the lines are colored corresponding to one of six selected
+users in • gray, • black, • blue, • yellow, • orange and • red.
+
+3) Witness Complex: The strong witness complex, imbed-
+ded into Rd , is recalculated for each sample at each interpola-
+tion step. A uniformly distributed selection of 5% of the data
+points of each example determines the landmarks to use.
+The low amount of landmarks allows real-time calculation
+even after the ﬁfth interpolation step, for which the number of
+data points exceeds 10.000 · 2 per signature.
+4) Heuristic for α: A free parameter α quantiﬁes a tol-
+erance to topological change, measured by Wasserstein or
+Bottleneck distance. Quantifying what means a signiﬁcant
+topological change is not trivial and requires further inves-
+tigation beyond the scope of this paper. A decision must be
+made on the following hypotheses:
+• H0 : The P t
+K and P t+1
+persistence diagrams have differ-
+ent underlying distributions.
+• H1 : The P t
+K and P t+1
+persistence diagrams have the
+same underlying distribution.
+Czado and Munk have proposed an asymptotic solution for
+
+K
+
+K
+
+t0t1t2t3t4t5(a)dB,Delaunay.dB(PtDel,Pt+1Del)t0t1t2t3t4t5(b)dW1,Delaunay.dW1(PtDel,Pt+1Del)t0t1t2t3t4t5(c)dB,Vietoris-Rips.dB(PtRips,Pt+1Rips)t0t1t2t3t4t5(d)dW1,Vietoris-Rips.dW1(PtRips,Pt+1Rips)t0t1t2t3t4t5∞(e)dB,witness.dB(PtWit,Pt+1Wit)t0t1t2t3t4t5(f)dW1,witness.dW1(PtWit,Pt+1Wit)Fig. 4: Gray • signatures are valid. Yellow • signatures are critical and stop interpolation. Red • signatures are invalid.
+Persistence diagrams are calculated on the Delaunay complex. In the ﬁrst letter of (0) the natural neighbor is more often the
+point to the right of the writing than the viewer’s line of thought, implying an N. The interpolation stops when the topology
+of these points creates new connected components, see top row (2). In the last part of the writing is an element of H1 which
+disappears. It is noticeable that many holes are preserved, but the density of the points is changed and certain holes are shifted,
+like the distance of a V -forming letter pair. This shift creates differences in the persistence diagrams and also leads to the stop.
+
+testing by trimmed Wasserstein distance of two distributions,
+which is adapted here [41]. Our solution is not exact, it follows
+the expected value of the persistence diagrams. It is, however,
+exact in the limit:
+
+(cid:90) 1−γ
+γ
+
+∆γ→0 (cid:88)x∈X
+
+f(x)dx = lim
+
+f(x)∆γ.
+
+(36)
+
+We slightly change the trimmed Wasserstein distance to an
+empirical estimate and use this estimate for our experiments.
+We accept a small error generated by the use of empirical
+measurements for our analysis.
+Deﬁnition 7.1 (Empirical Trimmed Wasserstein Distance):
+The empirically trimmed Wasserstein distance of two persis-
+tence diagrams is
+
+^Γ p
+γ (P t
+
+K , P t+1
+
+K ) =
+
+1
+(1 − 2γ)
+
+K )j ||p∞∆γ
+
+||(P t
+
+K )j − P t+1
+
+ 1
+
+p
+
+,
+
+ m(cid:88)j=1
+
+where α ∈ [0, 1/2) denotes a trimming bound resulting from
+the integral for the continuous case and is adapted as a
+difference in a ﬁnite weighted sum.
+The critical region of the equivalence test for our hypothesis
+is expressed as (cid:18) nm
+H0 against H1 follows the analysis by Czado and Munk and
+where zγ denotes the γ-quantile of the standard normal
+distribution and n = m, with n being the number of samples.
+
+p ^Γ p
+γ − αp
+^σγ
+
+(cid:19) 1
+
+≤ zγ ,
+
+n + m
+
+(37)
+
+γ (P t
+γ (P t
+
+K , P t+1
+K , P t+1
+
+K ) > α.
+K ) ≤ α.
+
+The initial problem can be rephrased in terms of the deﬁned
+distance:
+• H0 : Γ p
+• H1 : Γ p
+5) Data: For this experiment 45 signatures per user are
+considered. The signatures show the same writing, but are
+different and independent samples. In total we investigate 83
+users, i.e. just as many different writings. We assume that the
+persistence diagrams are statistically independent. For each
+user we have a set of 45 persistence diagrams and a set of 45
+corresponding handwritings.
+
+µX
+
+B. Evaluation
+The parameters for our experiment are stated in Alg. 1.
+In Fig. 5 basic statistics are computed for the entire data set
+such as mean µX , standard deviation σX , variation σX
+and the
+Wasserstein distance dW1 = dW1 (Xorg , Xt ). The statistics are
+also computed for the interpolated data with topological stop,
+respectively, marked with ∼. Note that for each signature it is
+decided separately up to which interpolation step the algorithm
+is executed.
+An improvement for each measured statistic at each iteration
+step by using the topological stop is achieved. In Fig. 3 the
+topological similarity between the individual users is made
+visual. It is conﬁrmed that both the Vietoris-Rips and the
+Delaunay complex are suitable to estimate the topological
+characteristics. The calculations using the witness complex
+produced far less stable results. This is due to the small
+selection of landmarks of only 5%. Further experiments show
+
+(0)(1)(2)(3)(4)(5)(0)(1)(2)(3)(4)(5)(0)(1)(2)(3)(4)(5)Del ← PDel ; ^Γ p
+
+(cid:48)
+
+Algorithm 1 Voronoi interpolation or natural neighbor inter-
+polation with heuristic topological stopping-criterion.
+
+5: for P (cid:48)
+for all x• ∈ X• do
+
+Require: A point set X = {x1 , . . . , xk } being the signature.
+(cid:48) ← X
+(cid:46) Initialize λs and persistence diagram.
+(cid:46) Set constant parameters.
+X• ← U (conv X
+
+1: λ, P ← ∅, ∅
+2: α, γ, p ← 0.01, 0.1, 1
+4: PDel ← PH.Del(X)
+3: X
+Del ← PH.Del(X
+γ (PDel , P (cid:48)
+Del ) ≤ α; P (cid:48)
+6:
+Del ← Triang.Del(X)
+)
+7:
+Del• ← Triang.Del(X ∪ x• )
+← resort(Del)
+8:
+← resort(Del• )
+9:
+λ ← diff(dgmVor , dgm•
+10:
+x• ← reweight(x• , λ)
+11:
+12:
+13:
+14:
+15:
+
+(cid:46) Persistent homology on Delaunay.
+(cid:48)
+(cid:46) Uniform points in convex hull.
+
+) do
+
+(cid:46) Determine weights.
+(cid:46) Reweight added point.
+(cid:46) Update X
+(cid:48) .
+
+(cid:46) Delaunay triangulation.
+(cid:46) Voronoi diagram.
+
+Vor
+
+dgmVor
+dgm•
+(cid:48) ← X
+(cid:48)
+
+X
+
+(cid:48) ∪ x•
+
+end for
+16: end for
+17: return X
+
+Vor )
+
+µX
+
+Fig. 5: Mean µ, standard deviation σ, variation σX
+and
+ﬁrst Wasserstein distance of all data sets of the respective
+interpolation step t0 , . . . , t1 are calculated. The Wasserstein
+distance is computed with respect to the original data. ˜σ is
+the variance of all samples interpolated with topological stop.
+Analogous to this also all other statistics. Note that for the
+statistics marked with ∼ the total number of data points is
+lower, because in some examples the interpolation is stopped.
+The statistics are scaled to ensure best possible readability.
+
+that the differences in the iteration steps for witness complexes
+with more landmarks increasingly follow the diagrams Fig. 3
+(c) and (d), but do not scale well.
+
+C. Limitation
+The additional points are initialized in the convex hull of
+the Delaunay complex. Therefore only a very small deviation
+from its topological properties is possible, see Fig. 4. It must
+be judged whether this is a desired effect. For this experiment,
+the implicit topology of the handwriting, when following the
+typography of the letters, was not interpolated. Often other
+pairs were chosen, cf. Fig. 4. A possible solution for this is to
+
+establish similar methods with other complexes and different
+parametrization, thereby the geometrical precision could be
+adapted.
+
+V I I I . CONCLU S ION S & FU TUR E WORK
+
+In this threatise the theoretical background of interpolation
+by means of natural neighbours was elaborated. The result
+is a stopping-criterion with a hypothesis test to determine
+whether an interpolated signature still originates from the same
+distribution as the source.
+We have worked out the theoretical backgrounds of Bot-
+tleneck and Wasserstein distance to measure differences in
+persistent homology and could visualize the changing topology
+of each group of signatures, see Fig. 3.
+Our measurement results show an improvement of basic
+statistics compared to the vanilla natural neighbor interpola-
+tion. We have shown the theoretical connection of Voronoi
+diagrams to the Delaunay complex and its connection to
+other complexes, which should serve as a basis to explore
+related algorithms. We have discussed, that up to homotopy
+equivalence – due to certain conditions homology equivalence
+– the Delaunay complex, ˇCech Delaunay complex and wrap
+complex can also be used for ﬁltration.
+During our investigations we were restricted in some as-
+pects, see Sect. VII-C, out of which the following open
+research questions arose:
+• To compute the Voronoi tesselation, Rd must be restricted
+to a closed neighborhood. The intrinsic geometry of the
+data points is often not the Euclidean one. On the other
+handside the frequently used imbedding of the Voronoi
+tesselation is. This causes unwanted artifacts. Future
+work could derive a suitable geometrically motivated
+clipping of the boundaries (or imbedding of the Delaunay
+triangulation).
+• To our knowledge there is no evidence known that
+the Voronoi
+tesselation obtains the homology groups.
+According to [42], the Voronoi tessellation is stable, in
+the sense that small perturbations on the points lead
+to equally small amounts of changes of the Voronoi
+cells. However, the experiments show that for increasing
+iterations additional homology groups appear. Is it correct
+(for general metric spaces) that the Voronoi tesselation
+without restriction to a certain region preserves the homo-
+logy groups or homotopy groups?
+• Is there a geometrically meaningful clipping for general
+metric spaces, for example using geodesics in a smooth
+manifold setting?
+Future work shall extend the topological stopping-criterion
+for other interpolation methods. Further, a non-parametric T-
+test with simulated p values shall be applied cf. [43], [44].
+
+ACKNOW L EDG EM EN T
+
+The authors would like to thank David Haller, Lekshmi B.G.
+and Melanie Sigl for their corrections and suggestions which
+have contributed to the uniformity of this paper. Furthermore
+they thank Bastian Rieck, Anton Rechenauer and Jan Frahm
+
+t0t1t2t3t4t50.40.60.81Scaledstatistics.µX˜µXσX˜σXσXµX˜σX˜µXw1˜w1who motivated and contributed signiﬁcantly to the develop-
+ment of ideas through professional discussions and always had
+time for feedback.
+
+R E FERENC E S
+
+[1] R. Sibson, “A brief description of natural neighbor interpolation,”
+Interpreting Multivariate Data, pp. 21–36, 1981.
+[2] H. Hiyoshi and K. Sugihara, “Improving the global continuity of
+the natural neighbor interpolation,” in Computational Science and Its
+Applications, 2004, pp. 71–80.
+[3] Y. Li, W. Chen, and D. Lu, “The application of natural neighbor
+interpolation in real-time environments,” in International Conference on
+Cyberworlds 2008, 2008, pp. 306–313.
+[4] R. M. Rodr´ıguez-Dagnino, “A super-resolution image reconstruction
+using natural neighbor interpolation,” Computaci ´on y Sistemas, vol. 19,
+no. 2, 2015.
+[5] H. Edelsbrunner, D. Letscher, and A. Zomorodian, “Topological per-
+sistence and simpliﬁcation,” Discrete and Computational Geometry,
+vol. 28, no. 4, pp. 511–533, 2002.
+[6] A. Zomorodian and G. E. Carlsson, “Computing persistent homology,”
+Discrete & Computational Geometry, vol. 33, no. 2, pp. 249–274, 2005.
+[7] G. E. Carlsson and A. Zomorodian, “The theory of multidimensional
+persistence,” Discrete and Computational Geometry, vol. 42, no. 1, pp.
+71–93, 2009.
+[8] G. E. Carlsson, G. Singh, and A. Zomorodian, “Computing multidimen-
+sional persistence,” Journal of Computational Geometry, vol. 1, no. 1,
+pp. 72–100, 2010.
+[9] A. Cerri and C. Landi, “Hausdorff stability of persistence spaces,”
+Foundations of Computational Mathematics, vol. 16, no. 2, pp. 343–
+367, 2016.
+[10] A. Zomorodian, “Fast construction of the vietoris-rips complex,” Com-
+puters and Graphics, vol. 34, no. 3, pp. 263–271, 2010.
+[11] M. Carri `ere, M. Cuturi, and S. Oudot, “Sliced wasserstein kernel
+for persistence diagrams,” in Proceedings of
+the 34th International
+Conference on Machine Learning, 2017, pp. 664–673.
+[12] O. Parzanchevski and R. Rosenthal, “Simplicial complexes: Spectrum,
+homology and random walks,” Random Structure Algorithms, vol. 50,
+no. 2, pp. 225–261, 2017.
+[13] F. Chazal, M. Glisse, C. Labru `ere, and B. Michel, “Convergence rates
+for persistence diagram estimation in topological data analysis,” Journal
+of Machine Learning Research, vol. 16, pp. 3603–3635, 2015.
+[14] U. Bauer and H. Edelsbrunner, “The morse theory of ˇCech and delaunay
+ﬁltrations,” in 30th Annual Symposium on Computational Geometry,
+2014, p. 484.
+[15] K. Borsuk, “On the imbedding of systems of compacta in simplicial
+complexes,” Fundamenta Mathematicae, vol. 35, pp. 217–234, 1948.
+[16] J.-D. Boissonnat, F. Chazal, and M. Yvinec, Geometric and Topological
+Inference. Cambridge University Press, 2018, vol. 57.
+[17] U. Bauer and H. Edelsbrunner, “The morse theory of ˇcech and delaunay
+complexes,” Transactions of the American Mathematical Society, vol.
+369, no. 5, pp. 3741–3762, 2017.
+[18] V. D. Silva and G. Carlsson, “Topological estimation using witness
+complexes.” SPBG: Symposium on Point-Based Graphics, vol. 4, pp.
+157–166, 2004.
+[19] T. Lin and H. Zha, “Riemannian manifold learning,” IEEE Transactions
+on Pattern Analysis and Machine Intelligence, vol. 30, no. 5, pp. 796–
+809, 2008.
+[20] P. G. Goerss and J. F. Jardine, Simplicial Homotopy Theory. Springer
+Science and Business Media, 2009.
+[21] G. W. Whitehead, Elements of Homotopy Theory.
+and Business Media, 2012, vol. 61.
+[22] B. Gray, Homotopy Theory: An Introduction to Algebraic Topology.
+Academic Press, 1975, vol. 64.
+[23] A. Hatcher, Algebraic Topology. Cambridge University Press, 2005.
+[24] H. Edelsbrunner and J. Harer, “Persistent homology – a survey,” Con-
+temporary mathematics, vol. 453, pp. 257–282, 2008.
+[25] D. Cohen-Steiner, H. Edelsbrunner, and J. Harer, “Stability of persis-
+tence diagrams,” Discrete and Computational Geometry, vol. 37, no. 1,
+pp. 103–120, 2007.
+[26] C. Villani, Optimal Transport: Old and New.
+Business Media, 2008, vol. 338.
+[27] M. Togninalli, E. Ghisu, F. Llinares-L ´opez, B. Rieck, and K. Borgwardt,
+“Wasserstein weisfeiler-lehman graph kernels,” Accepted as Conference
+Paper for Neural Information Processing Systems, 2019.
+
+Springer Science and
+
+Springer Science
+
+[28] D. Cohen-Steiner, H. Edelsbrunner, J. Harer, and Y. Mileyko, “Lipschitz
+functions have l p-stable persistence,” Foundations of computational
+mathematics, vol. 10, no. 2, pp. 127–139, 2010.
+[29] J.-D. Boissonnat and F. Cazals, “Smooth surface reconstruction via
+natural neighbour interpolation of distance functions,” in Proceedings
+of the 16th Annual Symposium on Computational Geometry, 2000, pp.
+223–232.
+[30] T. A. Bobach, “Natural neighbor interpolation - critical assessment
+and new contributions,” Doctoral Thesis, Technische Universit ¨at Kaiser-
+slautern, 2009.
+[31] O. Devillers, S. Meiser, and M. Teillaud, “Fully dynamic delauney
+triangulation in logarithmic expected time per operation,” in Proceedings
+of the 2nd Workshop on Algorithms and Data Structures, 1991, pp. 42–
+53.
+[32] J. Boissonnat and F. Cazals, “Natural neighbor coordinates of points
+on a surface,” Computational Geometry, vol. 19, no. 2-3, pp. 155–173,
+2001.
+[33] J.-D. Boissonnat, R. Dyer, and A. Ghosh, “Delaunay triangulation of
+manifolds,” Foundations of Computational Mathematics, vol. 18, no. 2,
+pp. 399–431, 2018.
+[34] F. Anton, D. Mioc, and A. Fournier, “Reconstructing 2d images with
+natural neighbour interpolation,” The Visual Computer, vol. 17, no. 3,
+pp. 134–146, 2001.
+[35] D. Fern ´andez-Ternero, E. Mac ´aas-Virg ´os, N. A. Scoville, and J. A.
+Vilches, “Strong discrete morse theory and simplicial ls category: A
+discrete version of the lusternik-schnirelmann theorem,” Discrete and
+Computational Geometry, 2019.
+[36] M. Cohen, A Course in Simple-Homotopy Theory.
+and Business Media, 2012, vol. 10.
+[37] S. H. U. of Transylvania, “The mobisig online signature database,”
+https://ms.sapientia.ro/ manyi/mobisig.html, accessed: 2019-04-01.
+[38] GUDHI User and Reference Manual. GUDHI Editorial Board, 2015.
+[Online]. Available: http://gudhi.gforge.inria.fr/doc/latest/
+[39] L. Wasserman, “Topological data analysis,” Annual Review of Statistics
+and Its Application, vol. 5, pp. 501–532, 2018.
+[40] A. Zomorodian, “Topological data analysis,” Advances in Applied and
+Computational Topology, vol. 70, pp. 1–39, 2012.
+[41] C. Czado and A. Munk, “Assessing the similarity of distributions-ﬁnite
+sample performance of the empirical mallows distance,” Journal of
+Statistical Computation and Simulation, vol. 60, no. 4, pp. 319–346,
+1998.
+[42] D. Reem, “The geometric stability of voronoi diagrams with respect
+to small changes of the sites,” in Proceedings of
+the 27th Annual
+Symposium on Computational Geometry, 2011, pp. 254–263.
+[43] A. Robinson and K. Turner, “Hypothesis testing for topological data
+analysis,” Journal of Applied and Computational Topology, vol. 1, no. 2,
+pp. 241–261, 2017.
+[44] P. Bubenik, “Statistical topological data analysis using persistence land-
+scapes,” The Journal of Machine Learning Research, vol. 16, no. 1, pp.
+77–102, 2015.
+
+Springer Science
+
+Luciano Melodia, M.A. studied German and Italian
+Philology as well as Information Science and Media
+Informatics at the University of Regensburg, and
+received his Bachelor of Arts in German Philology in
+2015. He completed his studies with a Master of Arts
+in Information Science in 2018 at the Computational
+Intelligence and Machine Learning Lab (CIML)
+and is currently a Ph.D. student at the Friedrich-
+Alexander University Erlangen-Nuremberg in Com-
+puter Science. He is a member of the German
+Informatics Society (GI).
+
+Prof. Dr.-Ing. Richard Lenz is Professor for Evo-
+
+lutionary Data Management at
+the University of
+Erlangen-Nuremberg. He studied computer science
+at
+the University of Kaiserslautern. In 1997 he
+received a Ph.D. from the University of Erlangen
+and in 2005 a habilitation degree from the University
+of Marburg. His research focuses on Information
+Systems in Healthcare, Data Quality and Data In-
+tegration. He is speaker of the special interest group
+Informatics in Life Sciences of the German Infor-
+matics Society (GI).
+
+

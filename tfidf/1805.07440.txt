@@ -1,0 +1,1621 @@
+Neural Architecture Search using Deep Neural Networks
+and Monte Carlo Tree Search
+
+Linnan Wang∗ 1 Yiyang Zhao∗ 2 Yuu Jinnai1 Yuandong Tian3 Rodrigo Fonseca1
+
+1Brown University
+
+2Worcester Polytechnic Institute
+
+3Facebook AI Research
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+5
+v
+0
+4
+4
+7
+0
+
+.
+
+5
+0
+8
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Neural Architecture Search (NAS) has shown great success
+in automating the design of neural networks, but the pro-
+hibitive amount of computations behind current NAS meth-
+ods requires further investigations in improving the sample
+efﬁciency and the network evaluation cost to get better results
+in a shorter time. In this paper, we present a novel scalable
+Monte Carlo Tree Search (MCTS) based NAS agent, named
+AlphaX, to tackle these two aspects. AlphaX improves the
+search efﬁciency by adaptively balancing the exploration and
+exploitation at the state level, and by a Meta-Deep Neural
+Network (DNN) to predict network accuracies for biasing the
+search toward a promising region. To amortize the network
+evaluation cost, AlphaX accelerates MCTS rollouts with a
+distributed design and reduces the number of epochs in eval-
+uating a network by transfer learning, which is guided with
+the tree structure in MCTS. In 12 GPU days and 1000 sam-
+ples, AlphaX found an architecture that reaches 97.84% top-1
+accuracy on CIFAR-10, and 75.5% top-1 accuracy on Ima-
+geNet, exceeding SOTA NAS methods in both the accuracy
+and sampling efﬁciency. Particularly, we also evaluate Al-
+phaX on NASBench-101, a large scale NAS dataset; AlphaX
+is 3x and 2.8x more sample efﬁcient than Random Search
+and Regularized Evolution in ﬁnding the global optimum. Fi-
+nally, we show the searched architecture improves a variety
+of vision applications from Neural Style Transfer, to Image
+Captioning and Object Detection.
+
+1
+
+Introduction
+
+Designing efﬁcient neural architectures is extremely labo-
+rious. A typical design iteration starts with a heuristic de-
+sign hypothesis from domain experts, followed by the de-
+sign validation with hours of GPU training. The entire de-
+sign process requires many of such iterations before ﬁnd-
+ing a satisfying architecture. Neural Architecture Search has
+emerged as a promising tool to alleviate human effort in this
+trial and error design process, but the tremendous computing
+resources required by current NAS methods motivate us to
+investigate both the search efﬁciency and the network eval-
+uation cost.
+AlphaGo/AlphaGoZero (Silver et al. 2016; Tian et al.
+2019) have recently shown super-human performance in
+playing the game of Go, by using a speciﬁc search al-
+gorithm called Monte-Carlo Tree Search (MCTS) (Kocsis
+
+∗Linnan Wang and Yiyang Zhao contributed equally
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+(a) random search
+
+(b) greedy methods
+
+(c) MCTS
+
+(d) Performance
+
+Figure 1: Comparisons of NAS algorithms: (a) random
+
+search makes independent decision without using prior roll-
+outs (previous search trajectories). An online model is to
+evaluate how promising the current search branch based
+on prior rollouts, and random search has no online model.
+(b) Search methods guided by online performance models
+built from previous rollouts. With static, coarse-grained ex-
+ploration strategy (e.g., -greedy in Q-learning), they may
+quickly be stuck in a sub-optimal solution; and the chance
+to escape is exponentially decreasing along the trajectory. (c)
+AlphaX builds online models of both performance and visi-
+tation counts for adaptive exploration. The numbers in nodes
+represent values. (d) Performance of different search algo-
+rithms on NASBench-101. AlphaX is 3x, 1.5x more sample-
+efﬁcient than random search and -greedy based Q-learning.
+
+and Szepesv ´ari 2006). Given the current game state, MCTS
+gradually builds an online model for its subsequent game
+states to evaluate the winning chance at that state, based
+on search experiences in the current and prior games, and
+makes a decision. The search experience is from the previ-
+ous search trajectories (called rollouts) that have been tried,
+and their consequences (whether the player wins or not).
+
+NoOnlineModelStart:End:𝝐𝝐𝝐𝝐QselectedpathOnlineModel,Coarse-grainedStaticExploration510442112#Visits	SelectedpathOnlineModel,Fine-grainedDynamicExploration#ofvisitsGreedy QAlphaXRandom Search0200004000060000#samples to global optimal 
+ 
+ 
+ 
+ 
+ 
+Methods
+
+Global
+Solution
+
+Online
+Model
+
+Exploration
+
+Distributed
+Ready
+
+Transfer
+Learning
+
+2 Related Work
+
+×
+×
+×
+√
+
+MetaQNN (QL) 1
+Zoph (PG) 2
+Regularized Evolution 4 √
+PNAS (HC) 3
+DeepArchitect (MCTS) 6 √
+Random Search 5
+Wistuba (MCTS) 7
+AlphaX (MCTS)
+
+√
+√
+
+-
+RNN
+RNN
+-
+-
+-
+
+-greedy
+-
+-
+top-k mutation
+random
+UCT
+
+Gaussian UCT
+meta-DNN UCT
+
+×
+√
+√
+√
+√
+×
+×
+√
+
+×
+×
+×
+×
+×
+×
+×
+√
+
+Table 1: Highlights of NAS search algorithms: compared
+
+to DeepArchitect and Wistuba, AlphaX makes several con-
+tributions toward a practical MCTS based NAS agent by im-
+proving the sample efﬁciency with an effective multi-stage
+metaDNN, and amortizes the network evaluation costs by a
+distirbuted design and transfer learning.
+
+Different from the traditional MCTS approach that evalu-
+ates the consequence of a trajectory by random self-play to
+the end of a game, AlphaGo uses a predictive model (or
+value network) to predict the consequence, which enjoys
+much lower variance. Furthermore, due to its built-in explo-
+ration mechanism using Upper Conﬁdence bound applied to
+Trees (UCT) (Auer, Cesa-Bianchi, and Fischer 2002), based
+on its online model, MCTS dynamically adapts itself to the
+most promising search regions, where good consequences
+are likely to happen.
+Inspired by this idea, we present AlphaX, a NAS agent
+that uses MCTS for efﬁcient architecture search with Meta-
+DNN as a predictive model to estimate the accuracy of
+a sampled architecture. Compared with Random Search,
+AlphaX builds an online model which guides the future
+search; compared to greedy methods, e.g. Q-learning, Reg-
+ularized Evolution or Top-K methods, AlphaX dynami-
+cally trades off exploration and exploitation and can es-
+cape from locally optimal solutions with fewer search trials.
+Fig. 1 summarizes the trade-offs. Furthermore, while prior
+works applied MCTS to Architecture Search (Wistuba 2017;
+Negrinho and Gordon 2017), they lack an effective model to
+accurately predict rewards, and the expensive network eval-
+uations in MCTS rollouts still remain unaddressed. Toward
+a practical MCTS-based NAS agent, AlphaX has two novel
+features: ﬁrst, a highly accurate multi-stage meta-DNN to
+improve the sample efﬁciency; and second, the use of trans-
+fer learning, together with a scalable distributed design, to
+amortize the network evaluation costs. As a result, AlphaX
+is the ﬁrst MCTS-based NAS agent that reports SOTA accu-
+racies on both CIFAR-10 and ImageNet in on par with the
+SOTA end-to-end search time.
+
+1 (Baker et al. 2016)
+2 (Zoph and Le 2016)
+3 (Liu et al. 2017a)
+4 (Real et al. 2018)
+5 (Sciuto et al. 2019)
+6 (Negrinho and Gordon 2017)
+7 (Wistuba 2017)
+
+Monte Carlo Tree Search: DeepArchitect (Negrinho and
+Gordon 2017) implemented vanilla MCTS for NAS without
+a predictive model, and Wistuba (Wistuba 2017) uses statis-
+tics from the current search (e.g., RAVE and Contextual Re-
+ward Prediction) to predict the performance of a state. In
+comparison, our performance estimate is from both searched
+rollouts so far and a model (meta-DNN) learned from perfor-
+mances of known architectures and can generalize to unseen
+architectures. Besides, the prior works do not address the
+expensive network evaluations in MCTS rollouts, while Al-
+phaX solves this issue with a distributed design and transfer
+learning, making important improvements toward a practical
+MCTS based NAS agent.
+Bayesian Optimization (BO) is a popular method for the
+hyper-parameter search (Kandasamy, Schneider, and P ´oczos
+2015). BO has proven to be successful for small scale prob-
+lems, e.g. hyper-parameter tuning of Stochastic Gradient
+Descent (SGD). Though BO variants, e.g. TPE (Bergstra
+et al. 2011), have tackled the cubic scaling issue in Gaus-
+sian Process, optimizing the acquisition function in a high
+dimensional search space that contains over 1017 neural ar-
+chitectures become the bottleneck.
+Reinforcement Learning (RL): Several RL techniques
+have been investigated for NAS (Baker et al. 2016; Zoph and
+Le 2016). Baker et al. proposed a Q-learning agent to design
+network architectures (Baker et al. 2016). The agent takes
+a -greedy policy: with probability 1 − , it chooses the ac-
+tion that leads to the best expected return (i.e. accuracy) es-
+timated by the current model, otherwise uniformly chooses
+an action. Zoph et al. built an RNN agent trained with Policy
+Gradient to design CNN and LSTM (Zoph and Le 2016).
+However, directly maximizing the expected reward in Pol-
+icy Gradient could lead to local optimal solution (Nachum,
+Norouzi, and Schuurmans 2016).
+Hill Climbing (HC): Elsken et al. proposed a simple hill
+climbing for NAS (Elsken, Metzen, and Hutter 2017). Start-
+ing from an architecture, they train every descendent net-
+work before moving to the best performing child. Liu et al.
+deployed a beam search which follows a similar procedure
+to hill climbing but selects the top-K architectures instead
+of only the best (Liu et al. 2017a). HC is akin to the vanilla
+Policy Gradient tending to trap into a local optimum from
+which it can never escape, while MCTS demonstrates prov-
+able convergence toward the global optimum given enough
+samples (Kocsis and Szepesv ´ari 2006).
+Evolutionary Algorithm (EA): Evolutionary algorithms
+represent each neural network as a string of genes and search
+the architecture space by mutation and recombinations (Real
+et al. 2018). Strings which represent a neural network with
+top performance are selected to generate child models. The
+selection process is in lieu of exploitation, and the mutation
+is to encourage exploration. Still, GA algorithms do not con-
+sider the visiting statistics at individual states, and it lacks an
+online model to inform decisions.
+
+Figure 2: Overview of AlphaX search procedures: explanations of four steps are in sec.3.2.
+
+to inform future decisions. We implement a state as a map
+that deﬁnes all the hyper-parameters for each network layer
+and their dependencies. We also introduce a special terminal
+state to allow for multiple actions. All the other states can
+transit to the terminal state by taking the terminal action, and
+the agent only trains the network, from which it reaches the
+terminal. With the terminal state, the agent freely modiﬁes
+the architecture before reaching the terminal. This enables
+multiple actions for the design agent to bypass shallow ar-
+chitectures.
+Action Space: an action morphs the current network ar-
+chitecture, i.e. current state, to transit to the next state. It
+not only explicitly speciﬁes the inter-layer connectivity, but
+also all the necessary hyper-parameters for each layer. Un-
+like games, actions in NAS are dynamically changing w.r.t
+the current state and design spaces. For example, AlphaX
+needs to leverage the current DAG (state) in enumerating all
+the feasible actions of ’adding an edge’. In our experiments,
+the actions for the NASNet search domain are adding a new
+layer in the left or right branch of a Block in a cell, creating a
+new block with different input combinations, and the termi-
+nating action. The actions for the NASBench search domain
+are either adding a node or an edge, and the terminating ac-
+tion.
+
+3.2 Search Procedure
+
+This section elaborates the integration of MCTS and
+metaDNN. The purpose of MCTS is to analyze the most
+promising move at a state, while the purpose of meta-DNN
+is to learn the sampled architecture performance and to gen-
+eralize to unexplored architectures so that MCTS can sim-
+ulate many rollouts with only an actual training in evaluat-
+ing a new node. The superior search efﬁciency of AlphaX
+is due to balancing the exploration and exploitation at the
+ﬁnest granularity, i.e. state level, by leveraging the visiting
+statistics. Each node tracks these two statistics: 1) N (s, a)
+counts the selection of action a at state s; 2) Q(s, a) is the
+expected reward after taking action a at state s, and intu-
+itively Q(s, a) is an estimate of how promising this search
+
+(a) NASNet Cell
+
+(b) NASBench DAG
+
+Figure 3: Design space: (a) the cell structure of NASNet and
+(b) the DAG structure of NASBench-101. Then the network
+is constructed by stacking multiple cells or DAGs.
+
+3 AlphaX: A Scalable MCTS Design Agent
+
+3.1 Design, State and Action Space
+
+Design Space: the neural architectures for different domain
+tasks, e.g. object detection and image classiﬁcation, follow
+fundamentally different designs. This renders different de-
+sign spaces for the design agent. AlphaX is ﬂexible to sup-
+port various search spaces with an intuitive state and ac-
+tion abstraction. Here we provide a brief description of two
+search spaces used in our experiments.
+• NASNet Search Space: (Zoph et al. 2017) proposes
+searching a hierarchical Cell structure as shown in Fig.3a.
+There are two types of Cells, Normal Cell (N C ell) and
+Reduction Cell (RC ell). N C ell maintains the input and
+output dimensions with the padding, while RC ell reduces
+the height and width by half with the striding. Then, the
+network is constituted by stacking multiple cells.
+• NASBench Search Space: (Ying et al. 2019) proposes
+searching a small Direct Acyclic Graph (DAG) with each
+node representing a layer and each edge representing the
+inter-layer dependency as shown in Fig.3b. Similarly, the
+network is constituted by stacking multiple such DAGs.
+State Space: a state represents a network architecture, and
+AlphaX utilizes states (or nodes) to keep track of past trails
+
+SelectionExpansionSimulationBackpropagationπ tree 2.8 /158.5 / 103.0 / 40.3 / 11.8 / 20.9 / 1Q += 0.7N += 1Q(s,a) / N(s,a)UCB1 scoreπ random NNNNNN1.91.62.12.02.1+∞2.8 / 158.5 / 103.0 / 40.3 / 11.8 / 20.9 / 10 / 01.91.62.12.1+∞2.8 / 158.5 / 103.0 / 40.3 / 11.8 / 20.9 / 10.7 / 11.91.62.12.1+∞3.5 /168.5 / 103.7 / 50.3 / 12.5 / 30.9 / 10.7 / 11.91.62.12.1+∞2.02.02.0meta_DNNActural trainingCell OutputCell Input1Cell Input2Block layerlayerleftbrench rightbrench output BlockBlockBlockBlockinputconv 3*3max 3*3outputconv 1*1inputconv 1*1max 3*3outputconv 3*3node list0000011100000100001001010adjacency matrix direction is. Fig.2 demonstrates a typical searching iteration
+in AlphaX, which consists of Selection, Expansion, Meta-
+DNN assisted Simulation, and Backpropagation. We eluci-
+date each step as follows.
+Selection traverses down the search tree to trace the cur-
+rent most promising search path. It starts from the root and
+stops till reaching a leaf. At a node, the agent selects actions
+based on UCB1 (Auer, Cesa-Bianchi, and Fischer 2002):
+
+(cid:115)
+
+(cid:33)
+
+(cid:32)
+
+Q(s, a)
+N (s, a)
+
++ 2c
+
+2 log N (s)
+N (s, a)
+
+,
+
+(1)
+
+a∈A
+
+πtree (s) = arg max
+N (s) = (cid:80)
+
+( Q(s,a)
+
+(cid:113) 2 log N (s)
+N (s,a) )
+
+where N (s) is the number of visits to the state s (i.e.
+a∈A N (s, a)), and c is a constant. The ﬁrst term
+N (s,a) ) is the exploitation term estimating the expected ac-
+curacy of its descendants. The second term (2c
+is the exploration term encouraging less visited nodes. The
+exploration term dominates πtree (s) if N (s, a) is small, and
+the exploitation term otherwise. As a result, the agent favors
+the exploration in the beginning until building proper conﬁ-
+dences to exploit. c controls the weight of exploration, and
+it is empirically set to 0.5. We iterate the tree policy to reach
+a new node.
+Expansion adds a new node into the tree. Q(s, a) and
+N (s, a) are initialized to zeros. Q(s, a) will be updated in
+the simulation step.
+
+Meta-DNN assisted Simulation randomly samples the
+
+descendants of a new node to approximate Q(s, a) of the
+node with their accuracies. The process is to estimate how
+promising the search direction rendered by the new node and
+its descendants. The simulation starts at the new node. The
+agent traverses down the tree by taking the uniform-random
+action until reaching a terminal state, then it dispatches the
+architecture for training.
+The more simulation we roll, the more accurate estimate
+of this search direction we get. However, we cannot conduct
+many simulations as network training is extremely time-
+consuming. AlphaX adopts a novel hybrid strategy to solve
+this issue by incorporating a meta-DNN to predict the net-
+work accuracy in addition to the actual training. We delay
+the introduction of meta-DNN to sec.3.3. Speciﬁcally, we
+estimate q = Q(s, a) with
+
+(cid:33)
+
+(cid:32)
+
+(cid:88)
+
+i=1..k
+
+1
+k
+
+Q(s, a) ←
+
+Acc(sim0 (s(cid:48) )) +
+
+P red(simi (s(cid:48) ))
+
+/2
+
+(2)
+where s(cid:48) = s + a, and sim(s(cid:48) ) represents a simulation
+starting from state s(cid:48) . Acc is the actually trained accuracy
+in the ﬁrst simulation, and P red is the predicted accuracy
+from Meta-DNN in subsequent k simulations. If a search
+branch renders architectures similar to previously trained
+good ones, Meta-DNN updates the exploitation term in Eq.1
+to increase the likelihood of going to this branch.
+Backpropagation back-tracks the search path from the
+new node to the root to update visiting statistics. Please note
+we discuss the sequential case here, and the backpropagation
+will be split into two parts in the distributed setting (sec.3.5).
+
+Figure 4: Encoding scheme of NASBench and NASNet.
+
+With the estimated q for the new node, we iteratively back-
+propagate the information to its ancestral as:
+
+Q(s, a) ← Q(s, a) + q , N (s, a) ← N (s, a) + 1
+s ← parent(s),
+a ← πtree (s)
+
+(3)
+
+until it reaches the root node.
+
+3.3 The design of Meta-DNN and its related issues
+
+Meta-DNN intends to generalize the performance of unseen
+architectures based on previously sampled networks. It pro-
+vides a practical solution to accurately estimate a search
+branch with many simulations without involving the actual
+training (see the metaDNN assisted simulation for details).
+New training data is generated as AlphaX advances in the
+search. So, the learning of Meta-DNN is end-to-end. The
+input of Meta-DNN is a vector representation of architec-
+ture, while the output is the prediction of architecture per-
+formance, i.e. test accuracy.
+The coding scheme for NASNet architectures is as fol-
+lows: we use 6-digits vector to code a B lock ; the ﬁrst two
+digits represent up to two layers in the left branch, and the
+3rd and 4th digits for the right branch. Each layer is rep-
+resented by a number in [1, 12] to represent 12 different
+layers, and the speciﬁc layer code is available in Appendix
+TABLE.4. We use 0 to pad the vector if a layer is absent.
+The last two digits represent the input for the left and right
+branch, respectively. For the coding of block inputs, 0 corre-
+sponds to the output of the previous C ell, 1 is the previous,
+previous C ell, and i + 2 is the output of B locki . If a block is
+absent, it is [0,0,0,0,0,0]. The left part of Fig.4 demonstrates
+an example of NASNet encoding scheme. A C ell has up to
+5 blocks, so a vector of 60 digits is sufﬁcient to represent a
+state that fully speciﬁes both RC ell and N C ell. The coding
+scheme for NASBench architectures is a vector of ﬂat adja-
+cency matrix, plus the nodelist. Similarly, we pad 0 if a layer
+or an edge is absent. The right part of Fig.4 demonstrates an
+example of NASBench encoding scheme. Since NASBench
+limits nodes ≤ 7, 7×7 (adjacency matrix)+ 7 (nodelist) = 56
+digits can fully specify a NASBench architecture.
+Now we cast the prediction of architecture performance as
+a regression problem. Finding a good metaDNN is heuristi-
+cally oriented and it should vary from tasks to tasks. We cal-
+culate the correlation between predicted accuracies and true
+accuracies from the sampled architectures in evaluating the
+
+Block1(Normal) cell h-2sep 5*511conv 1*17encoder max 5*5avg 5*5encoder encoder 52+leftbranchrightbranchencoder encoder cell h-1encoder 01ﬂatten[11, 5, 7, 2, 0, 1]Outputﬂatten[X, X, X, X, X, X]ﬂatten[X, X, X, X, X, X]Block2 (NormalCell) ConcatBlock5 (ReductionCell) adjacencymatrix inputconv 1*1max 3*3outputencoder encoder encoder encoder 2346[2, 3, 4, 6]ﬂatten[0, 0, 1, 0]ﬂattenConcatmeta_DNNPredict AccuracyNASNet StyleNASBench Stylenode list  Figure 5: Distributed AlphaX: we decouple the original
+back-propagation into two parts: one uses predicted accu-
+racy (green arrow), while the other uses the true accuracy
+(blue arrow). The pseudocode for the whole system is avail-
+able in Appendix Sec.A
+
+design of metaDNN. Ideally, the metaDNN is expected to
+rank an unseen architecture in roughly similar to its true test
+accuracy, i.e. corr = 1. Various ML models, such as Gaus-
+sian Process, Neural Networks, or Decision Tree, are candi-
+dates for this regression task. We choose Neural Networks
+as the backbone model for its powerful generalization on
+the high-dimensional data and the online training capability.
+More ablations studies for the speciﬁc choices of metaDNN
+are available in sec.4.2.
+
+3.4 Transfer Learning
+
+As MCTS incrementally builds a network with primitive ac-
+tions, networks falling on the same search path render simi-
+lar structures. This motivates us to incorporate transfer learn-
+ing in AlphaX to speed network evaluations up. In simula-
+tion (Fig. 2), AlphaX recursively traverses up the tree to ﬁnd
+a previously trained network with the minimal edit distance
+to the newly sampled network. Then we transfer the weights
+of overlapping layers, and randomly initialize new layers. In
+the pre-training, we train every sample for 70 epochs if no
+parent networks are transferable, and 20 epochs otherwise.
+Fig. 11 provides a study to justify the design.
+
+3.5 Distributed AlphaX
+
+It is imperative to parallelize AlphaX to work on a large
+scale distributed systems to tackle the computation chal-
+lenges rendered by NAS. Fig.5 demonstrates the distributed
+AlphaX. There is a master node exclusively for scheduling
+the search, while there are multiple clients (GPU) exclu-
+sively for training networks. The general procedures on the
+server side are as follows: 1) The agent follows the selection
+and expansion steps described in Fig.2. 2) The simulation in
+MCTS picks a network archn for the actual training, and
+the agent traverses back to ﬁnd the weights of parent archi-
+tecture having the minimal edit distance to archn for trans-
+
+(a) normal cell
+
+(b) reduction cell
+
+Figure 6: the normal and reduction cells that yield the high-
+est accuracy in the search.
+
+fer learning; then we push both archn and parent weights
+into a job queue. We deﬁne archn as the selected net-
+work architecture at iteration n, and rollout− f rom(archn )
+archn . 3) The agent preemptively backpropagates ˆq ←
+as the node which it started the rollout from to reach
+i=1..k P red(simi (s(cid:48) )) based only on predicted accura-
+cies from the Meta-DNN at iteration n.
+
+(cid:80)
+
+1
+k
+
+Q(s, a) ← Q(s, a) + ˆq , N (s, a) ← N (s, a) + 1,
+s ← parent(s),
+a ← πtree (s).
+
+(4)
+
+4) The server checks the receive buffer to retrieve a ﬁn-
+ished job from clients that includes archz , accz . Then
+the agent starts the second backpropagation to propagate
+(Eq. 2) from the node the rollout started
+(s ← rollout− f rom(archz )) to replace the backpropa-
+gated ˆq with q :
+
+q ← accz + ˆq
+2
+
+Q(s, a) ← Q(s, a) + q − ˆq ,
+s ← parent(s),
+a ← πtree (s).
+
+(5)
+
+The client constantly tries to retrieve a job from the mas-
+ter job queue if it is free. It starts training once it gets the
+job, then it transmits the ﬁnished job back to the server. So,
+each client is a dedicated trainer. We also consider the fault-
+tolerance by taking a snapshot of the server’s states every
+few iterations, and AlphaX can resume the searching from
+the breakpoint using the latest snapshot.
+
+Search Engineconsistently selecting newarch into the job queueGPUGPUGPUGPUback-propagate with meta-DNNsimulated accuracy Arch, AccArch, Accsocketsendback-propagate withtrue accuracy AlphaXArchitectureArchParent weightsArchParent weightsArchParent weightssep 5*5Identitysep 3*3sep 5*5sep 3*3sep 5*5Cell Input1Cell Input2addaddaddsep 3*3IdentityaddconcatNormal CellCell OutputCell Input1Cell Input2concatavg 3*3avg 3*3avg 3*3sep 7*7avg 3*3sep 5*5max 3*3avg 3*3max 5*5sep 3*3addaddaddaddaddReduction CelllCell OutputModel
+
+Params Err
+
+GPU days M
+
+NASNet-A+cutout (Zoph et al. 2017)
+3.3M 2.65
+2000
+AmoebaNet-B+cutout (Real et al. 2018) 2.8M 2.50±0.05 3150
+DARTS+cutout (Liu et al. 2018)
+RENASNet+cutout (Chen et al. 2019)
+
+3.3M 2.76±0.09 4
+3.5M 2.88±0.02 6
+
+AlphaX+cutout (32 ﬁlters)
+
+2.83M 2.54±0.06 12
+
+PNAS (Liu et al. 2017a)
+ENAS (Pham et al. 2018)
+NAONet (Luo et al. 2018)
+
+AlphaX (32 ﬁlters)
+
+NAS v3(Zoph and Le 2016)
+Hier-EA (Liu et al. 2017c)
+
+3.2M 3.41±0.09 225
+4.6M 3.54
+0.45
+10.6M 3.18
+200
+
+2.83M 3.04±0.03 12
+
+7.1M 4.47
+22400
+15.7M 3.75±0.12 300
+
+AlphaX+cutout (128 ﬁlters)
+
+31.36M 2.16±0.04 12
+
+20000
+27000
+-
+4500
+
+1000
+
+1160
+-
+1000
+
+1000
+
+12800
+7000
+
+1000
+
+Table 2: The comparisons of our NASNet search results to
+other state-of-the-art results on CIFAR-10. M is the number
+of sampled architectures in the search. The cell structure of
+AlphaX is in Fig. 6.
+
+model
+
+multi-adds params top1/top5 err
+
+NASNet-A (Zoph et al. 2017)
+564M
+AmoebaNet-B (Real et al. 2018) 555M
+DARTS (Liu et al. 2018)
+574M
+RENASNet (Chen et al. 2019)
+574M
+PNAS (Liu et al. 2017a)
+588M
+
+5.3M 26.0/8.4
+5.3M 26.0/8.5
+4.7M 26.7/8.7
+4.7M 24.3/7.4
+5.1M 25.8/8.1
+
+AlphaX-1
+
+579M
+
+5.4M 24.5/7.8
+
+Table 3: Transferring the CIFAR architecture to ImageNet,
+and their results in the mobile setting.
+
+4 Experiments
+
+4.1 Evaluations of architecture search
+
+Open domain search: we perform the search on CIFAR-10
+using 8 NVIDIA 1080 TI. One GPU works as a server, while
+the rest work as clients. To further speedup network evalu-
+ations, we early terminated the training at 70th epoch dur-
+ing the pre-training. We selected the top 20 networks from
+the pre-training and ﬁne-tuned them additional 530 epochs
+to get the ﬁnal accuracy. For the ImageNet training, we
+constructed the network with the same RC ell and N C ell
+searched on CIFAR10 following the accepted standard, i.e.
+the mobile setting, deﬁned in (Zoph et al. 2017). In total,
+AlphaX sampled 1000 networks; and Fig. 6 demonstrates
+the architecture that yields the highest accuracy after ﬁne-
+tuning. More details are available at appendix. C.
+Table. 2 and Table. 3 and summarize SOTA results on
+CIFAR10 and ImageNet, and AlphaX achieves SOTA ac-
+curacy with the least samples (M). Our end-to-end search
+cost, i.e. GPU days, is also on par with SOTA methods
+due to the early terminating and transfer learning. Notably,
+AlphaX achieves similar accuracy to AmoebaNet with 27x
+fewer samples for the case with cutout and ﬁlters = 32. With-
+out cutout and ﬁlters = 32, AlphaX outperforms NAONet by
+0.14% in the test error with 16.7x fewer GPU days.
+Searching on NAS dataset: To further examine the sam-
+
+(a) best acc progression
+
+(b) #samples to the best
+
+(c) best acc progression
+
+(d) #samples to the best
+
+Figure 7: Finding the global optimum on NASBench-101:
+
+AlphaX is 3x, 2.8x faster than Random Search and Regular-
+ized Evolution on NASBench-101 (nodes ≤ 6). The results
+are from 200 trails with different random seeds. (c) and (d)
+show the performance of AlphaX in cases of with/without
+meta-DNN on NASBench-101
+
+Figure 8: Accuracy distribution of NASBench.
+
+ple efﬁciency, we evaluate AlphaX on the recent NAS
+dataset, NASBench-101 (Ying et al. 2019). NASBench enu-
+merates all the possible DAGs of nodes ≤ 7, constituting
+of (420k+) networks and their ﬁnal test accuracies. This en-
+ables bypassing the computation barrier to fairly evaluate
+the sample efﬁciency. In our experiments, we limited the
+maximal nodes in a DAG ≤ 6, i.e. constructing a subset of
+NASBench-101 that contains 64521 valid networks. This al-
+lows us to quickly repeat each algorithm for 200 trials. The
+search target is the network with the highest mean test ac-
+curacy (the global optimum) at 108th epochs, which can be
+known ahead by querying the dataset. We choose Random
+Search (RS) (Sciuto et al. 2019) and Regularized Evolu-
+tion (RE) (Real et al. 2018) as the baseline, as RE deliv-
+ers competitive results according to Table. 2 in the NASNet
+search space, and RS ﬁnds the global optimal in expected
+n/2, where n is the dataset size.
+Fig. 7 demonstrates AlphaX is 2.8x and 3x faster than RE
+and RS, respectively. As we analyzed in Fig. 1, Random
+Search lacks an online model. Regularized Evolution only
+
+0200004000060000ith sample0.94100.94150.94200.9425the current best accRandomRegularizedEvolutionAlphaXRandom SearchRegularized EvolutionAlphaX0200004000060000#samples to global optimal0100002000030000ith sample0.94100.94150.94200.94250.9430the current best accwithout meta-DNNwith meta-DNNWithout metaDNNWith metaDNN0500010000150002000025000#samples to global optimal0.20.40.60.8accuracies in NASBench101103#samples(a) RNN train
+
+(b) RNN test
+
+Figure 9: AlphaX search visualization:each node repre-
+
+sents a MCTS state; the node color reﬂects its value, i.e.
+accuracy, indicating how promising a search branch.
+
+(c) MLP train
+
+(d) MLP test
+
+mutates on top-k performing models, while MCTS explic-
+itly builds a search tree to dynamically trade off the explo-
+ration and exploitation at individual states. Please note that
+the slight difference in Fig. 7a actually reﬂects a huge gap in
+speed as indicated by Fig. 7b. From Fig. 8, it shows there are
+abundant architectures with minor performance difference to
+the global optimum. Therefore, it is fast to ﬁnd the top 5%
+architectures, while slow in reaching the global optimum.
+
+Qualitative evaluations of AlphaX: Several interesting
+
+insights are observable in Fig.9. 1) MCTS invests more on
+the promising directions (high-value path), and less other-
+wise (low-value path). Unlike greedy based algorithms, e.g.
+hill-climbing, MCTS consistently explores the search space
+guided by the adaptive UCT. 2) the best performing network
+is not necessarily located on the most promising branch,
+highlighting the importance of exploration in NAS.
+
+4.2 Component evaluations
+
+Meta-DNN Design and its Impact: The metric in evaluat-
+
+ing metaDNN is the correlation between the predicted v.s.
+true accuracy. We used 80% NASBench for training, and
+20% for testing. Since DNNs have shown great success in
+modeling complex data, we start with Multilayer Perceptron
+(MLP) and Recurrent Neural Network (RNN) on building
+the regression model. Speciﬁc architecture details are avail-
+able in appendix.E. Fig. 10b and Fig .10d demonstrate the
+performance of MLP (corr=0.784) is 4% better than RNN
+(corr=0.743), as the MLP (Fig. 10c) performs much better
+than RNN (Fig. 10a) in the training set. However, MLP still
+mispredicts many networks around 0.1, 0.4 and 0.6 and 0.8
+(x-axis) as shown in Fig. 10d. This clustering effect is con-
+sistent with the architecture distribution in Fig. 8 for having
+many networks around these accuracies. To alleviate this is-
+sue, we propose a multi-stage model, the core idea of which
+is to have several dedicated MLPs to predict different ranges
+
+(e) multi-stage train
+
+(f) multi-stage test
+
+Figure 10: meta-DNN design ablations: True v.s. predicted
+accuracies of MLP, RNN and multi-stage MLP on architec-
+tures from NASBench. The scatter density is highlighted by
+color to reﬂect the data distribution; Red means high density,
+and blue otherwise.
+
+of accuracies, e.g. [0, 25%], along with another MLP to
+predict which MLP to use in predicting the ﬁnal accuracy.
+Fig. 10f shows a multi-stage model successfully improves
+the correlation by 1.2% from MLP, and the mispredictions
+have been greatly reduced. Since the multi-stage model has
+achieved corr = 1 on the training set, we choose it as the
+backbone regression model for AlphaX. Fig. 7 demonstrates
+our meta-DNN is effective to sustain NAS.
+Transfer Learning: the transfer learning signiﬁcantly
+speeds network evaluations up, and Fig. 11 empirically val-
+idates the effectiveness of transfer learning. We randomly
+sampled an architecture as the parent network. On the par-
+ent network, we added a block with two new 5x5 separable
+conv layers on the left and right branch as the child network.
+We trained the parent network toward 70 epochs and saved
+its weights. In training the child network, we used weights
+from the parent network in initializing the child network ex-
+cept for two new conv layers that are randomly initialized.
+
+Accuracybest pathlow value pathhigh value pathrootbest node0.00.10.20.30.40.50.60.700.20.40.60.81actual accuracy00.20.40.60.81predict accuracycorr=0.803lowdensityhighy = xFigure 11: Validation of transfer learning: transferring
+
+weights signiﬁcantly reduces the number of epochs in reach-
+17 → 70 epochs v.s. random initialization), but insufﬁcient
+ing the same accuracy of random initializations (Transfer
+epochs loses accuracy (Transfer, 9 epochs).
+
+(a) best acc progression
+
+(b) #samples to the best
+
+Figure 12: Algorithmic comparisons: AlphaX is consis-
+tently the fastest algorithm to reach the global optimal on
+another simpliﬁed search domain (appendix.D), while Hill
+Climbing can easily trap into a local optimal.
+
+Fig. 11 shows the accuracy progress of transferred child net-
+work at different training epochs. The transferred child net-
+work retains the same accuracy as training from scratch (ran-
+dom initialization) with much fewer epochs, but insufﬁcient
+epochs lose the accuracy. Therefore, we chose 20 epochs in
+pre-training an architecture if transfer learning applied.
+
+4.3 Algorithm Comparisons
+
+Fig. 12 evaluates MCTS against Q-Learning (QL), Hill
+Climbing (HC) and Random Search (RS) on a simpliﬁed
+search space. Setup details and the introduction of the de-
+sign domain are available in appendix.D. These algorithms
+are widely used in NAS (Baker et al. 2016; Liu et al. 2017b;
+Elsken, Metzen, and Hutter 2017; Greff et al. 2017). We
+conduct 10 trials for each algorithm. Fig. 12b demonstrates
+AlphaX is 2.3x faster than QL and RS. Though HC is the
+fastest, Fig. 12a indicates HC traps into a local optimal. In-
+terestingly, Fig. 12b indicates the inter-quartile range of QL
+is longer than RS. This is because QL quickly converges to a
+suboptimal, spending a huge time to escape. This is consis-
+tent with Fig. 12a that QL converges faster than RS before
+the 50th samples, but random can easily escape from the lo-
+cal optimal afterward. Fig. 12b (MCTS v.s. AlphaX) further
+corroborates the effectiveness of meta-DNN.
+
+(a) content
+
+(b) style
+
+(c) VGG
+
+(d) AlphaX-1
+
+Figure 13: Neural Style Transfer: AlphaX-1 v.s. VGG.
+
+4.4
+
+Improved Features for Vision Applications
+
+CNN is a common component for Computer Vision (CV)
+models. Here, we demonstrate the searched architecture can
+improve a variety of downstream Computer Vision (CV) ap-
+plications. Please check the Appendix Sec.F for the experi-
+ment setup.
+1) Neural Style Transfer: AlphaX-1 is better than a shal-
+low network (VGG) in capturing the rich details and textures
+of a sophisticated style image (Fig. 13).
+2) Object Detection: We replace MobileNet-v1 with
+AlphaX-1 in SSD (Liu et al. 2016) object detection model,
+and the mAP (mini-val) increases from 20.1% to 23.7% at
+the 300 × 300 resolution. (Fig.16, appendix).
+3) Image Captioning: we replace the VGG with AlphaX-
+1 in show attend and tell (Xu et al. 2015). On the 2014
+MSCOCO-val dataset, AlphaX-1 outperforms VGG by
+2.4 (RELU-2), 4.4 (RELU-3), 3.7 (RELU-4), respectively
+(Fig.17, appendix).
+
+5 Conclusion
+
+In this paper, we propose a new MCTS based NAS agent
+named AlphaX. Compared to prior MCTS agents, AlphaX
+is the ﬁrst practical MCTS based agent that achieves SOTA
+results on both CIFAR-10 and ImageNet in a reasonable
+amount of computations by improving the sampling efﬁ-
+ciency with a novel predictive model meta-DNN, and by
+amortizing the network evaluation costs with a scalable
+solution and transfer learning. In 3 search tasks, AlphaX
+consistently demonstrates superior search efﬁciency over
+mainstream algorithms, highlighting MCTS as a promising
+search algorithm for NAS.
+
+References
+
+[Auer, Cesa-Bianchi, and Fischer 2002] Auer,
+P.; Cesa-
+Bianchi, N.; and Fischer, P. 2002. Finite-time analysis
+of the multiarmed bandit problem. Machine learning
+47(2-3):235–256.
+
+0204060epochs80859095accuracyrandom initializationTransfer, 9 epochsTransfer, 17 epochsTransfer, 35 epochsTransfer, 70 epochs050100150200ith sample0.580.600.620.64the current best acchill climbingrandomQMCTSAlphaX(MCTS+metaDNN)RandomQMCTSAlphaX50100150#samples to global optimal[Baker et al. 2016] Baker, B.; Gupta, O.; Naik, N.; and
+Raskar, R. 2016. Designing Neural Network Architectures
+using Reinforcement Learning. 1–18.
+[Bergstra et al. 2011] Bergstra, J. S.; Bardenet, R.; Bengio,
+Y.; and K ´egl, B. 2011. Algorithms for hyper-parameter op-
+In Advances in neural information processing
+timization.
+systems, 2546–2554.
+[Chen et al. 2019] Chen, Y.; Meng, G.; Zhang, Q.; Xiang, S.;
+Huang, C.; Mu, L.; and Wang, X. 2019. Renas: Rein-
+forced evolutionary neural architecture search. In Proceed-
+ings of the IEEE Conference on Computer Vision and Pat-
+tern Recognition, 4787–4796.
+[Elsken, Metzen, and Hutter 2017] Elsken, T.; Metzen, J.-
+H.; and Hutter, F. 2017. Simple and efﬁcient architecture
+search for convolutional neural networks. arXiv preprint
+arXiv:1711.04528.
+[Gatys, Ecker, and Bethge 2015] Gatys, L. A.; Ecker, A. S.;
+and Bethge, M. 2015. A neural algorithm of artistic style.
+CoRR abs/1508.06576.
+[Greff et al. 2017] Greff, K.; Srivastava, R. K.; Koutn´ık, J.;
+Steunebrink, B. R.; and Schmidhuber, J. 2017. Lstm: A
+search space odyssey. IEEE transactions on neural networks
+and learning systems 28(10):2222–2232.
+[Kandasamy, Schneider, and P ´oczos 2015] Kandasamy, K.;
+Schneider, J.; and P ´oczos, B. 2015. High dimensional
+bayesian optimisation and bandits via additive models. In
+International Conference on Machine Learning, 295–304.
+[Kocsis and Szepesv ´ari 2006] Kocsis, L., and Szepesv ´ari, C.
+2006. Bandit based monte-carlo planning. In European con-
+ference on machine learning, 282–293. Springer.
+[Lin et al. 2014a] Lin, T.; Maire, M.; Belongie, S. J.; Bour-
+dev, L. D.; Girshick, R. B.; Hays, J.; Perona, P.; Ramanan,
+D.; Doll ´ar, P.; and Zitnick, C. L. 2014a. Microsoft COCO:
+common objects in context. CoRR abs/1405.0312.
+[Lin et al. 2014b] Lin, T.; Maire, M.; Belongie, S. J.; Bour-
+dev, L. D.; Girshick, R. B.; Hays, J.; Perona, P.; Ramanan,
+D.; Doll ´ar, P.; and Zitnick, C. L. 2014b. Microsoft COCO:
+common objects in context. CoRR abs/1405.0312.
+[Liu et al. 2016] Liu, W.; Anguelov, D.; Erhan, D.; Szegedy,
+C.; Reed, S.; Fu, C.-Y.; and Berg, A. C. 2016. Ssd: Single
+shot multibox detector. In European conference on computer
+vision, 21–37. Springer.
+[Liu et al. 2017a] Liu, C.; Zoph, B.; Shlens, J.; Hua, W.;
+Li, L.-J.; Fei-Fei, L.; Yuille, A.; Huang, J.; and Murphy,
+K. 2017a. Progressive neural architecture search. arXiv
+preprint arXiv:1712.00559.
+[Liu et al. 2017b] Liu, C.; Zoph, B.; Shlens, J.; Hua, W.; Li,
+L.-J.; Fei-Fei, L.; Yuille, A.; Huang, J.; and Murphy, K.
+2017b. Progressive Neural Architecture Search.
+[Liu et al. 2017c] Liu, H.; Simonyan, K.; Vinyals, O.; Fer-
+nando, C.; and Kavukcuoglu, K. 2017c. Hierarchical rep-
+resentations for efﬁcient architecture search. arXiv preprint
+arXiv:1711.00436.
+[Liu et al. 2018] Liu, H.; Simonyan, K.; Simonyan, K.; and
+Yang, Y. 2018. Darts: Differentiable architecture search.
+arXiv preprint arXiv:1806.09055.
+
+[Loshchilov and Hutter 2017] Loshchilov, I., and Hutter, F.
+2017. Sgdr: Stochastic gradient descent with warm restarts.
+arXiv preprint arXiv:1608.03983.
+[Luo et al. 2018] Luo, R.; Tian, F.; Qin, T.; Chen, E.; and Liu,
+T.-Y. 2018. Neural architecture optimization. In Bengio,
+S.; Wallach, H.; Larochelle, H.; Grauman, K.; Cesa-Bianchi,
+N.; and Garnett, R., eds., Advances in Neural Information
+Processing Systems 31. Curran Associates, Inc. 7816–7827.
+[Nachum, Norouzi, and Schuurmans 2016] Nachum,
+O.;
+Norouzi, M.; and Schuurmans, D. 2016. Improving policy
+gradient by exploring under-appreciated rewards.
+arXiv
+preprint arXiv:1611.09321.
+[Negrinho and Gordon 2017] Negrinho, R., and Gordon, G.
+2017. Deeparchitect: Automatically designing and training
+deep architectures. arXiv preprint arXiv:1704.08792.
+[Pham et al. 2018] Pham, H.; Guan, M. Y.; Zoph, B.; Le,
+Q. V.; and Dean, J. 2018. Efﬁcient neural architecture search
+via parameter sharing. arXiv preprint arXiv:1802.03268.
+[Real et al. 2018] Real, E.; Aggarwal, A.; Huang, Y.; and Le,
+Q. V. 2018. Regularized evolution for image classiﬁer ar-
+chitecture search. arXiv preprint arXiv:1802.01548.
+[Sciuto et al. 2019] Sciuto, C.; Yu, K.; Jaggi, M.; Musat, C.;
+and Salzmann, M. 2019. Evaluating the search phase of neu-
+ral architecture search. arXiv preprint arXiv:1902.08142.
+[Silver et al. 2016] Silver, D.; Huang, A.; Maddison, C. J.;
+Guez, A.; Sifre, L.; Van Den Driessche, G.; Schrittwieser,
+J.; Antonoglou, I.; Panneershelvam, V.; Lanctot, M.; et al.
+2016. Mastering the game of go with deep neural networks
+and tree search. nature 529(7587):484–489.
+[Szegedy et al. 2015] Szegedy, C.; Vanhoucke, V.; Ioffe, S.;
+Shlens, J.; and Wojna, Z. 2015. Rethinking the inception
+architecture for computer vision. CoRR abs/1512.00567.
+[Tian et al. 2019] Tian, Y.; Ma, J.; Gong, Q.; Sengupta, S.;
+Chen, Z.; Pinkerton, J.; and Zitnick, C. L. 2019. ELF
+opengo: An analysis and open reimplementation of alp-
+hazero. CoRR abs/1902.04522.
+[Wistuba 2017] Wistuba, M. 2017. Finding competitive net-
+work architectures within a day using uct. arXiv preprint
+arXiv:1712.07420.
+[Xu et al. 2015] Xu, K.; Ba, J.; Kiros, R.; Cho, K.; Courville,
+A.; Salakhudinov, R.; Zemel, R.; and Bengio, Y. 2015.
+Show, attend and tell: Neural image caption generation with
+visual attention.
+In International conference on machine
+learning, 2048–2057.
+[Ying et al. 2019] Ying, C.; Klein, A.; Real, E.; Christiansen,
+E.; Murphy, K.; and Hutter, F.
+2019. Nas-bench-101:
+Towards reproducible neural architecture search.
+arXiv
+preprint arXiv:1902.09635.
+[Zoph and Le 2016] Zoph, B., and Le, Q. V. 2016. Neural
+Architecture Search with Reinforcement Learning. 1–16.
+[Zoph et al. 2017] Zoph, B.; Vasudevan, V.; Shlens, J.; and
+Le, Q. V. 2017. Learning transferable architectures for scal-
+able image recognition. arXiv preprint arXiv:1707.07012.
+
+A Pseudocode of AlphaX
+
+In this section, we present the pseudocode of distributed
+AlphaX. Algorithm 3 describes the search engine; Algo-
+rithm 2 describes the procedures of server that implement
+a client-server communication protocol to send an architec-
+ture searched by MCTS to a client for training. Algorithm 1
+describes the procedures of client that consistently listen
+new architectures from the server for training, and send the
+accuracy and network back to the server after training.
+
+Algorithm 1 Client
+
+1: Require: Start working once building connection to the
+server
+
+2: while True do
+
+if The client is connected to server then
+
+network ← Receive()
+accuracy ← Train(network)
+Send (network , accuracy) to the Server
+
+else
+
+end if
+10: end while
+
+Wait for re-connection
+
+Algorithm 2 Server
+
+1: while size(T ASK−QU EU E ) > 2 do
+
+while no idle client do
+Continue
+(cid:46) Wait for dispatching jobs until there
+are idle clients
+
+end while
+
+Create a new connection to a random idle client
+
+network ← T ASK−QU EU E .pop()
+
+Send network to a Client
+if Received−Signal() then
+
+network , accuracy ← Receive−Result()
+acc(network) ← accuracy
+state ← rollout− f rom(network)
+Backpropagation(state, (accuracy − ˆq(state))/2,
+
+0)
+
+Train
+
+(cid:46) Replace ˆq with q = Q(s, a) in Eq. 2
+the meta-DNN with
+a
+new data
+
+(network , accuracy)
+
+3:
+4:
+5:
+6:
+7:
+8:
+9:
+
+2:
+3:
+
+4:
+5:
+6:
+7:
+8:
+9:
+10:
+11:
+12:
+
+13:
+
+14:
+15:
+16:
+
+else
+
+Continue
+
+end if
+17: end while
+
+Algorithm 3 Search Engine (MCTS)
+1: function Expansion(state)
+Create a new node in a tree for state.
+for all action available at state do
+
+2:
+3:
+
+4: Q(state, action) ← 0, N (state, action) ← 0
+
+5:
+
+end for
+6: end function
+
+7:
+
+8: function Simulation(state)
+
+9: action ← none
+while action is not term do
+next−net ← Apply(state, action)
+
+randomly generate an action
+
+10:
+11:
+12:
+
+(cid:46) Apply returns the next state when action is applied to
+
+state
+
+13:
+
+end while
+14: end function
+
+15:
+
+17:
+18:
+19:
+20:
+21:
+
+23:
+
+32:
+33:
+34:
+
+35:
+36:
+37:
+
+38:
+
+16: function Backpropagation(state, q , n)
+
+while state is not root do
+state ← parent(state)
+Q(state, action) ← Q(state, action) + q
+N (state, action) ← N (state, action) + n
+
+end while
+22: end function
+
+24: Require: Start from the root
+
+Server()
+
+25: while episode < M AX− episode do
+cur− state ← root−node
+i ← 0
+while i < M AX− tree−depth do
+i ← i + 1
+next−action ← Selection(cur− state)
+
+26:
+27:
+28:
+29:
+30:
+31:
+
+an action based on Eq. 1
+if next− state not in tree then
+
+(cid:46) Select
+
+next− state ← Expansion(next−action)
+Tt ← Simulationt (next− state) for t = 0...k
+
+(cid:46) k is the number of simulations we run using
+the Meta-DNN
+
+T ASK−QU EU E .push(T0 )
+rollout− f rom(T0 ) ← next− state
+ˆq(next− state) ← 1
+i=1..k P red(Ti )
+
+k
+
+(cid:46) P red returns an accuracy predicted by the
+Meta-DNN
+Backpropagation(next− state, ˆq) (cid:46) Preemptive
+backpropagation to send ˆq
+
+(cid:80)
+
+39:
+40:
+
+end if
+end while
+41: end while
+
+Table 4: The code of different layers
+
+layers
+3x3 avg pool
+5x5 avg pool
+7x7 avg pool
+
+code
+1
+2
+3
+
+layer
+3x3 max pool
+5x5 max pool
+7x7 max pool
+
+code
+4
+5
+6
+
+layer
+3x3 conv
+5x5 conv
+identity
+
+code
+7
+8
+9
+
+layer
+3x3 depth-separable conv
+5x5 depth-separable conv
+7x7 depth-separable conv
+
+code
+10
+11
+12
+
+B Details of the State and Action Space
+
+This section describes the state and action space for NASNet
+design space.
+We constrain the state space to make the design problem
+manageable. The state space exponentially grows with the
+depth: a k layers linear network has nk architecture varia-
+tions, where n is the number of layer types. We leverage the
+GPU DRAM size, our current computing resources and the
+design heuristics from leading DNNs, to propose the follow-
+ing constraints on the state space: 1) a branch has at most 1
+layer; 2) a cell has at most 5 blocks; 3) the depth of blocks
+is limited to 2; 5) we use layers listed in TABLE.4.
+Actions also preserve the constraints imposed on the state
+space. If the next state reaches out of the design boundary,
+the agent automatically removes the action from the action
+set. For example, we exclude the ”adding a new layer” action
+for a branch if it already has 1 layer. So, the action set is
+dynamically changing w.r.t states.
+
+C Experiment Setup for Section 4.1
+
+C.1 Setup for searching networks on NASBench
+
+Regularized Evolution: our implementation of Regularized
+Evolution (Real et al. 2018) is from 8 . The population size
+is set to 500 to ﬁnd the global optimum, and the tournament
+size is 50. We only mutate the best architecture in the tourna-
+ment set and replace the oldest individual in the population.
+We terminate the search once it ﬁnds the best architecture on
+NASBench.
+AlphaX : the only modiﬁcation for AlphaX on NASBench
+is at the network training that queries an architecture per-
+formance instead of training. c in Eq. 1 is set to 2, and the
+number of predictions from meta-DNN is set to 10. The de-
+sign and setup of meta-DNN are described in Sec. 4.2 and
+Sec. E.
+
+C.2 Setup for searching networks on CIFAR
+
+We used 8 NV-1080ti gpus for the open domain search. One
+GPU serves as the dedicated server, while the remaining
+gpus are clients for training the architectures sent from the
+server. The setup details are as follows: 1) we early termi-
+nate the training at the 70th epoch, then rank networks to get
+top-10 architectures. We trained an additional 530 epochs on
+top-10 architectures to get their ﬁnal accuracy; 2) we applied
+cutout (Zoph et al. 2017) during the training, and the cutout
+uses 1 crop of size 16 × 16; 3) we applied cosine annealing
+learning rate schedule (Loshchilov and Hutter 2017) in the
+
+8 https://github.com/google-research/nasbench
+/blob/master/NASBench.ipynb
+
+training, and the base learning rate is 0.025, the batch size
+is 96; 4) we used the momentum optimizer with momentum
+rate set to 0.9 and L2 weight decay; 5) we use dropout ra-
+tio schedule in the training. The droppath ratio is set to 0.3
+and dense dropout ratio is set to 0.2 for searching procedure
+and applied ScheduleDropPath (Zoph et al. 2017) for the ﬁ-
+nal training; 6) we use an auxiliary classiﬁer located at 2/3
+of depth of the network. The loss of the auxiliary classiﬁer
+is weighted by 0.4 (Szegedy et al. 2015). 7) the weights of
+architecture are initialized with Gaussian distribution with
+µ = 0 and σ = 0.01. 8) we randomly crop 32x32 patches
+from upsampled images of size 40 × 40, and apply random
+horizontal ﬂips (Zoph et al. 2017).
+
+C.3 Setup for ImageNet
+
+The setup for training AlphaX-1 toward ImageNet are as
+follows: 1) we construct the network for ImageNet with
+searched RC ell and N C ell according to Fig. 6 in (Zoph et
+al. 2017); 2) the input image size is 224× 224; 3) our models
+for ImageNet use polynomial learning rate schedule, start-
+ing with 0.05 and decay through 200 epochs; 4) we use the
+momentum optimizer with momentum rate set to 0.9; 6) the
+dropout rate at the the ﬁnal dense layer is 0.5; 7) the weights
+of an architecture are initialized with Gaussian distribution
+
+with µ = 0 and σ = 0.01.
+
+D Experiment Setup for Section 4.3
+
+The state space consists of sequential ConvNet, e.g. AlexNet
+or VGG. The possible hyper-parameters of a convolution
+layer are stride ∈ [1, 2], ﬁlters ∈ [32, 64], and kernels ∈
+[2, 4], and the maximum depth of a ConvNet is set to 3. The
+ﬁnal layer of a ConvNet is always a dense layer followed by
+a softmax.
+The possible actions are 1) adding a convolution layer; 2)
+choosing/changing an activation for a convolution layer; 3)
+changing a hyper-parameter of a convolution layer, e.g. ﬁl-
+ters from 32 to 64. At any state, the action set also consists
+of a special terminal action with a ﬁxed probability that sig-
+nals MCTS, random, and Q-learning to terminate the current
+search episode.
+Random: the agent randomly selects actions, and termi-
+nates the search once it hits a terminal action. Then the agent
+trains the network represented by the state where it hits the
+terminal to report accuracy.
+Q-learning: we used tabular Q-learning agent with -
+greedy strategy. The learning rate is set to 0.2, and the dis-
+count factor is 1. We ﬁxed  to 0.2, and initialized the Q-
+value with 0.5.
+
+(a) RNN predictor
+
+(b) MLP predictor
+
+Figure 14: Architecture of metaDNN: (a) the architecture
+of recurrent neural network style metaDNN (b) the architec-
+ture of multilayer perceptron style metaDNN.
+
+(a) AlphaX-1
+
+(b) MobileNet-v1
+
+(c) AlphaX-1
+
+(d) MobileNet-v1
+
+Figure 16: Object Detection: the object detection system is
+more precise with AlphaX-1 than MobileNet.
+
+E.2 Setup for the MLP based meta-DNN
+
+The multi-stage model
+is
+an
+ensemble
+of mul-
+tiple MLP models. The
+structure of
+an MLP is
+512→2048→2048→512→1,
+as
+shown
+by Fig.14b.
+The setup for training a MLP are: 1) the training lasts 20
+epochs on currently collected samples; 2) the learning rate
+is set to 0.00002 in an Adam optimizer and the batch size is
+128; 4) we uniformly initialize the network in the range of
+[-0.1, 0.1].
+
+F Setup for Vision Models
+
+F.1 Object detection
+
+We use AlphaX-1 model pre-trained on ImageNet dataset as
+the backbone. The training dataset is MSCOCO for object
+jects. Each image is scaled to 300 × 300 in RGB channels.
+detection (Lin et al. 2014a) which contains 90 classes of ob-
+We trained the model with 200k iterations with 0.04 initial
+learning rate and the batch size is set to 24. We applied the
+exponential learning rate decay schedule with the 0.95 de-
+cay factor. Our model uses momentum optimizer with mo-
+mentum rate set to 0.9. We also use the L2 weight decay
+for training. We process each image with random horizontal
+ﬂip and random crop (Liu et al. 2016). We set the matched
+threshold to 0.5, which means only the probability of an ob-
+ject over 0.5 is effective to appear on the image. We use 8000
+subsets of validation images in MSCOCO validation set and
+report the mean average precision (mAP) as computed with
+the standard COCO metric library (Lin et al. 2014b).
+
+F.2 Neural style
+
+We implement the neural style transfer application by re-
+placing the VGG model to AlplaX-1 model (Gatys, Ecker,
+
+Figure 15: Cell based architecture of AlphaX model
+
+Hill Climbing: the agent trains every architecture in the
+child nodes, and greedily chooses the next child node in a
+fashion similar to PNAS (Liu et al. 2017a). We terminated
+the search once it sticks into a local optimum, and restarted
+the process at different random states.
+
+E MetaDNN Designs and Setup
+
+E.1 Setup for the RNN based meta-DNN
+
+The detailed conﬁgurations of LSTM based meta-DNN are
+as follows. The hidden state size is 100, and the embed-
+ding size is 100. The ﬁnal LSTM hidden state goes through
+a fully-connected layer to get the ﬁnal validation accuracy.
+Fig.14a shows the architecture of the RNN predictor.
+The setup for the RNN training are: 1) the training lasts
+20 epochs on currently collected samples; 2) the base learn-
+ing rate is 0.00002 and the batch size is 128; 3) we use the
+Adam optimizer for the training; 4) we uniformly initialize
+the network in the range of [-0.1, 0.1].
+
+CodesVectorLSTM LSTM LSTM LSTM Output_1Output_2Output_3Output_100 100  Predict accuracy 5122048512Fully ConnectedLayers CodesVector12048Predict accuracyImage Input3x3 convlayerReductionCellNormal CellReductionCellNormal CellReductionCellNormal Cellx 2 x 6 x 6 x 6 (a) VGG: a tennis player is
+playing tennis on the court.
+AlphaX-1: a couple of peo-
+ple playing tennis on a tennis
+court.
+
+(b) VGG: a bus is parked on
+the side of the road.
+AlphaX-1: a blue bus is driv-
+ing down a street.
+
+(c) VGG: a cup of coffee and
+a cup of coffee.
+AlphaX-1: a book and a cup of
+coffee on a table.
+
+(d) VGG: a ﬁre hydrant on the
+side of a road.
+AlphaX-1: a red ﬁre hydrant
+on the side of a road.
+
+Figure 17: Image Captioning: AlphaX-1 captures more de-
+tails than VGG in the captions.
+
+and Bethge 2015). AlplaX-1 model is pre-trained on Ima-
+geNet dataset. In order to produce a nice result, we set the
+total 1000 iterations with 0.1 learning rate. We set 10 as
+the style weight which represents the extent of style recon-
+struction and 0.025 as the content weight which represents
+the extent of content reconstruction. We test different kinds
+of combinations of the outputs of different layers. Fig. 15
+shows the structure of AlphaX model, we found that for
+AlphaX-1 model, the best result can be generated by the
+concat layer of 13th normal cell as the feature for content
+reconstruction and the concat layer in ﬁrst reduction cell as
+the feature for style reconstruction, the types of layers in
+each cell are shown in Fig. 6.
+
+F.3
+
+Image captioning
+
+The training dataset of image captioning is MSCOCO (Lin
+et al. 2014a), a large-scale dataset for the object detec-
+tion, segmentation, and captioning. Each image is scaled to
+224 × 224 in RGB channels and subtract the channel means
+as the input to a AlphaX-1 model. For training AlphaX-1
+model, We use the SGD optimizer with the 16 batch size
+and the initial learning rate is 2.0. We applied the exponen-
+tial learning rate decay schedule with the 0.5 decay factor in
+every 8 epochs.
+
+

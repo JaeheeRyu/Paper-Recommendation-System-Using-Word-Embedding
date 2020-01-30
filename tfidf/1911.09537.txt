@@ -1,0 +1,398 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+7
+3
+5
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Neural Network Memorization Dissection
+
+Jindong Gu
+
+The University of Munich
+Siemens AG, Corporate Technology
+jindong.gu@siemens.com
+
+Volker Tresp
+
+The University of Munich
+Siemens AG, Corporate Technology
+volker.tresp@siemens.com
+
+Abstract
+
+Deep neural networks (DNNs) can easily ﬁt a random labeling of the training data
+with zero training error. What is the difference between DNNs trained with random
+labels and the ones trained with true labels? Our paper answers this question with
+two contributions. First, we study the memorization properties of DNNs. Our
+empirical experiments shed light on how DNNs prioritize the learning of simple
+input patterns. In the second part, we propose to measure the similarity between
+what different DNNs have learned and memorized. With the proposed approach,
+we analyze and compare DNNs trained on data with true labels and random labels.
+The analysis shows that DNNs have One way to Learn and N ways to Memorize.
+We also use gradient information to gain an understanding of the analysis results.
+
+1
+
+Introduction
+
+From a traditional perspective of machine learning, a model with sufﬁcient capacity can overﬁt
+the training data, e.g., by memorizing each training sample. The overﬁtted model will yield poor
+performance on unseen test data [11]. However, over-parametrized deep neural networks (DNNs)
+with high expressiveness often show excellent generalization ability, even without explicit regular-
+ization techniques. [18] showed that the generalization of DNNs cannot be explained by traditional
+approaches, such as Rademacher complexity [2], VC-dimension [16], and Uniform stability [3]).
+[18] demonstrated that DNNs are able to ﬁt data with random labels and pure noise inputs. They
+raised the interesting question whether similar memorization tactics are used when DNNs are trained
+on data with true labels. [1] showed that DNNs learn simple patterns ﬁrst before memorizing, based
+on observations in extensive experiments. How DNNs prioritize the learning of simple patterns in
+early training has not been well-understood.
+Paradigmatic examples of memorization algorithms are Lookup Tables and k-nearest neighbor
+approaches [9]. [4] built a network of Lookup Table Network that memorizes training examples.
+Although they memorize training examples, the built network also showed competitive generalization
+ability. Moreover, their built network shows little variation from run to run. [6] experimentally
+demonstrated the similarity between DNNs and k-NN.
+It is evident that, given training examples and corresponding hyperparameters, the built k-NN model
+is unique. However, it is not clear whether the learned functions are also similar in the case of DNNs,
+when trained with different initializations, network sizes, and architectures. To explore this question,
+we propose an approach to measure the similarity and dissimilarity between what individual DNNs
+have learned and what they have memorized. By using our proposed approach, we ﬁnd that DNNs
+have One way to Learn and N ways to Memorize training data. A deeper analysis shows that there is
+a qualitative difference between neural networks and k-NN.
+Our contributions can be summarized as follows: 1) With extensive experiments, we show that
+how DNNs initially learn or prioritize simple patterns; 2) We propose an approach to measure the
+similarity between what different DNNs have learned and memorized given the same training data; 3)
+With the proposed approach, we analyze DNNs trained on data with true labels and random labels,
+respectively. We discuss our understanding of the dissection results.
+
+NeurIPS 2019 Workshop on Machine Learning with Guarantees, Vancouver, Canada.
+
+ 
+ 
+ 
+ 
+ 
+ 
+(a) VGG11 trained on data with Random Labels
+
+(b) VGG11 trained on data with True Labels
+
+Figure 1: The training and test accuracy, and the gradient magnitude G in the training processes.
+
+2 How DNNs Prioritize the Learning of Simple Patterns?
+
+∂xj
+
+(cid:80)N
+
+N
+
+j=1 | ∂L
+∂xj
+
+i=1 G(xxx(i) ).
+
+We ﬁrst train VGG11 on CIFAR10 with true labels for 100 epochs using SGD with a constant learning
+rate of 0.01, moment 0.9 and a batch size of 128, using weight decay (λ =1e-4) as a regularizer. The
+model achieves 100% accuracy on training data and 83,73% accuracy on test data. Under the same
+setting, we train another VGG11 model with random labels without the regularizer, which achieves
+100% accuracy on training data and ≈10% accuracy on test data.
+Given the training loss L and a training data point xxx = {x1 , x2 , · · · , xM }, the gradient of the loss
+sum of absolute gradient values of an input G(xxx) = (cid:80)M
+with respect to each input dimension is ∂L
+. The gradient magnitude of the sample is deﬁned as the
+|. We record G(xxx) during training and
+average them over all training examples G = 1
+In the computational graph of a DNN, inputs and parameters of the DNN are leaf nodes. Their
+received gradients depend on the gradients of shared intermediate nodes due to the chain rule. In a
+backpropagation, gradients become smaller and smaller when propagated back to the input layer. To
+a great extent, a big gradient magnitude G corresponds to large gradients of the parameters.
+Figure 1 shows the accuracy and the gradient magnitude G of each epoch in the training process. In
+the model trained with random labels, the training process started with a hunting stage. Once it starts
+to ﬁt, it converges quickly. This phenomenon is also observed in [18]. In the model trained with true
+labels, the model ﬁts the data directly without a hunting stage. What we observed and summarised
+is not speciﬁc for the VGG11 model, but also for other models, e.g., a similar model with different
+network size (VGG13) and a model with a different architecture (Resnet32) (see Supplementary
+material).
+We use a constant learning rate in our experiments. In the hunting stage, the model updates itself
+slowly since gradients are small. In the ﬁtting stage, the big gradients make the quick update of the
+model possible to achieve high accuracy. An interesting question is how the gradients of parameters
+relate to the complexity of patterns in the training data.
+In the training data with true labels, simple patterns (i.e., easily recognizable patterns shared by
+the images with of the same class) exist. Since visually similar images with similar intermediate
+feature representations have the same labels, the gradients of a parameter inside a batch are consistent,
+which leads to a quick update of the parameter. In contrast, in the training process on random labels,
+in the beginning, the corresponding gradients are partly canceled due to the inconsistent gradient
+information. After ﬁne-tuning for several epochs, the neural network is able to map inputs of the
+same class (i.e., visually different images) to similar intermediate feature representations, which
+makes the gradients consistent again. The neural network starts the ﬁtting stage.
+
+3 Dissection Approach
+
+One path to understand DNNs is to visualize what each neuron has learned or detected. Activation
+Maximization synthesizes an input that highly activates a speciﬁc neuron using the gradients of the
+neural activation with respect to the input [8]. Different regularizations are applied [13, 14, 17] to
+make the synthesized inputs (i.e., images) look realistic. In this work, we aim to study the similarity
+between what different DNNs have learned and memorized given the same training data.
+
+2
+
+Figure 2: The dissimilarity between the func-
+tion learned by VGG11(s1) and the functions
+learned by other models (VGG11(s2), VGG13,
+ResNet32): the thin blue bars correspond to
+the case where all models were trained with
+true labels; the thick orange bars correspond
+to models trained with random labels.
+
+Figure 3: The images generated by the GAN: the
+ﬁrst row shows the images generated by GAN
+with different random seeds; other rows show
+the ones after the optimization of Equation 1 for
+different output classes of VGG11, such as Ship,
+Hourse and Bird.
+
+xxxj∗ = argmaxxxx f 1
+
+The two DNNs are trained on the same training data X = {xxx(1) , xxx(2) , · · · , xxx(n) } assumed to be
+sampled from a data distribution χ. Their learned functions are f 1 and f 2 , respectively. We can ﬁnd
+the input pattern that activates j -th output class of f 1 using Activation Maximization [8], namely,
+j (xxx). We could test whether f 2 also has a high response on the pattern at the j -th
+class f 2
+j (xxxj∗ ). By dissecting f 2 with the patterns learned by f 1 , we can compare the two functions.
+However, the challenge is that xxxj∗ could be very unlikely considering the data distribution χ. The f 2
+then could show unexpected outputs on the out-of-distribution inputs, which makes the comparison
+not accurate. To overcome the challenge, we apply a Generative Adversary Network (GAN) [10] to
+regularize the Activation Maximization process.
+A GAN consists of two components: a Discriminator to distinguish the real data from generated
+data and a Generator to fool the Discriminator by generating data. In the case of convergence,
+the Generator is able to map latent variables to samples in data space. We train a GAN on the
+same training data X as above until convergence. The Generator therefore maps latent variables
+zzz ∼ N (0, 1) to a sample G(zzz ) ∼ χ. The pattern learned by the j -th output class of the DNN f 1 is
+
+zzz j∗
+
+= argmax
+
+f 1
+j (G(zzz ))
+
+xxxj∗
+
+= G(zzz j∗
+
+)
+
+(1)
+
+zzz
+
+where pre-trained f 1 and G(·) are ﬁxed. The created xxxj∗ subject to χ can be used to dissect f 2 .
+Two strategies DNNs use are the lerning of simple patterns or the memorizing training samples.
+The pattern xxxj∗ in Equation 1 is what the DNN f 1 has learned or memorized in the j -th class. By
+dissecting f 2 using the pattern, we can identify whether the two functions are similar. The similarity
+between f 1 and f 2 can be measured with the following metric.
+
+Dist(f 1 , f 2 ) =
+
+1
+C
+
+DKL (f 1 (xxxj∗
+
+)(cid:107)f 2 (xxxj∗
+
+))
+
+(2)
+
+C(cid:88)
+
+j
+
+The lower the dissimilarity value Dist(f 1 , f 2 ) is, the more similar the two functions are. Another
+closely related work also uses a similar metric by replacing xxxj∗ with the images in test dataset [12].
+Different from their work, we focus on the patterns that DNNs has learned or memorized, not the
+random ones on the data distribution.
+
+4 Dissecting DNNs via Experiments
+
+The CIFAR10 training dataset with true labels is notated as XT . By replacing the true labels with
+random labels, we get another training dataset XR . We train four DNNs on XT and XR , respectively.
+The ﬁrst two models VGG11(s1), VGG11(s2) are VGG11 trained with different random initializations
+(i.e., different seeds). The other two models have a different network size or architecture, namely,
+VGG13 and ResNet32. The setting of training processes is the same as in Section 2. They all achieve
+100% accuracy on the training datasets.
+We train a deep convolutional GAN on the XT . The architectures and hyperparameters are the same
+as in [15]. The generator maps 100-dimensional gaussian noises zzz to images G(zzz ) with shape (32, 32,
+3) using four transposed convolutional layers; the discriminator maps the images to a single output
+using four convolutional layers. They are trained on XT for 30 epochs to converge.
+
+3
+
+Figure 4: The model VGG11 is trained with 10
+different seeds. Shown are training accuracy and
+gradient magnitude.
+
+Figure 5: The similarity between models trained
+on data with different noise levels. With less
+noise, models have a greater similarity.
+
+Given the four models pre-trained on XT or XR , we set VGG11(s1) model as f 1 and the rest of
+models as f 2 , respectively. To compute Dis(f 1 , f 2 ) in Equation 2, for each class, we initialize
+zzz ∼ N (0, 1) with 100 different seeds. The Equation 1 is optimized by Gradient Ascent with a
+learning rate of 0.05 for 1000 iterations.
+One way to Learn: For well-trained models, the dissimilarity values between them are computed
+with Equation 2 and shown in Figure 2. Each bar corresponds to a averaged dissimilarity value
+between two models. The black line on each bar corresponds its variance.
+The blue bars with very low values correspond to the dissimilarity between models trained on XT .
+What different models have learned are extremely similar. Given the training data XT , what neural
+networks have learned are not affected by different random initializations, network sizes, and neural
+architectures. In other words, DNNs have one way to learn.
+We visualize the patterns what VGG11(s1) has learned. Given the j -th class, zzz is initialized with
+different seeds. We show the images G(zzz ) generated by GAN before the optimization of Equation 1
+and also the ones after the optimization xxxj∗ . In Figure 3, each column corresponds to a seed, and the
+images in the 2nd-4th row correspond to the patterns learned for the respective classes.
+N ways to Memorize: As visible in Fig 2, models trained on XR memorize all the training samples.
+The yellow bars with high values mean that what different models have memorized from XR are
+different, even between the models from run to run. DNNs have different ways to memorize samples.
+In our experiments, as in previous works [1, 18], weight decay and data augmentations are turned off
+to reach zero error on the training data. We train VGG11 on XR with the weight decay (λ =1e-4)
+and the standard data augmentation (4-pixels paddings, 32×32 random croppings, and horizontal
+ﬂips), respectively. The experiment results show that the weight decay and the data augmentation do
+not affect the similarity between what different models have memorized.
+To further conﬁrm our hypothesis about the qualitative difference between models trained on XT
+and XR , we train VGG11 with 10 random seeds on the two datasets, respectively. We visualize the
+training accuracy and the gradient magnitude G of the 10 training processes in Figure 4. For the
+models trained on XT , the optimization always follows similar paths, as shown in the left subplot.
+Contrarily, the right subplot shows that the training process on XR follows obviously different
+optimization paths. We conjecture that the optimization on XR encounters a large number of saddle
+points [5, 7] and that the number of total saddle points encountered during learning depends on how
+the optimizer choose path directions on each saddle point, which might be quite sensitive to data.
+Learn and Memorize: When we train models on the training data with different noise levels (i.e., a
+certain percentage of training data are speciﬁed with random labels), it is not clear what DNNs learn
+and/or memorize. Our analysis in Section 2 supports the hypotheses: instead of only learning on
+the simple patterns or being totally misled by the examples with random labels, DNNs start to learn
+simple patterns and then memorize the rest of samples. The learned functions become gradually far
+away from each other when the noise level increases (see Figure 5).
+
+5 Conclusion
+
+Our work builds a connection between the learning process and the complexity of patterns in training
+data by analyzing their gradients. We further propose an approach to compare what different DNNs
+
+4
+
+learned and memorized. The experimental results reveal that DNNs have one way to learn and N
+ways to memorize.
+
+References
+
+[1] Arpit, D., Jastrzebski, S., Ballas, N., Krueger, D., Bengio, E., Kanwal, M. S., Maharaj, T.,
+Fischer, A., Courville, A., Bengio, Y., et al. A closer look at memorization in deep networks.
+In Proceedings of the 34th International Conference on Machine Learning-Volume 70, pp.
+233–242. JMLR. org, 2017.
+
+[2] Bartlett, P. L. and Mendelson, S. Rademacher and gaussian complexities: Risk bounds and
+structural results. J. Mach. Learn. Res., 3:463–482, 2001.
+
+[3] Bousquet, O. and Elisseeff, A. Stability and generalization. Journal of machine learning
+research, 2(Mar):499–526, 2002.
+
+[4] Chatterjee, S. Learning and memorization. In Proceedings of the 35th International Conference
+on Machine Learning, volume 80, pp. 755–763, 2018.
+
+[5] Choromanska, A., Henaff, M., Mathieu, M., Arous, G. B., and LeCun, Y. The loss surfaces of
+multilayer networks. In Artiﬁcial Intelligence and Statistics, pp. 192–204, 2015.
+
+[6] Cohen, G., Sapiro, G., and Giryes, R. Dnn or k-nn: That is the generalize vs. memorize question.
+2018.
+
+[7] Dauphin, Y. N., Pascanu, R., Gulcehre, C., Cho, K., Ganguli, S., and Bengio, Y. Identifying and
+attacking the saddle point problem in high-dimensional non-convex optimization. In Advances
+in neural information processing systems, pp. 2933–2941, 2014.
+
+[8] Erhan, D., Bengio, Y., Courville, A., and Vincent, P. Visualizing higher-layer features of a deep
+network. University of Montreal, 1341(3):1, 2009.
+
+[9] Fix, E. and Hodges Jr, J. L. Discriminatory analysis-nonparametric discrimination: consistency
+properties. Technical report, California Univ Berkeley, 1951.
+
+[10] Goodfellow, I., Pouget-Abadie, J., Mirza, M., Xu, B., Warde-Farley, D., Ozair, S., Courville,
+A., and Bengio, Y. Generative adversarial nets. In Advances in neural information processing
+systems, pp. 2672–2680, 2014.
+
+[11] Goodfellow, I., Bengio, Y., and Courville, A. Deep Learning. The MIT Press, 2016. ISBN
+0262035618, 9780262035613.
+
+[12] Hacohen, G. and Weinshall, D. All neural networks are created equal. arXiv preprint
+arXiv:1905.10854, 2019.
+
+[13] Mahendran, A. and Vedaldi, A. Visualizing deep convolutional neural networks using natural
+pre-images. International Journal of Computer Vision, 120(3):233–255, 2016.
+
+[14] Nguyen, A., Dosovitskiy, A., Yosinski, J., Brox, T., and Clune, J. Synthesizing the preferred
+inputs for neurons in neural networks via deep generator networks. In Advances in Neural
+Information Processing Systems, pp. 3387–3395, 2016.
+
+[15] Radford, A., Metz, L., and Chintala, S. Unsupervised representation learning with deep
+convolutional generative adversarial networks. In ICLR, 2015.
+
+[16] Vapnik, V. N. Statistical Learning Theory. Wiley-Interscience, 1998.
+
+[17] Yosinski, J., Clune, J., Nguyen, A., Fuchs, T., and Lipson, H. Understanding neural networks
+through deep visualization. In In Deep Learning Workshop, ICML conference, 2015.
+
+[18] Zhang, C., Bengio, S., Hardt, M., Recht, B., and Vinyals, O. Understanding deep learning
+requires rethinking generalization. In ICLR, 2017.
+
+5
+
+

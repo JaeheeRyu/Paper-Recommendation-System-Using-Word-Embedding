@@ -1,0 +1,1361 @@
+On Recurrent Neural Networks for Sequence-based
+Processing in Communications
+
+Daniel Tandler, Sebastian D ¨orner, Sebastian Cammerer, and Stephan ten Brink
+
+Institute of Telecommunications, Pfaffenwaldring 47, University of Stuttgart, 70659 Stuttgart, Germany
+{doerner,cammerer,tenbrink}@inue.uni-stuttgart.de
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+T
+
+I
+
+.
+
+s
+
+c
+
+[
+
+3
+v
+3
+8
+9
+9
+0
+
+.
+
+5
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract—In this work, we analyze the capabilities and prac-
+tical limitations of neural networks (NNs) for sequence-based
+signal processing which can be seen as an omnipresent property
+in almost any modern communication systems. In particular, we
+train multiple state-of-the-art recurrent neural network (RNN)
+structures to learn how to decode convolutional codes allowing a
+clear benchmarking with the corresponding maximum likelihood
+(ML) Viterbi decoder. We examine the decoding performance for
+various kinds of NN architectures, beginning with classical types
+like feedforward layers and gated recurrent unit (GRU)-layers,
+up to more recently introduced architectures such as temporal
+convolutional networks (TCNs) and differentiable neural comput-
+ers (DNCs) with external memory. As a key limitation, it turns
+out that the training complexity increases exponentially with the
+length of the encoding memory ν and, thus, practically limits
+the achievable bit error rate (BER) performance. To overcome
+this limitation, we introduce a new training-method by gradually
+increasing the number of ones within the training sequences,
+i.e., we constrain the amount of possible training sequences in
+the beginning until ﬁrst convergence. By consecutively adding
+more and more possible sequences to the training set, we ﬁnally
+achieve training success in cases that did not converge before
+via naive training. Further, we show that our network can learn
+to jointly detect and decode a quadrature phase shift keying
+(QPSK) modulated code with sub-optimal (anti-Gray) labeling in
+one-shot at a performance that would require iterations between
+demapper and decoder in classic detection schemes.
+
+I . INTRODUCT ION
+
+The huge success of deep learning (DL) and neural net-
+works (NNs), mainly in the ﬁelds of computer vision and
+speech processing, has recently triggered further exploration
+of DL for communications. The potential applications span
+from trainable channel decoders [1], [2], [3], [4], [5], NN-
+based multiple-input multiple-output (MIMO) detectors [6]
+and detectors for molecular channels [7] up to communication
+systems that inherently learn to communicate [8]. Most of
+these applications typically rely on block-based signal process-
+ing, which is an obvious consequence if NN structures are used
+that were derived from computer vision tasks. Besides, those
+structures also beneﬁt from the possibility of straightforward
+stochastic gradient descent (SGD)-based training.
+In the contrary to that, signal processing for communica-
+tions often beneﬁts from sequence-based processing (e.g., a
+simple ﬁnite impulse response (FIR) ﬁlter for equalization)
+
+This work has been supported by DFG, Germany, under grant BR 3205/6-1.
+We also acknowledge support from NVIDIA through their academic program
+which granted us a TITAN V graphics card that was used for this work.
+
+as it allows to maintain an internal state. Mainly driven by
+the speech processing community, a rich variety of different
+sequence-based recurrent neural network (RNN) structures
+emerged, which can typically also be trained by SGD when
+truncated back-propagation through time (BPTT) is used. In
+[9], advantages for detection over molecular channels have
+been reported and the authors of [3], [10] show that RNNs
+can improve the performance of channel decoding and also
+code design [11].
+In this work, we aim to compare different families of RNN
+architectures with fundamentally different properties (e.g.,
+NNs with external memory) rather than minor implementation
+differences (e.g., gated recurrent unit (GRU) vs. long short-
+term memory (LSTM)). This is also supported by [12] as
+the authors have shown by exhaustive search that the average
+performance of the GRU or LSTM cell structure does not
+signiﬁcantly differ [12].
+On the other hand, convolutional codes are well-understood
+since many years and can be seen as the workhorse of many
+communication systems [13], [14], [15], [16]. Besides their
+simple encoding structures, convolutional codes beneﬁt from
+the availability of an maximum likelihood (ML) decoder,
+namely the well-known Viterbi algorithm [17]. Thus, convo-
+lutional codes allow an easy benchmark by providing a clear
+(and optimal) baseline to analyze the inﬂuence of encoding
+memory and traceback-length, i.e., how close can a given
+NN approximate the optimal decoder for speciﬁcally chosen
+constraints.
+The universal approximator theorem [18], and the fact that
+an explicit optimal algorithm exists, directly tells us that also
+an NN must exist (neglecting any complexity constraints)
+which comes arbitrarily close to the optimal performance.
+While other groups already showed the existence of such
+decoding NNs for short memory convolutional codes [2], [3],
+we want to further investigate to what extent NNs are capable
+of processing even more complex information sequences using
+the example of decoding convolutional codes up to memory ν .
+However, in practice the limiting factor is clearly the training
+complexity and, thus, the major challenge is to ﬁnd a suitable
+training method for this task. This is also why we have made
+parts of the source code of this paper available1 , as we hope
+it could be useful for others working in communications at
+
+1 Source code available at: https://github.com/sdnr/RNN-Conv-Decoder
+
+ 
+ 
+ 
+ 
+ 
+ 
+Source
+
+u
+
+Conv.
+Encoder
+
+x
+
+BPSK
+Mapper
+
+˜x
+
+BER
+
+ˆu = ˆuNN
+
+Sink
+
+NN-based
+Decoder
+
++
+
+n
+
+y
+
+NVE
+
+ˆuvit
+
+Sink
+
+Viterbi
+Decoder
+
+L (y)
+
+BPSK
+Demapper
+
+Fig. 1: System model
+
+their speciﬁc processing tasks. We want to point out that the
+aim of this work is not to outperform the Viterbi decoder,
+but to provide insights into a suitable training methodology
+and efﬁcient NN architectures for continuous signal processing
+in communications. Yet, a potential beneﬁt can be seen in
+other metrics like the possibility of learning to approximate a
+(sub-optimal but) low-complex decoder for prohibitively large
+encoding memories (cf. the NASA Big Viterbi Decoder [19]).
+In [5], it has been shown for block-codes, that NNs are
+limited by an exponential training complexity when training
+with all possible codewords is required, i.e., for k informa-
+tion bits 2k different codewords needed to be shown during
+training. In the case of convolutional codes there is a naturally
+limited length that still allows (close to) optimal decoding (cf.
+traceback length in Viterbi decoding [13], [14]).
+Moreover, we believe both NN structures and the training
+procedure, as shown for convolutional codes in this paper,
+are of signiﬁcant practical importance in many other deep-
+learning-based communication applications like equalization,
+continuous channel state information (CSI) prediction and also
+with regard to the scalability of autoencoder-driven systems
+[8].
+
+I I . SY S T EM MODE L AND N EURAL N E TWORK
+ARCH IT ECTURE S
+
+Due to many breakthroughs and rapidly increasing research
+in machine learning for various domains, many different
+network structures and concepts have emerged. Each of those
+domains developed its own key NN layer architecture to
+successfully cope with the speciﬁc tasks. Most famously, con-
+volutional layers revolutionized the ﬁeld of computer vision,
+recurrent layers, in combination with BPTT, enhanced natural
+language and speech processing, and currently generative
+adversarial networks (GANs) are even aspiring to take one of
+the last human bastions – that is – creativity. When taking a
+closer look at the characteristics of most signals in the domain
+of communications we ﬁnd:
+
+• Sequences: signals are sequential, but can be often pro-
+cessed in a block-wise manner (cf. traceback).
+• Locality: Single samples are heavily entangled in time,
+but, unlike sentences or audio speech (where complex
+
+context connections over long time distances occur) these
+dependencies – with limited memory – are short and
+often constant in time (tapped delay, multidimensional
+modulation, sampling effects).
+• Complex-valued: Their dimensionality is either a single
+or multiple parallel complex-valued streams of samples
+that can be represented by concatenating real and imagi-
+nary values.
+
+Therefore, by seeking the optimal NN structure, we focus
+on recurrent sequence-to-sequence models. As we chose to
+exemplarily decode convolutional codes, our input signals for
+the decoding NN are of the following properties:
+
+• Two received samples represent one uncoded bit, as we
+consistently use rate r = 1/2 codes throughout this work.
+• The original information of the uncoded bit is diffused
+over several received samples depending on the memory
+ν of the applied convolutional code. As a rule of thumb,
+the affected sequence is of length “traceback” [13], [14]
+
+ℓtb ≈ 5 · (ν + 1).
+
+Fig. 1 depicts our basic system model where a convolutional
+encoder maps a stream u of uncoded bit uk ∈ {0, 1} to
+a stream x of coded bit xk ∈ {0, 1}, a mapper that maps
+those coded bits to a stream ˜x of binary phase shift keying
+(BPSK) symbols ˜xk ∈ {−1, 1}, an additive white Gaussian
+noise (AWGN) channel with output y = ˜x + n, where
+n ∼ N (0, σ2 ), and ﬁnally the NN decoder that predicts ˆu,
+deﬁned as ˆuk ∈ {0, 1}, given y by inherently adopting a
+demapping scheme. It also shows the Viterbi baseline system
+in dashed lines, where L (y) are the log-likelihood ratio (LLR)
+values of y and ˆuvit is the estimate of the Viterbi decoder.
+
+A. Basic Neural Network Decoder Architecture
+
+Based on reported experiences [3], [9], [11], [10] while
+facing similar processing problems, and also conﬁrmed by
+our own empirical experiments, we ﬁnally arrived at a baseline
+decoder layer architecture that makes use of bidirectional state
+propagation, i.e, processing the sequence from both sides.
+Fig. 2 depicts our ﬁnal NN-based decoder architecture
+which essentially consists of an RNN part in the early layers
+and a dense neural network (DNN) part in the later layers.
+As can be seen,
+the input
+to the decoder is a sequence
+(2ℓramp +ℓld )×2 of 2ℓramp+ℓld time steps, each containing
+snippet y
+two noisy channel observations y due to the rate r = 1/2
+code2 . Each time step is sequentially processed in forward
+and backward direction by a multi-RNN cell, i.e., a higher
+level cell structure consisting of several RNN layers. While
+the output of the multi-RNN cell for each time step consists
+of ℓrc values (inspired by [2]), the cell’s outputs from both
+directions are concatenated for each time step. The intuition
+behind this procedure is to interpret the RNN output as a latent
+feature variable which then needs to be further transformed
+into the decision on bit ˆuk . To mitigate degrading effects
+
+2We assume 1/r is integer, which is typically the case for convolutional
+codes due to their encoder structure. Otherwise we suggest feeding ⌈1/r⌉
+channel observations per time step while either repeating observations or zero
+padding observations at every second time step.
+
+s
+
+ℓramp
+
+sequence snippet
+
+ℓld
+
+y
+
+Multi-RNN Cell
+
+ℓramp
+
+q
+
+r
+
+1
+
+/
+
+2
+
+·
+
+ℓ
+
+r
+
+c
+
+q
+
+s
+
+N
+N
+D
+
+N
+N
+D
+
+N
+N
+D
+
+N
+N
+D
+
+N
+N
+D
+
+N
+N
+D
+
+N
+N
+D
+
+N
+N
+D
+
+soft output ˆp
+
+Fig. 2: Neural network based decoder architecture.
+
+during state build up at
+the beginning and, since we are
+processing bidirectionally, at the end of the original input
+sequence, we discard the beginning ℓramp “ramp-up” and the
+last ℓramp “ramp down” time step outputs. Hence, the output
+tensor of the decoder’s recurrent part is of shape ℓld × 2ℓrc .
+Note that this can be straightforwardly extended to a stateful
+architecture (at least in forward direction) that promises a
+higher throughput by passing the forward state from sequence-
+to-sequence instead of discarding it. The intuition behind is to
+avoid the rebuild of the internal state of the decoder similar
+to the traceback in Viterbi decoding. We do not follow this
+approach as it heavily complicates feeding and backward
+direction processing while not gaining signiﬁcantly in terms
+of the ﬁnal bit error rate (BER). One should also note that
+both designs based on bidirectional processing, stateless and
+stateful, exhibit a structural decoding delay of at least ℓramp
+time steps, caused by the backward processing branch.
+The output of the multi-RNN cell is then forwarded to
+a DNN layer with NDNN units and exponential linear unit
+(ELU) activation function. This DNN layer has no connections
+through time and is simply meant to combine the “features”
+that were extracted by the preceding multi-RNN cell in for-
+ward and backward direction. Finally, the combining layer’s
+output tensor of shape ℓld × NDNN is fed into a sigmoid
+activated layer with only one single neuron to give an estimate
+ˆpk = P ( ˆuk = 1), i.e., on the soft-value of ˆuk . Thereby, the
+ﬁnal output of our NN based decoder is the vector ˆp
+which can be hard decided for BER calculations to ˆu, where
+ˆuk = 1{ ˆpk >0.5} and 1{x>δ} denotes the indicator function,
+i.e., returns 1 if x > δ and 0 otherwise.
+
+ℓld×1
+
+B. Recurrent Neural Network Cell Structures
+
+As illustrated by Fig. 2, the core element within our decoder
+architecture is the recurrent part, namely the multi-RNN cell.
+Thus, it is of great importance to ﬁnd a good structure of
+these RNN layers to build up this multi-RNN wrapper cell.
+Such an RNN cell must be capable of generalizing to the task,
+
+while still complying to certain complexity constraints to be
+able to fully train the decoder within a reasonable amount of
+time. Out of the broad selection of NN structures available,
+we investigate the most promising ones for our task3 :
+1) Fully Connected Dense Layers (DNNs): To provide a
+fair comparison to non-recurrent networks, we also investigate
+classical feed-forward DNNs without any connections through
+time. Thereby, we distinguish between feeding only a single
+time step to the DNN to make a prediction on a single bit (as
+sanity check), which will not work because the DNN has no
+memory nor recurrent connections through time, and feeding
+a snippet of several time steps to give a prediction on several
+bits.
+2) Temporal Convolutional Networks (TCNs) and Trellis-
+nets: Conventional convolutional neural networks (CNNs)
+have been mainly used in multidimensional applications, e.g.,
+image classiﬁcation. However it has recently been shown
+[20], that they can be successfully applied to one-dimensional
+sequence-to-sequence task as well, while maintaining their
+causality by applying a speciﬁc amount of padding to the
+inputs of the convolutional layers. The use of convolutional
+layers in TCNs4 leads to parameter-sharing across layers, i.e.,
+the number of parameters is independent of the length of the
+input sequence. TrellisNets [21] are an extension of TCNs with
+the main difference being that the weights are not only shared
+across single layers, but also between all layers in the network
+and the input to the network is injected at each layer.
+3) Memory Augmented Neural Networks (MANNs): The
+class of MANNs extends the concept of RNNs with an
+external memory, with which the network can interact via
+some sorts of interfaces. One prominent example of a MANN
+is the differentiable neural computer (DNC) [22]. DNCs use
+a controller, consisting of a traditional feedforward network
+or recurrent network, to interact with the external memory via
+read-and write heads. A read-head can read from the memory
+at each time-step while write-heads can write to the memory at
+each time step. All operations performed within the DNC are
+fully differentiable, leading DNCs to be trainable with BPTT.
+Thus, we use DNCs with DNN- and GRU-based controllers,
+denoted as DNC-(DNN) and DNC-(GRU), respectively.
+4) “Classical RNNs”: GRUs [23] and LSTMs [24]: As will
+be shown in the results, these cell structures provide sufﬁcient
+complexity to solve the task while outperforming all other
+recurrent structures we tested in terms of low complexity and
+training convergence speed. The GRU-based multi-RNN cell
+used for all experiments throughout this work is depicted in
+Fig. 3. It consists of 3 GRU layers with 256 units per layer
+and hyperbolic tangent (tanh) activation function. One further
+advantage is the availability of CuDNN (an Nvidia library)
+implementations within the tensorﬂow library that are highly
+optimized for graphical processing unit (GPU) computations.
+We observe a reduction of up to factor 100 in training time
+
+3As mentioned in the introduction, we try to cover a wide range of different
+architectures.
+4 Strictly speaking, TCNs do not belong to the class of RNNs, however, we
+believe it is worth analyzing these sequence-to-sequence models.
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+0
+
+0
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+0
+
+0
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+G
+
+R
+
+U
+
+0
+
+0
+
+Multi-RNN Cell
+
+Fig. 3: Final Multi-RNN cell based on GRUs.
+
+compared to other RNN implementations. This renders the
+possibility of more training steps within the same amount of
+time. We also chose to use GRUs over LSTMs due to the
+implementational ease of only holding one internal state.
+
+I I I . TRA IN ING M E THODOLOGY
+
+We now provide some insights in different training strategy
+approaches. All presented results of this section’s experiments
+are based on decoding the standard non-systematic memory
+ν = 6 convolutional code (o133, o171)6 .
+
+A. Deep Learning Basics
+
+1) Loss Function: As we want the NN to give an estimation
+of whether a bit was 0 or 1, we face a binary classiﬁcation
+problem where the NN’s output is a vector of probabilities ˆp =
+
+[P ( ˆu1 = 1) , P ( ˆu2 = 1) , . . . , P ( ˆuℓld = 1)]. Thus, we deﬁne
+
+the loss J as binary cross-entropy (or log-loss) function
+
+Jlog = −
+
+ℓld
+
+Xk=1
+
+uk · log ˆpk + (1 − uk ) · log (1 − ˆpk )
+
+(1)
+
+where ℓld is the length of the bit sequence that is contributing
+to the loss (loss depth). By introducing ℓld > 1 we speed
+up the training procedure by reducing state ramp-up overhead
+that would otherwise occur by simply increasing the amount
+of N samples within a mini-batch. This also increases the ﬁnal
+BPTT depth of the gradient, which is at least of depth ℓramp
+and at most of depth ℓramp + ℓld − 1 time steps.
+It is worth mentioning, that we also achieved similar results
+in terms of convergence speed by considering this problem as
+a regression task. For this, the ﬁnal DNN layer is required
+to be linearly activated and the loss is deﬁned as the mean
+squared error (L2 loss).
+
+Jmse =
+
+ℓld
+
+Xk=1
+
+( ˆpk − uk )2
+
+(2)
+
+2) Optimizer and Learning Rate: Both the RMSProp and
+Adam [25] optimizer were tested, with RMSProp delivering
+slightly better results if binary cross-entropy loss (1) is used,
+and Adam if the L2 loss (2) is used, respectively. However,
+
+more important than the choice of the particular optimizer, is
+the value of the learning rate η , especially for codes with high
+memory. If the η is too high during in-depth training, we often
+noticed abrupt increases of training loss, sometimes leading to
+a complete loss of generalization. Throughout this work, we
+opt for a slow learning rate of η = 10−4 .
+3) Metrics: The most obvious metric, besides loss,
+to
+evaluate the performance of the NN-based decoder is the BER.
+We calculate the BER of a mini-batch by hard decision as in
+BER = E " 1
+As our decoder predicts ℓld bits at once in a sample, one
+has to take care of the individual BER of each bit during
+architecture design. The BER of a speciﬁc bit within a mini-
+batch is calculated by
+
+ℓld
+
+ℓld
+
+Xk=1
+
+1{( ˆpk>0.5) 6=uk }# .
+
+(3)
+
+BERk = E (cid:2)1{( ˆpk>0.5) 6=uk } (cid:3)
+
+(4)
+
+and, therefore, a signiﬁcant inequality of BER between bits of
+different spatial positions (e.g., BER0 > BERℓld/2 ) is a clear
+indicator that the hyperparameter ℓramp was chosen to small.
+Another informative metric is the normalized validation
+error (NVE) [5]. Since there exists an ML decoder, we can also
+evaluate our NN-based decoder’s performance by normalizing
+its BER within a certain signal-to-noise-ratio (SNR) range to
+the optimal achievable BER obtained by the Viterbi decoder
+within this SNR range. This metric was introduced in a similar
+way in [5] and is deﬁned as
+
+NVE (ρ) =
+
+1
+S
+
+S
+Xs=1
+
+BERNND (ρ, ρSNR,s )
+
+BERViterbi (ρSNR,s )
+
+(5)
+
+where ρ is the design parameter of the NN that shall be
+investigated, ρSNR denotes the SNR and S is the number of
+SNR points. The NVE provides an easy to understand metric
+that depicts the inﬂuence of a certain parameter with respect
+to the optimal performance.
+
+B. A Priori Ramp-Up Training
+
+While convolutional codes up to memory ν = 4 are easy to
+train with the presented NN-based decoder, we struggled (or
+never managed) to achieve convergence for codes with higher
+memory. In order to mitigate this problem we propose a pre-
+training method which can hopefully be adopted for many
+more sequence-based decoding problems, coined a priori
+ramp-up training. The basic idea is that, instead of starting
+the training with an equal distribution of zeros and ones in u
+where Pap (uk = 1) = 1/2, we start training with a distribution
+that favors either zeros or ones, i.e. Pap (uk = 1) < 1/2. In
+the context of Information Theory, this is equal to lowering
+the entropy of the sequence snippet u during the beginning of
+the training process and then gradually increasing the entropy
+of u until it reaches its maximum at Pap (uk = 1) = 1/2. It
+can also be interpreted as statistically reducing the available
+codeword space similar to what has been done in [5] where a
+clear separation of codewords that have been used for training
+
+R
+
+E
+
+B
+
+)
+
+1
+
+=
+
+k
+
+u
+
+(
+p
+a
+
+P
+
+0.5
+
+0.4
+
+0.3
+
+0.2
+
+0.5
+0.3
+0.1
+
+without
+
+abrupt
+
+linear
+
+stepwise
+
+E
+
+V
+N
+
+104
+
+102
+
+100
+
+ν = 4
+ν = 8
+ν = 10
+
+10
+
+20 ℓtbν =4 30
+
+40 ℓtbν =8 50 ℓtbν =10
+
+ℓramp
+
+0
+
+2000
+
+4000
+
+6000
+
+8000
+
+10000
+
+Training Iterations
+
+Fig. 5: Impact of gradient depth on the NVE performance over
+different ramp-up lengths ℓramp .
+
+Fig. 4: BER performance at Eb/N0 = 1.5dB over the initial
+training iterations for different a priori ramp-up approaches.
+
+and inference was enforced. This process variably reduces
+complexity and, thereby, makes it easier for the NN to learn
+the decoding scheme in opposite to beginning training with the
+full codebook. The perfect amount of a priori ramp-up during
+training is still part of current research, but in the following
+we present three different approaches:
+• linear – Gradually increase Pap (uk = 1) for each training
+step.
+• stepwise – Maintain a constant Pap (uk = 1) over several
+training steps and then increase it after a certain criteria
+is reached.
+• abrupt – Begin training at a certain constant level, e.g.,
+Pap (uk = 1) = 0.1, and then, after a certain criteria is
+reached, we continue training at Pap (uk = 1) = 1/2.
+Fig. 4 shows the BER performance at Eb /N0 = 1.5dB for
+different a priori ramp-up training approaches during the ini-
+tial 11, 000 training iterations. As can be seen from the result
+without the use of a priori ramp-up training, the NN-based
+decoder is not able to generalize to the problem of decoding
+the (o133, o171)6 code at all, as the BER does not decrease but
+constantly stays at 0.5 throughout the training. This also does
+not change for excessively more training iterations, because
+the initial barrier-of-entry, being the complexity of the full
+codebook, is prohibitively large. A priori ramp-up is therefore
+needed to initialize a learning behavior at all. This can be seen
+for all other approaches where a priori ramp-up training is
+used. While initially training with a low Pap (uk = 1) and then
+abruptly increasing to Pap (uk = 1) = 1/2 is already sufﬁcient
+to spark a convergence for further training at Pap (uk = 1) =
+1/2, we can see that the linear and stepwise approaches further
+increase the learning speed in terms of fewer iterations needed
+to achieve the same BER performance. This is why we use
+stepwise a priori ramp-up training throughout this work.
+
+C. Important Hyperparameters
+
+1) Layer Dimensions:
+In general, parameterization con-
+cerning the amount of recurrent and dense layers and their
+respective amount of units is heavily dependent on the con-
+volutional code. The RNN cell parameters we mention in
+Section II-B4 were used to decode the (o133, o171)6 con-
+volutional code. For less complex codes with fewer memory,
+
+less layers and less units are equally sufﬁcient. Also, different
+amounts of units per RNN layer are possible, but to be able
+to use highly performance optimized CuDNN GRU layer
+implementations in tensorﬂow, equal amounts of units per
+layer are required. For the combining DNN layer we use
+NDNN = 16 units. We found out that one combining layer is
+enough to do the job, more DNN layers resulted in a slower
+convergence during training throughout our experiments.
+
+2) Training SNR: In [5] it has been empirically shown that
+an optimal training SNR exists for a given code and NN
+architecture. This has also been shown analytically later in
+[26]. The intuition behind is that the optimal training SNR is
+a trade-off between training only the code structure (i.e., the
+inverse encoding function in the noiseless case) and learning
+how to handle noisy observations. We found, empirically, that
+the optimal SNR during training is at the point where the
+convolutional code performs in a range of BER = 10−1 to
+BER = 10−2 . For most of the codes we investigated, this
+means a training SNR range between 1dB to 1.5dB.
+3) Traceback Length: As mentioned before,
+the design
+parameters ℓramp and ℓld are highly important and must be
+matched to the convolutional code. While ℓld is only used to
+improve training efﬁciency, ℓramp basically deﬁnes the depth of
+the NN’s gradient and can thereby be interpreted as the NN-
+based decoder’s “traceback” length [14]. To be able to achieve
+close to ML performance, it is important that the gradient for
+the predictions p1 and pld is at least ℓtb time steps deep in both
+directions. We ensure this by setting the state ramp-up length
+to ℓramp = ℓtb for most of our experiments.
+Fig. 5 depicts the impact of gradient depth by showing the
+NVE over different “traceback” lengths ℓramp while ℓld = 1 for
+this experiment (to guarantee a constant gradient depth). To
+calculate a suitable NVE we chose S = 8 SNR-points equally
+spaced starting from ρSNR,1 = 0dB up to ρSNR,8 = 3.5dB. As
+can be seen for both codes, the decoding performance heavily
+depends on the gradient depth and results in a bathtub curve
+for too complex codes with high memory ν if plotted over
+different ℓramp . It is obvious that while ℓramp < ℓtb , the decoder
+can not reach ML performance, but if ℓramp is chosen too high,
+more training would be required. While ℓramp ≥ ℓtb can easily
+be trained when decoding the ν = 4 code, this is not possible
+for the ν = 8 and ν = 10 codes since the NN becomes too
+deep and complex to achieve optimal performance. Also note
+
+100
+
+10−1
+
+10−2
+
+10−3
+
+10−4
+
+R
+
+E
+
+B
+
+DNN (one time-step)
+
+DNN (snippet)
+
+DNC (DNN) (one time-step)
+
+TCN
+
+Trellisnet
+
+DNC (GRU)
+
+GRU
+
+Viterbi
+
+10−5
+−2
+
+0
+
+2
+
+4
+
+6
+
+Eb /N0 [dB]
+
+R
+
+E
+
+B
+
+100
+
+10−1
+
+10−2
+
+10−3
+
+10−4
+
+10−5
+
+0
+
+ν = 1
+
+ν = 2
+
+ν = 4
+
+ν = 6
+
+ν = 8
+
+ν = 10
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+Eb/N0 [dB]
+
+Fig. 6: BER performance of different RNN cell structures after
+limited training with the (o23, o35)4 convolutional code.
+
+Fig. 7: BER performance of the NN-based decoder for differ-
+ent codes (Viterbi performance in dashed lines).
+
+that we stopped training for the ν = 8 and ν = 10 codes after
+several days since there was no further improvement.
+
+IV. RE SULT S
+
+In this Section, we will present some results which demon-
+strate that it is possible to process high-entropy signals with
+NNs, even for highly complex tasks like decoding a memory
+ν = 6 convolutional code as used in 802.11 [15] and many
+other communication standards.
+
+A. Comparison Of Different RNN Cells
+
+Fig. 6 provides a BER over SNR performance comparison
+of all tested RNN cell structures. The amount of training
+steps is ﬁxed to 10, 000 iterations (which is not enough to
+reach Viterbi performance) and all training hyperparameters
+are consistent throughout all structures. We chose to present
+this result for the (o23, o35)4 convolutional code as some
+structures did not converge for higher memory codes and to
+limit training complexity.
+
+1) As can be seen the GRU-based multi-RNN cell performs
+best after training with this limited amount of iterations.
+2) Also the DNC-(GRU) cell, which uses GRU-based
+controllers yields the same performance. However, we
+assume this may be mainly caused by the embedded
+GRU structure.
+3) The DNC-(DNN) cell, using DNN-based controllers,
+performs as bad as the snippet-based DNN decoder. But
+this shows (and is worth mentioning), that the DNC-
+(DNN) must use its attached memory as we only feed
+one time-step yk per decision. In contrary to the non-
+snippet based DNN (i.e., a DNN (one time-step) that
+also only sees yk per decision) this net structure is in
+principle able to decode and, thus, must make use of its
+external memory.
+4) The Trellisnet and TCN cells also show a better con-
+vergence than the simple snippet-based forward fed
+DNN, which means their structure also improves signal
+processing for this problem.
+
+TABLE I: Characteristics of all learned convolutional codes
+
+type
+
+generator polynomials
+
+code rate
+
+constr. length (ν + 1)
+
+¯N ¯SC
+¯N ¯SC
+¯N ¯SC
+¯N ¯SC
+¯N ¯SC
+¯N ¯SC
+
+(o1, o3)1
+(o5, o7)2
+(o23, o35)4
+(o133, o171)6
+(o561, o753)8
+(o2335, o3661)10
+
+1/2
+1/2
+1/2
+1/2
+1/2
+1/2
+
+2
+3
+5
+7
+9
+11
+
+ℓtb
+
+10
+15
+25
+35
+45
+55
+
+From a rather practical perspective one of the most impor-
+tant problems with complex structures like the DNC-(GRU),
+Trellisnet and TCN cells is, that their computation time is way
+longer than the GRU cell’s. This means one can perform way
+more training iterations with a GRU-cell-based decoder than
+with the more complex cells in the same amount of time.
+
+B. Achieved BERs for different convolutional codes
+
+Fig. 7 shows the BER performance of the proposed NN
+based decoder for different convolutional codes. The charac-
+teristics of all investigated codes are listed in Table I. It can be
+seen that the NN-based decoder is able to pretty much achieve
+the Viterbi performance for all codes up to memory ν = 6,
+although the performance for codes with higher memory shows
+a signiﬁcant gap of several dB to the optimal performance.
+Both results for the ν = 8 and ν = 10 codes are achieved by
+reducing the NN-based decoder’s “traceback” and, thereby,
+its complexity to ℓramp = 20. We also stopped the training
+process for these codes after about two days of computing
+time, yet Viterbi performance may possibly be reached after
+even more training or parallelization approaches. We still ﬁnd
+it quite remarkable that, due to a priori ramp-up training, it
+is possible to initiate some generalization even for extremely
+complex convolutional codes of memory ν > 6.
+
+V. JO INT DE T ECT ION AND DECOD ING
+
+In a bit-interleaved coded modulation (BICM) scheme with
+non-Gray labeling, iterations between demapper and decoder
+are usually required to recover the full information [27]. Thus,
+for anti-Gray labeling and a single demapper iteration the BER
+
+10−1
+
+R
+
+E
+
+B
+
+10−3
+
+10−5
+
+NN-based Decoder
+Vit. w/o Int. Non-It.
+Vit. w Int. Non-It.
+Vit. w Int. 3 Iter. [27]
+Vit. Gray Mapping
+
+−1
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+Eb/N0 [dB]
+
+Fig. 8: BER performance of the NN-based decoder for anti-
+Gray mapped QPSK modulation.
+
+is inevitably degraded. Besides additional complexity, such
+iterative receiver schemes also increase the overall decoding
+latency signiﬁcantly. In this ﬁnal Section, we show that an NN-
+based decoder is inherently able to achieve a BER performance
+that could otherwise only be reached using iterative demapping
+and decoding. For this, we extend our system model by anti-
+Gray quadrature phase shift keying (QPSK) mapping.
+Fig. 8 shows the NN-based decoders performance if anti-
+Gray labeled QPSK modulation is used. As can be seen it
+outperforms the non-iterative Viterbi decoder for both with and
+without using a bit-interleaver and even slightly outperforms
+the Gray labeling QPSK Viterbi performance at low SNR. As
+reported in [27], the Viterbi decoder using a bit-interleaver
+and iterative demapping and decoding with only 3 iterations
+then again easily performs better than the NN-based decoder5.
+However, we want to emphasize that the NN-based decoder
+provides one-shot estimates outperforming the optimal non-
+iterative scheme. As in [5], we coin the term one-shot decoding
+as this scheme does not need any further iterations and, thus,
+can possibly operate at much lower overall decoding latency.
+
+V I . CONCLU S ION AND OUT LOOK
+
+In this paper, we compared several NN architectures for
+sequence-based processing on the task of decoding convolu-
+tional codes. We showed that, although all tested NNs were
+able to converge, the already well investigated and highly
+performance optimized GRU and LSTM cells are most suitable
+to tackle such exemplary complex communications related
+signals. We have demonstrated that an NN-based decoder is
+able to optimally decode convolutional codes up to memory
+ν ≤ 6 and introduced an original ramp up training, which
+actually enables convergence for memory ν ≥ 6 in the ﬁrst
+place. Further, we showed that the proposed NN-based decoder
+is able to learn what otherwise would only be possible with
+iterative processing schemes, which, again, underlines the high
+potential of NN-based components.
+
+5 Curve taken from [27]
+
+RE F ERENCE S
+
+[1] E. Nachmani, Y. Be’ery, and D. Burshtein, “Learning to decode linear
+codes using deep learning,” in Allerton Conf.
+IEEE, 2016, pp. 341–346.
+[2] Y. Jiang, H. Kim, H. Asnani, S. Kannan, S. Oh, and P. Viswanath,
+“Deepturbo: Deep turbo decoder,” arXiv:1903.02295, 2019.
+[3] H. Kim, Y. Jiang, R. Rana, S. Kannan, S. Oh, and P. Viswanath, “Com-
+munication algorithms via deep learning,” arXiv:1805.09317, 2018.
+[4] Y. Jiang, H. Kim, H. Asnani, and S. Kannan, “Mind: Model independent
+neural decoder,” arXiv:1903.02268, 2019.
+[5] T. Gruber, S. Cammerer, J. Hoydis, and S. ten Brink, “On deep learning-
+based channel decoding,” in CISS.
+IEEE, 2017, pp. 1–6.
+[6] N. Samuel, T. Diskin, and A. Wiesel, “Deep MIMO detection,” in
+SPAWC.
+IEEE, 2017, pp. 1–5.
+[7] N. Farsad and A. Goldsmith, “Detection algorithms for communication
+systems using deep learning,” arXiv:1705.08044, 2017.
+[8] T. O’Shea and J. Hoydis, “An introduction to deep learning for the
+physical layer,” IEEE Transactions on Cognitive Communications and
+Networking, vol. 3, no. 4, pp. 563–575, Dec 2017.
+[9] N. Farsad and A. Goldsmith, “Neural network detection of data se-
+quences in communication systems,” IEEE Transactions on Signal
+Processing, vol. 66, no. 21, pp. 5663–5678, 2018.
+[10] W. Lyu, Z. Zhang, C. Jiao, K. Qin, and H. Zhang, “Performance
+evaluation of channel decoding with deep neural networks,” in ICC.
+IEEE, 2018, pp. 1–6.
+[11] Y. Jiang, H. Kim, H. Asnani, S. Kannan, S. Oh, and P. Viswanath, “Learn
+codes: Inventing low-latency codes via recurrent neural networks,”
+arXiv:1811.12707, 2018.
+[12] K. Greff, R. K. Srivastava, J. Koutn´ık, B. R. Steunebrink, and J. Schmid-
+huber, “LSTM: A search space odyssey,” IEEE Transactions on Neural
+Networks and Learning Systems, vol. 28, no. 10, pp. 2222–2232, 2017.
+[13] G. D. Forney Jr, “Convolutional codes II. Maximum-likelihood decod-
+ing,” Information and control, vol. 25, no. 3, pp. 222–266, 1974.
+[14] F. Hemmati and D. J. Costello, “Truncation error probability in Viterbi
+decoding,” IEEE Trans. Commun., vol. 25, no. 5, pp. 530–532, 1977.
+[15] “IEEE standard for information technology – local and metropolitan area
+networks – speciﬁc requirements part 11: Wireless LAN medium access
+control (MAC) and physical layer (PHY) speciﬁcations – Amendment
+5: Enhancements for higher throughput,” IEEE Std 802.11n-2009, 2009.
+[16] 3GPP, “Evolved Universal Terrestrial Radio Access (E-UTRA); Multi-
+plexing and channel coding,” 3rd Generation Partnership Project (3GPP),
+Technical Speciﬁcation (TS) 36.212.
+[17] A. Viterbi, “Error bounds for convolutional codes and an asymptotically
+optimum decoding algorithm,” IEEE Trans. Inform. Theory, vol. 13,
+no. 2, pp. 260–269, 1967.
+[18] K. Hornik, M. Stinchcombe, and H. White, “Multilayer feedforward
+networks are universal approximators,” Neural networks, vol. 2, no. 5,
+pp. 359–366, 1989.
+[19] I. Onyszchuk, “coding gains and error rates from the big Viterbi
+decoder,” The Telecommun. and Data Acquisition Progr. Report 42-106,
+1991.
+[20] S. Bai, J. Z. Kolter, and V. Koltun, “An empirical evaluation of
+generic convolutional and recurrent networks for sequence modeling,”
+arXiv:1803.01271, 2018.
+[21] ——, “Trellis networks for sequence modeling,” arXiv:1810.06682,
+2018.
+[22] Graves et al., “Hybrid computing using a neural network with dynamic
+external memory,” Nature, vol. 538, no. 7626, p. 471, 2016.
+[23] K. Cho, B. Van Merri ¨enboer, C. Gulcehre, D. Bahdanau, F. Bougares,
+H. Schwenk,
+and Y. Bengio,
+“Learning phrase
+representations
+using RNN encoder-decoder
+for
+statistical machine translation,”
+arXiv:1406.1078, 2014.
+[24] S. Hochreiter and J. Schmidhuber, “Long short-term memory,” Neural
+computation, vol. 9, no. 8, pp. 1735–1780, 1997.
+[25] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,”
+arXiv:1412.6980, 2014.
+[26] M. Benammar and P. Piantanida, “Optimal training channel statistics for
+neural-based decoders,” in Asilomar, Oct 2018, pp. 2157–2161.
+[27] S. ten Brink, J. Speidel, and R. H. Yan, “Iterative demapping for QPSK
+modulation,” IEE Electron. Lett., vol. 34, no. 15, pp. 1459–1460, 1998.
+
+

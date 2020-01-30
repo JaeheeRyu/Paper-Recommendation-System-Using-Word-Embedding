@@ -1,0 +1,1091 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+R
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+2
+4
+6
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Anonymizing Masses: Practical Light-weight Anonymity at the Network
+Level
+
+HOOMAN MOHAJERI MOGHADDAM, Princeton University
+ARSALAN MOSENIA, Google
+
+In an era of pervasive online surveillance, Internet users are in need of better anonymity solutions for online communications without
+sacrificing performance. Existing overlay anonymity tools, such as the Tor network, suffer from performance limitations and recent
+proposals to embed anonymity into Internet protocols face fundamental deployment challenges. In this paper, we introduce Practical
+Anonymity at the NEtwork Level (PANEL), a practical light-weight anonymity solution based on hardware switching. We implement a
+prototype of PANEL on a high-performance hardware switch (namely, Barefoot Tofino) using P4 network programming language, and
+examine the validity and performance of the prototype. Based on our empirical results, PANEL achieves 96% of the actual throughput of
+the switch and adds a low-latency overhead (e.g., 3% overhead in Skype calls), while offering partial deployablility and transparency
+(i.e., PANEL requires neither client-side nor server-side modifications).
+
+1 INTRODUCTION
+
+The state-of-the-art pervasive online surveillance apparatus is capable of recording, aggregating, and analyzing our
+online communications, allowing business and government agencies to control, monitor, and influence our online
+interactions [1, 2]. Even when the communication content is encrypted, its metadata (e.g., Internet addresses and protocol
+specifications) reveal critical information about the parties involved in the communication, which can be exploited by
+governments and corporations [3, 4].
+Unfortunately, popular anonymity systems today, such as Tor [5], have been only successful in attracting the most
+privacy-conscious users due to their poor performance 1 . Under the hood, legacy anonymity tools require dedicated
+infrastructure: a series of overlay proxies to redirect traffic. This infrastructure typically consists of proxy servers run by
+volunteers, often with no performance guarantees, which causes bandwidth and latency issues [8, 9].
+To address the performance issues associated with the use of overlay approaches, a number of recent studies have
+proposed network-level anonymity solutions [10–16]. However, these proposals are not readily applicable to today’s
+Internet due to fundamental deployability challenges. Some solutions [10, 13] entirely modify the Internet routing and
+forwarding protocols, requiring a clean-slate design approach [17]. For instance, they rely on end-to-end source-controlled
+routing model and its variants, such as segment routing [10, 12, 13], which are still experimental and not ubiquitously
+deployed [18, 19]. Further, existing proposals lack a clear partial deployment pathway [12, 13], failing to take into
+account limitations imposed by different network actors in the wide area network, such as strict header format checking
+
+1 The total number of active Tor users is currently about 3 million users [6], a figure that is far from the number of active Internet users, which is, by even
+conservative estimates, more than 3 billion users [7].
+
+Authors’ addresses: Hooman Mohajeri Moghaddam, Princeton University, hoomanm@princeton.edu; Arsalan Mosenia, Google, mosenia@google.com
+The authors thank Bridger Hahn for his comments and feedback. This is not peer-reviewed article. November 2019.
+
+Permission to make digital or hard copies of part or all of this work for personal or classroom use is granted without fee provided that copies are not made or
+distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for third-party components of
+this work must be honored. For all other uses, contact the owner /author(s).
+© 2019 Copyright held by the owner/author(s).
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+2
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+
+of Internet Protocol (IP) and transport layers by routers and middleboxes [20, 21]. Previous anonymity solutions [11–15]
+are implemented and tested only on software switches.
+Our work is inspired by light-weight anonymity solutions (such as LAP [11]); however, in this paper, we pursue
+an entirely different angle to anonymity systems, motivated by the observation that hardware switches are pervasive
+in the Internet and offer a high performance and port density [22]. We present Practical Anonymity at the NEtwork
+Level (PANEL), a partially-deployable, low-latency, light-weight anonymity system compatible with both software and
+hardware switching. In particular, PANEL offers:
+• Network-level light-weight anonymity: PANEL is implemented by Autonomous Systems (ASes) and embeds
+light-weight anonymity into the Internet forwarding infrastructure. This obviates the need for a dedicated overlay
+and can provide ubiquitous communication privacy to users by default. Further, it mitigates the undesirable scrutiny
+drawn by the opt-in nature of overlay systems [23].
+
+• Partial deployability and compatibility with legacy network: PANEL provides a practical approach for de-
+
+ployability: it divides ASes on the communication path into PANEL-protected segments and legacy segments. ASes
+in a single PANEL segment are at liberty to choose the anonymization method from existing proposals [10–15].
+However, on the boundary of a PANEL segment, designated border routers (referred to as landmark routers)
+transform packets to standard IP and transport format with fixed size headers, and forward these packets to the
+legacy network. Also, in PANEL the end-to-end path is decided by each hop individually (hop-by-hop routing).
+• Transparency: As demonstrated in Section 5, PANEL is transparent to end hosts and does not require client-side
+(or server-side) modifications.
+
+Our main contributions can be summarized as follows:
+
+(1) We propose the first anonymity protocol designed for and tested on high-performance hardware switching fabric,
+offering low overhead and partial deployment.
+(2) We propose a technique, that we refer to as privacy preserving line-rate source information hiding. As discussed
+in Section 4.1, this technique involves three main steps: (1) source address rewriting, (2) source information
+normalization (i.e., randomization of IP identification field and TCP initial sequence number), and (3) hiding path
+information (i.e., time-to-live randomization). Among these steps, source address rewriting based on software-
+switches has been mentioned in an earlier work [14]. However, to the best of our knowledge, we are the first to
+implement privacy preserving source address rewriting based on hardware switches.
+(3) We implement a prototype of the proposed protocol using a high-performance programmable hardware switch
+(Barefoot Tofino switch [24]) and P4 [25] programming language.
+(4) We comprehensively evaluate our prototype and examine its validity and performance for different applications,
+such as web browsing and Skype video calls. Our empirical results suggest that that high-performance (line-rate)
+sender anonymity is achievable in today’s Internet, using high-performance hardware switches.
+
+This study sheds light on potential advantages of high-performance hardware switching for anonymity solutions,
+paving the way for further exploration in this area.
+The rest of this paper is organized as follows. We discuss design goals in Section 2, present an overview of PANEL
+in Section 3 and our design in Section 4. The evaluation of our PANEL prototype appears in Section 5, followed by a
+discussion of related work in Section 6, a discussion of limitations and potential extensions to PANEL in Section 7 and
+finally a conclusion in Section 8.
+
+Anonymizing Masses: Practical Light-weight Anonymity at the Network Level
+
+3
+
+IPv4 [20, 26]
+IPv6 [27]
+
+Drop rate
+30% - 70%
+50% - 90%
+
+Table 1. IPv4 and IPv6 packet drop rate according to different measurement experiments [20, 26, 27].
+
+2 DESIGN GOALS
+
+In this section, we outline the basic design goals of our protocol, including the privacy properties we aim to achieve. In
+Section 1, we highlighted partial deployment and compatibility with hardware switching fabrics as the two major factors
+towards practical deployment of network-level anonymity solutions. We address these issues in previous proposals and
+showcase a solution that is compatible with the legacy IP network, is designed to run on hardware switches, and achieves
+anonymity properties while being transparent to end hosts.
+
+2.1 Compatibility with Legacy IP Network
+
+We allow legacy and PANEL networks to coexist, enabling a partial deployment model. Here, we discuss desired properties
+that allow partial deployment of PANEL, which differentiates it from prior work [11–13, 15, 16].
+Standard Compliance: A number of prior proposals are based on packet-carrying state model [11, 13, 15], in which
+session information is encoded in packet headers. However, carrying entire state information in packet headers proves to
+be impractical in the legacy network for the following reasons:
+• First, while IPv4 [28] and IPv6 [29] allow for IP options in the header, in practice support for these fields is very
+limited in today’s deployed networks. Table 1 summarizes the drop rate of packets containing IP options on the
+Internet, as reported by different measurement studies [20, 26, 27]. The alternative approach of carrying state in
+transport and application layer headers also faces deployment challenges: (1). Considering the transport layer, the
+TCP options field is bounded in length (maximum of 40 bytes) and different protocols compete for that limited
+space [21]. (2). The fate of new experimental options are unknown due to pervasiveness of middleboxes enforcing
+transport and application layer policies [30]. Also, embedding routing state information into application layer
+space exposes packets to the risk of being dropped by network firewalls that monitor application layer semantics.
+• Second, packet-carrying state can leak information about the identity of the user, or the end-to-end route, unless
+routing information is encrypted. However, we avoid assuming that line-rate packet encryption is available at all
+landmark routers, for practical purposes.
+
+PANEL aims to be compliant with protocol standards as well as the support offered by today’s deployed networks.
+Thus, PANEL does not use the packet-carrying state model and only adds a constant size small tag to the IP headers for
+packets sent to the legacy network.
+Routing Compatibility: The source-controlled routing model, which many previous works are based on [12, 13],
+provides a means to allow sessions sender to determine or influence the routing path. However, source-controlled routing
+and its variants such as pathlet routing [31], are not ready for end-to-end deployment, due to unresolved incentive and
+security concerns [32]. Therefore, PANEL operates in the hop-by-hop routing model, where routing decisions are made
+independently by each landmark router. Also, PANEL allows for asymmetric routes between PANEL segments and for
+intra-segment routing, as discussed in Section 4.
+
+4
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+
+2.2 Hardware Switching
+
+The forwarding capacity and port density of hardware switching fabrics make them an indispensable part of the networking
+ecosystem from data centers and service providers to large enterprise networks [22]. The advent of programmable
+switching fabrics [24, 33–35] and the abstractions provided by high-level programming languages supporting them [25],
+have enabled researchers to prototype and experiment with new protocols on hardware switching fabric for the first time.
+A network switch often consists of a switching chip that acts as the fast forwarding plane, often called data plane,
+and a slower control plane with a richer instruction set (e.g. x86 CPU). Similar to OpenFlow [36] the fast data plane
+can communicate with the control plane via an API. Programmable data plane fabrics implement primitives such as
+match+action tables and limited stateful packet manipulation, which are mapped to a high-level language specifications,
+such as P4. Our design challenge was to work within the constraints of the language and the specific switching fabric
+utilized to modify packets at line-rate, which we further discuss in Section 4.2.
+
+2.3 Privacy Properties
+
+The privacy properties discussed below form the basis of our design. We note that in our design we consider the trade-off
+between privacy guarantees and feasibility of deployment for our solution, thus our design falls into the category of
+light-weight anonymity solutions [11].
+• Anonymity: A user, server, or a session is anonymous if it is not identifiable within an anonymity set, i.e., a set of
+entities with similar features [37]. In our light-weight anonymity model, we only provide sender anonymity, which
+implies that the initiating party of a communication session must remain anonymous.
+• Unlinkability: The unlinkability property indicates that the chances of linking elements in the system (e.g., sessions
+and messages) is bounded by the a-priori knowledge of the observer, even after observing the system [37, 38].
+Given the capabilities of an adversary, if two sessions are unlinkable, no amount of observation from that adversary
+should increase his confidence that these two sessions are related.
+• Path Information Protection: Adding multiple layers of mixing can increase the potential anonymity set, an
+idea first described by Chaum [39] and one that has been used in multiple settings [40, 41]. In our design, every
+additional PANEL segment adds a layer of mixing. However, topology-based analysis of packets with path
+information leakage can defeat the privacy benefits of iterative mixing (see Section 5.5 in [13] for more detail).
+Therefore, PANEL ensures that packet headers do not leak path information, including path length.
+
+3 OVERVIEW AND ENVIRONMENT
+
+In this section, we first present a brief overview of PANEL design, then discuss the network environment and threat
+model.
+
+3.1 Overview
+
+A PANEL deployment is comprised of multiple PANEL segments, each of which contains one or more ASes. PANEL only
+dictates the behavior of landmark routers interfacing with the next segment and routing decisions internal to a segment
+are not defined by PANEL. Fig. 1 shows an end-to-end session from sender (client) to receiver (server). In direction
+1, packet headers are rewritten at the boundary of the PANEL segment to achieve anonymity and session unlinkability.
+Each landmark router rewrites the source addresses in packet headers and replaces them with local addresses. Session
+identifiers are also replaced with randomized identifiers, called tags. The original address and session identifier, along
+
+Anonymizing Masses: Practical Light-weight Anonymity at the Network Level
+
+5
+
+Fig. 1. High level overview of PANEL: Packets for an end-to-end session from sender to receiver pass through a number of
+PANEL segments and legacy segments. Packet are rewritten at landmark routers in both directions, from sender to receiver
+(Direction 1) and from destination to source (Direction 2). In each PANEL segment, routing and packet format are decided by
+the segment, thus asymmetric routing can be suppor ted internally and in legacy segments.
+
+with other session information (such as segment-specific information), are stored at landmark routers. For the return path
+from the server to the client, each landmark, retrieves information stored locally and rewrites the headers in return packets
+in reverse direction. Thus, our work demonstrates two important ideas. First, that source information rewriting is sufficient
+to provide sender anonymity and session unlinkability in today’s Internet. Second, PANEL achieves these properties at
+line-rate using existing abstractions available in programmable network devices with no client side modification.
+As we will discuss in Section 4.3, this approach forces the return route to uses the same set of landmark ASes in the
+reverse order and we will further discuss the implications for participating ASes in Section 7.4. However, as shown in
+Fig. 1, PANEL allows for asymmetric routes in the legacy network and internally in each segment.
+
+3.2 Environment and Threat Model
+
+An adversary’s goal is to break the sender-anonymity or unlinkability properties of PANEL or reduce the anonymity set,
+as described in Section 2.3. Thus, PANEL provides these privacy properties against session receiver, every Autonomous
+System (AS) and passive or active eavesdroppers that are capable of observing, dropping, replaying and modifying
+packets either on the path or in compromised routers. We allow adversaries with a partial view of the network and those
+which are only capable of observing and controlling only a portion of ASes on the path. Similar to real-time anonymity
+systems such as Tor [5], global adversaries and end-to-end timing analysis are outside the scope of PANEL [42, 43].
+To ensure PANEL is transparent to end-hosts, we delegate the task of protecting user privacy to the Autonomous
+Systems. PANEL provides privacy benefits even with a single AS deployment, however, additional PANEL ASes on an
+end-to-end path increase the anonymity set and improve session privacy. In the absence of other network-level anonymity
+solutions such as Dovetail [12] or Phi [15], this means that the first PANEL-AS must be trusted, reducing our adversary
+model to that of the light-weight anonymity protocols [11]. We assume the interface between a PANEL segment and
+legacy network is defined by Internet Protocol (IPv4 [28] or IPv6 [29]).
+Finally, while payload encryption and more advance privacy preserving mechanisms such as onion routing [44] can
+help improve the confidentiality of content and metadata, we do not require that PANEL landmark routers support
+encryption at line-rate. Thus, PANEL leaves these functionalities to application and transport layers [5, 45, 46], in order
+
+6
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+
+Fig. 2. Source information rewriting in IPv4 network: a packet originating from the sender (1) is transformed in the first
+PANEL segment (2), with its source address and TTL randomized. The source IP address chosen at each landmark is from
+the PANEL IP pool. The packet is then forwarded in the legacy segment (3) as a standard IP packet. Additional PANEL
+segments (4) fur ther anonymize the packet source by replacing its source address.
+
+not to overburden PANEL routers with cryptographic requirements, simplifying the deployment of PANEL on existing
+routers that do not support such capabilities at line-rate.
+
+4 PANEL DESIGN
+
+In this section, we explain how we achieve anonymity and session unlinkability on programmable switches. Our design
+is heavily influenced by our objective to make PANEL practical and deployable in today’s Internet and applicability to
+primitives on programmable hardware switching fabric, such as match-action tables [22]. Also, we demonstrate how our
+design is compatible with legacy networks both in terms of routing and packet header format.
+
+4.1 Privacy Preserving Line-rate Source Information Hiding
+
+This section describes how to achieve anonymity through in-network source information hiding, based on the primitives
+available in programmable switching chips.
+
+4.1.1 Source Address Rewriting. While the idea of source address rewriting is not novel, we are the first to
+demonstrate how to achieve privacy preserving source address rewriting at line-rate on hardware switching fabric, without
+relying on overlay proxies. Thus, a major contribution of PANEL is to demonstrate that sender anonymity through source
+rewriting is achievable in today’s Internet, using high performance switching chips.
+Fig. 2 shows how the concealment the origin of packets is made possible through source information rewriting on a
+per-session basis. First, each landmark AS sets aside a subnet of public IP addresses, called PANEL (IP address) pool,
+which will be advertised through BGP and will be used to replace the source IP addresses for all sessions. A session
+on route from source to destination is modified at each landmark PANEL router, replacing the source address with an
+IP address from the PANEL pool. As we will see in Section 4.3.1, the IP address is chosen at random using a Pseudo
+Random Number Generator (PRNG). In Fig. 2, an instantiation of source rewriting is shown based on IPv4 addressing.
+For each packet, the source address is rewritten at each landmark router and packet is sent to the legacy network where
+the routing and forwarding take place without any changes in the legacy network.
+
+Anonymizing Masses: Practical Light-weight Anonymity at the Network Level
+
+7
+
+Fig. 3. Modified TCP/IP header : PANEL modifies headers in IP and transpor t layers (TCP). Source IP address and por t
+number fields are used to place randomized tags. IPv4 identification field and TCP sequence numbers are normalized to
+thwar t passive fingerprinting attacks. Finally, TTL (Hop Limit) field is randomized.
+
+4.1.2 Source Information Normalization. Several fields in packet headers can be utilized to perform fingerprinting
+attacks. In the presence of passive adversaries, IP identification field and TCP initial sequence number (shown in Fig. 3)
+reveal information about clients’ software. These fields are implemented using different algorithms on popular operating
+systems [47–49] and exploiting these fields to identify clients or to link different sessions of a user is a well known
+technique [50, 51]. Thus, the first landmark router normalizes these fields in packets to minimize the chances of such
+attacks. The landmark router must ensure that it is the first PANEL segment on the path between sender to receivers2 .
+Upon establishment of a session on a landmark router, a random offset is generated for each of the fields that will be
+added in one direction and subtracted in the reverse direction.
+
+4.1.3 Hiding Path Information. In the legacy IP network, time to live (TTL) or hop limit field in packet headers also
+leaks information about the distance to the original sender at any given vantage point. Assume that the initial TTL value
+Ti is a fixed constant c . If an adversary observes a specific TTL value δ , then he can readily calculate the hop distance (d )
+to the packet sender. Furthermore, through pre-computation on the AS-level topology, the adversary can narrow down the
+list of ASes where this packet could have originated from. This can be detrimental to the iterative mixing property of
+PANEL, discussed in Section 2.3. Therefore, the initial TTL value Ti must be randomized by a landmark router, as shown
+in Fig. 3. To determine the probability distribution for TTL values, we use mutual information to quantify the information
+leakage for a distance d , through observing value δ . We assume d is chosen from a distribution D and our objective is to
+find a distribution ∆, such that Ti ’s chosen from this distribution leak the least information about the distance to source at
+any given vantage point. Thus, our objective function is the following:
+
+minimize
+
+∆
+
+I (∆ − D ; ∆)
+
+supp (∆) = {Tm i n , . . . , Tma x } .
+
+(1)
+subject to
+Where I is the mutual information function, supp (∆i ) is the range of possible values for Ti ’s and Tm i n and Tma x are
+minimum and maximum values that the initial TTL value can take. Note that, by definition, the initial TTL has to have an
+upper bound (Tma x ). Also, it cannot be set to zero and has to be large enough such that packets on long end-to-end paths
+do not expire, thus a positive Tm i n is needed (e.g. 64). We will discuss in Section 5.5 how to empirically estimate D and
+how to compute the distribution ∆.
+
+2 If the packet is not originated in the same segment as the landmark router, the router can check whether the packet’s source address belongs to a PANEL
+segment, by consulting a global list of IP addresses of PANEL segments.
+
+8
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+
+Fig. 4. Once the first packet for a session arrives at the switch (1), the packet is sent to a local CPU or a specialized chip
+(2), where a random tag is generated for that session (3). The tag along with session information are inser ted into the
+forward table (4). Finally, the packet is modified and forwarded to the destination (5). Subsequent packets for this session
+are matched and modified in the forward table, stored in the switch data plane (6).
+
+4.2 Session Unlinkability with Randomization
+
+To achieve session unlinkability, session identifiers, such as TCP ports, are randomized in PANEL. There are two
+challenges with randomizing session identifiers. First session identifiers must fit into small fixed size header space to
+be compatible with legacy network. Second, we do not assume that per session asymmetric cryptography is available at
+every landmark router, so routers must assign session identifiers independently. Therefore, we replace session identifiers
+with the output of a cryptographic pseudorandom number generator (PRNG), called “tags". As shown in Fig. 4, we
+assume that a local agent or an external chip on the router generates these random tags for each new incoming session and
+guarantees that active tags are not reused. The tag is split and stored in lower bits of the source address and transport
+layer port numbers and further parts of IP and transport headers, when needed (discussed further in Section 4.3.1). Using
+secure random number generation guarantees that packet tags are independent of each other and provide tag bitwise
+unlinkability [52]. Once a tag is assigned to a session, the tag and the corresponding source information is stored in a
+key-value table, referred to as forward table and each subsequent packet will be matched by its source information (key)
+to retrieve its corresponding tag (value), as shown in Fig. 5. Then the packet will be rewritten similar to the first packet
+using a match-action functionality available in programmable switching fabric [22]. As we will discuss in Section 5.2, in
+our current implementation key sizes are reduced using a hash function in the data plane.
+
+4.3 Forwarding Responses in Absence of Return Addresses
+
+Since routing on the Internet is based on the destination addresses, removing original source addresses at landmark nodes
+makes routing response packets challenging. Here, we describe how our design overcomes this challenge.
+To be able to route the response, a landmark router must store the original session information. This information is
+stored in another table, referred to as reverse table. Reverse table is a look-up table that conceptually applies the reverse
+actions of forward table. Fig. 6 illustrates this translation in an asymmetric routing scenario.
+
+4.3.1 Match-Action Translation. Thus far, we have established that in PANEL, fixed size tags are placed in packet
+headers at every landmark node to identify sessions and sources in the absence of original headers and these tags are
+placed in the TCP/UDP port numbers and lower bits of IP address field. We apply tags to sessions through match-action
+tables [22], referred to as forward and reverse tables in the data plane of the router, as shown in Fig. 7. Upstream3 packets
+
+3 We refer to sessions from the source to the destination as upstream flows and the return sessions as downstream flows.
+
+Anonymizing Masses: Practical Light-weight Anonymity at the Network Level
+
+9
+
+Fig. 5. Ingress pipline of PANEL written in P4 for IPv4 addresses. Packets matching an IP address that belongs to the switch,
+will be handled by reverse tables, i.e. rev_panel_tcp or rev_panel_udp. Other packets are handled by forward tables,
+
+i.e. fwd_panel_tcp or fwd_panel_udp.
+
+Fig. 6. When B sends a response to A, the return address of A is absent in the packet header. B knows that the request
+packet passed through Y because of the source address of the request packet observed by B belongs to Y . Thus, B will
+send its response to Y . Y receives this packet addressed to its landmark IP, checks its list of tags, and sees that the request
+originated from X . When the response arrives at X , addressed to its landmark IP, X checks its list of tags, and sees that the
+request was sent by A. Finally, the response has its destination IP address modified to the IP address of A and forwarded
+from X to its final destination, A.
+
+are tagged using a lookup table. The first packet of each session will hit the local agent or a customized chip for tag
+generation, where tag is a unique identifier generated from a PRNG.
+
+control ingress {   //Check if packet is a valid IPv4 packet  if(valid(ipv4)){     //Check if TTL is larger than 0    if(ipv4.ttl > 0) {      //Check if dest IPv4 address belongs to us      apply(match_panel_ip)      {          hit {           //Apply reverse tables             if(valid(tcp)) {              apply(rev_panel_tcp);            }            if(valid(udp)) {              apply(rev_panel_udp);            }          }        }         //If packet's IPv4 address does not belong to          //us, apply forward tables         if(panel_metadata.match_panel == 0) {          //Assume all sessions are matched           if(valid(tcp)) {            apply(fwd_panel_tcp);          }          if(valid(udp)) {            apply(fwd_panel_udp);          }        }      ... }ABRequestAS1AS2AS4AS5 AS 1AS2AS5 AS3AS 4165.22.2.22128.112.224.44172.217.10.142172.217.10.142172.217.10.142165.22.3.14XYYXXYSrc AddrDest AddrResponseAS1AS3AS4AS5 172.217.10.142172.217.10.142165.22.2.22165.22.3.14128.112.224.44172.217.10.142YXXYSrc AddrDest AddrPANELSegmentLegacySegment10
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+
+Fig. 7. PANEL packet processing pipeline: if a session already exists in the forward table, the packet source information is
+searched in the table (A) and corresponding tag is retrieved from the memory (B) and is applied to the packet header(C). If,
+however, the session is not in the table, on the first packet of the flow, the local agent is queried (D) for a new tag. Once a free
+tag is assigned to the session, the local agent updates the tables (E and F) to reflect the changes. For downstream packets
+another match-action table, named reverse table is updated by the local agent to perform the reverse tagging operation,
+which performs the operation described in Section 4.3.
+
+4.4 Composition with other Anonymity Systems
+
+Recall that PANEL provides only light-weight anonymity by focusing on sender anonymity, and omits receiver anonymity
+and payload encryption from its design. By composing PANEL with other anonymity systems, we can augment the privacy
+or performance properties of these solutions. For instance, Dovetail (discussed in Section 6) is a network-level anonymity
+mechanism that provides receiver anonymity, thus, PANEL-Dovetail enables sender/receiver anonymity. Another example
+is that of the Tor network, which is vulnerable to traffic analysis attacks if both the Tor guard and the Tor exit are malicious
+and colluding. The composition of PANEL with Tor helps mitigate such traffic analysis attacks by protecting the identity
+of clients from Tor guards. Below we showcase PANEL-Dovetail and PANEL-Tor:
+PANEL-Dovetail: One of the advantages of the Tor network is that the end receiver for a Tor session does not have
+to be part of the Tor overlay network. However, both Dovetail and HORNET require both the session sender and the
+receiver to be part of the segment. As shown in Fig. 8, PANEL-Dovetail allows for a receiver outside the last segment.
+Anonymity headers are added in the first segment and removed by the last segment similar to MPLS [53], enabling a
+client to transparently access an end host through a PANEL-Dovetail deployment.
+PANEL-Tor: The Tor anonymity network is still popular, despite the performance issues it is facing. A key challenge
+in the Tor network is how to securely select the entry node (guard) for each client connecting to the network [54]. Since
+Tor’s guard selection algorithm takes guards’ available bandwidth as an input, powerful adversaries can inject high
+bandwidth guard nodes (and exit nodes) to compromise client anonymity. For example, such attackers can perform website
+fingerprinting attacks or even end-to-end timing analysis attacks, if they can monitor or compromise the corresponding
+Tor exit. With PANEL-Tor, however, guard nodes are no longer able to identify the client connecting to them, as shown in
+Fig. 9.
+
+Anonymizing Masses: Practical Light-weight Anonymity at the Network Level
+
+11
+
+Fig. 8. PANEL-Dovetail: PANEL-Dovetail allows Dovetail sessions to be extended over multiple segments, with the first
+segment establishing and end-to-end path from sender to the last PANEL-Dovetail segment landmark router. Thus, the last
+landmark router acts as a transparent proxy for the client, decapsulating PANEL-Dovetail layers, similar to a Tor exit.
+
+Fig. 9. PANEL-Tor : A PANEL segment can protect the users connecting to the Tor network by hiding their identity
+
+5 EVALUATION
+
+In this section, we evaluate the feasibility of our approach on programmable switches. We demonstrate our prototype
+followed by an empirical study of the parameters in our design and an estimate of the anonymity size of our solution in
+today’s Internet.
+
+5.1 Hardware Implementation
+
+Our implementation is based on a real-world Barefoot Tofino switch [24] with 3.3 Tbps forwarding capacity. PANEL’s
+forwarding plane code is written in a) P4, which is a field reconfigurable, protocol and target independence programming
+language designed as a platform for programming parse-match-action pipelines, through match-action tables in hardware,
+and b) a local agent written in python, running on an Intel x86 CPU, which performs tag generation.
+Our testbed consists of a server connected to the Tofino switch through a Mellanox ConnectX-3 dual-port 40GbE
+network interface card. As shown in Fig. 10, each of the interfaces connected to the switch are isolated to a Linux
+
+PANEL­Dovetail  Segment 1ClientPANEL­Dovetail  Segment 2ServerDovetail NodePANEL Landmark Legacy SegmentUnprotected Dovetail Path Protected Dovetail Path Dovetail Loop Path Tor NetworkPANEL Landmark Tor Guard Tor Client PANEL Segment12
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+
+Fig. 10. Experiment setup: Our test server is equipped with 3 Ethernet interfaces, each isolated to a single Linux namespace.
+E t h 1 and E t h 2 are connected to the Tofino switch over a dual por t network interface card. All traffic received on E t h 2 is
+forwarded to E t h 3 interface that is connected to the Internet over a local Ethernet bridge.
+
+namespace. Packets are passed through the switch via one Ethernet interface and received on the other interface. Finally,
+each packet is forwarded to its destination on the Internet via a local Ethernet bridge.
+
+5.2 Validation and Performance
+(1) Validation: In order to demonstrate that PANEL runs transparent to clients and application-level protocols, we ran
+two sets of experiments on our testbed using standard Ubuntu 16.04. First, we tested DNS, Web and TLS protocols
+by fetching 100 different domains from Alexa top websites over both HTTP and HTTPS. Each page was fetched
+with PANEL and vanilla routing software (simple router) and inspected visually to make sure the resulting pages
+are identical. Also, we successfully accessed servers over a range of protocols, including FTP, SSH, POP3, SMTP,
+Telnet and SMTP both with and without PANEL. Next, for real-time applications we tested Skype video calls. We
+verified that calls are established and can last over 10 minutes.
+(2) Throughput: Using iPerf4 , we first measured the bandwidth of packet forwarding between the two interfaces
+connected to the switch. These interfaces are hosted on the same network interface card that runs at 20 Gbps on
+each port. The average bitrate over one minute experiments were 16.9 ± 0.38 Gbps and 16.2 ± 0.54 Gbps for
+simple router and PANEL respectively, showing only a 5% bandwidth overhead. We repeated the same experiment
+with a remote iPerf server, using the Ethernet bridge depicted in Fig. 10. The bandwidth limit in this case is dictated
+by our upstream link to the Internet. For this experiment, simple router and PANEL respectively yield 127 ± 14
+Mbps and 118 ± 22 Mbps bitrates. These experiments show that we can achieve close to 92-96% of the switch
+capacity. Thus we expect that if we connect all the 32 ports on the Tofino switch to 100 Gbps interfaces, we can
+achieve Tbps forwarding capacity.
+(3) Latency: We measured the latency for the Skype experiment above. We repeated the Skype experiment 10 times
+and measured the latency in the video received. As shown in Table 2, PANEL adds only 3% latency over simple
+router for Skype calls. We also employed another method to measure latency incurred by PANEL. Using Gnu
+Wget software we fetched 100 websites from Alexa5 , 100 times each. Fig. 11 compares the latency of PANEL and
+simple router for each of these 100 websites. We discuss how the majority of this latency occurs during the first
+round trip in Appendix A.
+(4) Switch Capacity: To understand the number of sessions our Tofino switch can keep in memory, match-action
+tables with different key length were compiled on the switch, as shown in Fig. 12. If the switch had unlimited
+memory, the (theoretical) bound for table sizes would grow exponentially with the key length, however, in practice
+
+4 https://iperf.fr
+5 https://www.alexa.com/topsites
+
+InternetEthernet Bridgeeth3eth2eth1Test ServerBarefoot Toﬁno123Anonymizing Masses: Practical Light-weight Anonymity at the Network Level
+
+13
+
+Fig. 11. Comparison of latency for Alexa top 100 domain over PANEL and simple router. This figure shows the latency to
+fetch the front page of each domain.
+
+Simple router
+PANEL
+
+Latency (millisecond)
+
+241.33 ± 31.14
+248 ± 52.40
+
+Table 2. Skype video call latency in Simple router vs. PANEL.
+
+the switch reaches the maximum capacity for keeping the entire table in the memory at key length of 21 bits.
+Therefore, we use a hash function in the data plane to truncate the tag to match this key length.
+
+5.3 Sessions Maintained by Routers
+• How many sessions a router must maintain: To get an estimate of the number of sessions to expect on routers
+on the Internet, we have analyzed CAIDA dataset from 20166 . The dataset is published every 3 months, consisting
+of one-hour long anonymized packet headers for an Internet backbone link, operating at 10 Gbps. Our analysis
+shows that on average there are 6,206,033 concurrent source IP and source TCP port tuples for the duration of an
+hour.
+• How much memory do these sessions require: For each IPv4 session, instead of using all possible combinations
+of source IP address and port as table keys, PANEL uses a hash function to reduce the addressing space of the
+
+6 http://www.caida.org/data/passive/passive_2016_dataset.xml
+
+google.comyoutube.comfacebook.comreddit.comamazon.comwikipedia.orgyahoo.comtwitter.comnetflix.comebay.comimgur.comntd.tvlinkedin.cominstagram.comdiply.comcraigslist.orglive.comoffice.commicrosoftonline.comtumblr.comtwitch.tvpornhub.comespn.comt.copinterest.comcnn.combing.comwikia.comimdb.comchase.comlivejasmin.comnytimes.compaypal.comapple.comblogspot.combankofamerica.comyelp.comwordpress.comstackoverflow.commicrosoft.comwellsfargo.comgithub.comzillow.comintuit.commsn.comsalesforce.comxvideos.comwashingtonpost.comwalmart.comweather.combuzzfeed.comdropbox.comsoundcloud.comhuffingtonpost.comindeed.comgoogleusercontent.cometsy.comamazonaws.comtfetimes.comadobe.combreitbart.comfoxnews.comquora.comthepiratebay.orgspotify.comxfinity.cominstructure.comvice.comgfycat.comredd.itforce.compandora.comstackexchange.comaol.comxhamster.combbc.combestbuy.comrumble.comhomedepot.comblackboard.comtripadvisor.comconservativetribune.comcapitalone.comvimeo.comhulu.comtarget.comusps.comthesaurus.compatch.comnih.govonclkds.comgodaddy.comdailymail.co.uk4chan.orgforbes.comdeviantart.comslickdeals.netbusinessinsider.comtxxx.comcnet.com02004006008001000Fetch Time (milliseconds)PANELSimple Router14
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+
+Fig. 12. Tofino switch capacity: Table sizes with unlimited memory (theoretical bound ) shown in red and the maximum table
+size allowed on the Tofino switch (practical bound ) for each key size, shown in blue. For key lengths less than or equal to 21,
+the theoretical bound matches the practical bound, but after the 21 bit key length, we reach the SRAM memory limit on the
+switch and the practical bound star ts to degrade.
+
+memory used to store session mappings. Truncating the output of the hash function to 24 bits, yields more than 16
+million possible entries (an upper bound for the number of concurrent sessions we observed in the CAIDA dataset).
+For each entry in the match-action table, PANEL stores 4 bytes of original IP address and 2 bytes of original source
+port. Thus, the total memory required for forward mapping is 96 MB. Similarly for reverse direction the same
+amount of memory is required, adding up to 192 MB for all entries.
+• How many public IPv4 addresses are needed: To compute the number of unique IPv4 address needed to map
+all sessions in the memory, we first computed the maximum number of concurrent TCP sessions observed in the
+data as an estimate for the number of sessions to be stored. Dividing this number by 65,536, i.e., the total number
+of ports available shows that we need about 100 different public facing IP addresses for this router to run our
+protocol with aging out occurring every hour. Note that the estimates from these traces are conservative estimates,
+since most routers will see fewer sessions.
+
+5.4 Size of Anonymity Set
+
+Previous network-level anonymity proposals only considered number of IPv4 addresses assigned to an AS [11, 13] or
+IP prefix size distribution [14] for quantifying anonymity. This approach does not take into consideration the number
+of active IP addresses and overestimates the AS sizes. We, on the other hand, take an active measurement approach
+to address this limitation. To study anonymity size associated with each service provider on the Internet, we count the
+number of active clients on each service provider. To this end, we consider the number of active IPv4 addresses as a
+lower bound of active hosts in each service provider. Previous research shows that a combination of active scans on
+ZMap [55] platform and data observed by Content Distribution Network (CDN) vantage points can provide an estimate
+for the number of active IPv4 addresses [56]. However, there is no breakdown by service provider in previous research.
+For our purposes, we used Censys [57], a platform that captures and processes Internet-wide scanning datasets (using
+ZMap-based scans) of multiple protocols, such as ICMP reachability, identifying DNS resolvers and HTTP(S) server.
+Using Censys we queried the aggregated database of scans for 10 days in July 2018 and on average found over 156
+million active IPv4 addresses that responded to Censys queries. We then found the AS numbers associated with these IP
+addresses.
+Fig. 13a shows that the total number of IPv4 addresses assigned to each AS is on average 50532 ± 989326 Also, as
+shown in Fig. 13b, the number of active IPv4 addresses per AS is on average 2448 ± 50794. We also compared the
+
+15202530354045Key Length (bits)0.0M1.0M2.0M3.0M4.0MMaximum Table SizeAnonymizing Masses: Practical Light-weight Anonymity at the Network Level
+
+15
+
+(a)
+
+(b)
+
+Fig. 13. The histogram of the total number of IPv4 addresses assigned to each AS is shown in Fig. 13a followed by the
+histogram of the number of active IPv4 addresses per AS, shown in Fig. 13b. Note that the horizontal axis is logarithmic.
+Finally, the percentage of active IPv4 addresses over the number of IPv4 addresses allocated for the AS is shown in Fig. 13c
+
+(c)
+
+percentage of active IPv4 addresses over total number of IPv4 address assigned to a single AS in Fig. 13c, with an average
+value of 8%. While this is a lower bound, Using the data from measurement studies that showed 25% of hosts on the
+Internet responded to ping request (see section 5 of [58]), we estimate that 32% of assigned IPv4 addresses are active.
+This indicates that there is adequate vacant IP addresses that can be utilized for PANEL IP address pool.
+Finally, To understand how the anonymity set size increases with more ASes implementing PANEL, we assumed that
+the first two ASes implement our protocol and compute the total anonymity set. For this purpose, we chose Alexa 1000
+top domains and their corresponding AS numbers and chose top 1000 ASes based on CAIDA AS ranking7 . We then used
+CAIDA AS relationship database8 to infer an end-to-end path for sessions originating from the top ASes (source) to the
+top domains (destination). Using this inferred path, we computed the sum of the total number of IPv4 addresses assigned
+to the first two ASes in Fig. 14a (140989 ± 142523) and the total number of active IPv4 addresses in Fig.14b (average of
+3266 ± 2921). These graphs indicate that the total number of IP addresses assigned and the total number of IP addresses
+that are active can increase by a factor of 2.79 and 1.3 respectively, if two consecutive ASes implement PANEL.
+
+7 http://as-rank.caida.org/about
+8 http://www.caida.org/data/as-relationships/
+
+0200040006000800010000AS Size0.00000.00010.00020.00030.0004Ratio0200040006000800010000AS Active Size0.00000.00020.00040.00060.0008Ratio020406080100Active IP Address Percentage0500010000150002000025000Number of ASes16
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+
+(a)
+
+(b)
+
+Fig. 14. The number of total IPv4 addresses assigned to each two consecutive ASes is shown in 14b and the number of
+active IPv4 addresses in each two consecutive ASes is shown in 14b.
+
+(a)
+
+(b)
+
+Fig. 15. Hop distance distribution from vantage points for country Japan is shown in Fig. 15a. The optimized TTL distribution
+computed based on this distribution is shown in Fig. 15b.
+
+.
+
+5.5 Distance Distribution for TTL Obfuscation
+
+In Section 4.1.3, we used a distribution to randomize the initial TTL values used by PANEL. In order to estimate that
+distribution, we first approximated the hop distance to Alexa top 1000 domains. We used RIPE Atlas traceroutes9 , a
+global network that enables customized active traceroute scans. We collect traceroute data from 3 different vantage points
+within each country (repeated 10 times) then computed empirical frequency of distance shown in Fig. 15a. Then, using
+the equation 1 from Section 4.1.3, we found initial TTL distribution by solving the minimal mutual information equation
+(Fig. 15b).
+
+6 RELATED WORK
+
+Network-level anonymity solutions can be broadly categorized into two different classes: 1) enterprise and local-area
+networks, and 2) wide-area networks.
+Enterprise and local networks: In this category, the scope of the anonymity solution is a single enterprise, local
+network or autonomous system, where all the networking infrastructure is controlled by a centralized authority. For
+instance, PHEAR [59] replaces identifying information in packet headers with flat tags, which are securely communicated
+
+9 https://atlas.ripe.net
+
+0200040006000800010000AS Size0.0000000.0000250.0000500.0000750.0001000.0001250.0001500.000175Ratio0200040006000800010000AS Active Size0.000000.000050.000100.000150.00020Ratio5101520253035Number of Hops0.000.010.020.030.040.050.060.070.08Frequency5060708090100TTL Value0.0000.0050.0100.0150.0200.0250.030Computed FrequencyAnonymizing Masses: Practical Light-weight Anonymity at the Network Level
+
+17
+
+to individual hosts using a centralized SDN controller. However, this solution requires client side modification. iTap [60]
+takes a similar approach and eliminates the need for a client side software patch.
+Wide-area network: PANEL operates in the wide-area network model, thus the following contenders bear more
+similarity to our design. The Address Hiding Protocol (AHP) [14] proposes a NAT-like design, which aims to accommodate
+forensics needs by making flow associations reversible, using a cryptographic solution. However, their solution lacks
+session unlinkability, does not consider legacy network compatibility and makes it difficult for clients in enlisted ISPs
+to host services. Tor instead of IP [10] proposed replacing BGP speaking routers with onion routers and rendezvous
+mailboxes. While embedding onion routing into the network layer would provide both sender and receiver anonymity, the
+approach demands expensive operations at line-rate and is also based on source-controlled routing.
+Lightweight Anonymity and Privacy (LAP) [11] aims to protect end-host’s identity from servers. In LAP, the first AS
+is trusted, similar to the PANEL design. However, forwarding information is carried in each packet, with the potential for
+packet headers to grow arbitrarily large. Also, each AS has to encrypt and verify its own forwarding information as packets
+pass through the network, performing a symmetric key operation per packet at each hop, as opposed to our solution that
+only requires a table look-up for packet forwarding. Dovetail [12] extends LAP to provide sender-receiver anonymity,
+with the help of a third party node called matchmaker. A client using Dovetail forwards its traffic to the matchmaker and
+notifies the matchmaker node about the final destination, using public key encryption. Then the sender chooses the final
+path among a number of paths proposed by the matchmaker. Both LAP and Dovetail leak the location of individual ASes
+in an end-to-end path between sender and receiver. PHI [15], aims to solve this problem with a randomized path-segment
+positioning algorithm.
+HORNET [13] offers security and privacy on par with Tor instead of IP, providing an onion encryption with every
+hop between the two ends of a session. Moreover, forward and return paths can be distinct in HORNET and information
+leakage about the length of the path and the location of each AS on the path is minimized. However, HORNET assumes
+that an end-to-end path is known to the sender, where the sender establishes a key for each individual session with every
+forwarding node on the path, using public key operations. Also, similar to Dovetail and PHI, HORNET lacks a clear
+partial deployment plan and is a source-controlled routing solution, which makes it difficult to deploy in the current
+Internet. Finally, TARANET [16], improves HORNET, adding traffic analysis resilience through a traffic normalization
+technique called end-to-end traffic shaping. While TARANET has strong anonymity guarantees, its bandwidth and latency
+overhead are higher than other network-level anonymity proposal. Table 3 summaries the differences between wide-area
+anonymity solutions.
+
+7 DISCUSSION
+
+In this section, we discuss PANEL’s limitations, extensions for header and payload encryption, the challenges posed by IP
+address spoofing, implications for participating ASes, and comparison to carrier-grade NATs.
+
+7.1 Limitations
+
+While the design of PANEL provides several attractive properties including partial deployment and being based on
+hardware switching, it does have several limitations, which we discuss next.
+• First Round Time Trip Delay: Recall that session initiation in PANEL engages an external CPU/Controller
+which incurs an extra overhead as shown in Section 5.2. The P4 specification [61] allows for external hardware to
+implement customized functions, such as our session initiation algorithm and performs the operations at line-rate.
+
+18
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+Compatibility
+Sender/ReceiverAnonymity
+Leakage
+Routing
+State
+FirstDomain
+PartialDeployment
+Ready
+Network
+Packet-Carrying
+PathInformation
+Hardware
+Hop-by-Hop
+Untrusted
+Legacy
+
+No
+
+No
+
+LAP [11] (cid:35) (cid:71)(cid:35) (cid:35) (cid:32) (cid:35) (cid:35) (cid:35) (cid:35)
+
+HORNET [13] (cid:35) (cid:35) (cid:35) (cid:35) (cid:32) (cid:35) (cid:32) (cid:32)
+TARANET [16] (cid:35) (cid:71)(cid:35) (cid:35) (cid:35) (cid:32) (cid:35) (cid:32) (cid:32)
+Dovetail [12] (cid:35) (cid:71)(cid:35) (cid:35) (cid:35) (cid:32) (cid:35) (cid:32) (cid:32)
+Tor Instead of IP [10] (cid:35) (cid:35) (cid:35) (cid:35) (cid:32) (cid:35) (cid:35) (cid:32)
+Enlisting ISPs [14] (cid:35) (cid:71)(cid:35) (cid:32) (cid:32) (cid:35) (cid:71)(cid:35) (cid:35) (cid:35)
+
+PHI [15] (cid:35) (cid:35) (cid:35) (cid:32) (cid:32) (cid:35) (cid:32) (cid:35)
+PANEL (cid:32) (cid:32) (cid:32) (cid:32) (cid:35) (cid:32) (cid:32) (cid:35)
+
+Table 3. Related work comparison. Symbols (cid:32) , (cid:71)(cid:35) ,(cid:35) indicate full, par tial and no implementation in the solution respectively.
+
+Platforms such as NetFPGA10 can be used for a full hardware implementation of PANEL, which will reduce the
+latency overhead in the first round trip of the communication session.
+
+• First AS Trust: PANEL is a light-weight anonymity protocol, as mentioned in Section 3.2. This implies that
+protocol operations are performed by PANEL ASes, and the first AS has to be the point of trust. However, trusting
+the first AS can lead to privacy concerns. Users requiring stronger privacy can still benefit from the composition of
+PANEL with the Tor network, as discussed in Section 4.4.
+• Tag Placement: The number of sessions a PANEL router can serve is bounded by the number of bits in packet
+headers allocated for session tags. Relying only on the port number and lower bits of the IP address might be
+insufficient for router with large forwarding tables, since it increases the chances of collision. To extend tags for
+IPv4 sessions, we can leverage the literature in IP packet marking, where the goal is to embed information in
+packets to be able to identify them later in upstream hops [62]. IPv6, on the other hand, provides a much larger
+address space for this purpose.
+• TCP Fingerprintability: The variance between TCP implementations on different operating systems allows an
+adversary to fingerprint clients’ operating systems [63]. To obfuscate subtle differences in TCP state transition or
+advertised TCP window sizes, a PANEL segment must employ network-layer security protocols such as IPSec.
+Thus, TCP fingerprinting remains a limitation of PANEL and segments may choose to use more heavy-weight
+network-level anonymity solutions that also protect against timing analysis, such as TARANET [16] with higher
+overhead.
+
+10 https://github.com/NetFPGA/P4-NetFPGA-public
+
+Anonymizing Masses: Practical Light-weight Anonymity at the Network Level
+
+19
+
+7.2 Header and Payload Encryption
+
+We recognize that the advances in the field of networking will allow us to expand PANEL’s feature set. For instance, we
+discuss how to use line-rate encryption to remove state from landmark routers.
+Routing Encryption: Encrypting routing information is rather expensive to perform at line-rate and it is not currently
+supported by many routers. However, if routers are equipped with a cryptographic co-processors, our design can be
+extended to encrypt local routing decisions and replace tags generated using PRNGs in packet headers, as discussed in
+Section 4.3.1. Furthermore, currently the existence of a particular tag in upstream and downstream packets indicates that
+they belong to the same end-to-end session. If public key encryption is possible at packet level, tags in packet headers can
+be encrypted using routers’ public keys to provide unlinkability between packets in different directions for a session.
+Payload Encryption: PANEL neither modifies the payload of packets nor does it perform onion encryption. We
+believe that payload encryption should be addressed in higher layers, such as IPSec or HTTPS [46]. Nevertheless, payload
+encryption, if possible at line-rate, can help improve anonymity and unlinkability.
+
+7.3 Address Spoofing and Abuse Mitigation
+Address Spoofing: IP address spoofing entails an attacker using an IP address not belonging to its address space as the
+source of spoofed packets. PANEL routers store per-session state in forward and reverse tables, and an adversary can
+exhaust the memory on the router. A session is determined by the source IP address and its tag (consider the port number
+as part of the tag). This enables an adversary to have another attack vector namely tag spoofing, in which the adversary
+can change tags while keeping IP address persistent to amplify the attack.
+A general solution for tag spoofing is to rate limit tag generation in the first landmark AS. For orchestrated DDoS
+attacks, we envision filtering based on the characteristics of the attack [64]. There are also a number of filtering approaches
+based on characteristics of sessions, such as congestion feedback systems based on destination [65] or capability-based
+solutions [66–68].
+Abuse Mitigation: Since PANEL removes source information from sessions, a server under Denial of Service (DoS)
+attack does not have any means to filter out connections based on their source address. Thus, we envision a STOP
+mechanism by which an AS hosting a server can request the first landmark (whose identity must be kept secret due to
+iterative path mixing) on the path of a session to block certain sessions, on behalf of the victim of the DoS attack. In the
+absence of return address for a PANEL packet, an AS can use the same packet header, to send this STOP request back
+to the first PANELsegment. To prove that the STOP packet is generated by the end host’s AS, we assume there exist a
+PKI scheme for Autonomous Systems similar to S-BGP [69]. Using its private key, the last AS signs a STOP message
+and sends it with the same session tag to the first landmark, which in turn will terminate an abusive sender, an approach
+similar to StopIt [70] and AITF [71].
+
+7.4 Implications for Participating ASes
+
+One incentive for ASes to deploy PANEL would be to pitch privacy as a differentiating factor, similar to how today’s web
+browsers are pitching privacy to attract users [72]. Below, we discuss the cost implications for participating ASes.
+Equipment Costs: Equipment costs scale with the number of sessions an AS has to handle. An AS can choose to cap
+the number of external sessions it anonymizes. This presents an interesting trade-off between the anonymity set size and
+economic cost, since larger number of supported sessions lead to a larger anonymity set size, albeit with a higher cost.
+
+20
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+
+Limited IP Addresses: The challenge of a limited number of publicly available IP addresses, especially for IPv4
+addresses, can be addressed by having a PANEL segment share a pool of public IP addresses, and using ILNP [73] style
+location identifier to forward packets to the appropriate router, where the PANEL session mapping is stored.
+Asymmetric routing costs: Forwarding return packets in asymmetric routes increases the bill for an AS. However, an
+AS can lower this extra cost by capping the number of external sessions it anonymizes. We also note that ASes have the
+strongest incentives to support the privacy of their direct customers. Thus, the connections of these users can be prioritized
+in this process.
+Reputation costs: An AS can be flagged as untrustworthy for forwarding abusive sessions not originating from that
+AS. The design of abuse mitigation systems [74, 75] is currently an open question for all anonymous communication
+systems (even those based on overlay mechanisms, such as the Tor network).
+
+7.5 Comparison to Carrier-grade NAT
+
+Historically, network address translation (NAT) [76] has been widely used to work around the challenge of a limited
+number of IPv4 addresses. As this problem has become more acute in recent years, Internet service providers have started
+deploying carrier-grade NAT (CGN), also known as large-scale NAT, across their networks. CGNs allow a small pool of
+public IPv4 addresses to be shared among many hosts and customers, by placing the NAT logic on a service provider’s
+access network, rather than the subscriber’s edge network. Therefore, CGN shifts the NAT function from the customer
+premises to the service provider network.
+We note that the CGNs themselves provide very basic anonymity properties, by multiplexing multiple hosts and
+customers via shared IPv4 addresses. The design of PANEL indeed shares some similarities with CGNs, and builds upon
+the basic anonymity properties they provide. However, PANEL also differs from CGNs in several important ways.
+First, PANEL rewrites source information in a more rigorous and holistic manner than CGNs, including normalizing IP
+identification field, normalizing TCP initial sequence number, and hiding path information via time-to-live randomization.
+Furthermore, the mappings between sessions and session identifiers (tags) in PANEL are not chosen deterministically,
+but are chosen in a randomized manner using a PRNG as described in Section 4.2. In contrast, such mappings (session
+outbound ports) in CGNs are deterministic. As shown by prior work, this determinism can be used to link sessions of
+users, especially in the case of permissive (full cone) NAT, which is quite prevalent in design of CGNs [77].
+Second, PANEL uses iterative path mixing to further enhance anonymity, via protocol deployment at multiple PANEL
+segments in an end-to-end communication path between a client and server.
+Third, PANEL does not act as a multiplexer of internal destinations and thus, does not impose the kind of restriction
+that classical NATs place on network endpoints behind a NAT. For instance, in our design, a client can use the address of
+a server located in a landmark segment directly to access it. In fact, we argue that there need to be enough IP addresses
+allocated to individual hosts. Furthermore, PANEL explicitly mandates that service providers do not log the mapping
+between internal endpoint and global tags as discussed in Section 4.
+PANEL also shares a number of common challenges with CGNs [78]. First, for scalability, both need to maintain device
+throughput and line-rate packet processing. Moreover, resource management, such as memory used to keep sessions state
+or IP pool size (number of public facing IPs) is also a key component of design for both technologies. There are a number
+of best practices around designing CGNs and protocols that interact with them [79] and studies have shown the result
+of these practices in different providers [77]. Some of the techniques for DoS mitigation such as ingress filtering [80],
+TCP/UDP timeout are lessons applicable to both PANEL and CGNs.
+
+Anonymizing Masses: Practical Light-weight Anonymity at the Network Level
+
+21
+
+8 CONCLUSIONS
+
+In order to address one of the most challenging impediments that network-level anonymity proposals face (namely,
+deployability), we introduced PANEL .
+The proposed approach is sufficiently simple to be implemented using primitives available in programmable hardware
+switches: we prototyped PANEL on a real-world Barefoot Tofino switch using P4 [25] network programming language.
+PANEL offers (1) partial deployability, (2) low-latency, and (3) transparency (i.e., it does not require client-side or
+server-side modifications).
+Our analyses demonstrate that PANEL offers a high throughput (96% of the actual throughput of the switch), low-
+latency overhead (e.g., 3% overhead in Skype calls), and satisfactory anonymity set at the cost of a reasonable storage
+overhead (192 MB).
+
+REFERENCES
+
+[1] MacAskill, Ewen and Borger, Julian and Hopkins, Nick and Davies, Nick and Ball, James . GCHQ taps fibre-optic cables for secret access to world’s
+communications. https://www.theguardian.com/uk/2013/jun/21/gchq- cables- secret-world- communications- nsa. Accessed: 2018-08-24.
+[2] Stanley,
+Jay
+and
+Steinhardt, Barry.
+Bigger Monster, Weaker Chains.
+2003.
+https://www.aclu.org/report/
+bigger-monster-weaker- chains- growth- american- surveillance- society Accessed: 2018-08-24.
+[3] The Guardian: NSA Prism program slides. https://www.theguardian.com/world/interactive/2013/nov/01/prism- slides- nsa- document. Accessed:
+2018-08-24.
+[4] Stephen Farrell and Hannes Tschofenig. Pervasive Monitoring Is an Attack. RFC 7258, May 2014. URL https://tools.ietf.org/html/rfc7258.
+[5] Roger Dingledine, Nick Mathewson, and Paul Syverson. Tor: The Second-Generation Onion Router. In Proceedings of the 13th USENIX Security
+Symposium, August 2004.
+[6] Tor Metrics - Users. https://metrics.torproject.org/userstats- relay- country.html. Accessed: 2018-08-24.
+[7] ICT Facts and Figures 2016. https://www.itu.int/en/ITU-D/Statistics/Documents/facts/ICTFactsFigures2016.pdf. Accessed: 2018-08-24.
+[8] Andriy Panchenko, Lexi Pimenidis, and Johannes Renner. Performance Analysis of Anonymous Communication Channels Provided by Tor. In
+Availability, Reliability and Security, 2008. ARES 08. Third International Conference on, pages 221–228. IEEE, 2008.
+[9] Roger Dingledine and Steven J Murdoch. Performance Improvements on Tor or, Why Tor is slow and what we are going to do about it. In Tor Project
+Blog, 2009.
+[10] Vincent Liu, Seungyeop Han, Arvind Krishnamurthy, and Thomas Anderson. Tor instead of IP. In Proceedings of the 10th ACM Workshop on Hot
+Topics in Networks, page 14. ACM, 2011.
+[11] H. C. Hsiao, T. H. J. Kim, A. Perrig, A. Yamada, S. C. Nelson, M. Gruteser, and W. Meng. LAP: Lightweight Anonymity and Privacy. In 2012 IEEE
+Symposium on Security and Privacy, pages 506–520, May 2012. doi: 10.1109/SP.2012.37.
+[12] Jody Sankey and Matthew Wright. Dovetail: Stronger anonymity in next-generation internet routing. In Privacy Enhancing Technologies, 2014.
+[13] Chen Chen, Daniele E. Asoni, David Barrera, George Danezis, and Adrain Perrig. HORNET: High-speed Onion Routing at the Network Layer. In
+Proceedings of the 22nd ACM SIGSAC Conference on Computer and Communications Security, CCS ’15, pages 1441–1454. ACM, 2015. ISBN
+978-1-4503-3832-5. doi: 10.1145/2810103.2813628. URL http://doi.acm.org/10.1145/2810103.2813628.
+[14] Barath Raghavan, Tadayoshi Kohno, Alex Snoeren, and David Wetherall. Enlisting ISPs to improve online privacy: IP address mixing by default. In
+Privacy Enhancing Technologies, pages 143–163. Springer, 2009.
+[15] Chen Chen and Adrian Perrig. PHI: Path-Hidden Lightweight Anonymity Protocol at Network Layer. Proceedings on Privacy Enhancing Technologies,
+2017(1):100–117, 2017.
+[16] Chen Chen, Daniele E. Asoni, Adrain Perrig, David Barrera, George Danezis, and Carmela Troncoso. TARANET: Traffic-Analysis Resistant
+Anonymity at the NETwork layer. In IEEE European Symposium on Security and Privacy (EuroS&P) . IEEE, 2018.
+[17] Anja Feldmann. Internet Clean-slate Design: What and Why? SIGCOMM Comput. Commun. Rev., 37(3):59–64, July 2007. ISSN 0146-4833. doi:
+10.1145/1273445.1273453. URL http://doi.acm.org/10.1145/1273445.1273453.
+[18] George Neville-Neil, Pekka Savola, and Joe Abley. Deprecation of type 0 routing headers in IPv6. RFC 5095, 2007. URL https://tools.ietf.org/html/
+rfc5095.
+[19] Stefano Previdi, Clarence Filsfils, Kamran Raza, Darren Dukes, John Leddy, Brian Field, Daniel Voyer, Daniel Bernier, Satoru Matsushima, Ida Leung,
+Jen Linkova, Ebben Aries, Tomoya Kosugi, Eric Vyncke, David Lebrun, Dirk Steinberg, and Robert Raszuk. Internet-Draft: IPv6 Segment Routing
+Header (SRH). RFC, Jan 2018. URL https://tools.ietf.org/html/draft- ietf- 6man- segment- routing- header.
+[20] Rodrigo Fonseca, George Manning Porter, Randy H. Katz, Scott Shenker, and Ion Stoica. IP Options are not an option. Technical Report UCB/EECS-
+2005-24, EECS Department, University of California, Berkeley, Dec 2005. URL http://www2.eecs.berkeley.edu/Pubs/TechRpts/2005/EECS- 2005- 24.
+html.
+
+22
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+
+[21] Michio Honda, Yoshifumi Nishida, Costin Raiciu, Adam Greenhalgh, Mark Handley, and Hideyuki Tokuda. Is it still possible to extend TCP? In
+Proceedings of the 2011 ACM SIGCOMM conference on Internet measurement conference, pages 181–194. ACM, 2011.
+[22] Pat Bosshart, Glen Gibb, Hun-Seok Kim, George Varghese, Nick McKeown, Martin Izzard, Fernando Mujica, and Mark Horowitz. Forwarding
+Metamorphosis: Fast Programmable Match-action Processing in Hardware for SDN. In Proceedings of the ACM SIGCOMM 2013 Conference on
+SIGCOMM, SIGCOMM ’13, pages 99–110, New York, NY, USA, 2013. ACM. ISBN 978-1-4503-2056-6. doi: 10.1145/2486001.2486011. URL
+http://doi.acm.org/10.1145/2486001.2486011.
+[23] Mary Madden. Why some Americans have not changed their privacy and security behaviors. Pew Research Center, 2015.
+[24] Barefoot Tofino. https://barefootnetworks.com/products/brief- tofino. Accessed: 2018-08-24.
+[25] Pat Bosshart, Dan Daly, Glen Gibb, Martin Izzard, Nick McKeown, Jennifer Rexford, Cole Schlesinger, Dan Talayco, Amin Vahdat, George Varghese,
+and David Walker. P4: Programming Protocol-independent Packet Processors. SIGCOMM Comput. Commun. Rev., 44(3):87–95, July 2014. ISSN
+0146-4833. doi: 10.1145/2656877.2656890. URL http://doi.acm.org/10.1145/2656877.2656890.
+[26] Alberto Medina, Mark Allman, and Sally Floyd. Measuring the Evolution of Transport Protocols in the Internet. SIGCOMM Comput. Commun. Rev.,
+35(2):37–52, April 2005. ISSN 0146-4833. doi: 10.1145/1064413.1064418. URL http://doi.acm.org/10.1145/1064413.1064418.
+[27] Jen Linkova and Fernando Gont. IPv6 Extension Headers in the Real World v2. 0. 2014.
+[28] Jon Postel. Internet Protocol. RFC 791, Sept 1981. URL https://tools.ietf.org/html/rfc791.
+[29] Stephen E Deering and Robert M Hinden. Internet Protocol, Version 6 (IPv6) Specification. RFC 2460, December 1998. URL https://tools.ietf.org/
+html/rfc2460.
+[30] Gregory Detal, Benjamin Hesmans, Olivier Bonaventure, Yves Vanaubel, and Benoit Donnet. Revealing Middlebox Interference with Tracebox. In
+Proceedings of the 2013 Conference on Internet Measurement Conference, IMC ’13. ACM, 2013. ISBN 978-1-4503-1953-9. doi: 10.1145/2504730.
+2504757. URL http://doi.acm.org/10.1145/2504730.2504757.
+[31] P Godfrey, Igor Ganichev, Scott Shenker, and Ion Stoica. Pathlet Routing. ACM SIGCOMM Computer Communication Review, 39(4), 2009.
+[32] Joe Abley, Pekka Savola, and George Neville-Neil. Deprecation of type 0 routing headers in IPv6. RFC 5095, December 2007. URL https:
+//tools.ietf.org/html/rfc5095.
+[33] Recep Ozdag. Intel® Ethernet Switch FM6000 Series-Software Defined Networking.
+[34] XPliant® Ethernet Switch Product Family.
+[35] Broadcom Ships Jericho2, Industry’s Highest Bandwidth Ethernet Switch-Router at 10 Terabits per Second. https://www.broadcom.com/company/
+news/product- releases/2336498. Accessed: 2018-08-24.
+[36] Nick McKeown, Tom Anderson, Hari Balakrishnan, Guru Parulkar, Larry Peterson, Jennifer Rexford, Scott Shenker, and Jonathan Turner. OpenFlow:
+Enabling Innovation in Campus Networks. SIGCOMM Comput. Commun. Rev., 38(2):69–74, March 2008. ISSN 0146-4833. doi: 10.1145/1355734.
+1355746. URL http://doi.acm.org/10.1145/1355734.1355746.
+[37] Andreas Pfitzmann and Marit Hansen. A terminology for talking about privacy by data minimization: Anonymity, Unlinkability, Undetectability,
+Unobservability, Pseudonymity, and Identity Management, Aug 2010.
+[38] George Danezis, Claudia Diaz, and Paul F. Syverson. Systems for Anonymous Communication. In B. Rosenberg and D. Stinson, editors, CRC
+Handbook of Financial Cryptography and Security, CRC Cryptography and Network Security Series, pages 341–390. Chapman & Hall, August 2010.
+[39] David L Chaum. Untraceable Electronic Mail, Return Addresses, and Digital Pseudonyms. Communications of the ACM, 24(2):84–90, 1981.
+[40] Andreas Pfitzmann, Birgit Pfitzmann, and Michael Waidner. ISDN-Mixes: Untraceable Communication with Very Small Bandwidth Overhead. In
+Kommunikation in verteilten Systemen, pages 451–463. Springer, 1991.
+[41] Oliver Berthold, Hannes Federrath, and Stefan Köpsell. Web MIXes: A System for Anonymous and Unobservable Internet Access. In Designing
+privacy enhancing technologies, pages 115–129. Springer, 2001.
+[42] Steven J Murdoch and George Danezis. Low-Cost Traffic Analysis of Tor. In 2005 IEEE Symposium on Security and Privacy (S&P’05), pages
+183–195. IEEE, 2005.
+[43] Nicholas Hopper, Eugene Y Vasserman, and Eric Chan-Tin. How Much Anonymity does Network Latency Leak? ACM Transactions on Information
+and System Security (TISSEC), 13(2):13, 2010.
+[44] M. G. Reed, P. F. Syverson, and D. M. Goldschlag. Anonymous Connections and Onion Routing. IEEE Journal on Selected Areas in Communications,
+16(4):482–494, May 1998. ISSN 0733-8716. doi: 10.1109/49.668972.
+[45] Andrea Bittau, Michael Hamburg, Mark Handley, David Mazières, and Dan Boneh. The Case for Ubiquitous Transport-level Encryption. In
+Proceedings of the 19th USENIX Conference on Security, USENIX Security’10, pages 26–26, Berkeley, CA, USA, 2010. USENIX Association. ISBN
+888-7-6666-5555-4. URL http://dl.acm.org/citation.cfm?id=1929820.1929855.
+[46] Gennie Gebhart. We’re Halfway to Encrypting the Entire Web. https://www.eff.org/deeplinks/2017/02/were- halfway- encrypting- entire- web. Accessed:
+2018-08-24.
+[47] LWN.net: SipHash in the kernel. https://lwn.net/Articles/710746/. Accessed: 2018-08-24.
+[48] Leo Dorrendorf, Zvi Gutterman, and Benny Pinkas. Cryptanalysis of the Random Number Generator of the Windows Operating System. ACM Trans. Inf.
+Syst. Secur., 13(1):10:1–10:32, November 2009. ISSN 1094-9224. doi: 10.1145/1609956.1609966. URL http://doi.acm.org/10.1145/1609956.1609966.
+[49] Theo de Raadt, Niklas Hallqvist, Artur Grabowski, Angelos D. Keromytis, and Niels Provos. Cryptography in OpenBSD: An Overview. In Proceedings
+of the Annual Conference on USENIX Annual Technical Conference, ATEC ’99, pages 33–33, Berkeley, CA, USA, 1999. USENIX Association. URL
+http://dl.acm.org/citation.cfm?id=1268708.1268741.
+
+Anonymizing Masses: Practical Light-weight Anonymity at the Network Level
+
+23
+
+[50] Bellovin, Steven M. A technique for counting NATted hosts. In Proceedings of the 2nd ACM SIGCOMM Workshop on Internet measurment, pages
+267–272. ACM, 2002.
+[51] Robert Beverly. A Robust Classifier for Passive TCP/IP Fingerprinting. In Chadi Barakat and Ian Pratt, editors, Passive and Active Network
+Measurement, pages 158–167, Berlin, Heidelberg, 2004. Springer Berlin Heidelberg.
+[52] George Danezis. Better Anonymous Communications. PhD thesis, University of Cambridge, July 2004.
+[53] Arun Viswanathan, Ross Callon, and Eric C Rosen. Multiprotocol label switching architecture. (3031), January 2001. URL https://tools.ietf.org/html/
+rfc3031.
+[54] Roger Dingledine, Nicholas Hopper, George Kadianakis, and Nick Mathewson. One fast guard for life (or 9 months). In 7th Workshop on Hot Topics
+in Privacy Enhancing Technologies (HotPETs 2014). PETs, 2014.
+[55] Zakir Durumeric, Eric Wustrow, and J Alex Halderman. ZMap: Fast Internet-wide Scanning and Its Security Applications. In Presented as part of the
+22nd USENIX Security Symposium (USENIX Security 13), pages 605–620. USENIX.
+[56] Philipp Richter, Georgios Smaragdakis, David Plonka, and Arthur Berger. Beyond Counting: New Perspectives on the Active IPv4 Address Space.
+IMC ’16, pages 135–149. ACM, 2016. ISBN 978-1-4503-4526-2. doi: 10.1145/2987443.2987473. URL http://doi.acm.org/10.1145/2987443.2987473.
+[57] Zakir Durumeric, David Adrian, Ariana Mirian, Michael Bailey, and J Alex Halderman. A Search Engine Backed by Internet-Wide Scanning. In
+Proceedings of the 22nd Conference on Computer and Communications Security, pages 542–553. ACM, 2015.
+[58] Xun Gong, Nikita Borisov, Negar Kiyavash, and Nabil Schear. Website detection using remote traffic analysis. In Privacy Enhancing Technologies
+Symposium, pages 58–78, 2012.
+[59] Richard Skowyra, Kevin Bauer, Veer Dedhia, and Hamed Okhravi. Have No PHEAR: Networks Without Identifiers.
+In Proceedings of the
+2016 ACM Workshop on Moving Target Defense, MTD ’16. ACM, 2016.
+ISBN 978-1-4503-4570-5. doi: 10.1145/2995272.2995276. URL
+http://doi.acm.org/10.1145/2995272.2995276.
+[60] Roland Meier, David Gugelmann, and Laurent Vanbever.
+iTAP: In-network Traffic Analysis Prevention using Software-Defined Networks. In
+Proceedings of the Symposium on SDN Research. ACM, 2017.
+[61] The P4 Language Consortium. P416 Language Specification. 2017. URL https://p4.org/p4- spec/docs/P4- 16- v1.0.0- spec.pdf.
+[62] Michael T. Goodrich. Efficient Packet Marking for Large-scale IP Traceback. In Proceedings of the 9th ACM Conference on Computer and
+Communications Security, CCS ’02, pages 117–126. ACM, 2002. ISBN 1-58113-612-9. doi: 10.1145/586110.586128. URL http://doi.acm.org/10.
+1145/586110.586128.
+[63] Matthew Smart, G. Robert Malan, and Farnam Jahanian. Defeating TCP/IP Stack Fingerprinting. In Proceedings of the 9th Conference on USENIX
+Security Symposium - Volume 9, SSYM’00, pages 17–17, Berkeley, CA, USA, 2000. USENIX Association. URL http://dl.acm.org/citation.cfm?id=
+1251306.1251323.
+[64] Vern Paxson. An Analysis of Using Reflectors for Distributed Denial-of-Service Attacks. ACM SIGCOMM Computer Communication Review, 31(3):
+38–47, 2001.
+[65] Xin Liu, Xiaowei Yang, and Yong Xia. NetFence: Preventing Internet Denial of Service from Inside Out. In ACM SIGCOMM Computer Communication
+Review, volume 40, pages 255–266. ACM, 2010.
+[66] Xiaowei Yang, David Wetherall, and Thomas Anderson. A DoS-limiting Network Architecture. In ACM SIGCOMM Computer Communication
+Review, volume 35, pages 241–252. ACM, 2005.
+[67] Bryan Parno, Dan Wendlandt, Elaine Shi, Adrian Perrig, Bruce Maggs, and Yih-Chun Hu. Portcullis: Protecting Connection Setup from Denial-of-
+Capability Attacks. ACM SIGCOMM Computer Communication Review, 37(4):289–300, 2007.
+[68] Xin Liu, Ang Li, Xiaowei Yang, and David Wetherall. Passport: Secure and Adoptable Source Authentication. In Proceedings of the 5th USENIX
+Symposium on Networked Systems Design and Implementation, NSDI’08, pages 365–378. USENIX Association, 2008. ISBN 111-999-5555-22-1.
+URL http://dl.acm.org/citation.cfm?id=1387589.1387615.
+[69] Stephen Kent, Charles Lynn, and Karen Seo. Secure border gateway protocol (S-BGP). IEEE Journal on Selected areas in Communications, 18(4):
+582–592, 2000.
+[70] Xin Liu, Xiaowei Yang, and Yanbin Lu. To filter or to authorize: Network-layer dos defense against multimillion-node botnets. In ACM SIGCOMM
+Computer Communication Review, volume 38. ACM, 2008.
+[71] Katerina Argyraki and David R. Cheriton. Active Internet Traffic Filtering: Real-time Response to Denial-of-service Attacks. In Annual Conference
+on USENIX Annual Technical Conference, 2005. URL http://dl.acm.org/citation.cfm?id=1247360.1247370.
+[72] Cross-site tracking: Let’s unpack that. https://blog.mozilla.org/firefox/cross-site-tracking-lets-unpack-that/.
+[73] RJ Atkinson and SN Bhatti.
+Identifier-locator network protocol (ILNP) architectural description. RFC 6740, November 2012. URL https:
+//tools.ietf.org/html/rfc6740.
+[74] Zhuotao Liu, Yushan Liu, Philipp Winter, Prateek Mittal, and Yih-Chun Hu. Torpolice: Towards enforcing service-defined access policies for
+anonymous communication in the tor network. In 25th IEEE International Conference on Network Protocols, ICNP 2017, Toronto, ON, Canada,
+October 10-13, 2017, pages 1–10, 2017.
+[75] Alex Davidson, Ian Goldberg, Nick Sullivan, George Tankersley, and Filippo Valsorda. Privacy pass: Bypassing internet challenges anonymously.
+PoPETs, 2018(3):164–180, 2018.
+[76] Pyda Srisuresh and Matt Holdrege.
+https://tools.ietf.org/html/rfc2663.
+
+IP Network Address Translator (NAT) Terminology and Considerations. RFC 2663, August 1999. URL
+
+24
+
+Hooman Mohajeri Moghaddam and Arsalan Mosenia
+
+Fig. 16. Comparison of TCP handshake latency for Alexa top 100 domain over PANEL and simple router. This graph shows
+the time to complete a TCP three-way handshake for each domain.
+
+[77] Philipp Richter, Florian Wohlfart, Narseo Vallina-Rodriguez, Mark Allman, Randy Bush, Anja Feldmann, Christian Kreibich, Nicholas Weaver, and
+Vern Paxson. A Multi-perspective Analysis of Carrier-Grade NAT Deployment. In Proceedings of the 2016 ACM on Internet Measurement Conference,
+pages 215–229. ACM, 2016.
+[78] OFCOM. MC/159 Report on the Implications of Carrier Grade Network Address Translators . Technical report, 2013. URL https://www.ofcom.org.
+uk/__data/assets/pdf_file/0020/37802/cgnat.pdf.
+[79] Simon Perreault, Ikuhei Yamagata, Shin Miyakawa, Akira Nakagawa, and Hiroyuki Ashida. Common Requirements for Carrier-Grade NATs (CGNs).
+RFC 6888, April 2013. URL https://tools.ietf.org/html/rfc6888.
+[80] D Senie and P Ferguson. Network Ingress Filtering: Defeating Denial of Service Attacks which Employ IP Source Address Spoofing. RFC 2827, May
+2000. URL https://tools.ietf.org/html/rfc2827.
+
+A APPENDIX A.
+
+A.1 TCP Handshake Latency
+
+This next experiment shows that this overhead is mostly introduced in the first packets of each session: we established
+1000 TCP sessions to each of the above mentioned websites over TCP port 80 and measured the time it took to complete
+the TCP handshake. As shown in Fig. 16, for simple router, the average time to complete the TCP handshake was 18.22
+millisecond per session. In contrast, the average time to complete the TCP handshake was 152.16 millisecond per session
+for PANEL, showing an 8 fold increase in the first round trip. This overhead can be reduced substantially once the PANEL
+session establishment logic is moved to a full hardware implementation, as opposed to our current python based local
+agent (See Section 7.1).
+
+google.comyoutube.comfacebook.comreddit.comamazon.comwikipedia.orgyahoo.comtwitter.comnetflix.comebay.comimgur.comntd.tvlinkedin.cominstagram.comdiply.comcraigslist.orglive.comoffice.commicrosoftonline.comtumblr.comtwitch.tvpornhub.comespn.comt.copinterest.comcnn.combing.comwikia.comimdb.comchase.comlivejasmin.comnytimes.compaypal.comapple.comblogspot.combankofamerica.comyelp.comwordpress.comstackoverflow.commicrosoft.comwellsfargo.comgithub.comzillow.comintuit.commsn.comsalesforce.comxvideos.comwashingtonpost.comwalmart.comweather.combuzzfeed.comdropbox.comsoundcloud.comhuffingtonpost.comindeed.comgoogleusercontent.cometsy.comamazonaws.comtfetimes.comadobe.combreitbart.comfoxnews.comquora.comthepiratebay.orgspotify.comxfinity.cominstructure.comvice.comgfycat.comredd.itforce.compandora.comstackexchange.comaol.comxhamster.combbc.combestbuy.comrumble.comhomedepot.comblackboard.comtripadvisor.comconservativetribune.comcapitalone.comvimeo.comhulu.comtarget.comusps.comthesaurus.compatch.comnih.govonclkds.comgodaddy.comdailymail.co.uk4chan.orgforbes.comdeviantart.comslickdeals.netbusinessinsider.comtxxx.comcnet.com020406080100120140TCP Handshake Latency (milliseconds)PANELSimple Router

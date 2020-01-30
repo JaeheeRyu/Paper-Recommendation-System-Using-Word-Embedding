@@ -1,0 +1,701 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+8
+1
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+MSD : MU LT I -S E L F -D I ST I LLAT ION L EARN ING V IA
+MU LT I -C LA S S I FIER S W I TH IN D EE P N EURA L N ET-
+WORK S
+
+Yunteng Luan, Hanyu Zhao, Zhi Yang & Yafei Dai
+
+Department of Electronics Engineering and Computer Science
+Peking University
+Beijing, China
+
+{luanyunteng,zhaohanyu,yangzhi,dyf}@pku.edu.cn
+
+AB STRAC T
+
+As the development of neural networks, more and more deep neural networks
+are adopted in various tasks, such as image classiﬁcation. However, as the huge
+computational overhead, these networks could not be applied on mobile devices
+or other low latency scenes. To address this dilemma, muti-exit convolutional
+network is proposed to allow faster inference via early exits with the correspond-
+ing classiﬁers. These networks utilize sophisticated designing to increase the early
+exit accuracy. However, n ¨aively training the multi-exit network could hurt the per-
+formance (accuracy) of deep neural networks as early-exit classiﬁers throughout
+interfere with the feature generation process.
+In this paper, we propose a general
+training framework named multi-self-
+distillation learning (MSD), which mining knowledge of different classiﬁers
+within the same network and boost every classiﬁer accuracy. Our approach can
+be applied not only to multi-exit networks, but also modern CNNs (e.g., ResNet
+Series) augmented with additional side branch classiﬁers. We use sampling-based
+branch augmentation technique to transform a single-exit network into a multi-
+exit network. This reduces the gap of capacity between different classiﬁers, and
+improves the effectiveness of applying MSD. Our experiments show that MSD
+improves the accuracy of various networks: enhancing the accuracy of every clas-
+siﬁer signiﬁcantly for existing multi-exit network (MSDNet), improving vanilla
+single-exit networks with internal classiﬁers with high accuracy, while also im-
+proving the ﬁnal accuracy.
+
+1
+
+IN TRODUC T ION
+
+Deep convolutional networks (CNNs) are already adopted in a diverse set of visual recognition tasks
+such as image classiﬁcation Huang et al. (2018); Krizhevsky et al. (2012); Tan & Le (2019). With
+the ever-increasing demand for improved performance, the development of deeper networks has
+greatly increased the latency and computational cost of inference. These costs prevents models from
+being deployed on resource constrained platforms (e.g., mobile phones) or applications requiring
+a short response time (e.g., self-driving cars). To lessen these increasing costs, multi-exit network
+architectures Larsson et al. (2016); Teerapittayanon et al. (2016) are proposed to lessen the inference
+costs by allowing prediction to exit the network early when samples can already be inferred with
+high conﬁdence. Multi-exit networks posit that the easy examples do not require the full power
+and complexity of a massive DNN. So rather than attempting to approximate existing networks
+with weights pruning and quantization, they introduce multiple early-exit classiﬁers throughout a
+network, which are applied on the features of the particular layer they are attached to.
+However, the introduction of early classiﬁers into network could interfere negatively with later clas-
+siﬁers Huang et al. (2017). How to overcome this drawback is the key to design multi-exit network
+architectures. For example, use dense connectivity to connects each layer with all subsequent lay-
+ers. However, we make an observation that the later classiﬁers may not always be able to rightly
+classify test examples correctly predicted by earlier ones. For example, about 25.4% test samples
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+predicted correctly by the ﬁrst classiﬁer of MSDNets Huang et al. (2017) cannot rightly predicted
+by any later classiﬁers (including the ﬁnal classiﬁer) on on CIFAR100 dataset. This implies that
+increasing learning independence in multi-exit network also hinders the knowledge transfer among
+multiple classiﬁers.
+To solve this dilemma, we propose a novel multi-self-distillation learning framework where clas-
+siﬁers in a multi-exit network learn collaboratively and teach each other throughout the training
+process. One signiﬁcant advantage of self-mutual learning framework is that it doesn’t need other
+collaborative student models required in traditional mutual learning Zhang et al. (2018). All the
+classiﬁers within the network itself are trained as student models who effectively pools their col-
+lective estimate of the next most likely classes with different levels of features. Speciﬁcally, each
+classiﬁer is trained with three losses: a conventional supervised learning loss, a prediction mimicry
+loss that aligns each classiﬁers class posterior with the class probabilities of other classiﬁers, and a
+feature mimicry loss that induces all the classiﬁers’ feature maps to ﬁt the feature maps of the deep-
+est classiﬁer. The last loss consides heterogeneous cohorts consisting of mixed deepest classiﬁer
+and shallow classiﬁer, and enables the learning more efﬁciently with (more or less) bias towards the
+prowerful (deepest) classiﬁer.
+MSD learning helps each classiﬁer to obtain more discriminating features, which enhances the per-
+formance of other classiﬁers in return. With such learning, the model not only requires less training
+time but also can accomplish much higher accuracy, as compared with other learning methods (such
+as traditional knowledge distillation and mutual learning). In general, this framework can also be
+applied to improve the performance of single-exit CNNs by adding additional early-exit branches
+(with classiﬁers) at certain locations throughout the original network. For simplicity, in this paper
+we focus on typical group-wise networks, such as Inception and ResNet Series, where CNN archi-
+tectures are assembled as the stack of basic block structures. Each of group shares similar structure
+but with different weights and ﬁlter numbers, learning features of ﬁne scale in early groups and
+coarse scale in later groups (through repeated convolution, pooling, and strided convolution).
+With such kind of group-wise network architecture, we propose a sampling-based branch augmen-
+tation method to address the design considerations of (1) the locations of early-exit branches, and (2)
+the structure of a early-exit branch as well as its size and depth. Speciﬁcally, we add exit branches
+after different group to allow the samples to exit after processing a subset of groups. We determine
+the structure of a speciﬁc early-exit branch by performing intra-and-inter-group sampling over the
+remaining network deeper than the attached point of the branch. The basic idea of this sampling-
+based method is to enable the network path exits from any early-exit branch to approximate that exits
+from the main branch, i.e., the baseline (original) network. This reinforces the efﬁciency and learn-
+ing capabilities of individual branch classiﬁers. Also, our method provides a single neural network
+exits at different depth, permitting dynamic inference speciﬁc to test examples.
+Extensive experiments are carried out on two image-classiﬁcation datasets. The results show that, for
+specially designed network with multiple classiﬁers, the MSD learning improves the performance of
+every classiﬁer by a large margin with the same network architecture. Further, by argument modern
+convolutional neural networks with early-exit branches, the MSD learning signiﬁcantly improves
+the performance of these network at no expense of response time. 3.2% accuracy boost is obtained
+on average for ResNet Series, varying from 1.47% in ResNeXt as minimum to 4.56% in ResNet101
+as maximum. Finally, compared with self distillation by the deepest classiﬁer Zhang et al. (2019),
+collaborative MSD learning by all classiﬁers achieves better performance.
+In summary, the main contributions of this paper are:
+
+• We propose a MSD learning framework which provides a simple but effective way to im-
+prove the performance of a network with multiple classiﬁers.
+
+• We provide an exit-branch augmentation method to permit modern CNNs to be optimized
+with the proposed MSD learning.
+
+• We conduct experiments for different kinds of CNNs and training methods on the task of
+image classiﬁcation to prove the generalization of this learning method.
+
+2
+
+2 R ELAT ED WORK
+
+2 .1 KNOW L EDGE D I S T I LLAT ION
+
+KD (knowledge distillation) is a model compression technique proposed by Bucilu et al. (2006).
+And it was utilized for neural networks in Hinton et al. (2015). Traditional KD try to transfer a
+big pretrained teacher network’s knowledge to a smaller student network. In details, it compute
+a KL loss between the teacher and student output distributions. And this loss provides additional
+regularisation and supervision for the student. In this case, the student accuracy may be higher than
+the teacher. Various KD techniques have been proposed. FitNetRomero et al. (2014) propose a hint
+loss to minimize the distance of feature maps between teacher and network, and then it uses classical
+KD technique to train the re-initial student network. ATZagoruyko & Komodakis (2016) explores
+FitNet using two kinds of attention techniques. Lopes et al. (2017) proposes a KD solution in case
+of unable to obtain training data. Yim et al. (2017) deﬁnes an FSP matrix to represent knowledge
+and proposes a approach to transfer. Mirzadeh et al. (2019) discusses the gap between teacher and
+student in KD, and proposes a cascade KD technique. Zhang et al. (2019) proposes self-distillation,
+and this method does not need a pretrained teacher. Our work is possibly most closely related to this
+work, however, self-distillation focus on improving the ﬁnal accuracy, and it only use the ﬁnal exit
+to teach the middle exits. While our approach aims to improve each exit accuracy and use multiple
+teachers. DMLZhang et al. (2018) also does need a pretrained teacher. It trains multiple networks
+at the same time, and make them teach each other. However, this method introduces more training
+burden, and the small network must waiting for multiple large networks.
+
+2 .2 MU LT I - EX I T N ETWORK S
+
+Various prior studies explore ACT (adaptive computation time) networks. Recently, a new branch
+of ACT is multi-exit network. Multi-exit network is ﬁrst proposed by BranchyNet Teerapittayanon
+et al. (2016). It is a network equipped with multiple early exit connected with a backbone. As Fig-
+ure 1 illustrates, it has three early exits. This kind of architecture has many advantages. On the one
+hand, it provide multiple tiny-networks to satisfy different capacity and latency needs without hurt-
+ing the ﬁnal exit accuracy. On the other hand, it can be treated as an ensemble network. And because
+these exits share the same backbone network, multi-exit network is more efﬁcient computation than
+traditional ensemble network. FractalNet Larsson et al. (2016) proposes a multi-path network, and
+each path consumes different computation, achieve different accuracy. A permutation of these paths
+provide various latency and performance. SkipNet Wang et al. (2018) proposes a adaptive network
+architecture based on ResNet, and it skips unnecessary ResNet blocks utilizing reinforcement learn-
+ing. MSDNet Huang et al. (2017) propose a novel multi-exit network inspired by DenseNet, and it
+adopts multi-scale technique to increase early exit accuracy.
+
+3 M ETHOD
+
+In this section, we give an example to illustrate how to apply sampling-based branch augmentation
+to a non-multi-exit network. And then we give a detailed description of our proposed multi-self-
+distillation learning technique based on our example.
+
+3 .1 SAM PL ING -BA SED BRANCH AUGM EN TAT ION
+
+In Figure 1, we illustrate a modiﬁed ResNet-style network, which is equipped with multiple exits.
+In Resnet-style network, each layer group contains multiple ResNet blocks, and each layer group
+resizes the prior feature map dimension: shrinks feature map width and height dimension, increases
+channel dimension, in details. In order to make the early-exit’s feature map dimension changing
+pattern is similar with the backbone network, we equip the ﬁrst, second and third exit with 3, 2 and
+1 ResNet layer, respectively. And these extra ResNet layers is a instance of our proposed sampling-
+based branch augmentation architecture. The amount of computation added by the sampling-based
+branch augmentation is negligible relative to the entire network. However, these blocks bring a huge
+increase in accuracy, according to the experiment results.
+
+3
+
+Figure 1: A ResNet-style network equipped with multiple exits. We produce a early exit behind
+to each layer block. Every block has multiple ResNet layers, and will shrink feature map width
+and height dimension, increase channel dimension. In order to make the early-exit’s feature map
+dimension changes more smoothly, we equip the ﬁrst, second and third exit with 3, 2 and 1 ResNet
+block, respectively.
+
+3 .2 MU LT I -S EL F -D I ST I LLAT ION L EARN ING
+
+Formulation. We assume a dataset X = {xi } with M classes Y = {yi }, yi ∈ {1, 2, ..., M }, and
+a network with N exits. For the n exit, its output is an . We use softmax to compute the predicted
+probability p:
+
+where pn
+i represents the ith class probability of the n exit.
+
+Loss Function. MSD loss consist of three parts, label loss, kd loss and feature loss.
+Label loss. The ﬁrst loss comes from the label y provided by the dataset. For each exit, we compute
+cross entropy between pn and y . In this way, the label y directs each exit’s proper probability as
+high as possible. As there are multiple exits, we sum each cross entropy loss:
+
+loss1 =
+
+C rossEntropy(pn , y)
+
+(2)
+
+(cid:80) exp(an
+exp(an
+i )
+j )
+
+pn
+i =
+
+N(cid:88)
+
+n=1
+
+(1)
+
+(4)
+
+KD loss. In classical knowledge distillationHinton et al. (2015), there is a student network N ets with
+an output as , and a teacher network N ett with an output at . The KD loss for N ets is computed by:
+(3)
+
+where KL is Kullback-Leibler divergence, and ps
+τ and pt
+τ are soften probabilities:
+
+lossKD = K L(ps
+τ , pt
+τ )
+(cid:80) exp(as
+(cid:80) exp(at
+exp(as
+i /τ )
+exp(at
+i /τ )
+j /τ )
+j /τ )
+
+τ ,i =
+
+, pt
+
+ps
+
+τ ,i =
+
+where τ represents temperature. A higher temperature gives softer probability distribution and more
+knowledge to the student network.
+For each exit, we treat all the other N − 1 exits as its teacher networks. As different teacher provide
+different knowledge, we could achieve a more robust and accurate network. We use the average
+losses as each exit KD loss:
+
+loss2 =
+
+1
+N − 1
+
+K L(q i
+τ , q j
+τ )
+
+(5)
+
+N(cid:88)
+
+j (cid:54)=i
+
+· N(cid:88)
+
+i=1
+
+4
+
+(cid:9)(cid:27)3(cid:30)4(cid:2)(cid:9)(cid:27)3(cid:30)4(cid:3)(cid:9)(cid:27)3(cid:30)4(cid:4)(cid:9)(cid:27)3(cid:30)4(cid:5)(cid:14)(cid:30)(cid:29)4(cid:30)(cid:29)(cid:4)(cid:14)(cid:30)(cid:29)4(cid:30)(cid:29)(cid:3)(cid:14)(cid:30)(cid:29)4(cid:30)(cid:29)(cid:2)(cid:14)(cid:30)(cid:29)4(cid:30)(cid:29)(cid:5)(cid:12)(cid:30)1(cid:29)(cid:21)(cid:1)(cid:10)(cid:7)(cid:1)13(cid:28)(cid:28)(cid:11)(cid:16)(cid:17)-1(cid:11)(cid:16)(cid:17)-1(cid:1)13(cid:28)(cid:28)(cid:8)-(cid:16)(cid:29)(cid:30)(cid:27)-(cid:1)13(cid:28)(cid:28)(cid:7)(cid:21)(cid:20)(cid:20)-(cid:27)-2(cid:29)(cid:15)-(cid:28)(cid:13)-(cid:29)(cid:6)13(cid:18)(cid:22)and τ depends on the class number M .
+Feature loss. Inspired by FitnetsRomero et al. (2014), we compute the L2 distance between the
+feature maps before the ﬁnal FC layer. On one hand, the hint loss also provide knowledge for
+the early exits, and helps convergence. On the other hand, as Mirzadeh et al. (2019) says, when
+the student does not have the sufﬁcient capacity or mechanics to mimic the teachers behavior, the
+knowledge distillation may be not efﬁcient. And the hint loss forces student to approach the weight
+distribution of teachers, in other words, it reduce the gap between teacher and student.
+N −1(cid:88)
+
+loss3 =
+
+(cid:107)Fi − FN (cid:107)2
+
+2
+
+(6)
+
+where Fi represents the feature maps before the FC layer.
+
+i=1
+
+Training During training, we compute the sum of above three parts of loss. And to balance the
+three parts loss, we introduce two hyper-parameters α and β :
+
+C rossEntropy(pn , y)
+
+totalloss = (1 − α) · loss1 + α · loss2 + β · loss3
+= (1 − α) · N(cid:88)
++ α ·
+N − 1
+1
++ β · N −1(cid:88)
+
+· N(cid:88)
+
+(cid:107)Fi − FN (cid:107)2
+
+K L(q i
+τ , q j
+τ )
+
+N(cid:88)
+
+j (cid:54)=i
+
+n=1
+
+i=1
+
+2
+
+(7)
+
+i=1
+
+As the feature loss is used to help the early exits convergence as the beginning, a big β may hurt the
+network performance at the end of training. We adopt a cosine annealing policy for β :
+
+β = 0.5 · (1 + cos(epoch/total · π) · (βbegin − βend )) + βend
+
+(8)
+
+where βbegin , βend represents initial β and ﬁnal β . Experiments show this policy is better than a
+constant β .
+
+4 EX PER IM EN T S
+
+In this section, we elaborate experiments on different networks and datasets to demonstrate our
+approach. All experiment code is implemented by PyTorch. And we would release our code later.
+
+Networks
+MSDNet-1
+
+MSDNet-2
+
+Method
+joint-training
+multi-self-dis
+joint-training
+multi-self-dis
+
+Classiﬁer 1 Classiﬁer 2 Classiﬁer 3 Classiﬁer 4 Classiﬁer 5
+62.40
+65.37
+69.74
+71.88
+73.63
+
+71.35
+
+71.88
+
+73.30
+
+73.65
+
+73.38
+
+73.99
+
+74.93
+
+74.75
+
+75.09
+
+64.13
+
+64.44
+
+66.63
+
+67.86
+
+69.28
+
+70.79
+
+Table 1: Accuracy comparison on MSDNetHuang et al. (2017) (CIFAR100). MSDNet-1 set base=1,
+step=1, block=5, mode=lin grow, and MSDNet-2 set base=3, step=3, block=5, mode=even. More
+network details are described in paperHuang et al. (2017).
+
+4 .1 DATA S ET
+
+We conduct experiments on two popular datasets respectively. CIFAR100 contain 60 thousand RGB
+images of 32x32 pixels with 100 classes. And 50 thousand images for training, 10 thousand images
+for test. We use random cropping, random horizontal ﬂipping and normalization for preprocessing.
+
+5
+
+Networks
+ResNet18
+
+ResNet50
+
+ResNet101
+
+ResNet152
+
+WRN20-8
+
+WRN44-8
+
+Naive-Train
+77.09
+
+77.68
+
+77.98
+
+79.21
+
+79.76
+
+79.93
+
+Method
+self-dis-orign
+multi-self-dis
+self-dis-orign
+multi-self-dis
+self-dis-orign
+multi-self-dis
+self-dis-orign
+multi-self-dis
+self-dis-orign
+multi-self-dis
+self-dis-orign
+multi-self-dis
+
+69.45
+
+78.29
+
+68.84
+
+77.1
+
+78.93
+
+68.23
+
+78.6
+
+68.85
+
+76.81
+
+72.54
+
+77.11
+
+Classiﬁer1 Classiﬁer2 Classiﬁer3 Classiﬁer4
+67.85
+74.57
+78.23
+78.64
+
+79.63
+
+74.21
+
+80.36
+
+77.29
+
+80.47
+
+78.72
+
+80.98
+
+78.15
+
+78.60
+
+81.15
+
+79.95
+
+80.13
+
+75.23
+
+81.67
+
+81.17
+
+82.75
+
+81.43
+
+82.83
+80.98
+
+80.62
+81.96
+
+82.17
+
+80.26
+
+80.56
+
+81.78
+
+81.23
+
+82.54
+
+81.61
+
+82.74
+
+80.92
+
+81.23
+
+82.09
+
+82.28
+
+Table 2: Accuracy comparison with self-distillation on CIFAR100 dataset. Naive-Training repre-
+sents training the network with only cross-entropy loss. Self-dis-orign represents self-distillation
+results on the original paperZhang et al. (2019). Multi-self-dis represents our approach results.
+
+4 .2 MU LT I - EX I T N ETWORK S
+
+There are many works focus on designing multi-exit network architecture. MSDNet proposes a
+multi-scale networks for resource efﬁcient image classiﬁcation and achieves SOTA results. In this
+subsection, we select some kinds of MSDNet network to verify our approach’s effects. Note that we
+do not change any training details such as lr, training epochs, etc. from the original paper.
+From the Table 1, it is observed that our approach beats the original training on every exit, and
+achieves average over 1% increment. This proves that MSD is effective on multi-exit networks.
+
+4 .3 NON -MU LT I -EX I T N ETWORK
+
+We evaluate our approach with CIFAR100 dataset on multiple classical and efﬁcient Networks,
+including ResNet18, ResNet50, ResNet101, ResNet152, and WideResNet20-8, WideResNet44-8.
+We treat self-distillation as baseline as it achieves SOTA results on these models.
+The experiment results is reported in Table 2. Baseline is the original network accuracy by naive
+training method. From the table, wo could summarize some conclusions. 1) All ﬁnal exits (Classiﬁer
+4/4) based on our approach beat self-distillation and naive training, and achieve average nearly
+1% and 3.2% increment, respectively. 1) All middle exits except one (Classiﬁer3/4 of WRN20-8)
+beat self-distillation. Especially, the ﬁrst exit achieve average 8.5% increment. 3) The accuracy
+difference between the ﬁrst exit and the ﬁnal exit is very small, although the ﬁrst exit only takes a
+little part of FLOPs compared with the ﬁnal exit.
+
+5 CONC LU S ION
+
+We proposed a novel training framework called MSD (Multi-self-distillation) to mine the inherent
+knowledge within the model to improve its accuracy. We conducted various experiments on multi-
+exit networks, single-exit networks and different datasets, to prove its advantages compared with
+vanilla, self-distillation techniques. Moreover, MSD does not need too much extra training cost
+or other neural network helps, compared with traditional knowledge transfer and knowledge distil-
+lation. In order to apply MSD on single-exit networks, we also proposed sampling-based branch
+augmentation technique to extend single-exit to multi-exit. By this way, the original network not
+only achieves higher accuracy on the ﬁnal classiﬁer, but also could be utilized as an effective multi-
+exit network.
+
+6
+
+R E F ER ENC E S
+Cristian Bucilu, Rich Caruana, and Alexandru Niculescu-Mizil. Model compression. In Proceedings
+of the 12th ACM SIGKDD international conference on Knowledge discovery and data mining, pp.
+535–541. ACM, 2006.
+
+Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. Distilling the knowledge in a neural network. arXiv
+preprint arXiv:1503.02531, 2015.
+
+Gao Huang, Danlu Chen, Tianhong Li, Felix Wu, Laurens Van Der Maaten, and Kilian Q Wein-
+berger. Multi-scale dense convolutional networks for efﬁcient prediction.
+arXiv preprint
+arXiv:1703.09844, 2, 2017.
+
+Yanping Huang, Yonglong Cheng, Dehao Chen, HyoukJoong Lee, Jiquan Ngiam, Quoc V Le, and
+Zhifeng Chen. Gpipe: Efﬁcient training of giant neural networks using pipeline parallelism. arXiv
+preprint arXiv:1811.06965, 2018.
+
+Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton. Imagenet classiﬁcation with deep convo-
+lutional neural networks. In Advances in neural information processing systems, pp. 1097–1105,
+2012.
+
+Gustav Larsson, Michael Maire, and Gregory Shakhnarovich. Fractalnet: Ultra-deep neural net-
+works without residuals. arXiv preprint arXiv:1605.07648, 2016.
+
+Raphael Gontijo Lopes, Stefano Fenu, and Thad Starner. Data-free knowledge distillation for deep
+neural networks. arXiv preprint arXiv:1710.07535, 2017.
+
+Seyed-Iman Mirzadeh, Mehrdad Farajtabar, Ang Li, and Hassan Ghasemzadeh. Improved knowl-
+edge distillation via teacher assistant: Bridging the gap between student and teacher. arXiv
+preprint arXiv:1902.03393, 2019.
+
+Adriana Romero, Nicolas Ballas, Samira Ebrahimi Kahou, Antoine Chassang, Carlo Gatta, and
+Yoshua Bengio. Fitnets: Hints for thin deep nets. arXiv preprint arXiv:1412.6550, 2014.
+
+Mingxing Tan and Quoc V Le. Efﬁcientnet: Rethinking model scaling for convolutional neural
+networks. arXiv preprint arXiv:1905.11946, 2019.
+
+Surat Teerapittayanon, Bradley McDanel, and Hsiang-Tsung Kung. Branchynet: Fast inference
+via early exiting from deep neural networks. In 2016 23rd International Conference on Pattern
+Recognition (ICPR), pp. 2464–2469. IEEE, 2016.
+
+Xin Wang, Fisher Yu, Zi-Yi Dou, Trevor Darrell, and Joseph E Gonzalez. Skipnet: Learning dy-
+namic routing in convolutional networks. In Proceedings of the European Conference on Com-
+puter Vision (ECCV), pp. 409–424, 2018.
+
+Junho Yim, Donggyu Joo, Jihoon Bae, and Junmo Kim. A gift from knowledge distillation: Fast
+optimization, network minimization and transfer learning. In Proceedings of the IEEE Conference
+on Computer Vision and Pattern Recognition, pp. 4133–4141, 2017.
+
+Sergey Zagoruyko and Nikos Komodakis. Paying more attention to attention: Improving the perfor-
+mance of convolutional neural networks via attention transfer. arXiv preprint arXiv:1612.03928,
+2016.
+
+Linfeng Zhang, Jiebo Song, Anni Gao, Jingwei Chen, Chenglong Bao, and Kaisheng Ma. Be your
+own teacher: Improve the performance of convolutional neural networks via self distillation. In
+The IEEE International Conference on Computer Vision (ICCV), October 2019.
+
+Ying Zhang, Tao Xiang, Timothy M Hospedales, and Huchuan Lu. Deep mutual learning.
+In
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 4320–
+4328, 2018.
+
+7
+
+

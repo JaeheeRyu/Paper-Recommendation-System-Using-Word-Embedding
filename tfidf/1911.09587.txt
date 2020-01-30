@@ -1,0 +1,1063 @@
+Vouw: Geometric Pattern Mining
+using the MDL Principle
+
+Micky Faas and Matthijs van Leeuwen
+
+Leiden Institute for Advanced Computer Science, Leiden University
+
+Abstract. We introduce geometric pattern mining, the problem of ﬁnd-
+ing recurring local structure in raster-based data. It diﬀers from other
+pattern mining problems by encoding complex spatial relations between
+elements, resulting in arbitrarily shaped patterns. After we formalise this
+new type of pattern mining, we discuss an approach to selecting a set of
+patterns using the Minimum Description Length principle. We demon-
+strate the viability of our approach by introducing Vouw, a heuristic
+algorithm that ﬁnds good solutions to a speciﬁc class of geometric pattern
+mining problems. We empirically show that Vouw delivers high-quality
+results by using a synthetic benchmark.
+
+1
+
+Introduction
+
+Frequent pattern mining [1] is the well-known subﬁeld of data mining that aims
+to ﬁnd and extract recurring substructures from data, as a form of knowledge
+discovery. The generic concept of pattern mining has been instantiated for
+many diﬀerent types of patterns, e.g., for item sets (in Boolean transaction
+data), subgraphs (in graphs/networks), and episodes (in sequences). So far,
+however, little research has been done on pattern mining for raster-based data,
+i.e., geometric matrices in which the row and column orders are ﬁxed. The
+exception is geometric tiling [3,10], but that problem only considers tiles, i.e.,
+rectangular-shaped patterns, in Boolean data.
+In this paper we generalise this setting in two important ways. First, we
+consider geometric patterns of any shape that are geometrically connected, i.e.,
+it must be possible to reach any element from any other element in a pattern by
+only traversing elements in that pattern. Second, we consider discrete geometric
+data with any number of possible values (which includes the Boolean case). We
+call the resulting problem geometric pattern mining.
+Figure 1 illustrates an example of geometric pattern mining. Figure 1a shows a
+32×24 grayscale ‘geometric matrix’, with each element in [0, 255], apparently ﬁlled
+with noise. If we take a closer look at all horizontal pairs of elements, however,
+we ﬁnd that the pair (146, 11) is, amongst others, more prevalent than expected
+from ‘random noise’ (Figure 1b). If we would continue to try all combinations of
+elements that ‘stand out’ from the background noise, we would eventually ﬁnd
+four copies of the letter ‘I’ set in 16 point Garamond Italic (Figure 1c).
+The 35 elements that make up a single ‘I’ in the example form what we call a
+geometric pattern that occurs four times. Since these occurrences jointly cover a
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+7
+8
+5
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+ 
+ 
+ 
+ 
+ 
+ 
+2
+
+Micky Faas and Matthijs van Leeuwen
+
+(a) 32 × 24 ‘geometric matrix’. (b)
+(146, 11).
+
+Pair
+
+(c) Pattern ‘I’ occurs four times.
+
+Fig. 1: Geometric pattern mining example. Each element is in [0, 255].
+
+substantial part of the matrix, we could use this pattern to describe the matrix
+more succinctly than by 768 unrelated values. That is, we could describe it as
+628 unrelated values plus pattern ‘I’ at locations (5, 4), (11, 11), (20, 3), (25, 10),
+hereby separating structure from accidental (noise) data. Since the latter requires
+less space, we have compressed the data. At the same time we have learned
+something about the data, namely that it contains four I’s. This suggests that
+we can use compression as a criterion to ﬁnd patterns that describe the data.
+Approach and contributions. Our ﬁrst contribution is that we introduce and
+formally deﬁne geometric pattern mining, i.e., the problem of ﬁnding recurring
+local structure in geometric, discrete matrices. Although we restrict the scope of
+this paper to two-dimensional data, the generic concept applies to larger number
+of dimensions. Potential applications include the analysis of satellite imagery,
+texture recognition, and clustering.
+We distinguish three subtypes of geometric patterns. The ﬁrst concerns the
+discovery of exactly identical patterns; the second concerns fault-tolerant patterns,
+which can have noisy occurrences; the third concerns transformational patterns,
+which are identical after some transformation (such as mirror, inverse, rotate,
+etc.). Each consecutive subtype makes the problem more expressive and hence
+more complex. Further, we distinguish the discovery of patterns from either an
+otherwise empty matrix, diﬀerently distributed noise, or similarly distributed
+noise, again in order of increasing diﬃculty.
+As many geometric patterns can be found in a typical matrix, it is crucial to
+ﬁnd a compact set of patterns that together describes the structure in the data
+well. We regard this as a model selection problem, where a model is deﬁned by
+a set of patterns. Following our observation above, that geometric patterns can
+be used to compress the data, our second contribution is the formalisation of
+the model selection problem by using the Minimum Description Length (MDL)
+principle [7,4]. Central to MDL is the notion that ‘learning’ can be thought of
+as ‘ﬁnding regularity’ and that regularity itself is a property of data that is
+exploited by compressing said data. This matches very well with the goals of
+pattern mining, as a result of which the MDL principle has proven very successful
+for MDL-based pattern mining [11,6].
+Finally, our third contribution is Vouw, a heuristic algorithm for MDL-based
+geometric pattern mining that (1) ﬁnds compact yet descriptive sets of patterns,
+
+Vouw: Geometric Pattern Mining using the MDL Principle
+
+3
+
+(2) requires no parameters, and (3) is tolerant to noise in the data. We empirically
+evaluate Vouw on synthetic data and demonstrate that it is able to accurately
+recover planted patterns.
+
+2 Related Work
+
+As the ﬁrst pattern mining approach using the MDL principle, Krimp [11] was one
+of the main sources of inspiration for this paper. Many papers on pattern-based
+modelling using MDL have appeared since, both improving search, e.g., Slim [9],
+and extending to other problems, e.g., Classy [6] for rule-based classiﬁcation.
+The problem closest to ours is probably that of geometric tiling, as introduced
+by Gionis et al. [3] and later also combined with the MDL principle by Tatti
+and Vreeken [10]. Geometric tiling, however, is limited to Boolean data and
+rectangularly shaped patterns (tiles); we strongly relax both these limitations.
+Campana et al. [2] also use matrix-like input data (textures) and develops a
+compression-based similarity measure. Their method, however, cannot be used for
+explanatory data analysis as it relies on a generic image compression algorithm
+that is essentially a black box.
+
+3 Geometric Pattern Mining using MDL
+
+We deﬁne geometric pattern mining on bounded, discrete and two-dimensional
+raster-based data. We represent this data as an M × N matrix A whose rows
+and columns are ﬁnite and in a ﬁxed ordering (i.e. reordering rows and columns
+semantically alters the matrix). For elements ai,j , where row i is on [0; N ) and
+column j is on [0; M ), holds that ai,j ∈ S , the ﬁnite set of symbols over A.
+According to MDL, the shortest (optimal) description of A reveals all structure
+of A in the most succinct way possible and we approximate this optimal description
+through the compression of the original data. This optimal description A0 is only
+optimal if we can unambiguously reconstruct A from it and nothing more — the
+compression is both minimal and lossless. Intuitively compression means deﬁning
+A using as few building blocks as possible. We illustrate this in Figure 2. Given
+the matrix A we decompose it in patterns, denoted X and Y . The set of all these
+patterns is the model of a A, denoted HA . In order to reconstruct A from this
+model, we alse need a mapping from the HA back to A. This mapping represents
+in what MDL calls the the data given the model HA . In this context we think
+
+A =
+
+, I =
+
+X ·
+
+1 · · · 1 1
+· 1 · · · ·
+1 · · · 1 ·
+· 1 · · · 1
+
+1 1 1 1 · ·
+
+, H = {X =
+Fig. 2: Example decomposition of A into instantiation I and patterns X, Y
+
+·
+· Y ·
+·
+·
+·
+·
+·
+·
+X ·
+·
+· X ·
+·
+·
+·
+·
+·
+·
+Y · Y ·
+·
+·
+
+, Y = (cid:2)1 1(cid:3)}
+
+(cid:21)
+
+(cid:20)1 ·
+· 1
+
+4
+
+Micky Faas and Matthijs van Leeuwen
+
+of it as ‘instructions’ of how to reconstruct A. Let us call the set of all instructions
+required to rebuild A from HA the instantiation of HA . It is denoted by IA in
+the example. The result is a notation that allows us to express matrix A as if
+decomposed into sets of local and global spatial information, which we will now
+describe in more detail.
+
+3.1 Patterns and Instances
+. We deﬁne a pattern as a MX × NX submatrix X of the original matrix A.
+Elements of this submatrix may be ·, the empty element, which gives us the ability
+to cut-out any irregular-shaped part of A. We additional ly require the elements
+of X to be adjacent (horizontal, vertical or diagonal) to at least one non-empty
+element and that no rows and columns are empty.
+From this deﬁnition, the dimensions MX × NX give the smallest rectangle
+around X (the bounding box). We also deﬁne the cardinality |X | of X as the
+number of non-empty elements. We call a pattern X with |X | = 1 a singleton
+pattern, i.e. a pattern containing exactly one element of A.
+Each pattern contains a special pivot element: pivot(X ) is the ﬁrst non-empty
+element of X . A pivot can be thought of as a ﬁxed point in X which we can use
+to position its elements in relation to A. This translation, or oﬀset, is a tuple
+q = (i, j ) that is on the same domain as an index in A. We realize this translation
+by placing all elements of X on an empty M × X size matrix in such that the
+pivot element is at (i, j ). We formalize this in the instantiation operator ⊗:
+. We deﬁne the instance X ⊗ (i, j ) as the M × N matrix containing al l elements
+of X such that pivot(X ) is at index (i, j ) and the distances between al l elements
+are preserved. The resulting matrix contains no additional non-empty elements.
+Obviously this does not yield a valid result for an arbitrary oﬀset (i, j ). We
+want to limit ourselves to the space of pattern instances that are actually valid
+in relation to matrix A. Therefore two simple constraints are needed: (1) an
+instance must be well-deﬁned: placing pivot(X ) is at index (i, j ) results in an
+instance that contains al l elements of X , and (2) elements of instances cannot
+overlap, meaning each element of A should be described at most once. This allows
+for a description that is both unambiguous and minimal.
+. Two pattern instances X ⊗ q and Y ⊗ r, with q 6= r are non-overlapping if
+|(X ⊗ q) + (Y ⊗ r)| = |X | + |Y |.
+From here on we will use the same letter in lower case to denote an arbitrary
+instance of a pattern, e.g. x = X ⊗ q when the exact value of q is unimportant.
+Since instances are simply patterns projected on an M × N matrix, we can reverse
+⊗ by removing all completely empty rows and columns:
+. Let X ⊗ q be an instance of X , then by deﬁnition we say that (cid:11)(X ⊗ q) = X .
+We brieﬂy introduced the instantiation I as a set of ‘instructions’ of where
+instances of each pattern should be positioned in order to obtain A. As Figure 2
+suggests, this mapping has the shape of an M × N matrix.
+
+Vouw: Geometric Pattern Mining using the MDL Principle
+
+5
+
+. Given the set of patterns H , the instantiation (matrix) I is an incomplete
+M × N matrix such that Ii,j ∈ H ∪ {·} for al l (i, j ). For al l non-empty elements
+Ii,j it holds that Ii,j ⊗ (i, j ) is a non-overlapping instance of Ii,j in A.
+
+3.2 The Problem and its Solution Space
+Patterns can be constructed by joining smaller patterns in a bottom-up fashion.
+We can deﬁne the exact way two patterns should be joined by enumerating the
+distance of their respective pivots. To limit the possibilities to patterns relevant
+to A, instances can be used as an intermediate step. As Figure 3 demonstrates,
+we can use a simple element-wise matrix addition to sum two instances and use
+(cid:11) to obtain a joined pattern. Here we start by instantiating X and Y with oﬀsets
+(1, 0) and (1, 1) respectively. We add the resulting x and y to obtain (cid:11)z , the
+union of X and Y with relative oﬀset (1, 1) − (1, 0) = (0, 1).
+
+The Sets HA and IA We deﬁne the model class H, the set of all possible
+models for all possible inputs. Without any prior knowledge, this is the search
+space of our algorithm. We will ﬁrst look at a more bounded subset HA of all
+possible models for A, and IA , the set of all possible instantiations to these
+models. We will also take H 0
+A to be the model with only singleton patterns. As
+singletons are just individual elements of A, we can simply say that H 0
+A = S .
+The instantiation matrix corresponding to H 0
+A is denoted I 0
+A . Given that each
+element of this matrix must correspond to exactly one element of A in H 0
+A , we
+see that each Ii,j = ai,j and so I 0
+A is equal to A.
+A as base cases we can now inductively deﬁne the set IA :
+Using H 0
+A and I 0
+Base case
+By induction If I is in IA then take any pair Ii,j , Ik,l ∈ I such that (i, j ) ≤ (k , l)
+in lexicographical order. Then the set I 0 is also in IA , providing I 0 equals I
+except:
+
+i,j := (cid:11)(cid:0)Ii,j ⊗ (i, j ) + Ik,l ⊗ (k , l)(cid:1)
+
+k,l := ·
+This shows we can add any two instances together, which are by deﬁnition always
+non-overlapping and thus valid in A, in any order and obtain an element of IA .
+Eventually this results in just one big instance that is equal to A. Note that when
+we take two elements Ii,j , Ik,l ∈ I we force (i, j ) ≤ (k , l), not only to eliminate
+diﬀerent routes to the same instance matrix, but also such that the pivot of the
+new pattern coincides with Ii,j . We can then leave Ik,l empty.
+
+I 0
+
+A ∈ IA
+
+I 0
+I 0
+
+x = X ⊗ (1, 0) =
+
+, y = Y ⊗ (1, 1) =
+
+, x + y =
+
+, Z = (cid:11)(x + y) =
+
+Fig. 3: Example of joining patterns X and Y to construct Z .
+
+#
+
+" · ·
+1 ·
+· 1
+
+#
+
+"· ·
+· 1· ·
+
+" · ·
+
+#
+
+1 1· 1
+
+(cid:21)
+
+(cid:20)1 1· 1
+
+6
+
+Micky Faas and Matthijs van Leeuwen
+
+Y ·
+
+V ·
+
+(cid:2)1 0(cid:3),
+
+Vz}|{
+(cid:2)0
+(cid:2)1
+
+Iz }| {
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+
+(cid:2)X Y
+(cid:3) , (cid:2)V Y
+(cid:3) , (cid:2)V Y· X
+(cid:3) , (cid:2)X V· X
+(cid:3) , (cid:2)W V
+Y X
+
+(cid:2)0 ·
+(cid:2) · 1
+· 0
+(cid:2)0 1(cid:3) , (cid:2)V ·
+1 ·
+Y ·
+
+1
+
+0
+
+Xz}|{(cid:2)0(cid:3) ,
+Yz}|{(cid:2)1(cid:3)
+(cid:3)
+| {z }
+
+(cid:2)X Y
+Y X
+I
+
+Wz}|{
+(cid:3),
+
+Iz }| {
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+
+(cid:2)0 ·
+(cid:2)W Y·
+(cid:3) , (cid:2)W ·
+(cid:2) · 1
+(cid:3) , (cid:2)X W·
+·
+1 ·
+(cid:3) , (cid:2)W ·
+· X
+·
+· 0
+Y ·
+
+(cid:2)0 1
+1 0
+(cid:2)0 1
+1 0
+
+Zz}|{
+(cid:3),
+
+(cid:2)0 1
+1 0
+
+Iz}|{
+(cid:3)
+
+(cid:2)Z ·
+· ·
+
+Fig. 4: Model space lattice for a 2 × 2 Boolean matrix. The Left hand column shows
+which pattern is added in each step, I is the current instantiation.
+
+The construction of IA also implicitly deﬁnes HA . While this may seem odd
+— deﬁning models for instantiations instead of the other way around — note that
+there is no unambiguous way to ﬁnd one instantiation for a given model. Instead
+we ﬁnd the following deﬁnition by applying the inductive construction:
+
+HA = (cid:8){(cid:11)(I ) | I ∈ I } (cid:12)(cid:12) I ∈ IA
+
+(cid:9).
+
+(1)
+So for any instantiation I ∈ IA there is a corresponding set in HA of all patterns
+that occur in I . This results in an interesting symbiosis between model and
+instantiation: increasing the complexity of one decreases that of the other. This
+construction gives a tightly connected lattice as shown in Figure 4.
+
+3.3 Encoding Models and Instances
+From all parametrized models in HA we want to select (approximate) the model
+that describes A best. We use two-part MDL to quantify how well a given model
+and instantiation matrix ﬁt A. Two-part MDL tells us to minimize the sum of
+L1 (HA ) + L2 (A|HA ), two functions that give the length of the model and the
+length of ‘the data given the model’, respectively. In this context, the model
+is the set of patterns HA and the data given the model is IA , the accidental
+information needed to reconstruct the data from HA .
+In order to compute their lengths, we need to decide on a way to encode
+H and I ﬁrst. This encoding is of great inﬂuence on the length functions and
+therefore on the ability to accurately quantify the ﬁt of a given H and I to A.
+Although the decision for this encoding is obviously prone to bias, practice shows
+that good results can be had once certain conditions are met: (1) all data is
+encoded (lossless) and (2) the encoding is as concise as possible (nothing but the
+data is encoded). Based on these conditions we give length functions for pattern
+sets and instantiations, but we do not actually need to encode them.
+The ﬁctional encoder sequentially sends each symbol in the datastream to
+the ‘decoder’ using a code word. Information theory tells us that we optimal
+
+Vouw: Geometric Pattern Mining using the MDL Principle
+
+7
+
+Table 1: Length computation for the diﬀerent classes of matrices. The total length is
+the sum of the listed terms.
+Matrix
+Pattern
+Model
+Instantiation matrix
+
+Bounds
+log(M N )
+N/A
+constant
+
+LN (cid:0)MX NX|X |
+
+# Elements Positions
+
+Lp (X ∈ H )
+Lpp (I )
+
+LN (|H |)
+log(M N )
+
+Symbols
+log(|S |)
+
+Lp (X )
+L1 (H )
+L2 (I )
+
+(cid:1)
+
+N/A
+implicit
+
+length of a code word is given by − log(p)1 , where p is the exact probability
+that the code word occurs in the output. We therefore need not compute the
+actual code words, just their probabilities. For this to work, both the encoder
+and hypothetical decoder must know either the exact probability distribution
+or agree upon an approximation beforehand. Such approximation is often called
+a prior and is used to ﬁx ‘prior knowledge’ that does not have to be encoded
+explicitly.
+
+The length function for incomplete matrices. To losslessly encode A0 we
+have to encode both H and I individually. As both instances and patterns are
+both matrices it is tempting to utilize the same length function for both. Empirical
+evidence has shown that this is not a good idea though. For example, we do
+not consider certain values such as the size of the instance matrix because it is
+constant, however, the size of each individual pattern is not. We therefore have
+to construct a diﬀerent length function for each type of matrix. These are listed
+in Table 1 When encoding I , we observe that it contains each pattern X ∈ H
+multiple times, given by the usage of X . Using prequential plug-in code [4]
+to encode I enables us to omit encoding these usages separately, which would
+create unwanted bias. Prequential plug-in code gives us the following length
+function for I . We elaborate on the derivation of this equation in Appendix A.
++ log Γ (|I | + |H |)
+Γ (|H |)
+
+log Γ (usage(Xi ) + )
+Γ ()
+
+Lpp (I | Pplugin ) = −
+
+|H |X
+
+(cid:20)
+
+(cid:21)
+
+(2)
+
+Xi∈h
+
+Each length function has four terms. First we encode the total size of the
+matrix. Since we assume M N to be known/constant, we can use this constant to
+deﬁne the uniform distribution 1
+M N , such that log M N encodes an arbitrary index
+of A. Next we encode the number of elements that are non-empty. For patterns
+this value is encoded together with the third term, namely the positions of the
+non-empty elements. We use the previously encoded MX NX in the binominal
+function to enumerate the ways we can place the (|X |) elements onto a grid of
+MX NX . This gives us both how many non-empties there are as well as where
+they are. Finally the fourth term is the length of the actual symbols that encode
+the elements of matrix. In case we encode single elements of A, we simply assume
+that each unique value in A has an equal possibility of occurring. For the instance
+
+1 We calculate lengths in bits and therefore all logarithms in this paper have base 2.
+
+8
+
+Micky Faas and Matthijs van Leeuwen
+
+matrix, which encodes symbols to patterns, the prequential code is used as
+demonstrated before. Notice that LN is the universal prior for integers[8] that
+can be used to encode integers on an arbitrary range.
+
+4 The Vouw Algorithm
+
+Pattern mining often yields vast search spaces and geometric pattern mining
+is no exception. Since by deﬁnition two-part MDL is already an approximation
+of Kolmogorov complexity, it does not make sense to try to compute an exact
+solution and we therefore use the greedy heuristic widely used in MDL-based
+approaches [11,9,6]. We devise an inductive algorithm similar to the lattice in
+Figure 4: we start with a completely underﬁt model (left of the lattice), where
+there is one instance for each matrix element. On each iteration we combine two
+patterns, resulting in one or more pairs of instances to be merged (one step right
+in the lattice). We pick the pair of patterns that improve the compression ratio
+the most and we repeat these steps until no improvements are possible.
+
+4.1 Finding candidates
+The ﬁrst step of the algorithm is to ﬁnd the ‘best’ candidate pair of patterns to
+merge (Algorithm 1). Candidates are denoted as a tuple (X, Y , δ), where X and
+Y are patterns and δ the relative oﬀset of X and Y as they occur in the data.
+All possibilities form an enormous vector space. Fortunately, we need only pairs
+of patterns and oﬀsets that actually occur in the instance matrix. This means at
+each step we can directly enumerate candidates from the instantiation matrix
+and never even look at the original data.
+The support of a candidate, written sup(X, Y , δ), tells how often it is found
+in the instance matrix. Computing support is not completely trivial, as one
+candidate occurs multiple times in ‘mirrored’ conﬁgurations, such as (X, Y , δ) and
+(Y , X, −δ), which are equivalent but can still be found separately. Furthermore,
+due to the deﬁnition of a pattern, many potential candidates cannot be considered
+by the simple fact that their elements are not adjacent.
+Peripheries. For each instance x we deﬁne its periphery : the set of instances
+which are positioned such that their union with x produces a valid pattern.
+This set is split into the anterior- ANT(X ) and posterior POST(X ) peripheries,
+containing instances that come before and after x in lexicographical order,
+respectively. This enables us to scan the instance matrix once, in lexicographical
+order. For each instance x, we only consider the instances POST(x) as candidates,
+thereby eliminating any (mirrored) duplicates.
+Self-overlap. Self-overlap happens for candidates of the form (X, X, δ). In this
+case, too many or too few copies may be counted. Take for example a straight
+line of ﬁve instances of X . There are four unique pairs of two X ’s, but only two
+can be merged at a time, in three diﬀerent ways. Therefore, when considering
+candidates of the form (X, X, δ), we also compute an overlap coeﬃcient. This
+coeﬃcient e is given by the equation e = (2NX + 1)δi + δj + NX . This equation
+
+Vouw: Geometric Pattern Mining using the MDL Principle
+
+9
+
+Algorithm 1 Find Candidates
+
+Algorithm 2 Vouw
+
+I
+
+Input:
+Output: C
+1: for all x ∈ I do
+2:
+for all y ∈ POST(x) do
+X ← (cid:11)(x), Y ← (cid:11)(y)
+3:
+4:
+δ ← dist(X, Y )
+5:
+if X = Y then
+6:
+if V (x)[e] = 1 continue
+7:
+V (y)[e] ← 1
+8:
+end if
+9:
+10:
+sup(X, Y , δ) += 1
+11:
+end for
+12: end for
+
+C ← C ∪ (X, Y , δ)
+
+Input: H, I
+1: C ← Find Candidates
+
+2: (X, Y , δ) ∈ C : ∀c∈C ∆L((X, Y , δ)) ≤ ∆L(c)
+3: ∆Lbest = ∆L((X, Y , δ))
+
+H ← H ∪ {Z }
+
+4: if ∆Lbest > 0 then
+Z ← (cid:11)(X ⊗ (0, 0) + (Y ⊗ δ))
+5:
+6:
+for all xi ∈ I | (cid:11)(xi ) = X do
+7:
+8:
+for all y ∈ POST(xi ) | (cid:11)(y) = Y do
+9:
+xi ← Z , y ← ·
+10:
+end for
+11:
+end for
+12: end if
+13: repeat until ∆Lbest < 0
+
+essentially transforms δ into a one-dimensional coordinate space of all possible
+ways that X could be arranged after and adjacent to itself. For each instance
+x1 a vector of bits V (x) is used to remember if we have already encountered a
+combination x1 , x2 with coeﬃcient e, such that we do not count a combination
+x2 , x3 with an equal e. This eliminates the problem of incorrect counting due to
+self-overlap.
+
+∆L(A0 , c) = (cid:16)
+
+4.2 Gain computation
+After candidate search we have a set of candidates C and their respective supports.
+The next step is to select the candidate that gives the best gain : the improvement
+in compression by merging the pattens in the candidate. For each candidate
+c = (X, Y , δ) the gain ∆L(A0 , c) is comprised of two parts: (1) the negative gain
+of adding the union pattern Z to the model H , resulting in H 0 and (2) the gain
+of replacing all instances x, y with relative oﬀset δ by Z in I , resulting in I 0 . We
+L1 (H 0 ) + L2 (I 0 )(cid:17) − (cid:16)
+L1 (H ) + L2 (I )(cid:17)
+use the length functions L1 , L2 to derive an equation for gain:
+= L0 (|H |) − L0 (|H | + 1) − Lp (Z ) + (cid:16)
+As we can see, the terms with L1 are simpliﬁed to −Lp (Z ) and the model’s
+length because L1 is simply a summation of individual pattern lengths. The
+equation of L2 requires the recomputation of the entire instance matrix’ length,
+which is expensive considering we need to perform it for every candidate, every
+iteration. However, we can rework the function Lpp in Equation (2) by observing
+that we can isolate the logarithms and generalize them into:
+logG (a, b) = log Γ (a + b)
+Γ (b) = log Γ (a + b) − log Γ (b)
+
+L2 (I 0 ) − L2 (I )(cid:17)
+
+(4)
+
+(3)
+
+10
+
+Micky Faas and Matthijs van Leeuwen
+
+Which can be used to rework the second part of Equation (3) in such way that
+the gain equation can be computed in constant time complexity.
+
+L2 (I 0 ) − L2 (I ) = logG (U (X ), 1) + logG (U (Y ), 1)
+− logG (U (X ) − U (Z ), 1) − logG (U (Y ) − U (Z ), 1)
+− logG (U (Z ), 1) + logG (|I |, |H |) − logG (|I 0 |, |H 0 |)
+Notice that in some cases the usages of X and Y equal that of Z , which means
+additional gain is created by removing X and Y from the model.
+
+(5)
+
+4.3 Mining a Set of Patterns
+In the second part of the algorithm we select the candidate (X, Y , δ) with the
+best gain and merge X and Y to form Z , as explained in Section 3.2. We linearly
+traverse I to replace all instances x and y with relative oﬀset δ by instances of Z .
+(X, Y , δ) was constructed by looking in the posterior periphery of all x to ﬁnd
+Y and δ , which means that Y always comes after X in lexicographical order.
+The pivot of a pattern is the ﬁrst element in lexicographical order, therefore
+pivot(Z ) = pivot(X ). This means that we can replace all matching x with an
+instance of Z and all matching y with ·. This concludes the baseline version of
+the algorithm, which is listed in Algorithm 2.
+
+4.4 Improvements
+Local search. Given a matrix containing some pattern X , the algorithm can
+arrive to X in diﬀerent ways. Exploring these combinatorics can tell us how
+eﬃciently the algorithm arrives at X . By deﬁnition we know that the fundamental
+operation is to combine exactly two patterns on each step. Given this, the number
+of steps in which X can be constructed lies between log2 |X | and |X | − 1.
+To improve eﬃciency on large patterns without sacriﬁcing the objectivity of the
+original heuristics, we add an optional local search. It is a result of the observation
+that the algorithm generates a large pattern X by adding small elements to a
+incrementally growing pattern, resulting in a behaviour that approaches |X | − 1
+steps. Instead of taking all |X | − 1 steps to arrive at X , we can try to predict
+which elements will be added to X and merge them directly. Given that we
+selected candidate (X, Y , δ) and merged X and Y into Z , now for all m resulting
+instances zi ∈ z0 , . . . , zm−1 we try to ﬁnd pattern W and relative oﬀset δ such
+that holds:
+∀i∈0...m∃w ∈ ANT(zi ) ∪ POST(zi ) · (cid:11)(w) = W ∧ dist(zi , w) = δ
+This yields zero or more candidates (Z, W, δ), which are then treated as any
+candidate: candidates with the highest gain are merged ﬁrst until none exists
+with positive gain. This essentially means that we run the baseline algorithm only
+on the peripheries of all zi , with the condition that the support of the candidates
+
+(6)
+
+Vouw: Geometric Pattern Mining using the MDL Principle
+
+11
+
+is equal to that of Z . Therefore we only expand Z during local search and we do
+not create new patterns.
+Reusing candidates. We can improve performance by reusing the candidate set
+and slightly changing the search heuristic of the algorithm. The Best-N heuristic
+selects multiple candidates on each iteration as opposed to the baseline Best-1
+heuristic that only selects a single candidate with the highest gain. Best-N selects
+candidates in descending order of gain until no candidates with positive gain
+are left. Furthermore we only consider candidates that are all disjoint, because
+when we merge candidate (X, Y , δ), remaining candidates with X and/or Y have
+unknown support and therefore unknown gain.
+
+5 Experiments and Results
+
+To asses the practical performance of the Vouw algorithm, we will primarily
+use the synthetic dataset generator Ril that was developed speciﬁcally for this
+purpose. Ril utilizes random walks to populate a matrix with patterns of a given
+size and prevalence, up to a speciﬁed density, while ﬁlling the remainder of the
+matrix with noise. Both the pattern elements and the noise are picked from the
+same uniform random distribution on the interval [0; 255]. The signal-to-noise
+ratio (SNR) of the data is deﬁned as the number of pattern elements over the
+matrix size M N . The objective of the resulting experiment is that we try to ﬁnd
+all of the signal (the patterns) and none of the noise. Figure 6 gives an overview
+of what the generated data looks like, how it is mined and evaluated.
+Implementation. The implementation2 that was developed alongside this paper
+consists of the Vouw algorithm written in vanilla C/C++, a GUI and the synthetic
+benchmark Ril. All experiments were performed on one core of an Intel Xeon-
+E2630v3 machine with 512GB RAM.
+Evaluation. Completely random data (noise) is unlikely to be compressed. The
+SNR tells us how much noise is present in the data and thus conveniently gives us
+an upper bound of how much compression could be achieved. We use the ground
+truth SNR versus the resulting compression ratio as a benchmark to tell us how
+close we are in ﬁnding all the structure in the ground truth.
+Because the compression ratio alone does not tell us the quality of the results,
+we also compare the ground truth matrix with the compressed result. In order to
+do this, we use the notion that elements that have been encoded with singleton
+patterns, could evidently not be compressed. These elements must therefore
+be noise. We reconstruct the original matrix from the compressed result, while
+we omit any singleton patterns. This essentially gives us a matrix of ‘positives’
+(signal) and ‘negatives’ (noise). By comparing each element with the corresponding
+element in the ground truth matrix, the true positives can be calculated. This
+subsequently gives us traditional ﬁgures for precision and recal l.
+Figure 5a plots input SNR versus compression as well as precision/recall
+for diﬀerent matrix sizes. We expect the resulting compression ratio to be close
+
+2 https://github.com/mickymuis/libvouw
+
+12
+
+Micky Faas and Matthijs van Leeuwen
+
+to 1 − snr. In Figure 5b shows that patterns with a low prevalence have a
+lower probability of being ‘detected’ by the algorithm as they are more likely to
+by accidental/noise. We see that increasing the matrix size also increases this
+threshold. Finally we look at the inﬂuence of the two improvements upon the
+baseline algorithm as described in Section 4.4. Table 2 shows both precision/recall
+ﬁgures as well as wall clock time. In terms of quality, local search improves the
+results quite substantial in some cases (other experiments have shown that it
+can dramatically lower the detection threshold as well) while Best-N notably
+lowers precision. Both improve speed by an order of magnitude, although the
+improvements given by Best-N are clearly superior.
+
+6 Conclusion
+
+We have introduced geometric pattern mining, the problem of ﬁnding recurring
+structures in matrices or raster-based data, that we had not previously seen
+in literature. Compared to most pattern mining problems, it adds a layer of
+encoding geometric relations of data elements. Furthermore the problem can be
+split into three classes, of which the ﬁrst class has been the focus of this paper.
+We have also presented Vouw, an algorithm based on the MDL principle. The
+baseline algorithm is capable of generating high-quality results from synthetic
+datasets produced with our own dataset generated Ril. We have shown that
+the compression ratio achieved by the algorithm is on-par with what we would
+expect given the density (SNR) of the input data. By default, the algorithm
+has a bottleneck in the candidate search, which can be alleviated by the two
+demonstrated optimizations of the heuristics. It should also be mentioned that
+more optimizations on part of the implementation are possible (most notably
+parallelization), but these are outside the scope of this paper.
+In future work we would like to generalize the formal deﬁnition and notation
+to n-dimensional data. Moreover, the framework can be expanded to cover all
+three problem classes. For the algorithm, we believe that it can beneﬁt from more
+reﬁnement on part of the encoding scheme in an eﬀort to lower the threshold
+of pattern detection in larger matrices. Lastly we believe that expanding Vouw
+into similarity measure and clustering such demonstrated by [2], holds a very
+interesting premise.
+
+References
+
+1. Charu C. Aggarwal and Jiawei Han. Frequent Pattern Mining. Springer, 2014.
+2. Bilson JL Campana and Eamonn J Keogh. A compression-based distance measure
+for texture. Statistical Analysis and Data Mining: The ASA Data Science Journal,
+3(6):381–398, 2010.
+3. Aristides Gionis, Heikki Mannila, and Jouni K. Sepp¨anen. Geometric and combina-
+torial tiles in 0-1 data. In Proceedings of PKDD 2004, pages 173–184, 2004.
+4. Peter D Gr¨unwald. The minimum description length principle. MIT press, 2007.
+5. Ming Li and Paul Vit´anyi. An introduction to Kolmogorov complexity and its
+applications, volume 3. Springer, 2008.
+
+Vouw: Geometric Pattern Mining using the MDL Principle
+
+13
+
+(a) The inﬂuence of SNR in the ground
+truth
+
+(b) Prevalence versus recall
+
+Fig. 5
+
+(a) Generated matrix (b) Ground truth pat-
+terns
+
+(c) Found patterns
+
+(d) Diﬀerence
+
+Fig. 6: Example of how synthetic input is generated and evaluated.
+
+Table 2: Inﬂuence of optimizations with respect to the baseline algorithm
+Precision/Recall
+Average time
+Size SNR None
+Local Best-N Both
+None
+Local Best-N Both
+256 .05
+.98/.98 .99/.99 .93/.98 .95/.99
+29s
+1s
+2s
+1s
+.3
+.99/.8
+.99/.88 .96/.82 .99/.89
+2m 32s
+9s
+5s
+5s
+512 .05
+.98/.97 .99/.99 .87/.97 .93/.98
+5m 26s
+8s
+20s
+6s
+.3
+.97/.93 .99/.99 .94/.91 .97/.90 26m 52s 2m 32s
+24s
+65s
+1024 .05
+.97/.98 .99/.99 .84/.98 .92/.96 21m 34s
+44s
+37s
+34s
+.3
+.98/.98 .99/.99 .93/.96 .98/.97
+116m 7m 31s 1m 49s 3m 31s
+
+ 0 0.2 0.4 0.6 0.8 1 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7CompressionSignal-to-noise Ratio25651210242048 0 0.2 0.4 0.6 0.8 1 0 10 20 30 40 50RecallPrevalence per Pattern128256512102414
+
+Micky Faas and Matthijs van Leeuwen
+
+6. Hugo M Proen¸ca and Matthijs van Leeuwen. Interpretable multiclass classiﬁcation
+by mdl-based rule lists. arXiv preprint arXiv:1905.00328, 2019.
+7. Jorma Rissanen. Modeling by shortest data description. Automatica, 14(5):465–471,
+1978.
+8. Jorma Rissanen. A universal prior for integers and estimation by minimum descrip-
+tion length. The Annals of statistics, pages 416–431, 1983.
+9. Koen Smets and Jilles Vreeken. Slim: Directly mining descriptive patterns. In
+Proceedings of the 2012 SIAM International Conference on Data Mining, pages
+236–247. SIAM, 2012.
+10. Nikolaj Tatti and Jilles Vreeken. Discovering descriptive tile trees - by mining
+optimal geometric subtiles. In Proceedings of ECML PKDD 2012, pages 9–24, 2012.
+11. Jilles Vreeken, Matthijs van Leeuwen, and Arno Siebes. Krimp: mining itemsets
+that compress. Data Mining and Know ledge Discovery, 23(1):169–214, 2011.
+
+A Appendix
+
+A.1 Prequential Plugin-Code
+
+To encode the instance matrix we use the prequential plug-in code [4]. The
+prequential plug-in code is deﬁned for sequences of one item at a time and updates
+the probability of each item as it is encoded, such that the probability need not
+be known in advance. It has the favorable property of being asymptotically equal
+to the optimal code for large sequences. Say we want to encode all elements
+Ii ∈ I , we deﬁne:
+
+Pplugin (yi = Ii | y i−1 ) =
+
+P
+
+|{y ∈ y i−1 | y = Ii}| + 
+X ∈H |{y ∈ y i−1 | y = X }| + 
+
+(7)
+
+Here yi is the i-th element to be encoded and y i−1 is the sequence of elements
+encoded so far. We initialize the base case (no element has been sent yet) with a
+pseudocount , which gives Pplugin (y1 = I | y0 ) = 
+|H | . We pick  = 0.5 as it is
+used generally with good results.
+Let us adapt this principle to the problem of encoding patterns. The ﬁrst
+step here is to determine the probability that each unique element (instance of a
+pattern) in I occurs.
+. Given a set of instances I , we deﬁne usage(X ) = |{Ii ∈ I | Ii = X }|.
+From this deﬁnition we see that the usage of a pattern is a sum of how often
+it occurs as an instance. We can use this function to simplify things a little by
+realizing that we actually know the precise number of instances per pattern on
+the side of the decoder, but not as the decoder. This information can be used to
+slightly rephrase Equation 2 to be able to encode items in arbitrary order. This
+
+Vouw: Geometric Pattern Mining using the MDL Principle
+
+15
+
+produces the length function of the instance matrix I as follows3 :
+
+Lpp (I | Pplugin ) =
+
+=
+
+= − log
+
+(cid:20)
+
+|H |X
+
+Xi∈h
+
+= −
+
+|I |X
+|H |X
+
+i=1
+
+Xi∈h
+
+P
+
+− log
+
+− log
+
+|{y ∈ y i−1 | y = Ii }| + 
+X ∈H |{y ∈ y i−1 | y = X }| + 
+Pi−1
+
+usage(Xi )−1Y
+j + 
+QXi∈H Qusage(Xi )
+k=1 U (Xk ) + j + |H |
+j=0
+j=0
+j + 
+j=0 j + |H |
+
+Q|I |−1
+
+(cid:21)
+
+log Γ (usage(Xi ) + )
+Γ ()
+
++ log Γ (|I | + |H |)
+Γ (|H |)
+
+(8)
+
+3 Here we use the fact that we can interchange sums of logarithms with logarithms
+of products and that those terms can be moved around freely. Moreover we convert
+the real-valued product sequences to the Gamma function Γ , which is the factorial
+function extended to real and complex numbers such that Γ (n) = (n − 1)!.
+
+

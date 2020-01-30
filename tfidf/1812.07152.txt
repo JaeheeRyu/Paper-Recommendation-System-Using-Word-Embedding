@@ -1,0 +1,1538 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+C
+
+D
+
+.
+
+s
+
+c
+
+[
+
+6
+v
+2
+5
+1
+7
+0
+
+.
+
+2
+1
+8
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+MatRox: Modular approach for improving data
+locality in Hierarchical (Mat)rix App(Rox)imation
+
+Bangtian Liu∗
+
+CS Department
+
+University of Toronto
+Toronto, Canada
+
+bangtian@cs.toronto.edu
+
+Kazem Cheshmi∗
+
+CS Department
+
+University of Toronto
+Toronto, Canada
+
+kazem@cs.toronto.edu
+
+Saeed Soori
+
+CS Department
+
+University of Toronto
+Toronto, Canada
+
+saeed@cs.toronto.edu
+
+Michelle Mills Strout
+
+CS Department
+
+University of Arizona
+Tucson, USA
+
+mstrout@cs.arizona.edu
+
+Maryam Mehri Dehnavi
+
+CS Department
+
+University of Toronto
+Toronto, Canada
+
+mmehride@cs.toronto.edu
+
+Abstract
+
+Hierarchical matrix approximations have gained significant
+traction in the machine learning and scientific community as
+they exploit available low-rank structures in kernel methods
+to compress the kernel matrix. The resulting compressed ma-
+trix, HMatrix, is used to reduce the computational complexity
+of operations such as HMatrix-matrix multiplications with
+tuneable accuracy in an evaluation phase. Existing imple-
+mentations of HMatrix evaluations do not preserve locality
+and often lead to unbalanced parallel execution with high
+synchronization. Also, current solutions require the com-
+pression phase to re-execute if the kernel method or the
+required accuracy change. In this work, we describe MatRox,
+a framework that uses novel structure analysis strategies,
+blocking and coarsen, with code specialization and a storage
+format to improve locality and create load-balanced parallel
+tasks for HMatrix-matrix multiplications. Modularization of
+the matrix compression phase enables the reuse of compu-
+tations when there are changes to the input accuracy and
+the kernel function. The MatRox-generated code for matrix-
+matrix multiplication is 2.98×, 1.60×, and 5.98× faster than
+library implementations available in GOFMM, SMASH, and
+STRUMPACK respectively. Additionally, the ability to reuse
+portions of the compression computation for changes to the
+accuracy leads to up to 2.64× improvement with MatRox
+over five changes to accuracy using GOFMM.
+
+1 Introduction
+
+A large class of applications in machine learning and scien-
+tific computing involve computations on a dense symmetric
+positive definite (SPD) matrix that is obtained by comput-
+ing a kernel function K on pairs of points from a set of
+points {x 1 , . . . , x N } . The values of the N × N kernel ma-
+trix K are given by K (i , j ) = K (x i , x j ) with a typically large
+N . For example, in Gaussian ridge regression, the kernel
+
+∗ Equal contributions
+
+exp (− | |x i −x j | | 2
+
+2 /2h 2 ), h is bandwidth, is applied to a machine
+learning dataset, i.e. points. The resulting kernel matrix is
+used in costly matrix-matrix multiplications, with complex-
+ity O (N 3 ), in a direct solver to minimize a loss function.
+The computational complexity of kernel matrix computa-
+it, it is compressed to (cid:101)K using the kernel function, points, and
+tions is reduced significantly, leading to orders of magnitude
+performance [5], if instead of assembling K and operating on
+an admissibility condition [6, 24]. An admissibility condition
+is the value of a distance measure between points above with
+which the kernel value for that point pair is approximated.
+Many of kernel matrices are structured (or low-rank, or
+data-sparse). Hierarchical matrix computations, leverage the
+implicitly obtain (cid:101)K . First a cluster tree (CTree) is created from
+data-sparse structure induced by the point set distribution
+and admissibility condition during a compression phase to
+a partitioning of points. Compression then uses an HTree,
+a CTree which includes interactions from the admissibility
+condition, to hierarchically approximate low-rank blocks
+to as submatrices and form the compressed matrix (cid:101)K also
+of the kernel matrix. The low-rank approximated blocks as
+well as the blocks that are not approximated are referred
+known as the HMatrix. The submatrices are then operated
+on instead of K in an evaluation phase.
+Previous work attempts to optimize hierarchical matrix
+computations, specifically the evaluation phase, on paral-
+lel multicore architectures [16, 28, 56]. H 2 structures are
+amongst the most commonly used hierarchical algorithms
+and GOFMM [56], STRUMPACK [16], and SMASH [8] are
+well-known libraries that implement H 2 structures. How-
+ever, these implementations do not preserve locality and
+often lead to a load-imbalanced execution with high syn-
+chronization overheads, which limits the performance and
+scalability of hierarchical matrix evaluations on parallel ar-
+chitectures.
+The order and dependency of computations during eval-
+uation is determined by the HTree. GOFMM [56] uses the
+
+ 
+ 
+ 
+ 
+ 
+ 
+Conference’20, February 2020, USA
+
+Bangtian Liu, Kazem Cheshmi, Saeed Soori, Michelle Mills Strout, and Maryam Mehri Dehnavi
+
+HTree as the input for dynamic task scheduling, however,
+their scheduling trades locality for load balance. SMASH [8]
+traverses the CTree level-by-level, thus, synchronization
+overheads increase with the length of the critical path. Also
+schedulers that work with the CTree do not realize the addi-
+tional dependencies introduced by the admissibility condi-
+tion, which leads to additional synchronization costs. Imple-
+mentations such as SMASH and STRUMPACK [16] do not op-
+timize for load balance. Finally, some libraries are optimized
+for a specific H 2 structure, for example STRUMPACK is
+specialized for Hierarchical Semi-separable (HSS) [10] struc-
+tures, or only support low-dimensional points, e.g. SMASH.
+In this paper, we present structure analysis algorithms
+based on a modularized compression to generate code that
+improves data locality and maintains a good load balance for
+HMatrix evaluations. Our work focuses on HMatrix-matrix
+multiplications for the evaluation phase; we use the words
+HMatrix evaluation and HMatrix-matrix multiplication in-
+terchangeably throughout the paper. Our structure analysis
+uses a novel blocking algorithm and a coarsen algorithm
+based on load-balanced level coarsening (LBC) [11] to gen-
+erate specialized code for evaluation and to store the subma-
+trices in the order that they are visited during evaluation.
+The proposed algorithms are implemented in a framework
+called MatRox, which uses structure information from the
+points, the kernel function, as well as the admissibility and
+accuracy requirement. The MatRox inspector compresses K ,
+analyzes structure, and generates optimized code. The ex-
+ecutor computes the HMatrix-matrix multiplication. MatRox
+supports H 2 using a binary cluster tree and takes as input
+low- and high-dimensional points.
+Additionally, MatRox enables partial reuse of computa-
+tions when the kernel function and/or input accuracy are
+modified. In scientific and machine learning simulations, of-
+ten the kernel matrix has to be re-compressed because either
+the overall accuracy of the HMatrix-matrix multiplication is
+not sufficient or has to be reduced for faster evaluation, or
+the kernel function changes. While available libraries have
+to rerun the costly compression, MatrRox reuses parts of the
+previous inspection, e.g. compression information, and also
+reuses the previously generated evaluation code.
+The main contributions of this work include:
+• Two novel structure analysis strategies, based on the
+modularization of compression, called blocking and
+coarsen, that enable the generation of specialized code
+for HMatrix-matrix multiplications. The specialized
+code maintains an efficient trade-off between locality,
+load balance, and parallelism.
+• The Compressed Data-Sparse (CDS) storage format
+that follows the data access pattern during HMatrix
+evaluation to improve locality.
+• Implementation of the proposed strategies in a frame-
+work called MatRox. The MatRox-generated code is on
+
+average 2.98×, 1.60×, and 5.98× faster than GOFMM,
+SMASH, and STRUMPACK respectively.
+• An approach that enables the reuse of computations
+in compression for when the kernel function and/or
+accuracy change. MatRox with reuse is 2.21× faster
+than GOFMM over 5 changes to the input accuracy.
+
+2 Approach Overview
+
+In this section, we review the typical approach to hierarchical
+approximation and then provide an overview of the approach
+presented in this paper that is implemented in MatRox.
+
+2.1 Background
+Current library implementations of hierarchical matrix ap-
+proximations typically have an interface as follows. The user
+provides to the library, the pointset shown in Figure 1a, an
+admissibility parameter τ , a kernel function, and a desired
+
+block approximation accuracy (bacc). The compression phase
+
+approximates the kernel matrix, implicitly created using the
+points and the kernel function. The admissibility parame-
+ter τ dictates how pairs of points are determined to be far
+or close, and the block approximation accuracy bacc indi-
+cates how closely submatrices need to be approximated. A
+representation of the compressed matrix is the input to the
+evaluation code that multiplies the HMatrix with another
+matrix or vector. Compression is typically expensive, how-
+ever, the objective is to compress the kernel matrix once
+and reuse over many evaluations, e.g. multiple matrix-vector
+multiplications or a matrix-matrix multiplication.
+Compression. To approximate K , points are first clustered
+into hierarchically-organized sub-domains. Figure 1a shows
+a clustering that creates 10 sub-domains. Figure 1b shows a
+cluster tree for this clustering with each of the tree nodes
+representing a sub-domain. If two sub-domains i and j are
+Far from each other, their interaction, (i ,j ), is approximated.
+Interactions between sub-domains Near to each other are
+not approximated. The admissibility condition τ d is t (α , β ) >
+(d iam(α ) + d iam(β )) in which d is t (α , β ) is the geometrical
+distance between the two sub-domains α and β , d iam(α ) is
+the diameter of α , and τ is the input admissibility parameter,
+determines near-far interactions. The added dashed edges in
+blue and red to the cluster tree in Figure 1b represent these
+interactions and together form the HTree. The red edges are
+near interactions and blue edges show the far interactions.
+Figure 1c shows an example approximated K matrix with
+colored sub-blocks. The blue-colored blocks are matrix blocks
+that are approximated during the compression phase1 . The
+degree to which each block is approximated is determined by
+the submatrix-rank (srank). The srank is adaptively tuned to
+
+meet the user-requested block approximation accuracy (bacc).
+
+The red blocks are not approximated.
+
+1We use interpolative decomposition [38] for approximations.
+
+MatRox: Modular approach for improving data locality in Hierarchical (Mat)rix App(Rox)imation
+
+Conference’20, February 2020, USA
+
+(a) Example pointset that has been hierarchi-
+cally partitioned. For example partitions 3 and
+4 are both included in partition 1.
+
+(b) Cluster tree and Htree. Each node represents a par-
+tition. Edges between nodes indicate an interaction.
+
+(c) Conceptual diagram of approxi-
+mation matrix. Red submatrices are
+not approximated, blue ones are.
+
+1 // Loops with reduction
+2 #pragma omp parallel for
+3 for (every near interaction (i,j)){
+4 #pragma omp atomic
+Yi += Di , j * W j ;
+5
+6 }
+7
+8
+9 // Loops with carried dependencies
+10 for(l=depth; l>=1;l--)
+11 #pragma omp parallel for
+for(every node i ∈ level-l)
+12
+13
+if(i is leaf node)
+14
+Ti = V T
+* Wi
+15
+else
+Ti += V T
+16
+17
+Ti += V T
+
+* Tl c
+* Tr c
+
+i
+
+i
+i
+
+Yi += Di , j * W j ;
+
+i = d [0]; j = d [1];
+
+1 // Blocked loop
+2 #pragma omp parallel for
+3 for(every block b )
+for(every d ∈ nblockset[b])
+4
+5
+6
+7
+8 // Loop over the CTree
+9 for(every coarsen level c l )
+10 #pragma omp parallel for
+11
+for(every sub-tree s t )
+for(every i ∈ coarsenset[cl][st])
+12
+13
+if (i is a leaf node)
+14
+Ti = V T
+* Wi
+15
+else
+16
+Ti += V T
+17
+Ti += V T
+
+* Tl c
+* Tr c
+
+i
+
+i
+i
+
+(f ) Structure sets
+
+(g) The D generators stored in CDS
+
+(d) Library code for evaluation for D and V matri-
+ces
+
+(e) MatRox code for evaluation for D and V matrices.
+
+(h) The V generators stored in CDS
+
+Figure 1. Given a pointset in Figure 1a, a kernel function, and other parameters, it is possible to approximate the K matrix
+that results from applying the kernel function to points. Figure 1b illustrates the hierarchical organization of subpartitions
+of the pointset and the submatrices that will be generated to approximate interactions between points in various partitions.
+Figure 1d shows a typical library implementation of HMatrix evaluation using the CTree. Figure 1e is the implementation of
+HMatrix evaluation in MatRox. MatRox groups the D submatrices into blocks and the V matrices into coarsen level sets.
+Evaluation. The approximated matrix (cid:101)K is never explicitly
+assembled, instead the HTree is used during evaluation to
+compute the desired HMatrix-matrix multiplication. Figure
+1d shows a typical library implementation of the evaluation
+phase. Existing library implementations of evaluation are
+classified into (i) Loops with reduction that operate on the
+near and far interacting nodes in the HTree; (ii) Loops with
+sparse dependencies between parents and children that do a
+bottom-up or top-down, level-by-level traversal of the cluster
+tree to generate other portions of the approximated matrix.
+Lines 3-6 in Figure 1d show the reduction loop computing
+near interactions by operating on the D submatrices; oper-
+ation on the B submatrices is of the same loop type. Lines
+
+10-17 in Figure 1d show the loop over the CTree that operates
+on the V matrices with bottom-up traversal; the U subma-
+trices are operated on with the same loop type but using
+top-down traversal. Some library implementations perform
+the level-by-level traversal with a synchronization between
+levels and others place tasks into a dynamic task graph to
+enable run-time load balancing.
+
+2.2 Approach implemented in MatRox
+MatRox is composed of an inspector and an executor. The
+inspector is a modularized implementation of compression. It
+analyzes structure to generate optimized evaluation code and
+to store the submatrices associated with nodes in the cluster
+
+347891056210546201378910B2,1B1,2τ=1.0D3,3D3,4D4,3D4,4D7,7D8,8D9,9D9,10D10,9D10,10B5,6B6,5B7,8B8,7U1,V1U2,V2U4,V4U5,V5U6,V6U3,V3U7,V7U8,V8U9,V9U10,V101blockset={{b0z}|{(3,3),(3,4),(4,3),(4,4),(7,7),(8,8)};{b1z}|{(9,9),(9,10),(10,9),(10,10)}}coarsenset={{cl0z}|{{3,4,1}|{z}st0,{7,8,5,9,10,6}|{z}st1};{cl1z}|{{2}}}Conference’20, February 2020, USA
+
+Bangtian Liu, Kazem Cheshmi, Saeed Soori, Michelle Mills Strout, and Maryam Mehri Dehnavi
+
+tree into an optimized data structure called Compressed Data-
+Sparse (CDS). Together the optimization of the code and
+reorganization of the data lead to faster evaluation compared
+to libraries. Additionally, when the inputs to the inspector do
+not change, the inspection can be conducted at compile-time.
+The approach presented here improves data locality and
+reduces synchronization costs by grouping computations
+and associated data when the computations share data and
+are dependent on each other. For example, the computations
+involving the submatrices (9,9), (9,10), (10,9), and (10,10) are
+grouped together using blocking. The blocking algorithm an-
+alyzes the HTree to create a blockset shown in Figure 1f that
+creates an order for computation. This enables the blocked
+loop in Figure 1e to be fully parallel, because the blocks are
+selected to eliminate reduction dependencies between block
+computations. Also, these submatrices are stored next to
+each other in the CDS format to improve locality.
+The loop over the CTree is reorganized into coarsen levels
+and load-balanced sub-trees within those coarsen levels. The
+coarsening algorithm analyzes the cluster tree to create a
+coarsenset shown in Figure 1f that contains the coarsen lev-
+els and sub-trees. In Figure1b, there are two coarsen levels
+(cl 0 ,cl 1 ). The green nodes are in coarsen level 0 and node 2
+is in coarsen level 1 by itself (node 0 is not involved in any
+computation). The coarsened loop in Figure 1e has a sequen-
+tial loop over the coarsen levels and then a parallel loop over
+all of the sub-trees within that coarsenset. The sub-trees are
+load-balanced based on the srank. Sub-matrices associated
+with all of the nodes in a coarsenset are organized together
+in the CDS format as shown in Figure 1g and 1h.
+An example of how MaRox is used is shown in Figure 2
+in which the user provides the points, the kernel function,
+the admissibility condition, and block accuracy to the inspec-
+tor. The output of the inspector is used by the executor to
+complete evaluation. The CDS stored submatrices, shown
+with H in Figure 2, as well as the generated HMatrix-matrix
+multiplication code are used by the executor.
+In addition to the block and coarsen optimization, MatRox
+also specializes the evaluation code for a given matrix block.
+For example, since the parallelism in the HTree is less when
+we get closer the root, MatRox peels the last iteration of the
+nested computation to exploit block-level parallelism, e.g.
+with parallel BLAS. With all these changes, MatRox obtains
+9.06× speedup compared to GEMM and 2.11× compared to
+GOFMM for covtype dataset on Haswell.
+
+3 Modular HMatrix Approximation
+
+MatRox consists of an inspector that generates specialized
+code and an efficient storage of the compressed data to im-
+prove locality and load balance in HMatrix-matrix multiplica-
+tions. Figure 3 shows the overview of MatRox. The inspector
+is separated in to three phases of modular compression, struc-
+ture analysis, and code generation. The user-provided inputs
+
+1 /// MatRox Inspector Code
+2 #include <matrox.h>
+3
+...
+4
+// Inputs declaration
+5
+Points points("path/to/load/points");
+6
+Float(64) tau = 0.65;
+7
+Float(64) bacc = 1e-5;
+8
+Ker kfunc = GAUSSIAN;
+9
+// Outputs declaration
+10
+HMatrix H("path/to/store/hmat.cds");
+11
+Op HMatMul("path/to/store/matmul.h");
+12
+inspector(points, tau, kfun, bacc, &H, &HMatMul);
+13 /// MatRox Executor Code
+14 #include "path/to/matmul.h"
+15
+...
+16
+HMatrix H("path/to/load/hmat.cds");
+17
+Dense W("path/to/load/matrix/W");
+18
+Dense Y(Float(64), H.dim * W.cols);
+19
+Y = matmul(H, W);
+
+Figure 2. How a user provides parameters and calls the Ma-
+tRox inspector for compression and executor for evaluation.
+
+are separately passed to their respective modules in compres-
+sion. Compression generates the submatrices, sranks, as well
+as the CTree and HTree to be used by different components
+of structure analysis. Information from structure analysis,
+i.e. the structure sets, are used along with an internal rep-
+resentation of the HMatrix-matrix multiplication for code
+lowering and specialization in the code generation stage. Fi-
+nally the generated code and the submatrices stored in CDS
+are used by the executor for an efficient HMatrix-matrix
+multiplication. This section describes the MatRox internals.
+
+3.1 Modularizing compression
+MatRox provides a modularized design for the compression
+phase by defining four well-separated modules, i.e. interac-
+tion computation, tree construction, sampling, and low-rank
+approximation. Each module has well-defined inputs and
+creates and stores one or more of the outputs HTree, CTree,
+the sranks, and the submatrices, which we call the structure
+information. By modularizing compression we divide it into
+smaller pieces, each of which will take only the required user-
+provided inputs and/or inputs from another piece. With the
+tree construction, interaction computation, low-rank approx-
+imation, and sampling modules, the structure information
+are separately stored and are passed to the structure anal-
+ysis phase or to other parts in compression. The following
+discusses each module in the compression phase.
+Tree construction and interaction computation. Poin-
+ts are inputs to the tree construction module and the output is
+the CTree. The CTree is constructed recursively using a par-
+titioning algorithm with the tree root as the entire pointset.
+The partitioning terminates when the number of points in
+
+MatRox: Modular approach for improving data locality in Hierarchical (Mat)rix App(Rox)imation
+
+Conference’20, February 2020, USA
+
+Figure 3. MatRox takes admissibility, points, kernel function, and accuracy as inputs and generates a storage format and an
+optimized code for HMatrix-matrix multiplication. It first compresses the matrix in the compression phase and then inspects
+the output of the compression phase in structure analysis. MatRox then uses the result of structure analysis, i.e. structure sets,
+to generate an optimized code and a storage format CDS. The MatRox executor runs the generated code with CDS.
+
+the leaf node is less than a pre-defined constant m, i.e. leaf
+size. MatRox uses two partitioning algorithms, kd-tree [42]
+and two-means [45], which are respectively used for low
+(d ≤ 3) and high (d > 3) dimensional data. The interaction
+computation module takes as input the CTree and the ad-
+missibility parameter to find near and far sub-domains using
+the admissibility condition. It then adds the interactions to
+the CTree to create and store the HTree.
+Low-rank approximation and sampling. The inputs
+to the low-rank approximation module are the HTree, kernel
+function, block-accuracy, and the sampling information and
+the outputs are the sranks and the submatrices. Interpola-
+tive Decomposition (ID) [38] is used to create the U , V , and
+B submatrices with low-rank approximation and the full-
+rank D submatrices, i.e. the near blocks, are stored without
+approximation. Each low-rank block in that is compressed
+with a rank that is adaptively tuned to meet the input block-
+accuracy specified by the user. The rank with which a block
+is approximated with is stored in the sranks vector. ID can
+be expensive for larger block sizes [30], thus, sampling tech-
+niques are used to reduce the overhead of ID [35].
+Sampling is a separate module in MatRox compression
+that takes only the points and the CTree as inputs and gen-
+erates the sampling information for each sub-domain to be
+used by the low-rank approximation module. MatRox uses
+nearest-neighbour sampling [31] to reduce the overhead of
+low-rank approximation. The sampling module first takes
+the unclustered points to generate the k-nearest-neighbour
+list for each point [13]. k is the number of sampled points,
+sampling size [56], and is a predefined constant. Finding
+
+the exact k-nearest-neighbours of all points can be costly
+(points with high dimensions). To reduce this overhead, we
+use a greedy search based on random projection trees that
+recursively partitions the points along a random direction
+[13]. The lists are then combined for each block using the
+clustering in CTree to form a nearest-neighbour list for the
+corresponding sub-domain/block. Finally, importance sam-
+pling [35] selects from the nearest-neighbour list of a block
+and generates the sampling information for that block.
+
+3.2 Structure analysis
+As shown in Figure 3, after finishing compression, all struc-
+ture information is known, and MatRox analyzes this in-
+formation using the blocking and coarsening algorithms to
+create the coarsenset and blockset that are later used to gen-
+erate specialize code for HMatrix-matrix multiplication. The
+submatrices and sranks from the modular compression phase
+are used with the sets to store the HMatrix in the CDS format.
+In this section, we describe this structure analysis.
+Blocking. As shown in Algorithm 1, the blocking algo-
+rithm takes the HT r ee and an additional parameter called
+blocksize, as inputs and creates the blockset. We only show
+the blocking algorithm for near interactions; far interactions
+follow a similar algorithm. The blocking algorithm in lines
+3-9, maps a near interaction between nodes i and j to the lo-
+cation of (i /blocksize, j /blocksize) in the blocks array. This
+mapping increases the probably that interactions that in-
+volve the same node are in the same block which increases
+locality. However, as shown in line 5 of Figure 1d all in-
+teractions (i ,j ) will write to the location i of y, thus these
+
+Conference’20, February 2020, USA
+
+Bangtian Liu, Kazem Cheshmi, Saeed Soori, Michelle Mills Strout, and Maryam Mehri Dehnavi
+
+Algorithm 1: Blocking for near interactions
+
+Input
+: HT r ee , blocksize
+Output
+: blockset
+1 bl ockDim = (HTree.numNodes - 1 + blocksize) / blocksize
+
+2 blocks[bl ockDim ,bl ockDim] = (0,0);
+
+/* Find blocks based on near interactions
+
+3 for every node i ∈ HTree and i != root do
+for node j ∈ HTree.near[i] do
+
+iid = (i -1) / blocksize
+
+jid = (j -1) / blocksize
+blocks(iid,jid).append(i ,j )
+
+*/
+
+*/
+
+4
+5
+6
+7
+8
+
+11
+12
+13
+14
+15
+
+end
+
+9 end
+
+/* Add blocks into blockset
+
+10 for i=0; i<blockDim; i++ do
+for j=0; j<blockDim; j++ do
+if blocks(i,j).size() > 0 then
+
+blockset[i ].append(blocks(i ,j ))
+
+end
+
+end
+
+16 end
+
+interactions have to be put in the same block of blockset
+to eliminate synchronization; this is implemented in Lines
+10-16 of Algorithm 1.
+Coarsening. The coarsening algorithm creates a coarsenset
+that optimizes the loops over the CTree by improving locality
+while maintaining load balance. The algorithm is an adapta-
+tion of the Load-Balanced level Coarsening (LBC) method
+[11] with the difference that here the algorithm is designed
+for binary trees and a different cost model based on sranks is
+used to balance load. As shown in Algorithm 2, coarsening
+takes the CTree, the sranks, number of sub-trees p , and a
+tuning parameter aдд as inputs and generates a coarsenset.
+In lines 2-7 the levels of the CTree are coarsened to build the
+coarsened levels. A level of a tree refers to nodes with the
+same height. Tree[lb:ub] shows a coarsen level that includes
+nodes with levels in the range of lb-ub. Algorithm 2 builds
+all disjoint trees in a coarsen level, line 5, and stores them
+in coarsenset in post-order. For example in Figure 1b, the
+disjoint trees of HTree[0:1] are sub-trees with a root node
+in 1, 5, and 6. This ensures all nodes with dependency are
+assigned to the same thread to improve locality. The coars-
+ening algorithm computes the cost of each sub-tree using
+sranks in lines 8-14. The subtree cost is related to the size
+of submatrices associated with the subtree nodes and is de-
+termined by sranks. The computed costs are used in lines
+15-19 of Algorithm 2 to merge the initial disjoint sub-trees
+with a first-fit bin-packing algorithm [12] and to create p
+new sub-trees that are load balanced. These sub-trees will
+execute in parallel.
+Data layout construction. In the final phase of struc-
+ture analysis, MatRox uses the structure sets to store the
+
+generated submatrices in a format, which we call the com-
+pressed data-sparse (CDS), that improves locality during
+the HMatrix-matrix multiplication. CDS follows the order
+of computations in the blocked and coarsened loops which
+is obtained from the structure sets. More specifically, the
+U , V submatrices are stored in the order specified by the
+coarsenset and the B , D submatrices are stored by the order
+specified by the near and far blocksets. The size of each sub-
+matrix is known with sranks and is used as the offsets in
+CDS (see Figure 1f for an example).
+
+3.3 Code generation
+Code generation in MatRox uses structure information to
+lower an internally generated abstract syntax tree (AST)
+to an optimized evaluation code. Figure 3 shows different
+components of code generation. MatRox lowers the AST
+in either the block or the coarsen lowering stages or both.
+The resulting lowered code from these stages iterates over
+the structure set. Figure 1e shows an example lowered code
+where the blocked loop iterates over the blockset and the
+coarsen loop goes over coarsenset. The number of blocks
+and number of levels are used to determine whether the block
+and/or coarsen lowering should be applied. If the number
+of blocks are larger than an architecture-related threshold,
+block-threshold, MatRox applies block lowering. Similarly the
+number of levels and a coarsen-threshold is used to determine
+the application of coarsen lowering. These thresholds are
+defined to ensure there are enough parallel workloads that
+amortize the initial cost of launching threads. MatRox further
+optimizes the lowered code with low-level optimizations,
+using structure information, as shown in Figure 3.
+
+4 Experimental Results
+
+We compare the inspector and executor performance of Ma-
+tRox to the corresponding parts from STRUMPACK [16],
+GOFMM [56], and SMASH [8], which are well-known li-
+braries for HMatrix approximation. The inspector perfor-
+mance for MatRox is quite similar to the existing libraries.
+The resulting matrix-matrix multiply performed by the ex-
+ecutor is much improved over existing library implementa-
+tions due to improvements in data locality and parallelism.
+
+4.1 Methodology
+We select a set of datasets, i.e. points, used also in prior
+work and shown in Table 1 from real-world machine learn-
+ing and scientific applications. Problem IDs 1-8 are machine
+learning datasets from the UCI repository [2] and are high-
+dimensional points. Problem IDs 9-13 are scientific comput-
+ing points that are low-dimensional [8]. STRUMPACK only
+runs for small datasets, i.e. problem IDs 5, 6, 8, 13. We use a
+Gaussian kernel [51] with bandwidth of 5 when comparing
+to GOFMM and STRUMPACK. For comparisons to SMASH
+we use their default settings of kernel function (1/ ∥ x − y ∥ )
+
+MatRox: Modular approach for improving data locality in Hierarchical (Mat)rix App(Rox)imation
+
+Conference’20, February 2020, USA
+
+Algorithm 2: Coarsening
+
+Input
+Output
+
+: CT r ee , p , aдд, sr anks
+1 l = ⌈CT r ee .he iдht /aдд⌉
+
+: coarsenset
+
+2 for i=0; i<l ; i++ do
+
+lb = i *agg;
+ub = (i +1)*agg;
+cl = disjoint_subtrees(CT r ee [lb:ub]);
+coarsenset.append(cl);
+
+3
+4
+5
+6
+
+7 end
+
+/* Cost estimation for each node
+
+8 for node x ∈ CT r ee do
+if x ∈ CTree.leafnodes then
+
+CT r ee [x ].cost = cost(sranks(x ))
+else
+CT r ee [x ].cost = cost(sranks(x ),
+srank(lchild(x ))+sranks(rchild(x )))
+
+9
+10
+11
+12
+
+end
+
+13
+
+14 end
+
+/* Merge subtrees in each coarsen level
+
+15 for i=0; i<l ; i++ do
+
+cl = coarsenset[i ]
+nPart = cl.size() > p ? p : cl.size()/2
+coarsenSet[i ] = bin_pack(cl, nPart);
+
+16
+17
+18
+
+19 end
+
+Table 1. Data set: N is number of points, d is point dimension.
+
+ID
+1
+2
+3
+4
+5
+6
+Data covtype higgs mnist
+susy letter
+pen
+N
+100k
+100k 60k
+100k 20k
+11k
+d
+54
+28
+780
+18
+16
+16
+ID
+8
+9
+10
+11
+12
+13
+Data gas
+grid
+random dino sunflower unit
+N
+14k
+102k 66k
+80k 80k
+32k
+d
+129
+2
+2
+3
+2
+2
+
+7
+hepmass
+100k
+28
+
+*/
+
+*/
+
+and the scientific pointsets ID 9-13 (SMASH only supports
+1-3 dimensional points); MatRox uses the same setting when
+compared to SMASH. The HMatrix is multiplied with a ran-
+domly generated dense matrix W of size N × Q .
+Testbed architectures are Haswell with Xeon™ E5-2680v3,
+12 cores, 2.5 GHz, 30MB L3, and KNL with Xeon™ Phi 7250,
+68 cores, 1.4 GHz, and 34MB L3. All tools are compiled with
+icc/icpc 18.0.1 with -O3. For BLAS/LAPACK routines we use
+MKL [50]. MatRox is implemented in C++ in double precision.
+The median of 5 executions is reported for each experiment.
+When comparing to libraries we use their default settings
+and use the same in MatRox, e.g sampling size=32, maxi-
+mum rank=256. MatRox-specific parameters are aдд = 2,
+p = number of physical cores, bl ocks ize = 2 for near and
+block-threshold= number of leaf nodes. bacc is set to 1e − 5 for
+all experiments with MatRox and the libraries and the overall
+accuracy, i.e. accuracy of the HMatrix-matrix multiplication,
+is the same in MatRox and the libraries. We choose the ad-
+missibility condition to match the library’s default setting.
+STRUMPACK only supports HMatrix structures with a very
+large admissibility condition in which all off-diagonal blocks
+are low-rank approximated; also known as HSS. GOFMM
+uses a budget parameter instead of admissibility, which we
+also implement in MatRox. Recommended budget settings in
+GOFMM are 0.03 and 0, in our results we refer to the former
+
+bl ocks ize = 4 for far interactions, coarsen-threshold=4, and
+
+Figure 4. The overall time in MatRox, GOFMM, and
+STRUMPACK for different values of Q i.e., 1, 1K , 2K and
+4K for HSS (top) and H 2 -b (bottom) on Haswell. Missing
+bars for STRUMPACK mean it could not run that dataset.
+
+H 2 -b and the later as HSS as its structure is HSS. SMASH’s
+default admissibility is 0.65, which we also use.
+
+4.2 Performance of the MatRox inspector
+MatRox’s inspector time is similar to that of libraries since
+the time for structure analysis and code generation are negli-
+gible compared to the compression time as shown in Figure
+4. Structure analysis and code generation in MatRox is on
+average 8.1 percentage of inspection time. The compression
+time of STRUMPACK is slower than MatRox and GOFMM
+because of using a different compression method.
+Figure 4 also shows that the inspector time is amortized
+with increasing Q (number of columns in matrix approxi-
+mated K is multiplied by) because the evaluation time grows
+
+higgs-1higgs-1Khiggs-2Khiggs-4Ksusy-1susy-1Ksusy-2Ksusy-4Kletter-1letter-1Kletter-2Kletter-4Kgrid-1grid-1Kgrid-2Kgrid-4K0510152025Time (seconds)MatRox-compressionMatRox-structure analysisMatRox-code generationMatRox-executorGOFMM-compressionGOFMM-evaluationSTRUMPACK-compressionSTRUMPACK-evaluationhiggs-1higgs-1Khiggs-2Khiggs-4Ksusy-1susy-1Ksusy-2Ksusy-4Kletter-1letter-1Kletter-2Kletter-4Kgrid-1grid-1Kgrid-2Kgrid-4K020406080Time (seconds)MatRox-compressionMatRox-structure analysisMatRox-code generationMatRox-executorGOFMM-compressionGOFMM-evaluationConference’20, February 2020, USA
+
+Bangtian Liu, Kazem Cheshmi, Saeed Soori, Michelle Mills Strout, and Maryam Mehri Dehnavi
+
+with Q . The figure compares the MatRox overall time, in-
+cludes inspector and executor times, with the overall time of
+libraries, i.e. compression and evaluation, for four datasets
+and Q sizes of 1, 1K, 2K, and 4K on Haswell. The compression
+time for both H 2 -b and HSS and for all tools will not change
+for Q = 1 and a larger Q . For example, for susy with H 2 -b,
+MatRox’s overall Speedup vs GOFMM is 1.56× for Q = 1K
+and 2.02× for Q = 4K . Figure 4 does not include SMASH
+because SMASH only supports matrix-vector multiplication
+(Q = 1). We compared MatRox with SMASH for Q = 1 and
+our results show that the overall time of MatRox and its
+evaluation time is on average 1.1× and 1.6 × faster.
+The benefits of improving evaluation with MatRox are
+more for larger Q s. In scientific and machine learning ap-
+plications, Q is typically large and often close to N , shown
+in Table 1. Examples include multigrid methods in which
+the coefficient matrix is multiplied by a large matrix [7],
+Schur complement methods in hybrid solvers [55], high-
+order finite-elements [14], as well as direct solvers [27]. We
+also ran the un-approximated matrix-matrix multiplication
+KW with GEMM. For the tested datasetes on average Ma-
+tRox’s overall time is 18× faster than GEMM for Q = 2K ; the
+speedups obtained with HMatrix evaluation are significantly
+higher than GEMM for larger Q s. We use a Q = 2K for the
+rest of our experiments unless stated otherwise.
+
+4.3 The performance of the MatRox executor
+Figure 5 shows the performance breakdown of the MatRox’s
+executor (evaluation) versus GOFMM and STRUMPACK on
+Haswell. As shown MatRox’s evaluation time is on average
+3.41× and 2.98× faster than GOFMM in order for HSS and
+H 2 -b and is on average 5.98× faster than STRUMPACK. The
+performance breakdown shows the effect of CDS as well
+as the block and coarsen algorithms. To show the effect of
+CDS, we run both the MatRox executor, that uses CDS, and
+GOFMM and STRUMPACK, that use a tree-based storage
+format, with a single-thread and label in order with CDS
+(seq) and TB (seq). Coarsen, block, and low-level lowering
+applied in MatRox are labeled with coarsen, block, and low-
+level. The parallel version of GOFMM and STRUMPACK use
+a dynamic scheduling labeled with DS in Figure 5.
+The different admissibility conditions in HSS and H 2 -b
+allows us to demonstrate MatRox’s performance for different
+HMatrix structures. HMatrix structures differ by the number
+of blocks that they low-rank approximate, which changes
+the ratio of loops over the CTree to loops with reduction. Be-
+cause in HSS no off-diagonal blocks are full-rank, loops over
+the CTree dominate its execution time. As a result, from Fig-
+ure 5, coarsening contributes to a performance improvement
+of on average 79.2% for HSS, which is more that the 46.8%
+on average improvement from coarsening for H 2 -b. Also,
+while Blocking contributes on average 38.3% to the perfor-
+mance of the MatRox generated code for H 2 -b on Haswell,
+block lowering is never activated for HSS since the number
+
+Figure 5. The performance of executor/evaluation in Ma-
+tRox vs. GOFMM for HSS (top) and H 2 -b (bottom) on
+Haswell. Labels seq, TB, and DS are sequential, tree-based
+format, and dynamic scheduling respectively. Effects of CDS,
+coarsening, blocking, and low-level transformations are
+shown separately. Missing bars for STRUMPACK mean it
+could not run that dataset.
+
+Figure 6. Effect of improving locality on MatRox’s speedup
+vs. GOFMM on Haswell. Average memory access latency
+shows the average cost of accessing memory.
+
+of loops with reduction, i.e. near-far interactions, never ex-
+ceeds the block-threshold. MatRox peels the last iteration of
+loops over the CTree. Low-level transformations lead to on
+average 6.28% and 4.24% performance improvement of the
+MatRox code in HSS and H 2 -b respectively. Since HSS is
+dominated by loops over the CTree, the effect of low-level
+transformation is also more prominent in HSS.
+
+covtypehiggsmnistsusyletterpenhepmassgasgridrandomdinosunflowerunit0200400600GFLOP/sMatRox: CDS(seq)MatRox: CDS + coarsenMatRox: CDS + coarsen + low-levelGOFMM: TB(seq)GOFMM: TB + DSSTRUMPACK: TB(seq)STRUMPACK: TB + DScovtypehiggsmnistsusyletterpenhepmassgasgridrandomdinosunflowerunit0200400600800GFLOP/sMatRox: CDS(seq)MatRox: CDS + blockMatRox: CDS + block + coarsenMatRox: CDS + block + coarsen + low-levelGOFMM: TB(seq)GOFMM: TB + DSMatRox: Modular approach for improving data locality in Hierarchical (Mat)rix App(Rox)imation
+
+Conference’20, February 2020, USA
+
+1 ///MatRox inspector code for re-using inspection
+2 #include <matrox.h>
+3
+...
+4
+//Inputs declaration
+5
+Points points("path/to/load/points");
+6
+Float(64) tau = 0.65;
+7
+//Outputs declaration
+8
+Op HMatMul("path/to/save/mat_mul.c");
+9
+Tree CTree("path/to/store/ctree");
+10
+Set BlockSet("path/to/store/blockset");
+11
+Vector<Int(32)> sampling("path/to/store/sampling");
+12
+Op HMatMul("path/to/store/matmul.h");
+13
+inspector_p1(points,tau,&HMatMul,&CTree,&Blockset,&
+sampling);
+14 ///MatRox executor Code for re-using inspection
+15 #include "path/to/matmul.h"
+16
+...
+17
+Tree CTree("path/to/load/ctree");
+18
+Set BlockSet("path/to/load/blockset");
+19
+Vector<Int(32)> sampling("path/to/load/sampling");
+20
+Float(64) tau, acc; Ker kfunc = GAUSSIAN;
+21
+Dense W("path/to/load/matrix/W");
+22
+Dense Y(Float(64), CTree[0].num_points * W.cols);
+23
+// Accuracy tuning
+24
+for(acc in {1e-3,1e-4,1e-5,1e-6,1e-7}){
+25
+inspector_p2(kfunc,acc,sampling,CTree,Blockset,&H);
+26
+Y = matmul(H, W);
+27
+
+}
+
+Figure 8. Reusing inspection in MatRox
+
+do not rely on these inputs can execute only once and be
+reused. MatRox enables this reuse by separating the inspec-
+tor into two phases, i.e. inspector-p1 and inspector-p2. The
+inputs to inspector-p2 are the kernel function and the input
+accuracy and it is composed of the low-rank approximation,
+coarsening, and data layout construction modules in Figure
+3. The remaining parts of the inspector in Figure 3 belong
+to inspector-p1. A change in the kernel function and/or the
+accuracy only requires inspector-p2 and the executor to be
+re-ran. Figure 8 shows an example code that allows for the
+reuse of inspector-p1 when the bacc changes.
+In scientific and machine learning simulations, typically
+the input accuracy and the kernel function change more fre-
+quently than the input points and the admissibility condition.
+The reuse of inspector-p1 in MatRox reduces the overhead of
+these changes. For example in finite-elements the discretiza-
+tion, i.e. points, is often fixed [18], in statistical learning
+the training samples, i.e. points, are reused during offline
+training [26], and in N-body problems the CTree is only
+reconstructed during rebuild intervals [4, 39]. The admissi-
+bility condition also often remains the same in simulations
+and is known by the domain practitioner as it depends on
+the problem structure. However, users often need to tune
+the parameters in a kernel function specially in machine
+
+Figure 7. Scalability result on Haswell (top two) and KNL
+(bottom two) for datasets covtype (left) and unit (right).
+
+One major goal of inspection and lowering in MatRox is
+to improve locality. Figure 6 shows the correlation between
+the performance of MatRox generated code versus the cost
+of Average memory access latency among all datasets for
+both HSS and H 2 -b on Haswell. We measure the average
+memory access latency [25] that is computed based on the
+number of memory accesses, miss-ratio of different cache
+levels, and TLB, and use it as a proxy for locality. We use
+the PAPI [48] library to collect L1, LLC (Last-level Cache),
+TLB access and misses and number of memory accesses. The
+coefficient of determination or R2 is 0.81 that shows a good
+correlation between speedup and memory access latency.
+
+4.4 Scalability of the MatRox executor
+Figure 7 shows the scalability MatRox executor vs. GOFMM,
+STRUMPACK, and SMASH for two datasets on Haswell and
+KNL; other datasets follow a similar trend. SMASH does
+not support covtype and in the figure, MatRox-Skernel is
+MatRox with SMASH settings. We select KNL in addition
+to Haswell to demonstrate MatRox’s strong scalability on
+more cores, i.e. 68 cores of KNL. MatRox scales well on both
+architectures while the libraries show poor scalability with
+increasing number of cores. For example, GOFMM’s perfor-
+mance reduces from 34 to 68 cores. MatRox’s strong scaling
+is because coarsening and blocking improve locality and
+reduce synchronization while maintaining load-balance.
+
+5 Reusing Inspection
+
+The modular design in MatRox enables the reuse of specific
+outputs of the inspector when parts of the input change. In
+libraries, any change to the inputs results in re-running the
+entire compression and evaluation phases. However, when
+the kernel function and/or the input accuracy change in
+MatRox, the modules and components in the inspector that
+
+123456789101112Number of cores05101520Speedup over serial codecovtype (Haswell)123456789101112Number of cores05101520Speedup over serial codeunit (Haswell)1248173468Number of cores0204060Speedup over serial codecovtype (KNL)1248173468Number of cores0204060Speedup over serial codeunit (KNL)Conference’20, February 2020, USA
+
+Bangtian Liu, Kazem Cheshmi, Saeed Soori, Michelle Mills Strout, and Maryam Mehri Dehnavi
+
+Figure 9. Input accuracy bacc vs overall accuracy.
+
+Figure 10. MatRox reusing inspection for H 2 -b on Haswell.
+
+learning simulations. For example, the bandwidth h in the
+Gaussian kernel [51] is typically tuned with cross-validation
+to avoid overfitting [40]. Also, often the practitioner needs
+to tune the input accuracy (bacc) because the overall accu-
+racy of the HMatrix-matrix multiplication is not sufficient,
+i.e. bacc is correlated with the overall accuracy with a loose
+upper bound [34], or the user might decide to trade accuracy
+for faster evaluation (or vise-vesa) with re-compression.
+accuracy ϵ f obtained from ϵ f = ∥ (cid:101)KW − KW ∥F / ∥KW ∥F for
+Figure 9, shows the correlation between bacc and overall
+H 2 -b. As demonstrated, with a bacc of 1e−3 more than 50%
+of the datasets do not reach an overall accuracy of 1e−3 and
+thus the user has to retune. The tuning becomes more im-
+portant when more accurate results are required and also
+depends on the spectrum (i.e., eigenvalues) of the kernel
+Matrix. Figure 10 shows the MatRox’s overall time com-
+pared to GOFMM for H 2 -b with 5 changes to the input
+accuracy bacc, 1e−1 to 1e−5, with reusing inspector-p1. We
+do not include STRUMPACK for space but it follows a similar
+trend. As shown in the Figure, MatRox’s overall time is on
+average 2.21× faster than GOFMM. For high dimensional
+datasets such as mnist sampling is expensive, 89.2% of the
+compression time in mnist, and thus the reuse of sampling in
+inspector-p1 leads to a speedup of 2.64× for minst compared
+to GOFMM. MatRox with inspector reuse vs SMASH leads
+to on average 1.37× speedup with up to 2.4× for sunflower.
+
+6 Related Work
+
+The presented approach applies a modular inspector-executor
+strategy to HMatrix Approximation. This section summa-
+rizes previous approaches to improving the performance
+of HMatrix approximation and related inspector-executor
+strategies that were used in other contexts.
+Hierarchical matrices. Hierarchical matrices are used
+to approximate matrix computations in almost linear com-
+plexity. Hackbusch first introduced H -matrices [6, 20], to
+generalize fast multipole methods [19], where the matrix
+is partitioned hierarchically with a cluster tree and then
+
+parts of the off-diagonal blocks are approximated. Later, H 2 -
+structures were introduced [23] which use nested basis ma-
+trices [21], to further reduce the computational complexity
+of dense matrix computations. H 2 has gained significant
+traction in recent years [6, 22]. Hierarchical semi-separable
+(HSS) [10, 53, 54] are a specific class of H 2 structures. Ma-
+tRox supports HSS and other classes of H 2 using a binary
+cluster tree; we abbreviate H 2 matrix with HMatrix.
+HMatrix approximations have a compression and an eval-
+uation phase. Numerous algorithms have been studied for
+HMatrix compression [3, 9, 52] including interpolative de-
+composition (ID) [36]. MatRox uses ID in its compression
+phase and contributes on improving the performance of the
+evaluation phase, which is the focus of many of the recent
+works on HMatrix computations [56, 57].
+Specialized libraries for HMatrix computations. Nu-
+merous specialized libraries implement HMatrix evaluations
+on different platforms and for different evaluation opera-
+tions. HMatrix algorithms have been implemented on plat-
+forms ranging from shared memory [16, 28, 56], distributed
+memory [31, 33, 46], and many-core such as GPUs [32]. Hi-
+erarchical matrices have been studied to accelerate matrix
+factorization [1, 10, 54]. Ghysels et. al. [15] introduces an alge-
+braic preconditioner based on HSS. Other work has improved
+matrix inversion [37] and matrix-vector/matrix multiplica-
+tion [10]. STRUMPACK, GOFMM, and SMASH are the most
+well-known libraries that support HMatrix-matrix/vector
+multiplications. SMASH [8] supports 1-3D datasets while
+GOFMM [56] and STRUMPACK [16] also support datasets
+of higher dimension. MatRox generates code for HMatrix-
+matrix/vector multiplications for datasets of all dimensions
+on multicore platforms.
+Inspector-executor approaches. MatRox uses a domain-
+specific inspector-executor approach to generate code for
+HMatrix evaluation. Recent work [17, 29, 41, 43, 47] have
+proposed inspector-executors that inspect the data depen-
+dency graphs in sparse matrix computations to apply code
+optimizations that general compilers cannot apply. Amongst
+
+covtypehiggsmnistsusyletterpenhepmassgasgridrandomdinosunflowerunit1e-71e-61e-51e-41e-31e-21e-1Overall accuracybacc=1e-1bacc=1e-2bacc=1e-3bacc=1e-4bacc=1e-5covtypehiggsmnistsusyletterpenhepmassgasgridrandomdinosunflowerunit01234Normalized execution timeMatRox-inspector-p1MatRox-inspector-p2MatRox-executorGOFMM-compressionGOFMM-evaluationMatRox: Modular approach for improving data locality in Hierarchical (Mat)rix App(Rox)imation
+
+Conference’20, February 2020, USA
+
+them, inspectors based on level-by-level wavefront paral-
+lelism [44, 49] are the most well-known, but do not optimize
+for locality and load-balance. Cheshmi et. al. [11] present an
+approach to improve wavefront inspectors, with the LBC al-
+gorithm by coarsening levels for better locality and creating
+balanced partitions. However, LBC only works for DAG from
+a specific class of sparse matrix. MatRox improves the data
+locality and parallelism in reduction and tree-based loops for
+HMatrix approximation with a novel coarsening method that
+uses a cost model of submatrix ranks and uses a specialized
+partition for binary trees.
+
+7 Conclusion
+
+We demonstrate a novel structure analysis approach based
+on modular compression to generate specialized code and
+an efficient storage that improves the performance HMatrix
+approximations on multicore architectures. The proposed
+block and coarsen algorithms, improve locality in HMatrix
+evaluations while maintaining load-balance. The modular
+approach used in MatRox, allows parts of the inspector to
+be reused when the kernel function and accuracy change.
+MatRox outperforms state-of-the-art libraries for HMatrix-
+matrix multiplications on different multicore processors.
+
+References
+
+[1] Amirhossein Aminfar, Sivaram Ambikasaran, and Eric Darve. 2016. A
+fast block low-rank dense solver with applications to finite-element
+matrices. J. Comput. Phys. 304 (2016), 170–188.
+[2] Kevin Bache and Moshe Lichman. 2013. UCI Machine Learning Repos-
+itory [http://archive. ics. uci. edu/ml]. Irvine, CA: University of Cali-
+
+fornia. School of information and computer science 28 (2013).
+
+[3] Mario Bebendorf and Sergej Rjasanow. 2003. Adaptive low-rank ap-
+proximation of collocation matrices. Computing 70, 1 (2003), 1–24.
+[4] Jeroen Bédorf, Evghenii Gaburov, and Simon Portegies Zwart. 2012.
+A sparse octree gravitational N-body code that runs entirely on the
+GPU processor. J. Comput. Phys. 231, 7 (2012), 2825–2839.
+[5] Steffen Börm and Jochen Garcke. 2007. Approximating Gaussian Pro-
+
+cesses with H 2 -Matrices. In European Conference on Machine Learning.
+
+Springer, 42–53.
+[6] Steffen Börm, Lars Grasedyck, and Wolfgang Hackbusch. 2003. In-
+troduction to hierarchical matrices with applications. Engineering
+
+analysis with boundary elements 27, 5 (2003), 405–422.
+
+[7] William L Briggs, Steve F McCormick, et al. 2000. A multigrid tutorial.
+Vol. 72. Siam.
+[8] Difeng Cai, Edmond Chow, Lucas Erlandson, Yousef Saad, and Yuanzhe
+Xi. 2018. SMASH: Structured matrix approximation by separation and
+
+hierarchy. Numerical Linear Algebra with Applications 25, 6 (2018),
+
+e2204.
+[9] Tony F Chan. 1987. Rank revealing QR factorizations. Linear algebra
+
+and its applications 88 (1987), 67–82.
+
+[10] Shiv Chandrasekaran, Ming Gu, and Timothy Pals. 2006. A fast ULV
+decomposition solver for hierarchically semiseparable representations.
+
+SIAM J. Matrix Anal. Appl. 28, 3 (2006), 603–622.
+
+[11] Kazem Cheshmi, Shoaib Kamil, Michelle Mills Strout, and
+Maryam Mehri Dehnavi. 2018.
+ParSy: inspection and transfor-
+mation of sparse matrix computations for parallelism. In Proceedings
+
+of the International Conference for High Performance Computing,
+Networking, Storage, and Analysis. IEEE Press, 62.
+
+[12] Edward G Coffman, Jr, Michael R Garey, and David S Johnson. 1978.
+An application of bin-packing to multiprocessor scheduling. SIAM J.
+Comput. 7, 1 (1978), 1–17.
+[13] Sanjoy Dasgupta and Yoav Freund. 2008. Random projection trees and
+low dimensional manifolds.. In STOC, Vol. 8. Citeseer, 537–546.
+[14] Tingxing Dong, Veselin Dobrev, Tzanio Kolev, Robert Rieben, Stan-
+imire Tomov, and Jack Dongarra. 2014. A step towards energy efficient
+computing: Redesigning a hydrodynamic application on CPU-GPU. In
+
+2014 IEEE 28th International Parallel and Distributed Processing Sympo-
+
+sium. IEEE, 972–981.
+[15] Pieter Ghysels, Xiaoye Sherry Li, Christopher Gorman, and François-
+Henry Rouet. 2017. A robust parallel preconditioner for indefinite sys-
+tems using hierarchical matrices and randomized sampling. In Parallel
+
+and Distributed Processing Symposium (IPDPS), 2017 IEEE International.
+
+IEEE, 897–906.
+[16] Pieter Ghysels, Xiaoye S Li, François-Henry Rouet, Samuel Williams,
+and Artem Napov. 2016. An efficient multicore implementation of a
+novel HSS-structured multifrontal solver using randomized sampling.
+
+SIAM Journal on Scientific Computing 38, 5 (2016), S358–S384.
+
+[17] R Govindarajan and Jayvant Anantpur. 2013. Runtime dependence
+computation and execution of loops on heterogeneous systems. In
+
+Proceedings of the 2013 IEEE/ACM International Symposium on Code
+Generation and Optimization (CGO). IEEE Computer Society, 1–10.
+
+[18] Lars Grasedyck, Ronald Kriemann, and Sabine Le Borne. 2008. Parallel
+black box H-LU preconditioning for elliptic boundary value problems.
+
+Computing and visualization in science 11, 4-6 (2008), 273–291.
+
+[19] Leslie Greengard and Vladimir Rokhlin. 1987. A fast algorithm for
+particle simulations. Journal of computational physics 73, 2 (1987),
+325–348.
+[20] Wolfgang Hackbusch. 1999. A Sparse Matrix Arithmetic Based on H -
+Matrices. Part I: Introduction to H -Matrices. Computing 62, 2 (1999),
+89–108.
+
+[21] Wolfgang Hackbusch. 2015. Hierarchical matrices: algorithms and
+
+analysis. Vol. 49. Springer.
+[22] Wolfgang Hackbusch and Steffen Börm. 2002. Data-sparse approxima-
+tion by adaptive âĎŃ 2-matrices. Computing 69, 1 (2002), 1–35.
+[23] W Hackbusch, B Khoromskij, and SA Sauter. 2000. On H2-matrices:
+Lectures on applied mathematics.
+[24] Wolfgang Hackbusch, Boris N Khoromskij, and Ronald Kriemann.
+2004. Hierarchical matrices based on a weak admissibility criterion.
+Computing 73, 3 (2004), 207–243.
+[25] John L Hennessy and David A Patterson. 2017. Computer architecture:
+
+a quantitative approach. Elsevier.
+
+[26] Thomas Hofmann, Bernhard Schölkopf, and Alexander J Smola. 2008.
+Kernel methods in machine learning. The annals of statistics (2008),
+1171–1220.
+[27] Eun-Jin Im, Katherine Yelick, and Richard Vuduc. 2004. Sparsity:
+Optimization framework for sparse matrix kernels. The International
+
+Journal of High Performance Computing Applications 18, 1 (2004), 135–
+
+158.
+[28] Ronald Kriemann. 2005. Parallel-matrix arithmetics on shared memory
+systems. Computing 74, 3 (2005), 273–297.
+[29] Weifeng Liu, Ang Li, Jonathan Hogg, Iain S Duff, and Brian Vinter. 2016.
+A synchronization-free algorithm for parallel sparse triangular solves.
+
+In European Conference on Parallel Processing. Springer, 617–630.
+
+[30] William B March and George Biros. 2017. Far-field compression for
+fast kernel summation methods in high dimensions. Applied and
+
+Computational Harmonic Analysis 43, 1 (2017), 39–75.
+
+[31] William B March, Bo Xiao, and George Biros. 2015. ASKIT: Approxi-
+mate skeletonization kernel-independent treecode in high dimensions.
+
+SIAM Journal on Scientific Computing 37, 2 (2015), A1089–A1110.
+
+[32] William B March, Bo Xiao, D Yu Chenhan, and George Biros. 2015.
+An algebraic parallel treecode in arbitrary dimensions. In Parallel
+
+and Distributed Processing Symposium (IPDPS), 2015 IEEE International.
+
+Conference’20, February 2020, USA
+
+Bangtian Liu, Kazem Cheshmi, Saeed Soori, Michelle Mills Strout, and Maryam Mehri Dehnavi
+
+[50] Endong Wang, Qing Zhang, Bo Shen, Guangyong Zhang, Xiaowei Lu,
+Qing Wu, and Yajuan Wang. 2014. Intel math kernel library. In High-
+
+Performance Computing on the Intel® Xeon PhiâĎć. Springer, 167–188.
+
+[51] Christopher KI Williams and Carl Edward Rasmussen. 1996. Gaussian
+
+processes for regression. In Advances in neural information processing
+
+systems. 514–520.
+[52] Christopher KI Williams and Matthias Seeger. 2001. Using the Nyström
+method to speed up kernel machines. In Advances in neural information
+
+processing systems. 682–688.
+
+[53] Yuanzhe Xi and Jianlin Xia. 2016. On the stability of some hierarchical
+rank structured matrix algorithms. SIAM J. Matrix Anal. Appl. 37, 3
+(2016), 1279–1303.
+[54] Jianlin Xia, Shivkumar Chandrasekaran, Ming Gu, and Xiaoye S Li.
+2010. Fast algorithms for hierarchically semiseparable matrices. Nu-
+
+merical Linear Algebra with Applications 17, 6 (2010), 953–976.
+
+[55] Ichitaro Yamazaki and Xiaoye S Li. 2010. On techniques to improve
+robustness and scalability of a parallel hybrid linear solver. In Interna-
+
+tional Conference on High Performance Computing for Computational
+
+Science. Springer, 421–434.
+[56] Chenhan D Yu, James Levitt, Severin Reiz, and George Biros. 2017.
+Geometry-oblivious FMM for compressing dense SPD matrices. In
+
+Proceedings of the International Conference for High Performance Com-
+puting, Networking, Storage and Analysis. ACM, 53.
+
+[57] Chenhan D Yu, Severin Reiz, and George Biros. 2018. Distributed-
+memory hierarchical compression of dense SPD matrices. In Proceed-
+
+ings of the International Conference for High Performance Computing,
+Networking, Storage, and Analysis. IEEE Press, 15.
+
+IEEE, 571–580.
+[33] William B March, Bo Xiao, Sameer Tharakan, D Yu Chenhan, and
+George Biros. 2015. A kernel-independent FMM in general dimensions.
+
+In High Performance Computing, Networking, Storage and Analysis, 2015
+SC-International Conference for. IEEE, 1–12.
+
+[34] William B March, Bo Xiao, Sameer Tharakan, Chenhan D Yu, and
+George Biros. 2015. Robust treecode approximation for kernel ma-
+
+chines. In Proceedings of the 21th ACM SIGKDD International Conference
+on Knowledge Discovery and Data Mining. ACM, 775–784.
+
+[35] William B March, Bo Xiao, Chenhan D Yu, and George Biros. 2016.
+ASKIT: an efficient, parallel library for high-dimensional kernel sum-
+
+mations. SIAM Journal on Scientific Computing 38, 5 (2016), S720–S749.
+
+[36] Per-Gunnar Martinsson. 2011. A fast randomized algorithm for com-
+puting a hierarchically semiseparable representation of a matrix. SIAM
+J. Matrix Anal. Appl. 32, 4 (2011), 1251–1274.
+[37] Per-Gunnar Martinsson and Vladimir Rokhlin. 2005. A fast direct
+solver for boundary integral equations in two dimensions. J. Comput.
+Phys. 205, 1 (2005), 1–23.
+[38] Per-Gunnar Martinsson, Vladimir Rokhlin, and Mark Tygert. 2011. A
+randomized algorithm for the decomposition of matrices. Applied and
+
+Computational Harmonic Analysis 30, 1 (2011), 47–68.
+
+[39] Yohei Miki and Masayuki Umemura. 2017. GOTHIC: Gravitational
+oct-tree code accelerated by hierarchical time step controlling. New
+Astronomy 52 (2017), 65–81.
+[40] Vlad I Morariu, Balaji V Srinivasan, Vikas C Raykar, Ramani Du-
+raiswami, and Larry S Davis. 2009. Automatic online tuning for fast
+
+Gaussian summation. In Advances in neural information processing
+
+systems. 1113–1120.
+[41] Maxim Naumov. 2011. Parallel solution of sparse triangular linear
+systems in the preconditioned iterative methods on the GPU. NVIDIA
+
+Corp., Westford, MA, USA, Tech. Rep. NVR-2011 1 (2011).
+[42] Stephen M Omohundro. 1989. Five balltree construction algorithms.
+
+International Computer Science Institute Berkeley.
+[43] Jongsoo Park, Mikhail Smelyanskiy, Narayanan Sundaram, and
+Pradeep Dubey. 2014.
+Sparsifying synchronization for high-
+performance shared-memory sparse triangular solver. In International
+
+Supercomputing Conference. Springer, 124–140.
+
+[44] Lawrence Rauchwerger, Nancy M Amato, and David A Padua. 1995.
+Run-time methods for parallelizing partially parallel loops. In Pro-
+
+ceedings of the 9th international conference on Supercomputing. ACM,
+
+137–146.
+[45] Elizaveta Rebrova, Gustavo Chávez, Yang Liu, Pieter Ghysels, and Xi-
+aoye Sherry Li. 2018. A study of clustering techniques and hierarchical
+matrix formats for kernel ridge regression. In 2018 IEEE International
+
+Parallel and Distributed Processing Symposium Workshops (IPDPSW).
+
+IEEE, 883–892.
+[46] François-Henry Rouet, Xiaoye S Li, Pieter Ghysels, and Artem Napov.
+2016. A distributed-memory package for dense hierarchically semi-
+separable matrix computations using randomization. ACM Transac-
+
+tions on Mathematical Software (TOMS) 42, 4 (2016), 27.
+
+[47] Michelle Mills Strout, Larry Carter, Jeanne Ferrante, Jonathan Free-
+man, and Barbara Kreaseck. 2002. Combining performance aspects of
+irregular gauss-seidel via sparse tiling. In International Workshop on
+
+Languages and Compilers for Parallel Computing. Springer, 90–110.
+
+[48] Dan Terpstra, Heike Jagode, Haihang You, and Jack Dongarra. 2010.
+Collecting performance data with PAPI-C. In Tools for High Perfor-
+mance Computing 2009. Springer, 157–173.
+[49] Anand Venkat, Mahdi Soltan Mohammadi, Jongsoo Park, Hongbo
+Rong, Rajkishore Barik, Michelle Mills Strout, and Mary Hall. 2016.
+Automating wavefront parallelization for sparse matrix computations.
+
+In Proceedings of the International Conference for High Performance
+Computing, Networking, Storage and Analysis. IEEE Press, 41.
+
+

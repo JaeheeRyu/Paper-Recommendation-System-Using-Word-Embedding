@@ -1,0 +1,2166 @@
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+1
+
+High-dimensional Dense Residual Convolutional
+Neural Network for Light Field Reconstruction
+
+Nan Meng, Student Member, IEEE, Hayden K.-H. So, Senior Member, IEEE, Xing Sun,
+and Edmund Y. Lam, Fellow, IEEE
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+I
+
+.
+
+s
+s
+
+e
+e
+
+[
+
+3
+v
+6
+2
+4
+1
+0
+
+.
+
+0
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract— We consider the problem of high-dimensional light ﬁeld reconstruction and develop a learning-based framework for spatial
+and angular super-resolution. Many current approaches either require disparity clues or restore the spatial and angular details separately.
+Such methods have difﬁculties with non-Lamber tian surfaces or occlusions. In contrast, we formulate light ﬁeld super-resolution (LFSR)
+as tensor restoration and develop a learning framework based on a two-stage restoration with 4-dimensional (4D) convolution. This
+allows our model to learn the features capturing the geometry information encoded in multiple adjacent views. Such geometric features
+vary near the occlusion regions and indicate the foreground object border. To train a feasible network, we propose a novel normalization
+operation based on a group of views in the feature maps, design a stage-wise loss function, and develop the multi-range training strategy
+to fur ther improve the performance. Evaluations are conducted on a number of light ﬁeld datasets including real-world scenes, synthetic
+data, and microscope light ﬁelds. The proposed method achieves superior performance and less execution time comparing with other
+state-of-the-ar t schemes.
+
+Index Terms—Light ﬁeld super-resolution, 4-dimensional convolution, Convolutional neural networks, Deep learning
+
+!
+
+1 IN TRODUC T ION
+
+L IGHT ﬁeld (LF) camera can capture the 3D information
+about an object or a scene. Compared with traditional
+2D imaging systems, such cameras record the intensity of
+each direction of light rays passing through the lens [1],
+[2]. The additional information enables many applications in
+computer vision and imaging, such as refocusing [3], view
+synthesis [4], [5] and depth estimation [6], [7], [8].
+Commercial LF cameras make use of an array of micro-
+lenses, placed between the main lens and the sensor, to
+record the spatial and angular information in a single ex-
+posure [1]. There is a tradeoff in resolution, such that a
+dense angular sampling necessarily leads to a sparse spatial
+sampling, and vice versa [1], [9]. Over the years, several
+approaches to achieve light ﬁeld super-resolution (LFSR)
+have been proposed. Many of them, however, require depth
+estimation as a ﬁrst step; that often relies on the Lambertian
+assumption and works poorly on glossy surfaces such as
+metals, plastics, or ceramics [3], [10], [11], [12]. Occlusion
+also presents an additional challenge and can easily lead to
+artifacts in the super-resolution reconstruction.
+Convolutional neural networks (CNNs) have recently
+been used for LFSR by learning a mapping directly from
+low-resolution (LR) images to high-resolution (HR) im-
+ages [5], [13], [14]. Despite delivering results generally su-
+perior to depth-based methods, several issues remain to
+be addressed. Chief among them is that CNNs have not
+been fully exploited for LF due to the complexity of the 4D
+data. Existing methods implement CNNs on neighboring
+views [13] or epipolar plane images (EPIs) [14], considering
+only 2D information when training the network. Therefore,
+the features reﬂecting the inherent structure of LF is not fully
+
+N. Meng, H.K.H. So, and E.Y. Lam are with the Department of Electrical and
+Electronic Engineering, The University of Hong Kong, Pokfulam, Hong Kong
+(e-mail: nanmeng@eee.hku.hk, hso@eee.hku.hk, elam@eee.hku.hk)
+X. Sun is with the YouTu Lab, Tencent (e-mail: winfredsun@tencent.com)
+
+represented and extracted. In addition, the reconstruction
+process is applied on individual sub-aperture or EPI images,
+resulting in inefﬁciency of such algorithms.
+To address the problems, we explore solutions from the
+higher order and propose a deep high-dimensional dense
+residual network (HDDRNet) to extract the representative
+features encoded with geometry information for LFSR. To
+alleviate the training of high-dimensional network, we ap-
+ply the batch normalization [15] and improve the whiten
+process by considering the view correlations in feature
+space. Our network naturally accommodates the LF data
+and reconstruct the entire scene progressively. The model
+consists of a spatio-angular restoration network, followed
+by a reﬁnement of the details. The former uses densely-
+connected high-dimensional residual blocks to reconstruct
+the light distribution information, while the latter generates
+visually realistic spatial details while preserving angular
+correlations. Instead of using the (cid:96)2 loss function to super-
+vise the entire network, we propose to train the latter stage
+with the aperture-wise perceptual loss function to improve
+the reconstruction quality of spatial details. Although both
+stages contain multiple high-order operations, we are able
+to train the network in an end-to-end fashion without stage-
+wise optimization.
+The main contributions of this study are:
+‚ High-order convolution. We incorporate high-order
+convolution within a deep learning architecture to
+super-resolve LFs, achieving reconstruction at multi-
+ple scales in spatial or angular dimensions, or both.
+Such an approach allows the model to learn repre-
+sentations with scene geometry information by fully
+exploiting the high-dimensional LF data, enhancing
+the performance of synthesizing novel views.
+‚ Geometric features. We reveal that the high-order
+
+ 
+ 
+ 
+ 
+ 
+ 
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+2
+
+convolution possess the potential to extract features
+endowed with geometry information, named geo-
+metric features. The geometric features vary near
+the occlusions and therefore indicate the foreground
+object border.
+‚ Progressive reconstruction. Our model reconstructs
+the high-quality LF in one feedforward pass through
+two sub-networks. The ﬁrst is trained by optimizing
+the angular loss based on mean square error (MSE),
+which is crucial for learning the light distribution,
+while the second is trained by minimizing the per-
+ceptual loss [16]. This achieves a more realistic spa-
+tial reconstruction while preserving the learned light
+distribution properties from the previous network.
+‚ Multi-range training. To train the network more
+effectively, we further propose a strategy of learning
+that exploits the spatial inter-scale correlations and
+multiple angular baseline range to achieve higher
+reconstruction accuracy. Such a multi-range model is
+termed M-HDDRNet.
+
+2 RE LATED WORK
+
+Many LFSR approaches focus on enhancing either the spa-
+tial or the angular resolution, and accordingly we review
+them brieﬂy in separate sections.
+
+2.1 Spatial super-resolution
+Spatial super-resolution generally makes use of sub-
+aperture images, in a manner similar to single-image super-
+resolution. However, with LF, the achievable resolution of
+a sub-aperture image can be beyond the limitation of the
+lenslet array that splits incoming light in different directions.
+As discussed in [17], [18], the intensity values in neighboring
+views are propagated to the target view with non-integer
+shifts between two corresponding pixels. This becomes ap-
+parent when considering EPIs; as such, several methods are
+designed to analyze the scene geometry ﬁrst, and compute
+pixel intensity based on the estimated disparity information.
+In [11], Bishop and Favaro propose a Bayesian frame-
+work to restore more information from the geometric struc-
+ture of the scene by analyzing the correlations between
+adjacent views. Lim et al. [19] show that the angular
+data provide the subpixel shift information used by many
+SR algorithms. Wanner and Goldluecke [12] optimize a
+variational framework to enhance the resolution of novel
+views in a scene. Meanwhile, Mitra and Veeraraghavan [3]
+propose a patch-based model based on Gaussian mixture
+and reconstruct the patches according to the subpixel shift.
+These disparity-based methods however are problematic for
+occlusion regions and non-Lambertian surfaces, where the
+estimation algorithms can fail easily and result in artifacts
+such as tearing and ghosting.
+Taking advantages of CNNs, some recent learning-based
+methods aim to be free from the disparity estimation step.
+Yoon et al. [13] are among the ﬁrst to apply CNN-based
+model to perform LFSR. However, their model treats the
+spatial and angular information separately, underusing the
+potential of the entire angular information. Considering the
+angular correlation, Wang et al. [20] adopt a bidirectional
+
+recurrent CNN framework on horizontal or vertical sub-
+aperture images to model the spatial correlation iteratively.
+Meanwhile, Farrugia and Guillemot [21] apply a deep CNN
+on the aligned sub-aperture images to restore the entire light
+ﬁeld. By considering light ﬁeld as image sequences, these
+attempts to some extent exploit the subpixel shift among
+adjacent views. However, the light ﬁeld imaging systems
+sample the light distribution on every spatial pixel from a
+2D angular space. Such relationship is not fully represented
+in the image sequences, thus limiting the performance of
+these methods.
+
+2.2 Angular super-resolution
+Angular LFSR, also commonly called view synthesis, is
+based on two different approaches. The ﬁrst employs depth
+estimation algorithms [22], [23], [24] to acquire an accurate
+depth map and then warps the existing images to the novel
+views [5], [12], [25]. For example, an automatic depth layer-
+based method is introduced in [26] to generate an arbitrary
+view with a probabilistic interpolation approach, and depth
+information is calculated on a small set of sub-aperture
+images. Zhang et al. [27] reconstruct the LF from a micro-
+baseline stereo pair. They introduce a phase-based synthesis
+strategy to integrate disparity into the phase term when
+warping the input view to any close novel view, and a
+subsequent work further develops a patch-based synthe-
+sis method [28]. However, the quality of depth estimation
+depends on the scene content, and as such, these methods
+often introduce visual artifacts in the synthesized views.
+The second set of approaches formulate the view syn-
+thesis as sampling and consecutive reconstruction of the
+plenoptic function [29], where every pixel of the given views
+is considered a sample of a multidimensional LF function.
+Levin and Durand [30] propose a linear algorithm using a
+dimensionality gap prior to render a LF from a 3D focal
+stack sequence without depth estimation. Vagharshakyan et
+al. [31] consider the view synthesis as an inpainting task
+on EPI, and use the sparse representation of LF in shearlet
+transform to enhance the angular resolution.
+Nevertheless, both set of approaches above are vul-
+nerable to scenes with non-Lambertian surface, leading to
+researchers developing learning-based algorithms in recent
+years. Flynn et al. [32] synthesize novel views based on a
+sequence of images with wide baselines. Kalantari et al. [5]
+use two sequential CNNs to model depth and estimate
+color simultaneously. The disparity information and input
+views are then warped into the novel view. However, such
+depth-dependent method easily results in ghosting artifacts
+in the occluded regions. Gul and Gunturk [33] propose
+an algorithm for LFSR using two sequential CNNs. By
+combining the CNN models with different functions, their
+approach achieves both spatial and angular enhancement.
+Yet, with such pixel-level reconstruction strategy, the results
+easily suffer from jagging and lattice artifacts near the edges.
+Wu et al. [14] exploit the clear texture structure of the EPI
+and adopt a CNN to restore the EPI angular information.
+By making full use of EPI properties, the restored novel
+view is more pleasant compared with previous attempts.
+However, their network reconstructs a LF by restoring every
+EPI, which severely restricts the efﬁciency of the algorithm.
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+3
+
+Fig. 1. Two-plane parameterization of light ﬁeld imaging.
+
+Other than these EPI-wise [14], pixel-wise [33] or aperture-
+wise [5], [34] reconstruction schemes, we propose a novel
+schemes with throughput of the entire LF, and therefore
+improve the efﬁciency of the practical reconstruction.
+
+3 PROBLEM ANALYS IS AND FORMULAT ION
+
+3.1 Light ﬁeld representation
+We consider the simpliﬁed representation of light ﬁeld [29]
+by a 4D function Lpx, y , s, tq. In this representation, a light
+or lumigraph [35], describing the propagation of light rays
+ﬁeld is a collection of images captured by several cameras
+with the view points parallel to a common image plane, as
+shown in Fig 1. The focal plane contains the view points
+which are indexed by the coordinates ps, tq, and the image
+plane is parameterized by the coordinates px, yq. A 4D light
+ﬁeld is thus a mapping px, y , s, tq Ñ Lpx, y , s, tq, L : Ω ˆ
+Π Ñ R. The mapping can be regarded as an assignment of
+an intensity value to each radiance of rays passing through
+the two planes.
+
+3.2 Problem formulation
+We treat LFSR as a high-dimensional tensor restoration.
+Consider a given LR light ﬁeld I LR P RXˆY ˆSˆT , which
+is equivalent to downsampling an HR light ﬁeld I HR P
+RrsXˆrs Y ˆra Sˆra T by two factors rs and ra , where X and
+Y denote the embedded spaces deﬁned by spatial coordi-
+nates and S and T denote the angular embedded spaces.
+We use rs and ra to describe the respective scaling factors.
+The learning-based super-resolution can be described as
+
+(cid:32)
+
+θp0q , θp1q , . . . , θpK´1q(
+I SR px, y , s, tq “ g
+I LR px, y , s, tq ; Θ
+
+where Θ “
+represents the parame-
+ters of the networks, and gp¨q describes the learned mapping
+from LR to HR light ﬁelds. The deep learning model learns
+the mapping hierarchically through a stack of layers. Each
+layer is parameterized by a collection of weights and biases
+function δ pkq , where k P r0, K ´ 1s. Thus, the mapping from
+, followed by a nonlinear activation
+layer k ´ 1 to k can be expressed as
+
+W pkq , bpkq(
+
+θpkq “
+
+(cid:32)
+
+,
+
+(1)
+
+`
+
+˘
+
+¯
+
+¯
+
+g pkq
+
+I LR ; θpkq
+
+“ δ pkq
+
+W pkq ˚ g pk´1q
+
+I LR ; θpk´1q
+
+` bpkq
+
+,
+
+for k ě 1.
+(2)
+Moreover, the function gp¨q can be considered as the
+composition of multiple mappings, i.e., g “ g pK´1q ˝g pK´2q ˝
+
+´
+
+¯
+
+´
+
+´
+
+(a) 4D Convolution with re-
+ceptive ﬁeld highlighted.
+
+(b) The details of 4D feedforward
+convolutions.
+
+Fig. 2. The details of 4D feedforward convolutions on both spatial and
+angular dimensions.
+I LR ; θp0q ˘
+
+that g p0q `
+. . . ˝ g p0q , where the symbol ˝ represents function compo-
+sition. The original mapping is set to be identical, such
+“ I LR . All of the model parameters
+are optimized to reduce the loss Lp¨q, which measures the
+difference between I SR and I HR . Thus, the light ﬁeld SR
+problem can be formulated as
+
+Θ˚ “ arg min
+
+L
+
+I HR , g
+
+(3)
+Our proposed network directly learns the mapping gp¨q
+between LR light ﬁeld inputs and HR labels, and reconstruct
+the entire light ﬁeld in a single feedforward propagation.
+
+I LR ; Θ
+
+Θ
+
+.
+
+˘˘
+
+`
+
+`
+
+3.3 4D convolutional neural networks
+Ordinarily for images, convolutions are applied on the 2D
+feature maps, However, for light ﬁeld, it is more desirable
+to capture the spatio-angular information encoded in multi-
+ple adjacent views. Nevertheless, due to limitations in the
+traditional CNNs designed for 2D images, most existing
+learning-based methods apply them only on adjacent sub-
+aperture images [5], [13] to learn the relationships along
+angular coordinates, or on EPI images [36] to model scene
+geometry along one angular and one spatial coordinates.
+These approaches tend to underuse the potential of light
+ﬁeld, leading to artifacts in the region with complex light
+distribution, such as occluded regions or non-Lambertian
+surfaces. By convolving a 4D kernel with a tensor formed
+by cascading multiple neighboring views together in the
+angular dimensions, the feature maps are connected to
+adjacent views from the previous layer, thus capturing the
+spatio-angular information.
+We consider the input LR sub-aperture image set as
+
+, where s “ 1, 2, . . . , S and t “ 1, 2, . . . , T . We
+
+(cid:32)
+
+(
+
+use subscript to denote the position of each input sub-
+aperture image (or feature cube), which is shown in Fig 2(a).
+Moreover, we infer the hidden layers Hpkq , where k “
+0, 1, . . . , K ´ 1, according to Eq. 2, and therefore
+
+I LR
+s,t
+
+Hpkq “ δ
+
+Wpkq ˚ Hpk´1q ` Bpkq
+
+(4)
+Wpkq and Bpkq represent the ﬁlters and bias of 4D feedfor-
+ward convolution, respectively. Both have size s1 ˆ s2 ˆ a1 ˆ
+
+.
+
+´
+
+¯
+
+fstxyPstHi,jHi,j(k)Hi-2,j(k-1)Hi-1,j(k-1)(k-1)Hi-2,j-1(k-1)Hi-1,j-1(k-1)Hi,j-1(k-1)JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+a2 ˆ n, where n is the number of ﬁlters, s1 ˆ s2 is the spatial
+ﬁlter size, and a1 ˆ a2 is the angular ﬁlter size. To avoid the
+dying neuron problem in rectiﬁed linear units, we apply the
+leaky rectiﬁed linear units (LeakyReLU) proposed by Maas
+et al. [37] as the activation function in each layer, i.e.,
+if x ě 0
+
+(5)
+In all experiments, we set α “ 0.2. The notation ˚ in Eq. 4
+is implemented using cross-correlation combining the input
+feature map with the ﬁlter, i.e.
+
+δ pkq pxq “ δpxq “
+
+αx if x ă 0
+x
+
+"
+
+.
+
+s1´1ÿ
+m“0
+
+s2´1ÿ
+n“0
+
+a1´1ÿ
+u“0
+
+a2´1ÿ
+v“0
+
+pkq
+
+i,j pm, n, u, vq¨
+w
+px ` m, y ` n, s ` u, t ` vq,
+
+pkq
+
+h
+
+j
+
+px, y , s, tq “ c´1ÿ
+h
+
+i“0
+
+i
+
+pk´1q
+
+j
+
+pkq
+
+(6)
+px, y , s, tq is the value at position px, y , s, tq on
+where h
+in Hpkq , and w
+value at position pm, n, u, vq in the ﬁlter connected between
+the j th feature map h
+the ith stacked input channel and the j th feature map.
+
+i,j pm, n, u, vq is the
+
+pkq
+
+pkq
+
+j
+
+3.4 Geometric features
+The major beneﬁt of using 4D convolution for light ﬁeld
+processing is that it is able to extract the spatial features
+that preserve geometrical properties. Such feature maps not
+only contain spatial structures (e.g. textures and edges at
+different directions) but record the relationship of adjacent
+views as well. Fig. 3 exhibits an example of the feature
+maps learned by a single 4D convolutional layer in the net-
+work. To demonstrate these high-dimensional features, we
+present the 2D slices through the 4D features and arrange
+them in an equally spaced rectangular grid in Fig. 3(a).
+Meanwhile, Fig. 3(b) shows a certain single view and the
+horizontal and vertical “feature EPIs” acquired by gathering
+the feature samples with a ﬁxed spatial coordinate and an
+angular coordinate. The feature EPIs are very similar to
+the light ﬁeld EPIs, reﬂecting that the features learned by
+the 4D convolution layer have high coherence. In addition,
+the geometry properties are also reﬂected in the spatial
+dimensions. The learned spatial features are sensitive to
+the regions with occlusions, such as the foreground object
+border. In Fig. 3(d), Fig. 3(e) and Fig. 3(f), we visualize
+and compare two types of spatial features extracted from
+different 4D convolutional layers, namely the object border
+and texture features. The object border features are always
+with occlusions and displayed in the red boxes, while the
+texture features are presented in blue boxes. As is shown in
+the ﬁgures, the edges of object border features are smoother
+compared with the corresponding ones of reconstruction
+results in Fig. 3(c). By contrast, however, the edges of texture
+features remain clear.
+Such smoothing effects near object border is related to
+the scene geometry, other than a random occurrence. To
+demonstrate typical variances, we analyze the light ray
+transmission in the LF imaging system. Fig. 4 exhibits an ex-
+ample conﬁguration for two objects placed at different dis-
+tances from the camera and the corresponding EPI pattern.
+The near object (denoted as “occluder ”) whose distance is
+z2 partially occludes the further object in red (denoted as
+
+4
+
+(a) 2D feature slices
+
+(b) Feature EPIs
+
+(c) Reconstruction
+
+(d) Feature (Conv4D 22, Channel 4)
+
+(e) Feature (Conv4D 15, Channel 1) (f) Feature (Conv4D 7, Channel 50)
+
+Fig. 3. Visualization of the geometric features extracted from the pro-
+posed 4D framework. (a) The collection of 2D slices through the learned
+feature maps. (b) A cer tain 2D slice of the 4D geometric feature map
+shown in (a), and the EPIs located at corresponding lines. (c) The spatial
+reconstruction results. (d)–(f) geometric features extracted from different
+4D convolutional layer.
+
+“background”) with the distance z1 . We denote the positive
+direction of s as the left views in a LF. The line A1A2 on
+A1 corresponds to the leftmost view and A2 corresponds to
+EPI is projected from A of the background, where point
+the rightmost view (the same for points B , O , and C ). The
+shaded region BC of the background is partially occluded
+by the occluder at z2 with no occlusion from the leftmost
+the corresponding region B 1O 1O2 on the EPI is deﬁned as
+view and completely occluded from the rightmost view, and
+partially occluded region (POR). As a result, in the POR, the
+pixels belong to occluder shifts with larger distance than the
+background pixels among different views (in both the input
+and the feature space). Considering the 4D convolutional
+layer is approximately linear (the LeakyReLU is piecewise
+linear), the features of each layer are actually calculated
+as a weighted combination of multiple views directly or
+
+xysttyxs12121212121212121212121212121212JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+5
+
+Algorithm 1: Aperture group batch normalization
+Input
+: The features of a particular hidden layer:
+
+tHp ps, tqu;
+
+Output: The normalized features: ˆHp ps, tq
+Parameters to be learned γ , β
+1 Initialize the  “ 0.001;
+2 for p “ 1, ¨ ¨ ¨ , N do
+
+ř
+
+1
+mST
+
+µp Ð 1
+
+m
+
+ř
+ř
+
+i“1 p 1
+m
+ST
+m
+i“1
+m
+i“1
+
+ř
+ř
+ř
+
+ř
+ř
+ř
+
+s“1
+S
+S
+s“1
+s“1
+S
+p`
+σ2
+
+σp Ð 1
+ˆHp ps, tq Ð γ ¨ Hp ps,tq´µp
+
+?
+
+mST
+
+i ps, tqq “
+
+i ps, tq;
+i ps, tq ´ µp q2 ;
+
+t“1 Hp
+T
+t“1 Hp
+T
+T
+
+t“1 pHp
+
+` β
+
+3
+
+4
+
+5
+
+6
+
+Fig. 4. Illustration of partially occluded region in EPI pattern. The
+positive direction of s denotes the left views.
+
+7 end
+
+indirectly from inputs. The features near object border is
+therefore smooth.
+
+3.5 Aperture group batch normalization
+To ease the training of 4D framework, we follow the
+work [15] and apply the normalization to the outputs of
+every 4D convolutional layer. However, as is illustrated in
+Section 3.4, considering such geometric features preserve the
+high coherence among adjacent views, the whiten process
+should not be applied on every view of the feature maps.
+Therefore, we implement the normalization transform over
+a group of sub-aperture images in each channel of the fea-
+ture maps, and named the proposed operation as aperture
+group batch normalization (AGBN).
+Following the description is Section 3.3, we consider the
+output of a particular hidden layer H (omit the superscript
+k for brevity). We only count on the angular dimension
+and use a new symbol to denote the learned features
+in an aperture-wise manner as H “ tHp
+i ps, tqu, where
+s “ 1, 2, ¨ ¨ ¨ , S and t “ 1, 2, ¨ ¨ ¨ , T are two indices of
+angular dimensions, and p denotes the number of feature
+channels, and for each sub-aperture feature map contains
+m values (i “ 1, 2, ¨ ¨ ¨ , m). Then, the algorithm can be
+described in the Algorithm 1.
+
+4 ME THOD
+
+4.1 High-dimensional dense residual CNNs
+Our model is designed on the basis of the 4D convolutional
+layer. The network takes an LR light ﬁeld as input (rather
+than its upscaled version) and recovers the spatial and
+angular information progressively. There are two subnet-
+works, which reconstruct the entire light ﬁeld in two dif-
+ferent stages: (1) spatio-angular restoration, and (2) details
+reﬁnement.
+
+distribution, which can assist in further super-resolving the
+light ﬁeld. To achieve this, the network learning proceeds by
+minimizing the angular loss between the predicted HR light
+ﬁeld and the ground truth using mean square error (MSE).
+For upsampling, we extend the sub-pixel convolution
+operation proposed in [38] by combining it with angular
+interpolation to upscale an input LR feature tensor in all
+dimensions. A graphical illustration of the upsampling op-
+eration is presented in Fig. 6. As an example, assuming
+H ˆ W ˆ S ˆ T , where H “ W “ 4 and S “ T “ 3.
+a single channel, and the LR feature map has dimensions
+Let the spatial upscaling factor rs and the angular upscaling
+factor ra both be 2. The ﬁrst step involves expanding the
+channel by a factor of r2
+s . In the second step, given the
+high coherence of the spatio-angular features, we use linear
+interpolation on the angular dimensions of the feature maps
+a factor of ra each (strictly, from 3 ˆ 3 to 5 ˆ 5). Third,
+to upsample the resolution of the angular dimensions by
+the channel-to-space transpose layer is placed on top of the
+feature maps to upscale both spatial dimensions by a factor
+of rs each.
+
+4.1.2 Details reﬁnement
+The spatio-angular restoration network is trained in a super-
+vised manner, using a mean-squared reconstruction loss to
+measure the difference between the output and the ground
+truth. While such per-pixel loss function contributes to the
+network learning of the angular coherence, it can also lead
+to difﬁculty in restoring the high-frequency texture. To miti-
+gate this problem, the details reﬁnement network, designed
+for recovering the spatial high-frequency details, is trained
+by optimizing the sub-aperture perceptual loss. As will be
+demonstrated later in our experiments, such loss based on
+differences between high-level features is effective to drive
+the high-dimensional network to recover spatial details with
+sub-pixel accuracy.
+
+4.1.1 Spatio-angular restoration
+As illustrated in Fig. 5, the spatio-angular restoration stage
+is set up to take down-sampled light ﬁeld patches as inputs
+and predict the missing information. At this stage, the
+high-dimensional subnetwork is trained to learn the light
+
+4.2 Loss Function
+Most learning-based methods for light ﬁeld reconstruction
+use the mean squared error (MSE) between the recovered
+EPI image [36] or sub-aperture image [13], [20], [21] and the
+ground truth. However, typical loss function encourages the
+
+z1z2zsxbackgroundEPI:L(x,s)A'A"OO'O"B'(B")occluderABC(C')Left viewsRight viewsJOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+6
+
+Fig. 5. The overview of the proposed model. Our model consists of a residual network for restoring the local spatio-angular information of light
+ﬁeld and a reﬁnement network for reconstructing the spatial details of scenes. Blue arrows indicate high-dimensional convolution operation, while
+yellow arrow stands for activation operation. Green arrows (with ‘) indicate addition and red arrow denotes upsampling, and a denotes the (cid:96)2
+difference.
+
+model to ﬁnd pixel-wise averages of plausible solutions that
+are often too smooth [39], [40], resulting in edge artifacts
+such as blurring and ghosting in the region containing com-
+plex occlusions or textures. To reconstruct realistic spatial
+texture details while preserving the geometric properties,
+we design a novel loss function that evaluates the results
+concerning the entire light ﬁeld characteristics. The loss
+function used for training our proposed network is formu-
+lated as the weighted sum of an angular loss (cid:96)A and a spatial
+perceptual loss (cid:96)S , i.e.,
+
+(cid:96)SA “ α ¨ (cid:96)S ` β ¨ (cid:96)A ,
+
+(7)
+
+where scalars α and β denote the weights of each loss.
+Spatial loss measures the quality of reconstructed light
+ﬁeld in terms of spatial coordinates.
+Inspired by [39]
+and [16], we extend the perceptual loss to describe aperture-
+wise differences between high-level feature representations.
+Such loss obtained from pre-trained 19 layer VGG net-
+work [41] encourages the network to restore the spatial
+information with better high-frequency details. In our ex-
+periments, the spatial loss is obtained by calculating the
+average value of content loss through all the sub-aperture
+images which can be formulated as
+
+,
+
+(cid:96)S “ 1
+ST
+
+f pI HR
+s,t q ´ f pgpI LR
+s,t ; Θqq
+
+t“1
+
+s“1
+
+(8)
+where f p¨q indicates the summation of all the feature maps
+after every activation function of VGG network. We use
+s,t “ I HR p¨, ¨, s, tq to represent the
+LR input and label sub-aperture image with angular coordi-
+nates ps, tq, respectively. The function gp¨q is the mapping as
+indicated in Section 3.2.
+
+s,t “ I LR p¨, ¨, s, tq and I HR
+
+I LR
+
+Sÿ
+
+Tÿ
+
+`
+
+˘2
+
+Angular loss is deﬁned on the basis of MSE between the
+reconstructed light ﬁeld and the ground truth. This item
+is straightforward but critical for learning the light ﬁeld
+structure properties. Unlike single image super-resolution,
+for LFSR the MSE loss not only describes the pixel-wise
+differences but also ensures that the results preserve the
+relationship of adjacent viewpoints. Such property can be
+reﬂected by rearranging the order of summation
+
+I HR px, y , s, tq ´ I SR px, y , s, tq
+
+I HR px, y , s, tq ´ I SR px, y , s, tq
+
+˘2
+˘2
+
+¸
+
+(cid:96)A “ Xÿ
+
+x“1
+
+“ Yÿ
+“ Yÿ
+
+y“1
+
+Yÿ
+Tÿ
+Tÿ
+
+t“1
+
+y“1
+
+Sÿ
+Tÿ
+`
+˜
+Xÿ
+Sÿ
+`
+
+x“1
+
+s“1
+
+t“1
+
+s“1
+
+`
+
+y“1
+
+t“1
+
+˘2
+
+EHR py , tq ´ E SR py , tq
+
+,
+
+(9)
+where EHR py , tq and E SR py , tq represent the original and
+super-resolved EPIs acquired by gathering the light ﬁeld
+samples in terms of a spatial coordinate x and an angular
+coordinate s, respectively.
+
+4.2.1 Network Settings
+In the proposed HDDRNet, all 4D convolution layers
+have 64 ﬁlters with a spatial dimension of 3 ˆ 3 and an
+angular dimension of 5 ˆ 5. The convolution ﬁlters are
+initialized using the method of Glorot and Bengio [42].
+Furthermore, we use the residual blocks layout proposed
+by Gross and Wilber [43]. Each block consists of two 4D
+convolutional layers followed by batch normalization and
+the LeakyReLU [37] with a slope α “ 0.2 in the negative
+domain as the non-linear activation function.
+
+Spatio-angular RestorationDetails RefinementLRLF (RGB)LRLF (YCbCr)LRLF (Y)yyLoss Network (VGG19)yyJOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+7
+
+Fig. 6. Upscaling operation used for resolution enhancement. For
+size is 1) with a single channel C “ 1. Given the LR input feature
+clarity, in this example, we only consider a single feature tensor (batch
+tensor with dimension C ˆ H ˆ W ˆ S ˆ T (“ 1 ˆ 4 ˆ 4 ˆ 3 ˆ 3),
+we ﬁrst add 2 zero-padding frames, and then apply the 4D convolution
+on the feature tensor. We use four 4D convolution kernels to generate
+the LR feature map with 4 channels (denoted by 4 main colors in step
+2(cid:13)). Subsequently, interpolation is ﬁrst performed on (S ˆ T ) angular
+dimensions of LR feature map. For spatial resolution, we applied the
+shufﬂe operation which enhances the (H ˆ T ) spatial resolution of
+feature map and reduces the channel resolution. Therefore, at the end
+we have a super-resolved feature tensor of size 1 ˆ 8 ˆ 8 ˆ 5 ˆ 5.
+
+4.2.2 Multi-range training
+
+The multi-range training strategy is speciﬁcally designed for
+our model to learn the light distribution where there may
+be complex occlusions, usually at the edges of occluders.
+There are two major aspects to this: 1) For spatial dimension,
+r0.8, 1.0s to encourage the model to learn the inter-scale
+we randomly downsample the spatial resolution between
+correlations [44]. 2) For angular dimension, we sample 5 dif-
+ferent angular directions with various ranges. We consider
+the light distribution model near the occluders as shown in
+Fig. 7(a), where we use different colors to demonstrate the
+light rays from different views with occlusion. The sampling
+is implemented by choosing ﬁrst, at random, a center view
+and a range, and then the surrounding views according to
+the range. For instance, considering the occlusions near pixel
+x1 . If one takes s4 as the center view and samples the other
+views with range 1, then s2 to s6 are selected to describe
+the light distribution occlusions contributed by a single
+occluder. If one considers the light distribution near pixel
+x3 and takes s4 as center view and samples the other views
+with range 2, then sk , where k “ 0, 2, 4, 6, 8, are selected
+to describe the light distribution with complex occlusions
+contributed by two occluders. An example of what the
+training samples look like is provided in Fig. 7(b). In our
+experiments, the model trained using multi-range strategy
+has more robustness over the complex light distribution
+and different scaling on spatial details. Therefore, we name
+it M-HDDRNet and present the quantitative and visual
+comparisons in Section 6.
+
+(a)
+
+(b)
+
+Fig. 7. Illustration of light distribution at the place with two occluders
+(a) the light ray model near occluders. The blue line denotes camera
+plane and xi (i “ 0, 1, 2, 3) is a point in the background, while si
+(i “ 0, 1, ¨ ¨ ¨ , 8) stands for the viewpoint. The orange square (cid:4) denotes
+the selected viewpoints and pixel in background when occlusions are
+contributed by only 1 occluder, while the red square (cid:4) is used to
+for places where the occlusions are contributed by 2 occluders. (b)
+illustration of light ray model in the spatial dimensions. The solid point
+represents the pixel without occlusion while hollow point stands for the
+occluded pixel.
+
+4.2.3 Implementation and training details
+Our network each time receives a 4D patch of light ﬁeld
+as the input and outputs a super-resolved 4D patch. We
+assume that the input LR light ﬁeld patch is related to its
+HR counterpart based on the classical imaging model [21],
+[45], [46], [47]
+
+I LR “ κpB ˚ I HR q ` ξ ,
+
+(10)
+where ξ represents an additive noise, κp¨q is the nearest
+neighbor downsampling operator on every sub-aperture
+image. B is the Gaussian kernel with window size of 7 and
+standard deviation of 1.2. The HR patches are randomly
+cropped from Lytro Archive [48] and Fraunhofer [49] dataset
+with 96 ˆ 96 pixels and 5 ˆ 5 angular directions. Our model
+is implemented using Tensorﬂow toolbox [50] and trained
+using the Stochastic Gradient Descent solver. The learning
+rate is initialized to 10´5 and decreased by a factor of 0.1
+for every 10 epochs. Our implementation is available at
+https://github.com/monaen/LightFieldReconstruction.
+
+5 EXPER IMENTS
+
+5.1 Training data and analysis
+The light ﬁelds involved in the experiments reported in this
+paper are all from publicly available datasets. We select 100
+light ﬁelds from the Lytro Archive [48] (excluding occlusions
+and reﬂective) and the entire densely-sampled Fraunhofer
+dataset [49] for training. The former contains 353 real-world
+scenes captured using a Lytro Illum camera with a small
+baseline. Since many corner angular samples are outside the
+camera’s aperture, for each scene, we select the center 9 ˆ 9
+views in the experiments. The latter includes 9 scenes that
+are densely sampled using a high-resolution camera. Each
+light ﬁeld is processed as a 21 ˆ 101 array of views, and each
+view is a sampling of the real-world object with a resolution
+as high as 1988ˆ1326 pixels. The Fraunhofer dataset enables
+the proposed multi-range strategy, which helps to increase
+
+3x3x3x3 kernelt(CLxHLxWLxSLxTL)1x4x4x3x3sxyAngularInterpolationt(CxHHxWHxSLxTL)1x8x8x5x54x4x4x3x34x4x4x5x5(CHxHLxWLxSHxTH)sttConvolutionwith paddingReshape(CHxHLxWLxSLxTL)1234x0x1s0s1s2s3s4Occluder1x2s5s6s7s8x3Occluder2BackgroundOcclusions with 1 occluderOcclusions with 2 occluderss0s2s4s6x1x2x3JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+8
+
+Fig. 8. Finding the angular kernel size. The curves are based on the
+average mean PSNR on a subset of the Stanford Archive scenes with
+spatial scaling factor ˆ2 and angular scaling factor ˆ2.
+
+the robustness of our model against different disparities
+across views.
+The evaluation is conducted on light ﬁelds from multiple
+sources, including real ones such as the New Light Field
+Image Dataset (EPFL) [51], [52], the synthetic ones such as
+HCI datasets [53], [54], the microscope datasets [55], [56] that
+contain complex occlusions and translucency, and the cam-
+era gantry light ﬁelds such as the Gantry Archive [57]. The
+experimental results demonstrate that the trained network
+can be generalized to various real-world scenes, synthetic
+scenes, and microscopy light ﬁelds. This shows that the
+geometric features are relatively representative of multiple
+situations.
+
+5.2 Model design
+In this section, we evaluate the model with 5 residual blocks
+in the spatio-angular restoration stage, and 3 residual blocks
+in the details reﬁnement stage. Furthermore, to analyze the
+performance of our model, we vary the ﬁlter size and the
+local residual connections. We also analyze the effects of the
+multi-range training strategy.
+
+5.2.1 Angular ﬁlter size of 4D convolution
+To ﬁnd the effective ﬁlter size to aggregate the angular
+information through the restoration network, we test ﬁve
+different settings of 4D convolution. We experiment with
+two types of architectures: (1) all convolution layers have
+the same kernel size (1 ˆ 1, 3 ˆ 3, or 5 ˆ 5); (2) the kernel
+size increases (1–1–3–3–5) or decreases (5–5–3–3–1) across
+the layer. Note that for spatial super-resolution, varying
+the ﬁlter size does not have a signiﬁcant impact on the
+performance, and certain ﬁlter size (e.g., 3 ˆ 3) already can
+model the spatial content well [41]. As is shown in Fig. 8,
+with 5 ˆ 5, 3 ˆ 3 and increasing angular kernel size have
+our experiments show that the performance of networks
+competitive capacity to learn the angular correlations.
+
+5.2.2 Varying residual connections
+We examine three different methods of local residual learn-
+ing in our model to evaluate the effects of hierarchical
+spatial-angular features from the original LR light ﬁelds.
+
+(a) Sequential
+skip connection
+
+(b) shared-source
+skip connection
+
+(c) dense-skip
+connection
+
+Fig. 9. Local residual connection. We explore three different ways
+of skip connection in the residual modules for training the proposed
+models.
+
+Fig. 10. Convergence analysis on different types of connections. The
+curves for each connection are based on the Average Mean PSNR on
+the validation set.
+
+1) Sequential skip connection: This is the classic con-
+nection style used in ResNet. We adopt and extend
+the method to ﬁt our high-dimension convolution
+layer.
+2) Share-source skip connection: All residual blocks
+are connected to the source features.
+3) Dense skip connection: A dense-style connection
+motivated by DenseNet [58], which makes full use
+of hierarchical spatio-angular features.
+We illustrate the three types of connection in Fig. 9, and
+Fig. 10 shows the convergence curves of each type of con-
+nection. The dense-skip connection ensures that the model
+converges to a better point.
+
+5.2.3 Reconstruction strategy
+We compare different variants of the proposed model with
+different loss items and multi-range training strategy. Our
+model is composed of two parts, namely spatio-angular
+information reconstruction represented by “R”, and spatial
+details reﬁnement represented by “D”. Table 1 compares the
+effects of different components, together with the learning
+
+050100150200250Epoch2830323436Average Mean PSNRksize=1ksize=3ksize=5increasingdecreasinginputResidualBlockResidualBlockResidualBlockinputResidualBlockResidualBlockResidualBlockinputResidualBlockResidualBlockResidualBlock050100150200250300350Epoch2728293031323334Average Mean PSNRdensesequentialshare-sourceJOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+strategy and loss for 2ˆ spatial and 2ˆ angular SR task.
+The number behind R and D represents the number of HD
+residual blocks having been involved in the corresponding
+subnetwork. “MR” stands for multi-range training, and “Re-
+ﬁnement” denotes whether the model contains the details
+reﬁnement part. The quantitative results show performance
+improvement, which validates the effectiveness of multi-
+range training strategy and the deﬁned loss. Fig. 11 exam-
+ines the contribution of using the spatial loss function on
+the high-frequency details reconstruction. As is discussed in
+Section 4.2, this loss function helps to promote the restora-
+tion of high-frequency details (e.g. the roof tile texture and
+window frame).
+
+TABLE 1
+Ablation study of different components in the proposed model. We
+compare the performs of several variants of the model on the HCI new
+test dataset and occlusion scenes, and repor t the PSNR results.
+
+ˆ
+ˆ
+
+Model MR Reﬁnement
+R8
+D8
+R5D3 ˆ
+R8
+D8
+R5D3 (cid:88)
+
+(cid:88)
+(cid:88)
+
+(cid:88)
+(cid:88)
+
+ˆ
+
+(cid:88)
+(cid:88)
+
+ˆ
+
+Loss
+
+HCI new (test) Occlusion 10
+
+(cid:96)A
+(cid:96)S
+(cid:96)A ` (cid:96)S
+(cid:96)A
+(cid:96)A ` (cid:96)S
+(cid:96)S
+
+31.35
+31.34
+31.34
+31.64
+31.65
+31.74
+
+32.70
+32.65
+32.76
+32.77
+33.30
+33.29
+
+Fig. 11. Contribution of different loss. (a) The input LR LF image (b)
+Bicubic (c) Model R5D3 trained on angular loss (d) Model R5D3 trained
+on the combination of spatial and angular loss (e) Ground-truth
+
+6 RESU LTS
+
+6.1 Overall Comparisons
+For comparisons in terms of spatial resolution, we choose
+8 state-of-the-art SR algorithms, including 3 LFSR meth-
+ods (Yoon et al. [34], BM PCA+RR [45], LFNet [20]), 3
+well-known single-image SR methods (VDSR [59], MSLap-
+SRN [44], RDN [60]) and 2 video SR (ESPCN [38] and
+Jo et al. [61]). We examine different methods on 7 public
+light ﬁeld datasets on real-world, synthetic and microscope
+data. The results are evaluated with the widely used im-
+age quality metrics: peak signal-to-noise ratio (PSNR) and
+structural similarity (SSIM), comparing the performance on
+2ˆ, 3ˆ and 4ˆ SR. For each comparison, we use the public
+source code and ﬁne-turning of the model to ﬁt the classic
+downsampling method described in Eq. 10. (for details,
+please refer to supplementary materials) The quantitative
+results are shown in Table 2. Our M-HDDRNet performs
+favorably against existing 2D and 3D (video) SR methods.
+One major limitation of these methods is that they do
+not fully exploit the light ﬁeld structure, where each sub-
+aperture image is restored independently (2D) or with 1D
+
+9
+
+correlations. However, the sub-aperture images in light ﬁeld
+are correlated in 2D, and our M-HDDRNet is able to fully
+exploit such complex angular correlations to reconstruct
+high-quality scenes.
+For angular SR, we compare with several
+recent
+learning-based methods on different tasks. In Table 2, we
+evaluate the performance against methods proposed by
+Kalantari et al. [5] and Wu et al. [14] on real-world, syn-
+presented in Table 2, where “Aˆ2” refers to enhance angular
+thetic and microscope datasets. Both PSNR and SSIM are
+resolution from 5 ˆ 5 to 9 ˆ 9, and “Aˆ3” means enhance
+angular resolution from 3 ˆ 3 to 9 ˆ 9.
+6.1.1 Comparison with 2D SR methods
+To illustrate the beneﬁts of using high-dimensional convo-
+lution, we compare the visual performance on the scenes
+containing ﬁne structures with two state-of-the-art 2D SR
+methods. As is shown in Fig. 13, our proposed model
+successfully restores the ﬁne texture (the “whisker ”) that
+is almost lost in the LR input scenes. The results generated
+from 2D SR methods [44] and [60] are blurry, especially on
+the “whisker ” regions, even if they have competitive PSNR
+and SSIM with ours.
+
+6.1.2 Comparison with 3D SR methods
+3D SR methods on LFSR treat the light ﬁeld as a sequence of
+images, and therefore they all lose 1D angular correlation.
+In our experiment, we rearrange the sub-aperture images
+of a set of light ﬁeld as an image sequence, and compare
+the results of our model with other state-of-the-art 3D SR
+methods in Fig. 14. M-HDDRNet gives more realistic spatial
+results while preserving good angular correlations in 2D.
+6.2 2 ˆ 2 to 8 ˆ 8 view synthesis comparison
+In this section, we carried out comparison with two state-of-
+the-art view synthesis methods, namely Kalantari et al. [5]
+and Yeung et al. [62]. The method by Wu et al. [14] cannot
+be compared since their method requires 3 views in each
+angular dimension to provide enough information for in-
+terpolation step. Table 3 shows the average performance on
+several public LF datasets and our model obtains higher
+PSNR value than the other two methods. Fig. 15 further
+visually demonstrates that our model
+is able to obtain
+better reconstruction quality. Kalantari et al. [5] tends to
+produce artifacts near the boundaries, especially in the
+region with complex occlusions. Our model reconstructs the
+LF preserved better geometric structure by fully using the
+correlations among sub-aperture images.
+
+6.3 Comparison with spatio-angular SR methods
+One major beneﬁts of our proposed model is its capability to
+enhance both spatial and angular resolution simultaneously.
+We compare with two existing methods [33], [34] for super-
+resolution on both spatial and angular dimensions in Fig. 16.
+Yoon et al. [34] applied the SRCNN to recover spatial details
+leading to smooth results; Gul et al. [33] provided a pixel-
+level reconstruction strategy, recovering both spatial and
+angular information separately. However, such pixel-level
+approach easily results in lattice artifacts in bright regions
+of the scene, such as what is shown in the “wall region” of
+Fig. 16(c).
+
+(e)(a)(b)(d)(c)HCI new - Medieval2JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+10
+
+TABLE 2
+Quantitative evaluation of state-of-the-ar t LFSR algorithms. We repor t the average PSNR and SSIM for Spatial 2ˆ, 3ˆ, 4ˆ and Angular 2ˆ, 3ˆ.
+Red and blue indicate the best and the second best performance, respectively.
+
+Algorithm
+
+Scale
+
+Bicubic
+Yoon et al. [34]
+BM PCA+RR [45]
+LFNet [20]
+VDSR [59]
+MSLapSRN [44]
+RDN [60]
+ESPCN [38]
+Jo et al. [61]
+HDDRNet
+M-HDDRNet
+Bicubic
+Yoon et al. [34]
+BM PCA+RR [45]
+LFNet [20]
+VDSR [59]
+MSLapSRN [44]
+RDN [60]
+ESPCN [38]
+Jo et al. [61]
+HDDRNet
+M-HDDRNet
+Bicubic
+Yoon et al. [34]
+BM PCA+RR [45]
+LFNet [20]
+VDSR [59]
+MSLapSRN [44]
+RDN [60]
+ESPCN [38]
+Jo et al. [61]
+HDDRNet
+M-HDDRNet
+Yoon et al. [34]
+Kalantari et al. [5]
+Wu et al. [14]
+HDDRNet
+M-HDDRNet
+Kalantari et al. [5]
+Wu et al. [14]
+HDDRNet
+M-HDDRNet
+
+Sˆ2
+
+Sˆ3
+
+Sˆ4
+
+Aˆ2
+
+Aˆ3
+
+Occlusions
+(20)
+28.52
+28.86
+30.45
+30.37
+29.84
+30.85
+31.46
+32.72
+32.29
+34.69
+34.83
+26.95
+27.25
+27.96
+28.01
+27.94
+29.22
+29.14
+28.90
+30.62
+31.18
+31.08
+24.98
+25.04
+26.28
+25.94
+25.00
+27.41
+26.97
+27.14
+27.59
+28.40
+28.70
+34.55
+36.50
+37.76
+38.27
+38.45
+34.70
+35.64
+35.96
+36.05
+
+Reﬂective
+(20)
+31.19
+31.42
+33.07
+33.85
+32.32
+32.43
+33.86
+35.38
+34.54
+36.34
+37.06
+29.50
+29.78
+30.05
+30.34
+29.77
+32.03
+30.82
+31.47
+33.19
+33.34
+33.37
+27.54
+28.14
+28.73
+28.81
+27.72
+30.28
+29.64
+29.84
+30.32
+30.57
+30.78
+35.30
+38.73
+40.36
+41.22
+41.38
+37.24
+40.03
+40.16
+40.14
+
+PSNR (dB)
+HCI
+new Micro. Stanford EPFL
+HCI
+old
+(21)
+26.97 29.69 30.13
+31.75
+28.66
+28.41 31.24 30.99
+32.71
+29.69
+31.20 32.62 28.93
+32.92
+32.68
+29.56 32.81 30.11
+32.21
+32.66
+29.32 32.11 31.28
+32.29
+30.46
+29.51 33.13 31.63
+34.07
+32.27
+31.13 33.25 31.91
+33.22
+32.41
+31.18 33.42 32.19
+36.61
+32.41
+30.92 32.93 32.59
+34.75
+31.83
+32.64 34.20 32.64
+37.49
+35.30
+33.12 34.64 33.00
+38.30
+35.97
+25.39 28.94 29.04
+29.42
+27.31
+25.79 29.57 29.06
+29.78
+27.51
+26.78 30.24 29.00
+29.96
+29.71
+26.76 29.81 29.34
+29.98
+29.69
+26.28 29.44 29.38
+29.67
+27.62
+27.80 30.94 30.21
+33.61
+30.00
+26.89 29.54 29.68
+32.92
+29.65
+27.46 29.96 30.10
+33.36
+30.30
+29.05 31.76 30.11
+33.25
+30.86
+29.53 31.97 30.59
+33.74
+32.68
+29.41 32.11 30.93
+34.03
+32.73
+23.95 25.92 27.46
+26.99
+25.94
+25.65 28.28 28.02
+29.25
+26.97
+25.85 28.90 27.32
+29.91
+27.51
+25.40 29.36 28.21
+28.67
+26.10
+25.21 29.05 28.23
+29.38
+25.99
+26.27 29.55 29.13
+31.70
+28.78
+26.66 29.63 28.80
+31.81
+28.58
+26.07 29.06 29.22
+30.58
+27.95
+26.72 29.75 29.63
+30.53
+28.52
+27.66 29.83 28.60
+30.91
+29.97
+27.97 30.46 28.98
+31.94
+30.61
+30.65 33.54 32.43
+33.75
+35.21
+32.95 36.96 33.87
+33.37
+38.70
+33.62 36.24 35.85
+34.96
+39.37
+35.56 37.72 37.21
+35.05
+40.02
+35.77 37.90 37.39
+35.27
+40.22
+32.59 35.53 30.71
+28.84
+35.19
+33.38 35.64 31.08
+30.21
+37.05
+33.75 35.79 31.34
+30.24
+38.28
+34.23 36.45 31.38
+30.61
+38.41
+
+Occlusions
+(20)
+0.808
+0.834
+0.878
+0.881
+0.865
+0.879
+0.893
+0.911
+0.902
+0.934
+0.935
+0.746
+0.758
+0.817
+0.816
+0.809
+0.818
+0.796
+0.809
+0.859
+0.872
+0.875
+0.663
+0.686
+0.710
+0.709
+0.671
+0.755
+0.724
+0.745
+0.765
+0.790
+0.805
+0.910
+0.943
+0.952
+0.953
+0.953
+0.927
+0.928
+0.928
+0.929
+
+Reﬂective
+(20)
+0.863
+0.885
+0.896
+0.912
+0.898
+0.909
+0.916
+0.936
+0.920
+0.949
+0.950
+0.819
+0.826
+0.835
+0.847
+0.841
+0.875
+0.846
+0.866
+0.896
+0.902
+0.902
+0.771
+0.798
+0.796
+0.808
+0.780
+0.835
+0.817
+0.826
+0.838
+0.846
+0.853
+0.939
+0.969
+0.970
+0.972
+0.973
+0.958
+0.963
+0.964
+0.964
+
+SSIM
+HCI
+new Micro. Stanford EPFL
+HCI
+old
+(21)
+0.769 0.806 0.797
+0.919
+0.849
+0.826 0.851 0.798
+0.937
+0.864
+0.892 0.879 0.731
+0.921
+0.906
+0.884 0.898 0.813
+0.924
+0.892
+0.821 0.886 0.839
+0.940
+0.892
+0.852 0.894 0.867
+0.945
+0.901
+0.894 0.893 0.858
+0.893
+0.912
+0.900 0.896 0.843
+0.963
+0.926
+0.871 0.860 0.866
+0.946
+0.909
+0.932 0.916 0.872
+0.967
+0.945
+0.933 0.915 0.866
+0.969
+0.947
+0.703 0.776 0.760
+0.895
+0.812
+0.733 0.803 0.724
+0.912
+0.827
+0.766 0.834 0.732
+0.875
+0.850
+0.764 0.822 0.741
+0.864
+0.848
+0.721 0.803 0.739
+0.873
+0.855
+0.789 0.828 0.758
+0.935
+0.867
+0.755 0.788 0.761
+0.891
+0.834
+0.786 0.819 0.780
+0.938
+0.855
+0.822 0.852 0.793
+0.934
+0.891
+0.848 0.865 0.786
+0.938
+0.904
+0.855 0.869 0.807
+0.940
+0.904
+0.630 0.688 0.705
+0.842
+0.767
+0.688 0.768 0.710
+0.860
+0.792
+0.703 0.772 0.675
+0.865
+0.785
+0.706 0.762 0.718
+0.835
+0.775
+0.672 0.765 0.722
+0.863
+0.772
+0.723 0.782 0.715
+0.907
+0.821
+0.730 0.792 0.742
+0.895
+0.804
+0.717 0.771 0.744
+0.890
+0.812
+0.722 0.787 0.769
+0.891
+0.830
+0.789 0.814 0.693
+0.891
+0.846
+0.801 0.827 0.708
+0.907
+0.862
+0.779 0.892 0.905
+0.849
+0.939
+0.915 0.933 0.910
+0.936
+0.972
+0.920 0.924 0.944
+0.901
+0.973
+0.918 0.925 0.932
+0.908
+0.973
+0.919 0.924 0.934
+0.904
+0.973
+0.906 0.916 0.826
+0.850
+0.959
+0.905 0.918 0.845
+0.852
+0.960
+0.905 0.904 0.847
+0.857
+0.961
+0.913 0.916 0.842
+0.861
+0.962
+
+TABLE 3
+Quantitative evaluation of state-of-the-ar t view synthesis algorithms.
+We repor t the average PSNR under the task 2 ˆ 2 ´ 8 ˆ 8.
+
+Algorithm Occlusions
+(20)
+Kalantari et al. [5]
+32.68
+Yeung et al.(16L) [62]
+33.19
+M-HDDRNet
+33.24
+
+Reﬂective
+(20)
+35.98
+36.82
+36.97
+
+EPFL
+(21) Micro. HCI
+new
+33.60 22.14 33.19
+35.09 24.11 33.39
+35.34 24.13 34.04
+
+6.4 Computational analysis
+
+One potential drawback of the proposed 4D framework is
+its additional computational requirement for the demanding
+4D convolution operations. Theoretically, when compare
+convolution layer incur a1 ˆ a2 times additional compute
+with a conventional 2D convolution layer, the proposed 4D
+operations to result in the same output size. However, as the
+4D convolution allows our model to reconstruct the entire
+LF directly without additional auxiliary steps, the end-to-
+
+end compute time of our proposed framework remains
+competitive. To evaluate its end-to-end performance, we
+compare the execution time versus PSNR with two state-
+of-the-art approaches with different reconstruction schemes.
+The ﬁrst algorithm was proposed by Kalantari et al. [5]
+which reconstructed the LF in an aperture-wise manner. To
+generate each novel view, the algorithm must also estimate
+the disparity map and adjust the pixel color value, which
+further add to its overall run time. The second approach
+is an multi-step EPI-wise reconstruction approach proposed
+by Wu et al. [14], which called for blur-restoration-deblur
+steps for each EPI reconstruction. Fig. 17 shows the run-
+time versus PSNR performance over different schemes for
+3 ˆ 3 Ñ 9 ˆ 9 angular SR task. Compared with the EPI-
+wise [14] and aperture-wise [5] method, our model is at least
+40ˆ times faster.
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+11
+
+Fig. 12. Visual comparison for 4ˆ SR on the Stanford Archive (real-world), 3ˆ SR on Microscope, and 4ˆ SR on HCI new (synthetic) dataset.
+
+Fig. 14. Comparison with 3D image SR methods on real-world LF
+scene for 4ˆ SR. We present both the spatial SR results (center view)
+and the error EPI of the focused region.
+
+Fig. 13. Comparison with 2D image SR methods on real-world LF
+scene for 4ˆ SR. The LRLF loses the detailed texture after down-
+sampling, and our model super-resolves the “whisker” accurately while
+MSLapSRN [44] and RDN [60] failed to reconstruct such ﬁne texture
+information.
+
+7 CONCLUS IONS
+
+In this paper, we proposed a high-dimensional deep convo-
+lutional network with dense connections for accurate LFSR.
+Our model progressively recovers spatio-angular informa-
+tion and high-frequency spatial details by minimizing MSE-
+
+based angular loss and content spatial loss. By introducing
+high-dimensional convolution layers, the proposed HDDR-
+Net is able to reconstruct the light ﬁeld at multiple scales
+in both spatial and angular dimensions. In addition, the ex-
+tracted geometric features are sensitive to the object border
+and therefore indicate the scene geometric structure. To ease
+the training of such 4D framework, a novel normalization
+operation is deﬁned based on a group of sub-aperture
+images in each feature map. Subsequently, we proposed
+the multi-range training strategy to further improve the
+reconstruction results, and named the improved model –
+
+Groundtruth HR LFStanford Archive - General 15LR LF(PSNR, SSIM)Bicubic(25.82, 0.790)Yoonet al.(26.63, 0.808)BM PCA+RR(26.73, 0.814)LFNet(27.76, 0.828)VDSR(27.97, 0.843)MSLapSRN(29.64, 0.861)RDN(29.34, 0.856)ESPCN(29.07, 0.849)Jo et al.(30.64, 0881)M-HDDRNet(32.55, 0.918)GroundtruthLR LF(PSNR, SSIM)GroundtruthYoonet al.(26.59, 0.798)BM PCA+RR(24.78, 0.713)VDSR(26.30, 0.809)MSLapSRN(27.67,0.813)M-HDDRNet(28.68, 0.841)RDN(27.45, 0.817)Bicubic(24.45, 0.729)Groundtruth HR LFMicroscope - golgi 40xESPCN(26.96, 0.805)Jo et al.(26.38, 0.785)LFNet(25.93, 0.804)LR LF(PSNR,SSIM)GroundtruthHRLFHCInew-boxesBicubic(26.50,0.730)Yoonet al.(29.17,0.788)BMPCA+RR(29.78,0.809)LFNet(29.33,0.792)VDSR(29.29,0.804)MSLapSRN(31.23,0.840)RDN(29.36,0.795)ESPCN(29.62,0.802)Joetal.(30.34,0.821)M-HDDRNet(30.76,0.848)GroundtruthBicubic(27.98, 0.895)MSLapSRN(35.75, 0.948)RDN(34.02, 0.938)Input LRLF (PSNR, SSIM)M-HDDRNet(34.15, 0.955)Input LRLF (PSNR, SSIM)Bicubic(31.52, 0.869)MSLapSRN(35.54, 0.912)RDN(35.09, 0.903)M-HDDRNet(35.91, 0.921)(a) Groundtruth(b) M-HDDRNet(c) LFNet(d) BM PCA RR(e) ESPCN(e) Jo et al.0.00.20.40.60.81.0Groundtruth HR LFStanford-Occlusions 7JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+12
+
+Fig. 15. Visual comparison of our model with Kalantari et al. [5] and Yeung et al. [62] for 2 ˆ 2 – 8 ˆ 8 angular SR task. The ﬁrst column presents
+the ground truth LF, and the other columns show the residual results between the reconstruction LF and ground truth LF on the p5, 5q synthesized
+sub-aper ture image. We zoom in some regions for better comparison.
+
+Fig. 16. Comparison with spatio-angular SR methods on real-world LF scene for 2ˆ on spatial and 2ˆ on angular resolution enhancement.
+
+M-HDDRNet. Moreover, we also show the efﬁcacy of the
+proposed M-HDDRNet in the context of recovering sub-
+pixel information in some challenging scenes.
+
+ACKNOW LEDGMEN TS
+
+This work was supported in part by the Hong Kong Re-
+search Grant Council (17203217 and 17201818) and the Uni-
+versity of Hong Kong (104004142, 104004582, 104005009).
+
+RE FERENCES
+
+[1] R. Ng, M. Levoy, M. Br ´edif, G. Duval, M. Horowitz, and P. Han-
+rahan, “Light ﬁeld photography with a hand-held plenoptic cam-
+era,” Computer Science Technical Report, vol. 2, no. 11, pp. 1–11,
+2005.
+[2] E. Y. Lam, “Computational photography with plenoptic camera
+and light ﬁeld capture: tutorial,” Journal of the Optical Society of
+America A, vol. 32, no. 11, pp. 2021–2032, 2015.
+[3] K. Mitra and A. Veeraraghavan, “Light ﬁeld denoising,
+light
+ﬁeld superresolution and stereo camera based refocussing using
+
+Kalantarietal.Yeungetal.M-HDDRNetGroundTruth0.100.080.060.040.020.000.100.080.060.040.020.00Geometric SculptureCotton0.100.080.060.040.020.00CarsInput LRLF  EPFL - Black Fence(a) 4Dcubic(b) Yoon et al.(c) Gul et al.(d) M-HDDRNet(e) GroundtruthJOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+13
+
+[17] C.-K. Liang and R. Ramamoorthi, “A light transport framework
+for lenslet light ﬁeld cameras,” ACM Transactions on Graphics,
+vol. 34, no. 2, pp. 16:1–16:19, February 2015.
+[18] G. Wu, B. Masia, A. Jarabo, Y. Zhang, L. Wang, Q. Dai, T. Chai, and
+Y. Liu, “Light ﬁeld image processing: An overview,” IEEE Journal
+of Selected Topics in Signal Processing, vol. 11, no. 7, pp. 926–954,
+August 2017.
+[19] J. Lim, H. Ok, B. Park, J. Kang, and S. Lee, “Improving the spatial
+resolution based on 4D light ﬁeld data,” in IEEE International
+Conference on Image Processing, February 2009, pp. 1173–1176.
+[20] Y. Wang, F. Liu, K. Zhang, G. Hou, Z. Sun, and T. Tan, “LFNet:
+A novel bidirectional recurrent convolutional neural network for
+light-ﬁeld image super-resolution,” IEEE Transactions on Image
+Processing, vol. 27, no. 9, pp. 4274–4286, 2018.
+[21] R. A. Farrugia and C. Guillemot, “Light ﬁeld super-resolution
+using a low-rank prior and deep convolutional neural networks,”
+IEEE Transactions on Pattern Analysis and Machine Intelligence, 2019.
+[22] H.-G. Jeon, J. Park, G. Choe, J. Park, Y. Bok, Y.-W. Tai, and
+I. So Kweon, “Accurate depth map estimation from a lenslet light
+ﬁeld camera,” in IEEE Conference on Computer Vision and Pattern
+Recognition, October 2015, pp. 1547–1555.
+[23] M. W. Tao, S. Hadap, J. Malik, and R. Ramamoorthi, “Depth from
+combining defocus and correspondence using light-ﬁeld cam-
+eras,” in IEEE International Conference on Computer Vision, March
+2013, pp. 673–680.
+[24] T.-C. Wang, A. A. Efros, and R. Ramamoorthi, “Occlusion-aware
+depth estimation using light-ﬁeld cameras,” in IEEE International
+Conference on Computer Vision, February 2015, pp. 3487–3495.
+[25] S. Wanner and B. Goldluecke, “Spatial and angular variational
+super-resolution of 4D light ﬁelds,” in European Conference on
+Computer Vision. Springer, 2012, pp. 608–621.
+[26] J. Pearson, M. Brookes, and P. L. Dragotti, “Plenoptic layer-based
+modeling for image based rendering,” IEEE Transactions on Image
+Processing, vol. 22, no. 9, pp. 3405–3419, June 2013.
+[27] Z. Zhang, Y. Liu, and Q. Dai, “Light ﬁeld from micro-baseline
+image pair,” IEEE Conference on Computer Vision and Pattern Recog-
+nition, pp. 3800–3809, October 2015.
+[28] F.-L. Zhang, J. Wang, E. Shechtman, Z.-Y. Zhou, J.-X. Shi, and S.-
+M. Hu, “PlenoPatch: Patch-based plenoptic image manipulation,”
+IEEE Transactions on Visualization and Computer Graphics, vol. 23,
+no. 5, pp. 1561–1573, February 2017.
+[29] M. Levoy and P. Hanrahan, “Light ﬁeld rendering,” in ACM
+Conference on Computer Graphics and Interactive Techniques, 1996, pp.
+31–42.
+[30] A. Levin and F. Durand, “Linear view synthesis using a dimen-
+sionality gap light ﬁeld prior,” in IEEE Conference on Computer
+Vision and Pattern Recognition, August 2010, pp. 1831–1838.
+[31] S. Vagharshakyan, R. Bregovic, and A. Gotchev, “Light ﬁeld recon-
+struction using shearlet transform,” IEEE Transactions on Pattern
+Analysis and Machine Intelligence, vol. 40, no. 1, pp. 133–147, 2018.
+[32] J. Flynn, I. Neulander, J. Philbin, and N. Snavely, “DeepStereo:
+Learning to predict new views from the world’s imagery,” in
+Proceedings of the IEEE Conference on Computer Vision and Pattern
+Recognition, December 2016, pp. 5515–5524.
+[33] M. S. K. Gul and B. K. Gunturk, “Spatial and angular resolution
+enhancement of light ﬁelds using convolutional neural networks,”
+IEEE Transactions on Image Processing, vol. 27, no. 5, pp. 2146–2159,
+May 2018.
+[34] Y. Yoon, H.-G. Jeon, D. Yoo, J.-Y. Lee, and I. S. Kweon, “Light-
+ﬁeld image super-resolution using convolutional neural network,”
+Signal Processing Letters, vol. 24, no. 6, pp. 848–852, 2017.
+[35] S. J. Gortler, R. Grzeszczuk, R. Szeliski, and M. F. Cohen, “The
+lumigraph,” in ACM Annual Conference on Computer Graphics and
+Interactive Techniques, 1996, pp. 43–54.
+[36] G. Wu, M. Zhao, L. Wang, Q. Dai, T. Chai, and Y. Liu, “Light
+ﬁeld reconstruction using deep convolutional network on EPI,”
+in IEEE Conference on Computer Vision and Pattern Recognition, vol.
+2017, November 2017, pp. 1638–1646.
+[37] A. L. Maas, A. Y. Hannun, and A. Y. Ng, “Rectiﬁer nonlinearities
+improve neural network acoustic models,” in International Confer-
+ence on Machine Learning, vol. 30, no. 1, 2013.
+[38] W. Shi, J. Caballero, F. Husz ´ar, J. Totz, A. P. Aitken, R. Bishop,
+D. Rueckert, and Z. Wang, “Real-time single image and video
+super-resolution using an efﬁcient sub-pixel convolutional neu-
+ral network,” in IEEE Conference on Computer Vision and Pattern
+Recognition, June 2016, pp. 1874–1883.
+
+Fig. 17. The runtime comparison of multiple schemes for 3 ˆ 3 Ñ 9 ˆ 9
+task. The execution time (sec.) of different frameworks are calculated on
+the same machine with 2.4GHz Intel i7 CPU and NVIDIA Titan X GPU
+(12G Memory) and the PSNR values are calculated over the average of
+60 real-world test scenes.
+
+a GMM light ﬁeld patch prior,” in IEEE Conference on Computer
+Vision and Pattern Recognition Workshops, July 2012, pp. 22–28.
+[4] P. P. Srinivasan, T. Wang, A. Sreelal, R. Ramamoorthi, and R. Ng,
+“Learning to synthesize a 4D RGBD light ﬁeld from a single
+image,” in IEEE International Conference on Computer Vision, vol. 2,
+no. 5, 2017, pp. 2243–2251.
+[5] N. K. Kalantari, T.-C. Wang, and R. Ramamoorthi, “Learning-
+based view synthesis for light ﬁeld cameras,” ACM Transactions
+on Graphics, vol. 35, no. 6, pp. 193:1–193:10, November 2016.
+[6] T.-C. Wang, A. A. Efros, and R. Ramamoorthi, “Depth estimation
+with occlusion modeling using light-ﬁeld cameras,” IEEE Transac-
+tions on Pattern Analysis and Machine Intelligence, vol. 38, no. 11, pp.
+2170–2181, 2016.
+[7] C. Shin, H.-G. Jeon, Y. Yoon, I. S. Kweon, and S. J. Kim, “EPINET:
+A fully-convolutional neural network using epipolar geometry for
+depth from light ﬁeld images,” in IEEE Conference on Computer
+Vision and Pattern Recognition, 2018, pp. 4748–4757.
+[8] X. Sun, Z. Xu, N. Meng, E. Y. Lam, and H. K.-H. So, “Data-driven
+light ﬁeld depth estimation using deep convolutional neural net-
+works,” in IEEE International Joint Conference on Neural Networks,
+November 2016, pp. 367–374.
+[9] T. G. Georgiev and A. Lumsdaine, “Focused plenoptic camera and
+rendering,” Journal of Electronic Imaging, vol. 19, no. 2, pp. 021 106–
+1–021 106–11, April 2010.
+[10] W.-S. Chan, E. Y. Lam, M. K. Ng, and G. Y. Mak, “Super-resolution
+reconstruction in a computational compound-eye imaging sys-
+tem,” Multidimensional Systems and Signal Processing, vol. 18, no.
+2-3, pp. 83–101, February 2007.
+[11] T. E. Bishop and P. Favaro, “The light ﬁeld camera: Extended depth
+of ﬁeld, aliasing, and superresolution,” IEEE Transactions on Pattern
+Analysis and Machine Intelligence, vol. 34, no. 5, pp. 972–986, August
+2012.
+[12] S. Wanner and B. Goldluecke, “Variational light ﬁeld analysis for
+disparity estimation and super-resolution,” IEEE Transactions on
+Pattern Analysis and Machine Intelligence, vol. 36, no. 3, pp. 606–
+619, August 2014.
+[13] Y. Yoon, H.-G. Jeon, D. Yoo, J.-Y. Lee, and I. S. Kweon, “Learn-
+ing a deep convolutional network for light-ﬁeld image super-
+resolution,” in IEEE International Conference on Computer Vision
+Workshops, February 2015, pp. 57–65.
+[14] G. Wu, Y. Liu, L. Fang, Q. Dai, and T. Chai, “Light ﬁeld re-
+construction using convolutional network on EPI and extended
+applications,” IEEE Transactions on Pattern Analysis and Machine
+Intelligence, no. 1, pp. 1681–1694, 2018.
+[15] S. Ioffe and C. Szegedy, “Batch normalization: Accelerating deep
+network training by reducing internal covariate shift,” arXiv
+preprint arXiv:1502.03167, 2015.
+[16] J. Johnson, A. Alahi, and L. Fei-Fei, “Perceptual losses for real-
+time style transfer and super-resolution,” in European Conference
+on Computer Vision, vol. 9906, September 2016, pp. 694–711.
+
+101100101102103104Slower           Execution time(sec.)           Faster35.035.536.036.537.037.538.038.539.0PSNR(dB)Kalantari et al.Wu et al.M-HDDRNet14
+
+[60] Y. Zhang, Y. Tian, Y. Kong, B. Zhong, and Y. Fu, “Residual
+dense network for image super-resolution,” in IEEE Conference on
+Computer Vision and Pattern Recognition, 2018, pp. 2472–2481.
+[61] Y. Jo, S. W. Oh, J. Kang, and S. J. Kim, “Deep video super-
+resolution network using dynamic upsampling ﬁlters without
+explicit motion compensation,” in IEEE Conference on Computer
+Vision and Pattern Recognition, 2018, pp. 3224–3232.
+[62] H. W. F. Yeung, J. Hou, J. Chen, Y. Y. Chung, and X. Chen,
+“Fast light ﬁeld reconstruction with deep coarse-to-ﬁne modeling
+of spatial-angular clues,” in The European Conference on Computer
+Vision, September 2018.
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+[39] C. Ledig, L. Theis, F. Husz ´ar, J. Caballero, A. Cunningham,
+A. Acosta, A. Aitken, A. Tejani, J. Totz, Z. Wang, and W. Shi,
+“Photo-realistic single image super-resolution using a generative
+adversarial network,” IEEE Conference on Computer Vision and
+Pattern Recognition, pp. 105–114, November 2017.
+[40] P. Gupta, P. Srivastava, S. Bhardwaj, and V. Bhateja, “A modi-
+ﬁed PSNR metric based on HVS for quality assessment of color
+images,” in IEEE International Conference on Communication and
+Industrial Application, February 2011, pp. 1–4.
+[41] K. Simonyan and A. Zisserman, “Very deep convolutional net-
+works for large-scale image recognition,” International Conference
+on Learning Representations, 2015.
+[42] X. Glorot and Y. Bengio, “Understanding the difﬁculty of training
+deep feedforward neural networks,” in The thirteenth International
+Conference on Artiﬁcial Intelligence and Statistics, 2010, pp. 249–256.
+[43] G. Sam and W. Michael, “Training and investigating residual
+nets,” http://torch.ch/blog/2016/02/04/resnets.html, February
+2016.
+[44] W.-S. Lai, J.-B. Huang, N. Ahuja, and M.-H. Yang, “Fast and
+accurate image super-resolution with deep laplacian pyramid
+networks,” arXiv preprint arXiv:1710.01992, 2017.
+[45] R. A. Farrugia, C. Galea, and C. Guillemot, “Super resolution
+of light ﬁeld images using linear subspace projection of patch-
+volumes,” IEEE Journal of Selected Topics in Signal Processing, vol. 11,
+no. 7, pp. 1058–1071, August 2017.
+[46] Z. Cheng, Z. Xiong, C. Chen, and D. Liu, “Light ﬁeld super-
+resolution: a benchmark,” in IEEE Conference on Computer Vision
+and Pattern Recognition, October 2019.
+[47] M. Rossi and P. Frossard, “Geometry-consistent light ﬁeld super-
+resolution via graph-based regularization,” IEEE Transactions on
+Image Processing, vol. 27, no. 9, pp. 4207–4218, 2018.
+[48] “Stanford Lytro light ﬁeld archive,” http://lightﬁelds.stanford.
+edu/.
+[49] M. Ziegler, R. op het Veld, J. Keinert, and F. Zilly, “Acquisition
+system for dense lightﬁeld of large scenes,” in IEEE Conference
+on The True Vision-Capture, Transmission and Display of 3D Video,
+February 2017, pp. 1–4.
+[50] M. Abadi, P. Barham, J. Chen, Z. Chen, A. Davis, J. Dean, M. Devin,
+S. Ghemawat, G. Irving, M. Isard, M. Kudlur, J. Levenberg,
+R. Monga, S. Moore, D. G. Murray, B. Steiner, P. Tucker, V. Va-
+sudevan, P. Warden, M. Wicke, Y. Yu, and X. Zheng, “TensorFlow:
+A system for large-scale machine learning,” in The 12th USENIX
+Symposium on Operating Systems Design and Implementation, Savan-
+nah, GA, 2016, pp. 265–283.
+[51] M. Rerabek and T. Ebrahimi, “New light ﬁeld image dataset,” in
+The 8th International Conference on Quality of Multimedia Experience,
+no. EPFL-CONF-218363, June 2016.
+[52] A. Mousnier, E. Vural, and C. Guillemot, “Partial light ﬁeld to-
+mographic reconstruction from a ﬁxed-camera focal stack,” arXiv
+preprint arXiv:1503.01903, 2015.
+[53] K. Honauer, O. Johannsen, D. Kondermann, and B. Goldluecke,
+“A dataset and evaluation methodology for depth estimation on
+4D light ﬁelds,” in Asian Conference on Computer Vision. Springer,
+March 2016, pp. 19–34.
+[54] S. Wanner, S. Meister, and B. Goldluecke, “Datasets and bench-
+marks for densely sampled 4D light ﬁelds.” in Vision, Modeling,
+and Visualization, vol. 13, 2013, pp. 225–226.
+[55] M. Levoy, R. Ng, A. Adams, M. Footer, and M. Horowitz, “Light
+ﬁeld microscopy,” in ACM Transactions on Graphics, vol. 25, no. 3,
+July 2006, pp. 924–934.
+[56] X. Lin, J. Wu, G. Zheng, and Q. Dai, “Camera array based light
+ﬁeld microscopy,” Biomedical Optics Express, vol. 6, no. 9, pp. 3179–
+3189, 2015.
+[57] B. Wilburn, N. Joshi, V. Vaish, E.-V. Talvala, E. Antunez, A. Barth,
+A. Adams, M. Horowitz, and M. Levoy, “High performance imag-
+ing using large camera arrays,” in ACM Transactions on Graphics,
+vol. 24, no. 3, 2005, pp. 765–776.
+[58] G. Huang, Z. Liu, L. Van Der Maaten, and K. Q. Weinberger,
+“Densely connected convolutional networks.” in IEEE Conference
+on Computer Vision and Pattern Recognition, vol. 1, no. 2, November
+2017, pp. 4700–4708.
+[59] J. Kim, J. Kwon Lee, and K. Mu Lee, “Accurate image super-
+resolution using very deep convolutional networks,” in IEEE
+Conference on Computer Vision and Pattern Recognition, June 2016,
+pp. 1646–1654.
+
+

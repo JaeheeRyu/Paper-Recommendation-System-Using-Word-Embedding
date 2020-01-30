@@ -1,0 +1,625 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+8
+3
+4
+0
+0
+
+.
+
+4
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Understanding Neural Architecture Search
+Techniques
+
+George Adam
+
+Department of Computer Science
+University of Toronto
+alex.adam@mail.utoronto.ca
+
+Jonathan Lorraine
+
+Department of Computer Science
+University of Toronto
+lorraine@cs.toronto.edu
+
+Abstract
+
+Automatic methods for generating state-of-the-art neural network architectures
+without human experts have generated signiﬁcant attention recently. This is because
+of the potential to remove human experts from the design loop which can reduce
+costs and decrease time to model deployment. Neural architecture search (NAS)
+techniques have improved signiﬁcantly in their computational efﬁciency since the
+original NAS was proposed. This reduction in computation is enabled via weight
+sharing such as in Efﬁcient Neural Architecture Search (ENAS). However, recently
+a body of work conﬁrms our discovery that ENAS does not do signiﬁcantly better
+than random search with weight sharing, contradicting the initial claims of the
+authors. We provide an explanation for this phenomenon by investigating the
+interpretability of the ENAS controller’s hidden state. We ﬁnd models sampled
+from identical controller hidden states have no correlation with various graph
+similarity metrics, so no notion of structural similarity is learned. This failure mode
+implies the RNN controller does not condition on past architecture choices. Lastly,
+we propose a solution to this failure mode by forcing the controller’s hidden state to
+encode pasts decisions by training it with a memory buffer of previously sampled
+architectures. Doing this improves hidden state interpretability by increasing the
+correlation between controller hidden states and graph similarity metrics.
+
+1
+
+Introduction
+
+Neural architecture search encompasses a broad set of techniques that use deep learning to automate
+the process of searching for an effective network architecture for a given task. Numerous versions of
+NAS exist differing mainly by features such as parameter sharing, early stopping, and whether the
+depth of the architecture is ﬁxed. Many of these techniques use reinforcement learning as a way of
+efﬁciently exploring a predeﬁned architecture search space. To enable generation of variable depth
+architectures, NAS techniques typically use an RNN to sequentially sample architecture decisions
+at each time step such as the number of ﬁlters in a given convolutional layer, or the kernel size.
+However, this setup induces a sparse-reward reinforcement learning problem where any given action
+sampled by the RNN does not have a clear effect on the reward, which in this case is the validation
+set performance of the sampled architecture. If a particular architecture choice such as using 3x3
+convolutions in the ﬁrst layer is particularly effective, then other choices which co-occur in the
+sampled architectures also become more likely. This is a fundamental problem with using policy
+gradient in a sparse-reward setting, as the total likelihood of all actions in a trajectory is increased
+for a trajectory resulting in larger return than the baseline. Taking this limitation into account, we
+question whether the impressive results obtained by NAS techniques such as ENAS depend on the
+use of reinforcement learning. Our contributions are:
+
+ 
+ 
+ 
+ 
+ 
+ 
+1. We demonstrate that the probability of the most likely action at any given time step is higher
+for a trained controller than a random controller. This suggests that a trained controller
+becomes more biased in its architecture sampling.
+2. We show a validation performance distribution comparison between a trained and random
+controller immediately after the search phase, without ﬁnal tuning. Although the perfor-
+mance for a trained controller seems signiﬁcantly better, there is an explanation which does
+not imply the controller is actually sampling better architectures. Rather, the performance
+difference is an artifact of the weight-sharing scheme used.
+3. We demonstrate that the controller embeddings learned by the ENAS controller are not
+encoding past actions, which is further evidence the controller is not doing anything mean-
+ingful. To rectify this, we provide a regularization technique for enforcing conditioning on
+past actions in the controller’s hidden state space. Lastly, we show an improved correlation
+between graph-based notions of architecture similarity and the distance between controller
+hidden states using this regularization technique.
+
+While our analysis focuses on ENAS, it is applicable to general NAS techniques using an RNN
+controller trained with policy gradient.
+
+2 Background & Related Work
+
+2.1 Architecture Search as Hyperparameter Optimization
+
+Hyperparameter optimization is common to all successful predictive modelling applications. For
+traditional ML models such as SVMs, there is canonical set of hyperparameters such as the kernel to
+be used, as well as hyperparameters which are kernel speciﬁc such as the degree of the polynomial
+kernel. Neural networks add more complexity to hyperparameter optimization as architectures can
+represent arbitrary computation graphs mapping inputs to outputs. Architecture search is a subﬁeld
+of hyperparameter optimization which specializes in ﬁnding an effective neural network architecture
+for a given task for a ﬁxed set of optimization hyperparameters such as learning rate, batch size, and
+weight decay. An architecture search space must be speciﬁed to restrict model capacity and provide
+an effective inductive bias. For example, since convolutional neural networks are known to have
+super-human performance on several computer vision tasks, it is reasonable to restrict the architecture
+search space to convolutional architectures when solving such as task. Formally, architecture search
+solves the following bi-level optimization problem
+∗
+
+L(λ) (λ, w∗ (λ)) subject to w∗ (λ) := arg min
+
+L(w) (λ, w, α)
+
+(1)
+
+λ
+
+= arg min
+
+λ∈H
+
+w
+
+where λ is the architecture, w are the weights learned by an optimization algorithm such as stochastic
+gradient descent, α are the optimization hyperparameters such as learning rate or batch size, and L is
+the validation set loss. We assume implicitly that there are architecture search parameters θ which
+control the exploration of the architecture search space H. Such an optimization problem suffers from
+lack of convergence when using simultaneous gradient updates, and can be improved by considering
+the "best-response" function as suggested by Mackay et al.
+
+2.2 Neural Architecture Search
+
+The original NAS by Zoph and Le [2016] demonstrated that with sufﬁcient computational resources,
+performance close to STOTA on image classiﬁcation and language modelling tasks could be achieved.
+It introduced a general framework based on using reinforcement learning to explore the vast search
+space of possible architectures. A policy πθ is used to sequentially make choices for layers in a ﬁxed
+size architecture such as stride length or number of ﬁlters in a convolutional layer. The following
+algorithm is used:
+• Sample an architecture λ as a sequence of actions in an environment where the current state
+st is the architecture at time step t: πθ (at |st )
+• Train a neural network with architecture λ
+• Observe validation set performance Rλ
+
+2
+
+t=1 ∇θ logP (at |st ; θ)Rλ
+
+• Compute controller update using policy gradient as ∆θ = (cid:80)T
+• Update controller parameters via θ (cid:48) = θ + η∆ψ
+A batch of architectures is typically sampled which simply requires averaging the update over all the
+architectures in a batch. This setup of training sampled architectures from scratch every time required
+32,000 GPU hours to achieve competitive results on CIFAR10 which is computationally unrealistic.
+Since the NAS publication, several improvements have been proposed such as: Progressive Neural
+Architecture Search (Liu et al. [2017]) which searches for architectures in order of increasing
+complexity, or using a regression model to predict performance of architectures in order to reduce the
+amount of time spent training them (Baker et al.). Differentialble alternatives to architecture search
+that do not rely on reinforcement learning have also gained popularity and include: Differentiable
+Architecture Search (Liu et al.) which optimizes a continuous relaxation of the architecture search
+space, or Neural Architecture Optimization (Luo et al.) which uses an autoencoder framework to
+encode architectures into a continuous embedding, predict and optimize performance in embedding
+space, and decode the embedding back into a discrete architecture. While these methods are powerful,
+they are not as widely adopted as ENAS which is why we focus our research efforts on understanding
+ENAS. Our investigation of ENAS is further justiﬁed by the work of Bender et al. [2018] where the
+authors observe that there is no need for reinforcement learning to generate architectures with high
+performance when weight sharing is used. However, we approach this limitation of reinforcement
+learning from an interpretability perspective to reveal why RL is ineffective in this setting.
+
+2.3 Efﬁcient Neural Architecture Search
+
+ENAS, introduced by Pham et al. [2018], presented the idea of parameter sharing where a shared pool
+of parameters ω exists and is updated by every sampled architecture. For example, when generating
+a CNN, if there are 3 options for kernel size in the ﬁrst convolutional layer (3,5,7) and 4 options
+for the number of ﬁlters [16, 32, 48, 64], then there would be a set of parameters for each possible
+combination kernel size and number of ﬁlters. The ﬁrst time a particular combination (k , f ) is
+sampled as part of an architecture λ, the parameters ω(k,f ) corresponding to that combination are
+updated based on what the CNN learned. The next time an architecture is sampled with that same
+combination (k,f) for the ﬁrst layer, rather than having those parameters be randomly initialized, they
+are initialized to a setting that was previously effective for other architectures. This reuse of learned
+weights is often used in transfer learning, except that in architecture search, the task remains static
+while the architecture changes. Unfortunately, weight sharing has two major limitations:
+• The controller’s parameters θ and the shared parameters ω are updated in an alternating
+fashion. This procedure does not have convergence guarantees.
+• Weight sharing prohibits any single architecture from achieving its best performance since
+the shared parameters ω have to be effective for an average of architectures that have been
+sampled. If the best architecture λ
+∗ requires speciﬁc weight matrix norms or weight structure
+to exhibit superior performance over other architectures, this will likely not be achieved
+during training.
+
+Since our analysis focuses on recurrent cells generated by ENAS, we brieﬂy detail how ENAS
+samples recurrent cells. A recurrent cell is a computation graph represented as a directed acyclic
+graph (DAG) where each node in the DAG represents represents a local computation, and each edge
+represents a ﬂow of information between two nodes. The local computation which occurs at a given
+node vi connected to another note vj where i > j is vi = σ(vj · Wi,j ) where σ is a sampled activation
+function. DAG construction follows these steps:
+• At the ﬁrst node v1 the controller samples an activation function. Suppose this function is
+ReLU. Since this is the ﬁrst node in the recurrent cell, it takes as input the hidden state of
+the recurrent cell at the previous time step ht−1 , the input at the current time step xt and
+• At any inner node vi , the controller samples an activation function σ and a previous vj
+which to connect to the current node. vi = σ(vj · Wi,j )
+• The output of the cell is the average of the states off all leaf nodes. If A is the set of indices
+of all leaf nodes, then ht = 1|A|
+
+computes v1 = ReLU(xt · Wx + ht−1 · Wh )
+
+(cid:80)
+
+k∈A vk
+
+3
+
+Once the controller’s parameters and shared parameters have been updated for a given number of
+iterations, a batch of ﬁnal architectures is sampled. These architectures are evaluated on the validation
+set, and the best architecture has its weights randomly initialized and then trained from scratch. This
+is the ﬁnal output of ENAS.
+The size of the ENAS search space over recurrent cells is |H| ≈ 1015 . However, this is highly
+constrained since the local computation performed at each node in a cell is already to known to be
+effective for RNNs. Different architectures do not vary signiﬁcantly in performance since they all
+have high enough capacity to ﬁt the Penn Treebank data set which is the task of interest. Concurrent
+work from Sciuto et al. [2019], Li and Talwalkar [2019] have found that the architectures generated
+by state of the art one-shot-architecture-search (OSAS) models have similar performance to random
+search. We build on their work by conﬁrming the performance of random baselines. Additionally, we
+propose potential causes and solutions for the lack of performance.
+
+3 Experiments
+
+3.1 Biased Exploration
+
+The most basic indication that the ENAS controller does something different and potentially better
+than random sampling is a signiﬁcantly biased probability distribution at each time step. This indicates
+that it has decided to narrow the search space to a subset where certain connections/activations are
+more prominent. Such a phenomenon is seen in ﬁgure 1. We stress that this plot is not enough to
+conclude that the trained controller is sampling architectures that are in any way better than a random
+controller. The biased sampling could be due to a rich-get-richer phenomenon: because the ENAS
+training loop alternates between updating controller and shared parameters, if previously sampled
+architectures are sampled again, their probability of being sampled is increased simply because the
+shared parameters were improved.
+
+y
+
+t
+i
+l
+i
+
+b
+
+a
+
+b
+o
+
+r
+
+P
+
+y
+
+t
+i
+l
+i
+
+b
+
+a
+
+b
+o
+
+r
+
+P
+
+Time Step
+
+(a) Random Controller
+
+Time Step
+
+(b) Trained Controller
+
+Figure 1: A trained controller is more certain about architecture choices than a random controller,
+indicating that architecture sampling occurs in a small subset of the entire architecture search space.
+
+3.2 Quantifying Random Performance
+
+Figure 2 suggests less variance in the performance of a trained vs. untrained ENAS controller at the
+end of the architecture search phase, without ﬁnal tuning. The trained controller samples architectures
+whose performance is restricted to a narrower range that often performs better than the random
+controller. However, we can not conclude the trained controller sampled better architectures for the
+PTB language modeling task. A trained controller samples a less diverse architectures than a random
+controller. Thus, the shared parameters for a trained controller only have to be effective for a smaller
+set of architectures. Additionally, since it is unlikely that any of the architectures sampled during
+training for the random controller setting will be sampled at the end of training when the shared
+parameters have been tuned, it is not reasonable to expect those shared parameters to be effective for
+never before seen architectures.
+
+4
+
+051015200.00.20.40.60.81.0051015200.00.20.40.60.81.0This highlights a fundamental problem in OSAS NAS techniques. It is difﬁcult to disentangle the
+factors behind validation set performance: architecture inductive bias and the OSAS shared weights
+for an architecture. Also, the entropy penalty in ENAS is critical in balancing exploration/exploitation.
+Increasing it results in more diverse architectures being sampled during training, while weight sharing
+hinders the performance of any single model as the number of possible architectures increases. Thus,
+deciding which sampled architecture to use as the "best" architecture depends on a highly sensitive
+entropy coefﬁcient and random seed used.
+
+Validation PPL
+
+(a) Random Controller
+
+Validation PPL
+
+(b) Trained Controller
+
+Figure 2: A trained controller seems to sample better architectures than a random controller. There
+are several explanations for this besides the inductive bias of the sampled architectures. For example,
+limitations of the OSAS weight sharing scheme.
+
+3.3
+
+Investigating ENAS Controller Embeddings
+
+We inspect the hidden state of the ENAS controller for 100 different sampled architectures and ﬁnd
+that it converges to the same vector, regardless of the choices that were made (ﬁgure 3a). This means
+the controller’s hidden state cannot be used to differentiate between architectures, so it does not
+encode information regarding the structure of the DAG. The controller is unable to learn to effectively
+sample certain DAGs (ex. chains) without conditioning on past actions.
+Speciﬁcally, the controller models the architecture choice at at step t as:
+
+P (at |a1 , ..., at−1 ) ≈ P (at )
+
+P (at |a1 , ..., at−1 ) = P (at |st )
+
+(2)
+We propose that this assumption is too simple and that the choices should be conditioned on the past:
+(3)
+where the state at a given time step st encodes (potentially) all choices made thus far. To encourage
+the encoding of past decisions, we applied the following regularization technique
+• After 5 epochs of training, sample, and store 1000 architectures per epoch (up to limit of
+10,000). Once the buffer is full, randomly replace 100 existing architectures every epoch
+• At the 10th epoch, add a supervised penalty for reconstructing a random sample of 100
+architectures from the memory buffer of architectures. This loss is added to the policy
+gradient loss at each step of controller training: L = LP G + LSup
+This regularization technique forces the controller embeddings to depend on previous choices. The
+way the memory buffer of architectures is constructed is important. If no buffer is used, and a
+new set of architectures is sampled at each step the controller can cheat by producing the same
+deterministic architecture, even when the entropy penalty is increased. Thus, there is a trade-
+off between constructing architectures that were sampled using old controller parameters, and
+architectures sampled using current controller parameters. This is similar to using experience replay
+when training GANs [Salimans et al., 2016].
+Figure 3 shows the difference in the ﬁnal hidden state for a supervised and an unsupervised controller.
+There is signiﬁcant variability in the hidden state for the supervised controller - note that most
+
+5
+
+020040060080010001200140016000.0000.0020.0040.0060.0080.0100.012Mean: 272.94 Min: 103.24Max: 1443.93901001101201301400.000.050.100.150.200.250.30Mean: 90.58 Min: 87.60Max: 142.97columns are not solid lines, unlike the unsupervised controller. Furthermore, Figure 4 shows that the
+probability of the most likely action depends on previous decisions using our regularization, whereas
+it is independent of previous decisions without regularization.
+
+e
+
+t
+
+a
+
+t
+
+S
+
+n
+
+e
+
+d
+d
+
+i
+
+H
+
+H
+
+i
+
+d
+d
+
+e
+
+n
+
+S
+
+t
+
+a
+
+t
+
+e
+
+V
+
+a
+
+l
+
+u
+
+e
+
+Architecture
+
+(a) Unsupervised Controller
+
+Architecture
+
+(b) Supervised Controller
+
+Figure 3: Final hidden state for 100 sampled architectures. Each row corresponds to the controller
+hidden state for a single architecture. Each column represents a single neuron in the controller’s
+hidden state. Note how the supervised controller has signiﬁcantly more variability per column,
+indicating it can distinguish between different architectures.
+
+y
+
+t
+i
+l
+i
+
+b
+
+a
+
+b
+o
+
+r
+
+P
+
+y
+
+t
+i
+l
+i
+
+b
+
+a
+
+b
+o
+
+r
+
+P
+
+Time Step
+
+Time Step
+
+(a) Unsupervised Controller
+
+(b) Supervised Controller
+
+Figure 4: Argmax controller probability at each time-step for 100 different sampled architectures
+showing the advantage of our supervision method. The unsupervised controller collapses to a single
+line, indicating that probabilities do not change based on prior actions. The supervised controller has
+a visible separation between the lines, showing future actions are inﬂuenced by past actions.
+
+3.4 Architecture Similarities
+
+Given that the regularized controller is able to discriminate between different architectures, we
+investigate if distances in this embedding space reﬂect architecture similarities. For two generated
+architectures λ1 and λ2 let h(λ1 ) and h(λ2 ) represent the hidden states of the controller at the ﬁnal
+time-step of the architecture sampling process Does ||h(λ1 ) − h(λ2 )||2 correlate with the number
+of common activation functions between the architectures, and the number of common connections
+between the architectures?
+We compute the Spearman correlation between these measures of architecture similarity for a random,
+supervised, and an unsupervised controller in table 1. The regularization of the controller clearly
+helps improve the correlation between measured notions of similarity. Most impressively, there is
+now a slight correlation between controller embedding distance and absolute difference in model
+performance. This indicates that the controller’s embedding space is arranged in a way that potentially
+captures validation set performance.
+
+6
+
+010203040506070809010001020304050607080901000.80.40.00.40.8010203040506070809010001020304050607080901000.80.40.00.40.8051015200.30.40.50.60.70.80.91.01.1051015200.00.20.40.60.81.0Table 1: Correlation between L2 distance of architecture embeddings and four standard notions of
+similarity: number of common activation functions, number of common connections, graph edit
+distance, absolute validation set performance difference.
+Train Type
+# Common Activations
+# Common Connections
+Random
+-0.090
+-0.130
+Supervised
+Unsupervised
+
+Abs. Performance Diff.
+0.004
+
+GED
+-0.064
+
+-0.404
+
+-0.315
+
+-0.160
+
+-0.072
+
+0.100
+
+-0.028
+
+0.163
+
+-0.001
+
+4 Conclusion
+
+We showed that the controller ENAS uses to generate architectures does not capture meaningful
+information about generated architectures in its hidden state by default. This explains why random
+search performs similarly to a controller trained by policy gradient, and suggests that other techniques
+to explore the search space such as differential evolution might be more effective. Weight sharing
+schemes like the ones used by ENAS confound the performance of architectures during the training
+phase so it’s possible that the most effective architectures are being overlooked because they require
+signiﬁcantly different weights than mediocre architectures. The method we presented to regularize
+the ENAS controller and to condition on past actions can be further improved via multitask training
+rather than experience replay, though we leave this for future work. We hope that steps taken in this
+direction allow NAS to beat random baselines in the future.
+
+References
+
+Bowen Baker, Otkrist Gupta, Ramesh Raskar, and Nikhil Naik. ACCELERATING NEURAL
+ARCHITECTURE SEARCH USING PERFORMANCE PREDICTION. Technical report. URL
+https://tiny-imagenet.herokuapp.com/.
+
+Gabriel Bender, Pieter-Jan Kindermans, Barret Zoph, Vijay Vasudevan, and Quoc Le. Understanding
+and Simplifying One-Shot Architecture Search. Technical report, 2018.
+
+Liam Li and Ameet Talwalkar. Random search and reproducibility for neural architecture search.
+arXiv preprint arXiv:1902.07638, 2019.
+
+Chenxi Liu, Barret Zoph, Maxim Neumann, Jonathon Shlens, Wei Hua, Li-Jia Li, Li Fei-Fei, Alan
+Yuille, Jonathan Huang, and Kevin Murphy. Progressive Neural Architecture Search. dec 2017.
+URL http://arxiv.org/abs/1712.00559.
+
+Hanxiao Liu, Karen Simonyan, and Yiming Yang. DARTS: Differentiable Architecture Search. URL
+https://arxiv.org/pdf/1806.09055.pdf.
+
+Renqian Luo, Fei Tian, Tao Qin, Enhong Chen, and Tie-Yan Liu. Neural Architecture Optimization.
+Technical report. URL https://github.com/renqianluo/NAO.
+
+Matthew Mackay, Paul Vicol, Jon Lorraine, David Duvenaud, and Roger Grosse. SELF-TUNING
+NETWORKS: BILEVEL OPTIMIZATION OF HYPERPARAMETERS US-ING STRUCTURED
+BEST-RESPONSE FUNCTIONS. Technical report.
+
+Hieu Pham, Melody Y Guan, Barret Zoph, Quoc V Le, and Jeff Dean. Efﬁcient neural architecture
+search via parameter sharing. arXiv preprint arXiv:1802.03268, 2018.
+
+Tim Salimans, Ian Goodfellow, Wojciech Zaremba, Vicki Cheung, Alec Radford, and Xi Chen.
+Improved techniques for training gans. In Advances in neural information processing systems,
+pages 2234–2242, 2016.
+
+Christian Sciuto, Kaicheng Yu, Martin Jaggi, Claudiu Musat, and Mathieu Salzmann. Evaluating the
+search phase of neural architecture search. arXiv preprint arXiv:1902.08142, 2019.
+
+Barret Zoph and Quoc V Le. Neural architecture search with reinforcement learning. arXiv preprint
+arXiv:1611.01578, 2016.
+
+7
+
+

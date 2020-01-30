@@ -1,0 +1,1099 @@
+Towards Ghost-free Shadow Removal via
+Dual Hierarchical Aggregation Network and Shadow Matting GAN
+
+Xiaodong Cun,1 Chi-Man Pun,1 ∗ Cheng Shi1,2
+
+1 Department of Computer and Information Science, University of Macau, Macau, China
+2 School of Computer Science, Xi’an University of Technology, Xi’an, China
+{yb87432,cmpun}@umac.mo,chengc s@163.com
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+8
+1
+7
+8
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Shadow removal is an essential task for scene understand-
+ing. Many studies consider only matching the image contents,
+which often causes two types of ghosts: color in-consistencies
+in shadow regions or artifacts on shadow boundaries (as
+shown in Figure. 1). In this paper, we tackle these issues in
+two ways. First, to carefully learn the border artifacts-free
+image, we propose a novel network structure named the dual
+hierarchically aggregation network (DHAN). It contains a se-
+ries of growth dilated convolutions as the backbone without
+any down-samplings, and we hierarchically aggregate multi-
+context features for attention and prediction, respectively.
+Second, we argue that training on a limited dataset restricts
+the textural understanding of the network, which leads to the
+shadow region color in-consistencies. Currently, the largest
+dataset contains 2k+ shadow/shadow-free image pairs. How-
+ever, it has only 0.1k+ unique scenes since many samples
+share exactly the same background with different shadow
+positions. Thus, we design a shadow matting generative ad-
+versarial network (SMGAN) to synthesize realistic shadow
+mattings from a given shadow mask and shadow-free image.
+With the help of novel masks or scenes, we enhance the cur-
+rent datasets using synthesized shadow images. Experiments
+show that our DHAN can erase the shadows and produce
+high-quality ghost-free images. After training on the synthe-
+sized and real datasets, our network outperforms other state-
+of-the-art methods by a large margin. The code is available:
+http://github.com/vinthony/ghost-free-shadow-removal/
+
+Introduction
+
+Shadows are a common phenomenon in nature. Cast shad-
+ows, which often appear in the opposite direction of a light
+source, form when the light from an illuminant is blocked
+by an object. Removing these shadows is essential because
+shadows may degrade the performance of many computer
+vision tasks, such as object detection and tracking (Mikic et
+al. 2000; Khan et al. 2015). Early approaches try to automat-
+ically detect shadow regions (Guo, Dai, and Hoiem 2013;
+Khan et al. 2015) or to do so with user input (Gong and
+Cosker ; Yang, Tan, and Ahuja 2012) ﬁrst, after which they
+
+∗Corresponding Author
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+Figure 1: We plot a result of our model with the input shown
+in the yellow square. From the two zoomed regions, it can be
+seen that our method successfully removes the shadow and
+reduces the ghost.
+
+transform the shadows to match the background. For deep
+learning-based approaches, Qu et al. (2017) train a neural
+network considering multi-context features (global seman-
+tics and low-level details). Then, Wang, Li, and Yang (2018)
+conduct joint shadow removal/detection using a stacked gen-
+erative adversarial network. Hu et al. (2018) retrain their
+shadow detection network to directly train shadow removal
+network. More recently, Hu et al. (2019) train a network us-
+ing an unpaired dataset without paired supervisions.
+However, current deep learning-based techniques have
+two major drawbacks. First, we argue that previous network
+structures are not carefully designed for shadow removal.
+While the goal of shadow removal is restoring the color
+from the shadow image, the shadow border also plays a vital
+role in the visual quality. For example, DeShadowNet (Qu
+et al. 2017) learns only the shadow matting from multi-
+context features other than the full image using the pre-
+trained VGG19, and the artifacts will still show on the bor-
+der. DSC (Hu et al. 2018) learns using a direction-aware at-
+tention model, which well captures the directional details
+well and also preserves more shadow boundaries. Thus, a
+
+ 
+ 
+ 
+ 
+ 
+ 
+carefully designed model is criterial. In addition, the com-
+munity lacks a high-quality image pairs (shadow/shadow-
+free) for shadow removal and joint learning on shadow re-
+moval and detection (shadow/shadow-free/mask). Since the
+largest available dataset contains only 0.1k+ unique scenes,
+and the performance of unsupervised learning is limited.
+We argue that such limited scenes will hugely inﬂuence the
+color consistency between the shadow and shadow-free re-
+gions because training on small dataset can not understand
+the scenes well.
+In this work, we design a novel network structure to
+erase shadows and produce high-quality shadow-free im-
+ages according to the following observations: the shadow
+and shadow-free images share the same semantic informa-
+tion and shadow removal speciﬁcally and only needs to learn
+the shadow. Since the semantic knowledge is the same and
+the network needs to focus on low-level features, differ-
+ent from others, an image processing network (Chen, Xu,
+and Koltun 2017) serves as a useful starting point for our
+method. In detail, this network uses several dilated convolu-
+tions (Yu and Koltun 2015) linearly with a growing dilated
+rate to capture multi-contexts and preserve useful low-level
+features. Based on this backbone, we hierarchically aggre-
+gate dilated convolutions to achieve better feature reuse (Yu
+et al. 2017). Then, to speciﬁcally learn the shadow regions,
+we design the hierarchical aggregation attention model with
+the help of multi-contexts and the attention loss from the
+shadow mask. Non-linear feature aggregation helps our at-
+tention to gain the knowledge from multiple previous layers,
+and dilated convolutions preserve the details well.
+In addition, we get our inspiration from the nature in
+that a cast shadow comes from the opposite direction of
+the light source. When an object moves, a single shadow-
+free image can produce countless shadow images. Thus,
+if we train the network to synthesize shadow images from
+the corresponding masks and shadow-free images, the net-
+work will also produce the novel shadows according to the
+novel mask. It is much easier to collect the required data for
+shadow synthesis than for triples of paired shadow/shadow-
+free/mask. Thus, we design a novel shadow synthesis net-
+work using GAN (Goodfellow et al. 2014) to enlarge the cur-
+rent datasets. Instead of learning the shadow image directly,
+our network learns the shadow matting ﬁrst and produces
+the high-quality shadow from the original shadow-free im-
+age and matting. Although these images are synthesized us-
+ing neural network, they still have a similar distributions
+to the real natural scene compared with those from com-
+puter games (Sidorov 2019). In our shadow synthesis, we
+assume the scenes contain only cast shadows with the ob-
+jects outside the scene. Experiments shows that our setting
+also works well in other situations.
+We summarize our major contributions as follows.
+• We design a joint learning framework, named Dual Hi-
+erarchical Aggregation Network (DHAN), for shadow
+removal with the help of shadow detection. The pro-
+posed network hierarchically aggregates the dilated multi-
+contexts features and attentions, respectively.
+• We design and train a Shadow Matting GAN on current
+
+paired shadow datasets. Then, the novel paired samples
+are obtained from the well-trained network with novel
+masks or scenes. Finally, we train shadow-related tasks
+using augmented datasets.
+• Experiments on real and synthetic data indicate that our
+algorithm outperforms other state-of-the-art methods, es-
+pecially on the visual quality.
+
+Related Work
+
+Shadow Removal Early works often erase shadows via user
+interaction or hand-crafted features (Guo, Dai, and Hoiem
+2013; Khan et al. 2015). Inspired by the convolution neural
+network-based method, Qu et al. (2017) propose a multi-
+stream neural network for removing the shadows according
+to global-and-local contexts, and Hu et al. (2018) use a fully
+convolutional network structure but with direction-aware at-
+tention. For learning shadow removal and detection jointly,
+Wang, Li, and Yang (2018) proposed a stacked GAN where
+the learned shadow mask serves as the attention for the re-
+moval. Ding et al. (2019) extend this method by strong net-
+work and learning recurrently.
+Shadow Synthesis For it is hard to collect larger shadow re-
+moval datasets, Gryka, Terry, and Brostow (2015) generate
+the shadow images from graphics tools and Sidorov (2019)
+generate the shadow dataset by controlling the lights in the
+video game. However, scenes or shadows that are rendered
+by computer graphics are signiﬁcantly different from natu-
+ral scenes. (Le et al. 2018; Le and Samaras 2019) propose
+a two-stage network for generating the adversarial shadow
+images before shadow detection, and they also use this idea
+to remove shadows by enhancing the shadow strength. Fo-
+cusing on the limitation of a paired dataset, Hu et al. (2019)
+train a neural network to remove shadows from unpaired
+shadow/shadow-free images. It also contains an auxiliary
+network for shadow synthesis. However, their synthesized
+shadows are not learned using the paired dataset and their
+shadow generator is used in cycle-consistency loss only.
+Shadow Detection Some traditional methods use physical
+models of illumination and color for shadow detection (Sal-
+vador, Cavallaro, and Ebrahimi 2004; Panagopoulos et al.
+2011). Others describe image regions by hand-crafted fea-
+tures, such as color (Lalonde, Efros, and Narasimhan 2010),
+texture (Vicente, Hoai, and Samaras 2017), then recognize
+these regions by classiﬁer. However, these approaches are
+not well suited for various natural scenes. Current state-of-
+the-art shadow detection methods are based on the power
+of convolution neural network, such as learning shadow
+edges (Khan et al. 2015; Shen, Wee Chua, and Leman 2015)
+and designing attention modules by considering the direc-
+tion (Hu et al. 2018), recurrent attention (Zhu et al. 2018)
+and distraction (Zheng et al. 2019).
+
+Proposed Methods
+
+Dual Hierarchical Aggregation Network
+
+Given a shadow image Ishadow , our method learns the
+shadow-free image If ree using the proposed network with
+
+Figure 2: The network structure of the proposed Dual Hierarchical Aggregation Network.
+
+the help of the attention loss (shadow mask M ) in a sin-
+gle forward process. As previously discussed, our back-
+bone structure is based on the context aggregation net-
+work (CAN) (Chen, Xu, and Koltun 2017; Zhang, Ng,
+and Chen 2018) for image processing. Speciﬁcally, we
+extract
+the hyper-column features from the pre-trained
+VGG19 (CONV1 2, CONV2 2, CONV3 2, CONV4 2 and
+CONV5 2) and the original RGB image serves as an aug-
+mented network input. Then, we encode these multi-context
+features using several dilated convolutions with a growing
+dilate rate. Each convolutional block follows an Instance
+Normalization and LeakyReLU layer. Previous studies show
+that this network structure works well in image processing
+tasks, such as Nonlocal de-hazing and L0 smoothing since
+there is no down-sampling or stride convolution in the con-
+text encoding, the low-level details can be well preserved.
+Although shadow removal is similar to low-level task, it
+speciﬁcally needs to learn the shadow regions. Possible so-
+lutions are to learn the particular region using partial con-
+volution (Liu et al. 2018) or gated convolution (Yu et al.
+2019). However, these attention mechanisms are designed
+for image in-painting. Thus, they need to ﬁll the region using
+global semantic contexts and work in a Unet-like structure.
+Thus, to speciﬁcally learn the shadows and preserve low-
+
+level details, we design dual hierarchical aggregations for
+
+spatial attentions and mixed layer features, respectively. In
+detail, as shown in Figure. 2, we build the attention module
+by aggregating the features from multiple previous layers in
+a hierarchical layer aggregation style (Yu et al. 2017). Our
+n layer dual hierarchical aggregation network DH ANn =
+
+Tn × ATn merges the features in a tree-like structure for
+richer context attention. In it, Tn and ATn can be deﬁned as:
+
+Tn = N (Rn
+n−1 (x), ..., Rn
+1 (x), Ln
+1 (x), Ln
+2 (x))
+ATn = AN (ARn
+n−1 (x), ..., ARn
+1 (x), Ln
+1 (x), Ln
+2 (x))
+
+(1)
+
+where N and AN are the aggregation node and attention
+aggregation node, respectively. N (·) means the feature con-
+catenation. R, AR and feature layer L are deﬁned as:
+
+(2)
+
+ARn
+m (x) =
+
+1 (x) × ARn
+Ln
+1 (x) = DBk=2n−1 (Rn
+(cid:26)Tm
+1 (x))
+Ln
+2 (x) = DBk=2n (Ln
+1 (x))
+(cid:26)ATm
+Rn
+m (x) =
+Tm (Rn
+ATm (ARn
+
+if m = n-1
+m+1 (x)) otherwise,
+if m = n-1
+m+1 (x)) otherwise,
+where DBk=x represents the x-dilated convolution. Thus,
+each aggregated feature is spatially reweighed by the multi-
+context attention. In addition, we also use the ground truth
+shadow mask as the supervision for the attention.
+In each aggregation node (as shown in Figure. 3), we use
+a squeeze-and-excitation block (Hu, Shen, and Sun 2018)
+to re-weight the importance of each feature channel. Then,
+a 3 × 3 convolution is added to squeeze the features and
+match the original channels. Notice that, the S igmoid(·)
+layer is added only at the end of the attention aggregation
+nodes (AR). Finally, a spatial pooling pyramid (as shown
+in Figure. 2) (He et al. 2015) is added at the end of the last
+aggregation block for multi-context features remixing.
+Loss Functions By considering the semantic measures
+and low-level details in multiple contexts, we train our net-
+work using the multi layer perception loss (Zhang, Ng, and
+Chen 2018; Johnson, Alahi, and Fei-Fei 2016) LΦ in the
+pixel and feature domain as follows:
+
+5(cid:88)
+
+LΦ =
+
+λl ||Φk (I
+
+(cid:48)
+
+f ree )) − Φk (If ree )||1
+
+(3)
+
+Figure 3: Attentive Aggregation nodes for feature aggrega-
+tion and attention aggregation.
+
+where Φ is the VGG16 that is pre-trained on ImageNet. We
+estimate the differences from the CONVk 2(k = 1...5) and
+
+k=0
+
+Figure 4: The network structure of Shadow Matting GAN.
+
+the original images (k = 0 in Equation. 3) between the nat-
+ural shadow-free image If ree and the generated I
+f ree using
+the L1 loss with weight λl . For the attention loss, we use the
+binary cross entropy (BCE) loss between the predicted mask
+M (cid:48) and the ground truth mask M as follows:
+
+(cid:88) −[M log(M (cid:48) ) + (1 − M )log(1 − M (cid:48) )] (4)
+
+(cid:48)
+
+Lm =
+
+1
+N
+
+Where N is the total number of pixels. In addition, the con-
+volution neural network might also preserve the shadow bor-
+der in the images, which will also degrades the shadow re-
+moval quality. Thus, we use the adversarial loss as (Isola
+et al. 2017) in our approach. By considering our DHAN as
+the generator, the discriminator D is constructed with sev-
+eral convolution blocks. We simply discriminate the patches
+in the real shadow-free image If ree and the predicted I
+given the shadow image Ishadow . The discriminator is opti-
+mized to identify the generated image that pushes the gener-
+ator towards realistic shadow-free images. The discriminator
+loss is as follows:
+
+f ree
+
+(cid:48)
+
+(cid:88)
+
+LcGAN =
+
+(5)
+Overall ,the ﬁnal objective of our method G∗ is as follows:
+
+[log(D(Ishadow , G(Ishadow ))
+−log(D(Ishadow , If ree ))]
+
+arg minG arg maxD LcGAN + λLΦ + αLm . We set α equals
+
+to 100 and β equals to 20 empirically.
+
+SM-GAN: Shadow Matting GAN
+
+As discussed in the introduction, one of the key issues in
+current shadow removal methods is the limitation of the
+paired dataset. However, with respect to the various types
+of shadow masks and scenes, it is hard to collect a large
+dataset with paired shadow/shadow-free images. The state-
+of-the-art SRD dataset (Qu et al. 2017) and ISTD (Wang,
+Li, and Yang 2018) contains only 100+ different scenes
+and 10+ unique shadow types. In addition, the environmen-
+tal light changes so fast that it is impossible to take pairs
+of shadow/shadow-free images under the same light condi-
+tions, even in a ﬂash. The uncertainty of the light transform-
+ing between shadow/shadow-free images inﬂuences the ac-
+curacy of the network. For these reasons, we argue that the
+application range of current learning-based shadow removal
+algorithms is limited and training using limited scenes will
+cause color inconsistencies between shadow and shadow-
+free regions. However, it is far easier to collect the natu-
+ral shadow-free images and random masks than to collect
+
+(cid:48)
+
+(cid:48)
+
+(cid:48)
+
+(cid:48)
+
+the corresponding shadow/shadow-free/shadow-mask sets.
+Thus, we synthesize the shadow image using the random
+shadow mask and the shadow-free image via the GAN to
+improve the accuracy of shadow networks and extend their
+capabilities to larger natural domains.
+As shown in Figure.4, using the knowledge of the shadow
+image Ishadow , the shadow mask M and the correspond-
+ing shadow-free image If ree in the current dataset, we train
+shadow synthesis as a paired task (Isola et al. 2017) using
+the GAN. Speciﬁcally, we train a generator to synthesize
+the shadow image I
+shadow from the corresponding shadow-
+free image If ree and mask M . Then, the discriminator is
+optimized to identify whether the synthesized shadow im-
+age I
+shadow is real or not. Since there is a corresponding
+ground truth image Ishadow in the dataset, apart from ad-
+versarial loss from the discriminator, we restrict the simi-
+larity of the I
+shadow and Ishadow in a supervised manner.
+Instead of generating the shadow image directly, we learn
+the shadow matting Imatting following the former observa-
+tion (Qu et al. 2017): Ishadow = Imatting × If ree . Thus, our
+shadow synthesis network can be written as follows:
+
+shadow = G(If ree , M ) × If ree
+
+(6)
+where G(·) is the generator of our shadow matting GAN.
+The supervised losses in the shadow matting generator are
+similar to our shadow removal: We use the multi-scale per-
+ceptual loss to measure the prediction quality and adversar-
+ial loss to guarantee the realism of the output. Then, we up-
+date the parameters in the discriminator network D to recog-
+nize whether the generated shadow image is real or not. The
+generator of our SM-GAN has a similar structure with the
+CycleGAN (Zhu et al. 2017). For simplicity, the discrimi-
+nator is constructed with 5 convolution layers with ReLU
+non-linear activation and Batch Normalization layer, which
+is similar to our shadow removal network.
+After training, the generator in SMGAN can be easily
+used to sample novel domain examples, such as the novel
+background and novel shadow mask (as shown in the novel
+mask/background of Figure.4). Here, we use the shadow-
+free images in USR (Hu et al. 2019) and shadow masks
+from ISTD training set to synthesize the shadow images
+for data augmentation. For each shadow-free image in the
+USR dataset, we randomly choose 3 images from the train-
+ing mask of the ISTD dataset to generate shadow. The ex-
+periments show that this kind of setting is sufﬁcient for the
+shadow removal and detection tasks.
+
+I
+
+Figure 5: Shadow Removal Comparison. The top and bottom two samples are from ISTD and SRD dataset, respectively. In (d),
+the top and bottom two results are from ST-CGAN (ST) and DeShadowNet (DS), respectively. Best view with zoom-in.
+
+Table 1: Comparison of Shadow removal results. The subscripts represent the years of the compared methods.
+Method
+S
+NS
+RMSE SSIM-S
+PSNR-S
+S
+NS
+RMSE SSIM-S
+PSNR-S
+ISTD dataset
+SRD dataset
+10.97
+98.19
+14.28
+88.54
+15.63
+93.25
+22.57
+-
+9.30
+96.04
+12.60
+91.46
+8.53
+96.97
+8.73
+-
+-
+-
+6.10
+94.68
+7.47
+94.93
+-
+-
+6.67
+96.66
+6.23
+93.75
+6.37
+98.29
+5.67
+95.29
+
+Original
+Yang12(cid:48)
+Guo13(cid:48)
+Gong14(cid:48)
+DeShadowNet17(cid:48)
+ST-CGAN18(cid:48)
+DSC18(cid:48)
+Ours (DHAN)
+Ours (DHAN)+DA
+
+19.35
+-
+23.69
+-
+31.97
+-
+31.69
+33.36
+
+32.67
+19.82
+18.95
+14.98
+-
+10.33
+9.48
+8.14
+
+32.87
+28.01
+27.49
+29.79
+-
+32.23
+33.45
+34.50
+
+34.98
+
+46.87
+23.43
+29.89
+19.58
+10.81
+-
+10.89
+8.94
+
+8.39
+
+5.60
+22.26
+6.47
+4.92
+4.85
+-
+4.99
+4.80
+
+4.67
+
+6.83
+14.83
+7.46
+7.29
+-
+6.93
+6.14
+6.04
+
+5.43
+
+5.46
+
+95.31
+
+33.72
+
+7.52
+
+5.76
+
+98.36
+
+Experiments
+
+In this section, ﬁrst, we conduct the shadow removal experi-
+ments using standard benchmarks, the ISTD (Wang, Li, and
+Yang 2018) and the SRD (Qu et al. 2017). The SRD contains
+2k+ and 408 images for training and testing, respectively. In
+ISTD, there is 1.3k and 540 images for training and testing,
+respectively. On both datasets1 , we jointly learn the shadow
+removal and attention (shadow mask) using the proposed
+DHAN. In addition, we retrain these tasks on the dataset
+containing both real and synthesized shadow images. Then,
+we evaluate the effectiveness of our synthesized shadows
+for shadow detection on SBU (Vicente et al. 2016) dataset,
+which contains 4k+ and 0.6k+ images for training and test-
+ing, respectively. Finally, we conduct the ablution study on
+the network structure, the quality of shadow synthesis and
+the network capabilities.
+Implementation Detail We train all our models using
+TensorFlow framework and optimize the network on Adam
+
+1Since there is no ground truth shadow mask in the SRD, we
+calculate the shadow matting using the shadow/shadow-free pairs
+and generate the binary mask via thresh-holding.
+
+optimizer (Kingma and Ba 2014) with a ﬁxed learning rates
+of 2 ∗ 10−4 and 10−4 in the generator and the discriminator,
+respectively. In training, we randomly resize the original im-
+age from 256p to 480p, thereby retaining the original aspect
+radio rather than cropping the image. We set the batch size
+to 1 and train the network in over 100 epochs for shadow
+synthesis and 150 epochs for shadow removal (60 epochs
+for the augmented datasets). For testing, we evaluate all the
+images in their original size. It takes 0.2s for our network to
+generate a shadow-free image with a resolution of 640x480
+on a single NVIDIA TITAN V GPU. On shadow removal,
+we follow the previous works and evaluate the RMSE on the
+LAB color space in the shadow (S) and non-shadow (NS) re-
+gions. In addition, we also report the PSNR and SSIM for the
+shadow region (SSIM-S and PSNR-S, respectively) to eval-
+uate whether it can produce high-quality shadow removal
+results. To evaluate on shadow detection, we use the Bal-
+ance Error Rate (BER) for the shadow (S) and non-shadow
+region (NS) as in previous works. The BER is deﬁned as fol-
+lows: BER = 1 − 1
+T N +F P ), where TP, TN,
+FP and FN are the total numbers of the true positives, true
+negatives, false positives and false negatives, respectively.
+
+T P +F N + T N
+T P
+
+2 (
+
+(a)Input(b)Guo(c)DSC(d)ST/DS(e)Ours(f)Ours+(g)TargetFigure 6: Comparison the shadow detection results with state-of-the-art methods on the SBU dataset.
+
+Comparison with the State-of-the-art Methods
+
+Shadow Removal We compare ours results with those of
+the state-of-the-art shadow removal methods, including ST-
+CGAN (Wang, Li, and Yang 2018) that jointly conducts
+shadow removal and detection, DSC (Hu et al. 2018) that
+removes shadows using a direction-aware attention mecha-
+nism, and DeShadowNet (Qu et al. 2017) conducts shadow
+removal using multi-context features and the shadow mat-
+ting loss. Apart from deep learning-based methods, we also
+compare our algorithm with some open-sourced traditional
+methods (Guo, Dai, and Hoiem 2013; Gong and Cosker ;
+Yang, Tan, and Ahuja 2012). Note that, in order to con-
+duct a fair comparison, all the results and ﬁgures are pro-
+vided by the authors or taken from the original papers. Since
+the training codes of ST-CGAN and DeShadowNet are not
+publicly available, we evaluate their performances only on
+their own dataset. As shown in Figure. 5, our method pro-
+vides much better visual quality than the others on both two
+standard datasets. In these samples, previous works produce
+many ghosts because of the remaining shadow boundaries
+or color inconsistencies. For example, DeShadowNet learns
+the shadow matting only where the restored color might
+not match the background. In addition, the DSC and De-
+ShadowNet will cause sharp shadow boundaries since their
+network structures need to down-sample and up-sample in
+the multi-contexts. Meanwhile, due to the limited dataset,
+they all lack better scene understandings. However, the pro-
+posed method (Ours) has minimal artifacts in the shadow
+boundaries and the synthesized dataset used as augmenta-
+tion (Ours+DA) provides much better color consistency. For
+the numerical evaluation in Table. 1, all the methods can
+successfully learn the shadow-free region with the help of
+network; however, it is clear that our DHAN outperforms
+the others, especially on the shadow regions, because of the
+effectiveness of our attention model and attention loss. Ad-
+ditionally, training on the augmented synthesized shadow
+dataset helps a lot in shadow and non-shadow regions since
+it successfully enlarges the knowledge of current dataset.
+Note that, on SRD dataset, even though ISTD dataset con-
+tains larger color differences between the training pairs in
+the shadow-free region and our network try to ﬁt these map-
+ping in shadow synthesis, the synthesized shadows also help
+the scenes understanding on SRD dataset.
+
+Shadow Synthesis for Detection Our synthesized dataset
+
+also beneﬁts to shadow detection. In detail, we modify our
+
+Table 2: Comparison on shadow detection.
+NS↓
+9.69
+12.53
+
+S↓
+
+Method
+backbone
+scGAN17(cid:48)
+-
+ST-CGAN18(cid:48)
+-
+DSC18(cid:48)
+VGG19
+ADNet18(cid:48)
+Adversarial
+Ours(HAN)
+VGG19
+Ours(HAN)+DA VGG19
+BDRAR18(cid:48)
+DSDNet19(cid:48)
+
+ResNeXt101
+ResNeXt101
+
+8.39
+3.75
+9.76
+4.45
+2.80
+
+2.71
+
+3.40
+3.33
+
+1.42
+
+6.30
+6.32
+5.87
+3.89
+3.58
+
+BER↓
+9.04
+8.14
+5.59
+5.37
+4.56
+4.29
+3.64
+
+3.45
+
+network structure to match the detection by removing the
+output of attention loss. Thus, we only use the mask as
+output for back-propagation. We compare our results with
+state-of-the-art learning-based shadow detection methods,
+such as attention-based methods DSC (Hu et al. 2018),
+BDRAR (Zhu et al. 2018), DSD (Zheng et al. 2019), joint
+learning method ST-CGAN (Wang, Li, and Yang 2018) and
+adversarial shadow-based methods ADNet (Le et al. 2018).
+As shown in Table. 2, although our network is not particu-
+larly designed for shadow detection, it still gets better results
+than those other methods under the same backbone. Our
+network also obtains comparable results with the state-of-
+the-art methods using the powerful pre-trained ResNext101
+model and multi-contexts supervisions. The shadows in the
+SBU dataset are much more challenging and complex than
+simple cast shadows. However, our synthesized shadow still
+helps, as in Figure. 6 and Table. 2.
+
+Ablation Studies
+
+Network Structure We evaluate the contributions of our
+network structure on the SRD dataset. As shown in Ta-
+ble. 3 and Figure. 7, our baseline is the context aggrega-
+tion network (CAN) (Zhang, Ng, and Chen 2018) that is de-
+signed for image processing and reﬂection removal. It has
+a poor performance on the shadow removal task both on
+shadow and non-shadow regions. However, our feature layer
+aggregation (+ LA) technique greatly improves the qual-
+ity of the shadow regions. This is because the hierarchical
+mixed features will force the network to better understand
+multiple contexts. Then, when training using the dual ag-
+gregation network with attention aggregation (+DLA), our
+
+(a)Input(b)DSC(c)BDRAR(d)ADNet(e)DSD(f)Ours(g)Ours+(h)TargetTable 4: Comparison on the quality of shadow synthesis.
+Method
+LPIPS ↓
+SSIM ↑
+PSNR ↑
+Masked-ShadowGAN
+25.30
+80.18
+23.18
+Pix2Pix
+11.51
+88.82
+26.01
+Ours
+
+26.31
+
+91.67
+
+5.38
+
+Figure 9: Training using our synthesized dataset (ISTD+S)
+helps the network works better on novel domains.
+
+that, the shadow generator in Mask-ShadowGAN is just an
+auxiliary helper for unpaired shadow removal, other than
+synthesizing the paired dataset for supervised learning as
+data augmentation. The ShadowGAN trains using only the
+low-resolution images from the computer rendered dataset.
+For comparison, we train our shadow synthesis network and
+others on the ISTD training set and test by synthesizing the
+shadow images using the ISTD test set. We evaluate the re-
+sults using the SSIM and PSNR. In addition, since percep-
+tual quality is also important for image generation, we evalu-
+ate the generated shadow using the image perceptual quality
+metrics LPIPS (Zhang et al. 2018). As shown in Table. 4,
+our method outperforms other methods in all the metrics.
+Extend to Novel Domain Training using our synthesized
+dataset enlarges the capabilities of the network. Here, we
+show the potential of our methods in novel scenes. Par-
+ticularly, we test the pre-trained ISTD model on the SRD
+and SBU datasets without retraining on their speciﬁc train-
+ing datasets. We show an examples from shadow detection
+datasets SBU in Figure. 9. With the help of the synthesized
+dataset (ISTD+S in Figure. 9), our network can better un-
+derstand the scenes and remove the shadows in these regions
+without ghosts or color inconsistencies. In the SRD dataset,
+when training using the ISTD+S dataset, the RMSE of our
+network is 9.82; however, if we train using only the ISTD
+dataset, the RMSE is 11.9.
+
+Conclusion
+
+In this paper, we aim to create a ghost-free shadow removal
+method in two aspects. First, we propose a novel network
+that starts with context aggregation network and hierarchi-
+cally aggregates the features and attentions. Our network
+structure can produce high-quality border-free results from
+multi-context features and attentions. Then, to enlarge the
+scenes in the current shadow removal dataset and reduce
+the color inconsistencies, we train a shadow matting GAN
+to synthesize the shadow images from the corresponding
+shadow-free images and masks. The proposed shadow gen-
+erator is used to augment the data of the current dataset. Ex-
+
+Figure 7: Ablation study on our network structure. We plot
+the results of our full methods with the input in yellow re-
+gion. The baseline network CAN can remove the shadow but
+still have color in-consistency, and our feature LA(+LA) and
+dual LA(+DLA) can further remove the artifacts.
+
+Figure 8: Comparison with the attention from gated convolu-
+tion. We show the results and corresponding attention map.
+It is obviously that gated attention learns the feature locally
+while our attention predict the shadow region successfully.
+
+method gains far better results with the supervision of the
+shadow mask. In addition, we ﬁnd that the local gated con-
+volution (Yu et al. 2019) is quantitatively less effective on
+our task. Here, we plot an example in Figure. 8 and compare
+our attention with the results on local gated convolution. We
+visualize the mean responses on the last attention features
+after S igmoid. The ﬁgure shows that when the shadow re-
+gion is large enough, the local gated convolution only gains
+the knowledge from its sibling convolution, causing the fail-
+ure to capture the whole image context.
+
+Comparison on Shadow Synthesis Since there are few
+
+deep learning-based methods for shadow synthesis particu-
+larly, we compare the auxiliary network for unpaired shadow
+removal in the Mask-ShadowGAN (Hu et al. 2019) and the
+ShadowGAN (Zhang, Liang, and Wang 2019), which syn-
+thesizes shadows using the Pix2Pix (Isola et al. 2017). Note
+
+Table 3: Ablation Study on SRD dataset.
+NS↓ RMSE↓
+Methods
+CAN
+5.11
+6.14
++ LA
+5.10
+5.98
++ DLA
+
+10.05
+9.31
+
+8.93
+
+4.80
+
+S↓
+
+5.67
+
+(a)Result(b)Input(c)CAN(d)+LA(e)+DLA(a)Input(b)GatedAtt.(c)OursAtt.(a)Input(b)ISTD(c)ISTD+Speriments show both our methods are helpful for generating
+the ghost-free shadow-free images.
+
+Acknowledgments
+
+This work was partly supported by the University of Macau
+under Grants: MYRG2018-00035-FST and MYRG2019-
+00086-FST,
+the Science and Technology Development
+Fund, Macau SAR (File no. 041-2017-A1) and the National
+Natural Science Foundation of China (61902313).
+
+References
+
+[Chen, Xu, and Koltun 2017] Chen, Q.; Xu, J.; and Koltun,
+V. 2017. Fast image processing with fully-convolutional
+networks. In ICCV, 2497–2506.
+[Ding et al. 2019] Ding, B.; Long, C.; Zhang, L.; and Xiao,
+C. 2019. ARGAN: Attentive Recurrent Generative Adver-
+sarial Network for Shadow Detection and Removal. ICCV.
+[Gong and Cosker ] Gong, H., and Cosker, D.
+Interactive
+shadow removal and ground truth for variable scene cate-
+gories.
+[Goodfellow et al. 2014] Goodfellow, I.; Pouget-Abadie, J.;
+Mirza, M.; Xu, B.; Warde-Farley, D.; Ozair, S.; Courville,
+A.; and Bengio, Y. 2014. Generative adversarial nets. In
+NIPS, 2672–2680.
+[Gryka, Terry, and Brostow 2015] Gryka, M.; Terry, M.; and
+Brostow, G. J. 2015. Learning to remove soft shadows. ACM
+TOG.
+[Guo, Dai, and Hoiem 2013] Guo, R.; Dai, Q.; and Hoiem,
+D. 2013. Paired Regions for Shadow Detection and Re-
+moval. IEEE TPAMI.
+[He et al. 2015] He, K.; Zhang, X.; Ren, S.; and Sun, J. 2015.
+Spatial pyramid pooling in deep convolutional networks for
+visual recognition. IEEE TPAMI 37(9):1904–1916.
+[Hu et al. 2018] Hu, X.; Fu, C.-W.; Zhu, L.; Qin, J.; and
+Heng, P.-A. 2018. Direction-aware Spatial Context Features
+for Shadow Detection and Removal. IEEE TPAMI.
+[Hu et al. 2019] Hu, X.; Jiang, Y.; Fu, C.-W.; and Heng, P.-
+A. 2019. Mask-shadowgan: Learning to remove shadows
+from unpaired data. ICCV.
+[Hu, Shen, and Sun 2018] Hu, J.; Shen, L.; and Sun, G.
+2018. Squeeze-and-excitation networks. In CVPR, 7132–
+7141.
+[Isola et al. 2017] Isola, P.; Zhu, J.-Y.; Zhou, T.; and Efros,
+A. A. 2017.
+Image-to-image translation with conditional
+adversarial networks. In CVPR, 1125–1134.
+[Johnson, Alahi, and Fei-Fei 2016] Johnson, J.; Alahi, A.;
+and Fei-Fei, L. 2016. Perceptual losses for real-time style
+transfer and super-resolution. In ECCV, 694–711. Springer.
+[Khan et al. 2015] Khan, S. H.; Bennamoun, M.; Sohel, F.;
+and Togneri, R. 2015. Automatic shadow detection and
+removal from a single image. IEEE TPAMI 38(3):431–446.
+[Kingma and Ba 2014] Kingma, D. P., and Ba, J.
+2014.
+Adam: A method for stochastic optimization. arXiv preprint
+arXiv:1412.6980.
+
+[Lalonde, Efros, and Narasimhan 2010] Lalonde,
+J.-F.;
+Efros, A. A.; and Narasimhan, S. G.
+2010. Detecting
+ground shadows in outdoor consumer photographs.
+In
+ECCV, 322–335. Springer.
+[Le and Samaras 2019] Le, H., and Samaras, D.
+2019.
+Shadow removal via shadow image decomposition.
+In
+ICCV.
+[Le et al. 2018] Le, H.; Vicente, T. F. Y.; 0004, V. N.; Hoai,
+M.; and Samaras, D. 2018. A+D Net - Training a Shadow
+Detector with Adversarial Shadow Attenuation. ECCV.
+[Liu et al. 2018] Liu, G.; Reda, F. A.; Shih, K. J.; Wang, T.-
+C.; Tao, A.; and Catanzaro, B. 2018. Image inpainting for
+irregular holes using partial convolutions. In ECCV, 85–100.
+[Mikic et al. 2000] Mikic, I.; Cosman, P. C.; Kogut, G. T.;
+and Trivedi, M. M. 2000. Moving shadow and object detec-
+tion in trafﬁc scenes. In ICPR, volume 1, 321–324. IEEE.
+[Panagopoulos et al. 2011] Panagopoulos, A.; Wang, C.;
+Samaras, D.; and Paragios, N. 2011. Illumination estimation
+and cast shadow detection through a higher-order graphical
+model. In CVPR, 673–680.
+[Qu et al. 2017] Qu, L.; Tian, J.; He, S.; Tang, Y.; and Lau,
+R. W. 2017. Deshadownet: A multi-context embedding deep
+network for shadow removal. In CVPR, 4067–4075.
+[Salvador, Cavallaro, and Ebrahimi 2004] Salvador, E.; Cav-
+allaro, A.; and Ebrahimi, T. 2004. Cast shadow segmenta-
+tion using invariant color features. CVIU 95(2):238–259.
+[Shen, Wee Chua, and Leman 2015] Shen, L.; Wee Chua, T.;
+and Leman, K. 2015. Shadow optimization from structured
+deep edge detection. In CVPR.
+[Sidorov 2019] Sidorov, O.
+2019. Conditional gans for
+multi-illuminant color constancy: Revolution or yet another
+approach? In CVPR Workshop, 0–0.
+[Vicente et al. 2016] Vicente, T. F. Y.; Hou, L.; Yu, C.-P.;
+Hoai, M.; and Samaras, D. 2016. Large-scale training of
+shadow detectors with noisily-annotated shadow examples.
+In ECCV, 816–832.
+[Vicente, Hoai, and Samaras 2017] Vicente, T. F. Y.; Hoai,
+M.; and Samaras, D. 2017. Leave-one-out kernel opti-
+mization for shadow detection and removal. IEEE TPAMI
+40(3):682–695.
+[Wang, Li, and Yang 2018] Wang, J.; Li, X.; and Yang, J.
+2018. Stacked conditional generative adversarial networks
+for jointly learning shadow detection and shadow removal.
+In CVPR, 1788–1797.
+[Yang, Tan, and Ahuja 2012] Yang, Q.; Tan, K.-H.; and
+Ahuja, N. 2012. Shadow removal using bilateral ﬁltering.
+IEEE TIP 21(10):4361–4368.
+[Yu and Koltun 2015] Yu, F., and Koltun, V. 2015. Multi-
+scale context aggregation by dilated convolutions. arXiv
+preprint arXiv:1511.07122.
+[Yu et al. 2017] Yu, F.; Wang, D.; Shelhamer, E.; and Darrell,
+T. 2017. Deep Layer Aggregation. CVPR.
+[Yu et al. 2019] Yu, J.; Lin, Z.; Yang, J.; Shen, X.; Lu, X.;
+and Huang, T. S. 2019. Free-form image inpainting with
+gated convolution. ICCV.
+
+[Zhang et al. 2018] Zhang, R.; Isola, P.; Efros, A. A.; Shecht-
+man, E.; and Wang, O. 2018. The unreasonable effectiveness
+of deep features as a perceptual metric. In CVPR.
+[Zhang, Liang, and Wang 2019] Zhang, S.; Liang, R.; and
+Wang, M. 2019. Shadowgan: Shadow synthesis for vir-
+tual objects with conditional adversarial networks. Compu-
+tational Visual Media 5(1):105–115.
+[Zhang, Ng, and Chen 2018] Zhang, X.; Ng, R.; and Chen,
+Q. 2018. Single Image Reﬂection Separation with Percep-
+tual Losses. CVPR.
+[Zheng et al. 2019] Zheng, Q.; Qiao, X.; Cao, Y.; and Lau,
+R. W. 2019. Distraction-aware shadow detection. In CVPR,
+5167–5176.
+[Zhu et al. 2017] Zhu, J.-Y.; Park, T.; Isola, P.; and Efros,
+A. A. 2017. Unpaired Image-to-Image Translation using
+Cycle-Consistent Adversarial Networks. ICCV.
+[Zhu et al. 2018] Zhu, L.; Deng, Z.; Hu, X.; Fu, C.-W.; Xu,
+X.; Qin, J.; and Heng, P.-A. 2018. Bidirectional feature
+pyramid network with recurrent attention residual modules
+for shadow detection. In ECCV, 121–136.
+
+

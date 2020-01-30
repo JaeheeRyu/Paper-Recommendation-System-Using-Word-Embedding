@@ -1,0 +1,1329 @@
+Thinking Globally, Acting Locally: Distantly Supervised Global-to-Local
+Knowledge Selection for Background Based Conversation
+
+Pengjie Ren1 , Zhumin Chen2 , Christof Monz1 , Jun Ma2 , Maarten de Rijke1
+
+1 University of Amsterdam, Amsterdam, The Netherlands
+{p.ren, c.monz, derijke}@uva.nl, {chenzhumin, majun}@sdu.edu.cn
+2 Shandong University, Jinan, China
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+C
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+8
+2
+5
+9
+0
+
+.
+
+8
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Background Based Conversations (BBCs) have been intro-
+duced to help conversational systems avoid generating overly
+generic responses. In a BBC, the conversation is grounded in
+a knowledge source. A key challenge in BBCs is Knowledge
+Selection (KS): given a conversational context, try to ﬁnd the
+appropriate background knowledge (a text fragment contain-
+ing related facts or comments, etc.) based on which to gen-
+erate the next response. Previous work addresses KS by em-
+ploying attention and/or pointer mechanisms. These mecha-
+nisms use a local perspective, i.e., they select a token at a time
+based solely on the current decoding state. We argue for the
+adoption of a global perspective, i.e., pre-selecting some text
+fragments from the background knowledge that could help
+determine the topic of the next response. We enhance KS
+in BBCs by introducing a Global-to-Local Knowledge Se-
+lection (GLKS) mechanism. Given a conversational context
+and background knowledge, we ﬁrst learn a topic transition
+vector to encode the most likely text fragments to be used
+in the next response, which is then used to guide the local
+KS at each decoding timestamp. In order to effectively learn
+the topic transition vector, we propose a distantly supervised
+learning schema. Experimental results show that the GLKS
+model signiﬁcantly outperforms state-of-the-art methods in
+terms of both automatic and human evaluation. More impor-
+tantly, GLKS achieves this without requiring any extra anno-
+tations, which demonstrates its high degree of scalability.
+
+Introduction
+
+Non-task-oriented conversational systems (a.k.a., chatbots)
+aim to engage users in conversations for entertainment (Yan
+2018) or to provide valuable information (Zhou, Prabhu-
+moye, and Black 2018). Sequence-to-sequence models are
+an effective framework that is commonly adopted in this
+ﬁeld. However, a problem of vanilla sequence-to-sequence
+based methods is that they tend to generate generic and
+non-informative responses with bland and deﬁcient re-
+sponses (Chen et al. 2017). Various methods have been
+proposed to alleviate this issue, such as adjusting objec-
+tive functions (Li et al. 2016; Zhang et al. 2018b; Jiang et
+al. 2019) or incorporating personal proﬁles (Zhang et al.
+2018a).
+Background Based Conversations (BBCs) have demon-
+strated a potential for generating more informative responses
+
+Figure 1: Visualization of local knowledge selection. The
+X-axes represent the background tokens; the top Y-axis rep-
+resents KS probabilities and the spike indicates the ground
+truth KS; the bottom Y-axis represents the decoding times-
+tamp and darker blue means larger KS probabilities.
+
+(Zhou, Prabhumoye, and Black 2018). Given some back-
+ground knowledge (e.g., an article in the form of free text)
+and a conversation, the BBC task is to generate responses
+by referring to the background knowledge and considering
+the dialogue history context at the same time. A key chal-
+lenge in BBCs is Knowledge Selection (KS), which is the
+task of ﬁnding the appropriate background knowledge (e.g.,
+a text fragment about a movie plot) based on which the next
+response is to be generated.
+Existing methods for BBCs can be grouped into two
+categories: extraction-based methods and generation-based
+methods. The former addresses KS by learning two point-
+ers to extract spans from the background material as re-
+sponses, and outperforms generation-based methods in ﬁnd-
+ing knowledge (Moghe et al. 2018). However, there are two
+major issues with extraction-based methods. First, in most
+cases the generated responses are not natural due to their ex-
+tractive nature. Second, unlike, e.g., Machine Reading Com-
+prehension (MRC), in BBCs there is no notion of standard
+answer. For example, extraction-based methods cannot han-
+dle greetings in chitchats.
+Today’s generation-based methods perform KS with a lo-
+cal perspective, i.e., by selecting one token at a time based
+solely on the current decoding state. This is problematic be-
+cause they lack the guidance that a more global perspective
+would offer. In Figure 1, we visualize the KS of a state-
+of-the-art model, an improved Get To The Point (GTTP),
+
+ 
+ 
+ 
+ 
+ 
+ 
+which achieves competitive performance on this task. The
+top ﬁgure corresponds to the ground truth KS annotations;
+the lower ﬁgure shows the KS probabilities of GTTP at each
+decoding timestamp. GTTP settles on two background areas
+(red box 1 and 2) at ﬁrst in a sign of hesitation.
+However, due to the lack of a global perspective, it
+chooses the wrong one (red box 1). And it is too late when
+GTTP realizes this and tries to correct its mistakes (red box
+3). In this paper, we propose to address this issue and en-
+hance KS for generation-based methods by introducing a
+Global-to-Local Knowledge Selection (GLKS) mechanism.
+The general idea is that we learn a “topic transition vec-
+tor” with a Global Knowledge Selection (GKS) module be-
+forehand, which sets the tone for the next response and en-
+codes the general meaning of the most likely used back-
+ground knowledge. The “topic transition vector” is then used
+to guide the Local Knowledge Selection (LKS) at each de-
+coding timestamp to avoid situations like the one in Figure 1.
+As in existing work, we train LKS with the Maximum
+Likelihood Estimation (MLE) loss. However, MLE is not ef-
+fective enough to supervise the learning of GKS because it
+only provides token-wise supervision. To this end, we pro-
+pose a distantly supervised learning schema where we use
+the Jaccard similarity between the ground truth responses
+and the background knowledge as an extra signal to train
+GKS. All parameters are learned by a linear combination of
+the global Distant Supervision (DS) and local MLE in an
+end-to-end back-propagation training paradigm.
+Several
+recent
+studies
+try to improve the KS of
+generation-based methods. Meng et al. (2019) introduce a
+reference decoder that learns to directly select a semantic
+unit (e.g., a span containing complete semantic information)
+from the background, besides generating the response token
+by token. Liu et al. (2019) fuses two types of knowledge,
+triples from a structured knowledge graph and texts from
+unstructured background material, for better KS. Although
+they achieve promising improvements, they all have obvious
+limitations. Meng et al. (2019)’s work needs boundary anno-
+tations of semantic units in both backgrounds and responses
+to enable supervised training. To be able to put Liu et al.
+(2019)’s model to work, the authors prepare a structured
+knowledge source and manually ground unstructured back-
+ground to it beforehand. To show the effectiveness of GLKS,
+we carry out experiments on the same datasets as Meng et al.
+(2019) and Liu et al. (2019). Our proposed GLKS model sig-
+niﬁcantly outperforms their models as well as other state-of-
+the-art methods in terms of both automatic and human eval-
+uation. GLKS is able to generate natural responses, yielding
+better KS, while requiring minimum efforts (in terms of hu-
+man annotations), which means it exhibits better scalability.
+Our contributions are summarized as follows:
+• We propose a novel neural architecture with a Global-
+to-Local Knowledge Selection (GLKS) mechanism for
+BBCs that can generate more appropriate responses while
+• We devise an effective combined global (DS) and local
+retaining ﬂuency.
+(MLE) learning schema for GLKS without using extra an-
+notations.
+• Experiments show that GLKS outperforms state-of-the-
+art models by a large margin in terms of both automatic
+and human evaluation.
+
+Related Work
+
+Open-domain Conversation
+
+Sequence-to-sequence modeling for open-domain conversa-
+tions has been studied for years (Shang, Lu, and Li 2015).
+Previous studies have proposed various variants on different
+conversational tasks (Lowe et al. 2015; Serban et al. 2016)
+and have shown the superiority of sequence-to-sequence
+conversation modeling when compared to IR or template-
+based methods, especially in generating ﬂuent responses.
+However, many challenges remain. Response informative-
+ness is especially important; conversations become dull and
+less attractive due to too many generic responses such as “I
+don’t know” and “I am sorry” (Vougiouklis, Hare, and Sim-
+perl 2016; He et al. 2017). A number of studies address this
+issue by promoting response diversity. They either propose
+new losses (Li et al. 2016; Zhao, Zhao, and Eskenazi 2017;
+Jiang et al. 2019) or introduce new learning schemas (Zhang
+et al. 2018b). Another strategy is to incorporate latent topic
+information (Xing et al. 2017) or leverage external knowl-
+edge (Ghazvininejad et al. 2018; Liu et al. 2018; Zhou et al.
+2018; Young et al. 2018).
+
+Background Based Conversation
+
+Background Based Conversations (BBCs) have shown
+promising results in improving response informativeness
+(Zhou, Prabhumoye, and Black 2018; Dinan et al. 2019;
+Qin et al. 2019). Work on BBCs can be grouped into
+extraction-based and generation-based methods.
+Extraction-based methods grew out of work on Machine
+Reading Comprehension (MRC), where a span is extracted
+from the background as response to a question (Seo et al.
+2016). Extraction-based methods are good at locating the
+right background knowledge but because they are designed
+for MRC tasks, where user utterances are mostly simple
+questions that can be answered by a span, they are not suit-
+able for BBCs (Moghe et al. 2018). The extracted spans
+are not natural as conversational responses, and in many
+cases there are no standard answers in BBCs, e.g., greeting
+chitchats or opinions.
+Therefore, most
+recent studies on BBC focus on
+generation-based methods. Since generation-based methods
+can generate natural and ﬂuent responses, the key challenge
+is to ﬁnd the appropriate background knowledge (Lian et
+al. 2019). Zhang, Ren, and de Rijke (2019) introduce a pre-
+selection process that uses dynamic bi-directional attention
+to improve background KS by using the utterance history
+context as prior information. Li et al. (2019) devise an Incre-
+mental Transformer to encode multi-turn utterances along
+with background knowledge and design a two-pass decoder
+to improve KS. Meng et al. (2019) combine the advantages
+of extraction-based and generation-based methods by incor-
+porating a reference decoder that learns to select a span from
+the background during decoding. Liu et al. (2019) combine
+two types of knowledge, triples from knowledge graphs and
+texts from unstructured documents. For KS, they use multi-
+hop walking on graphs, like Moon et al. (2019).
+Unlike the work described above, we address KS in BBCs
+by introducing a novel Global-to-Local Knowledge Selec-
+tion (GLKS) mechanism and a distantly supervised learning
+schema for better learning of the mechanism. Most impor-
+tantly, the proposed GLKS needs neither span annotations
+
+Figure 2: Overview of Global-to-Local Knowledge Selection (GLKS).
+
+(Meng et al. 2019) nor extra knowledge grounding (Liu et
+al. 2019).
+
+Global-to-Local Knowledge Selection
+
+Given background material in the form of free text K = [k1 ,
+k2 , . . . , kt , . . . , k|K | ], with |K | tokens, and a current conver-
+sational context X = [x1 , x2 , . . . , xt , . . . , x|X | ], with |X |
+tokens (usually, the previous n utterances), the task of BBC
+is to generate a response Y = [y1 , y2 , . . . , yt , . . . , y|Y | ] to X
+by occasionally referencing background knowledge in K .
+The proposed model GLKS, shown in Figure 2, consists
+of four modules: Background & Context Encoders, a Global
+Knowledge Selection (GKS) Module, a State Tracker, and a
+Local Knowledge Selection (LKS) Module. Given K and X ,
+the background & context encoders encode them into latent
+representations HK and HX , respectively. Then, the GKS
+module evaluates the matching matrix between HK and HX
+globally. Based on the matching matrix, GKS makes a deci-
+sion of “what to talk about next” by selecting continuous
+spans from the background K to form a “topic transition
+vector” hX→K . At each decoding time step, LKS outputs a
+response token by either generating from the vocabulary or
+selecting from the background K under the guidance of the
+topic transition vector.
+
+Background and context encoders
+
+We use a bi-directional RNN with GRU (Cho et al. 2014) to
+convert the background and context sequences into two hid-
+den representation sequences HK = [hk
+t , . . ., hx|X | ], respectively:
+
+hk|K | ] and HX = [hx
+1 , hx
+2 , . . ., hx
+
+1 , hk
+2 , . . ., hk
+t , . . .,
+
+hk
+t = BiGRUK (e(kt ), hk
+t−1 ),
+
+(1)
+
+where e(kt ) is the token embedding vector; hk
+0 is initialized
+with 0; HX is obtained in a similar way but the BiGRUX
+does not share parameters with BiGRUK .
+
+Global Knowledge Selection (GKS) module
+
+Before calculating the match between HK and HX , we ﬁrst
+aggregate each representation in HK and HX with the last
+context output hx|X | using highway transformations (Srivas-
+tava, Greff, and Schmidhuber 2015):
+
+hk
+
+(2)
+
+t = gk (Wlinear [hk
+
+t , hx|X | ] + b)
++ (1 − gk ) tanh(Wnon-linear [hk
+t , hx|X | ] + b),
+gk = σ(Wgate [hk
+t , hx|X | ] + b]),
+where Wlinear , Wnon-linear and Wgate are parameters; b
+
+is a bias; and σ is the sigmoid activation function. We formu-
+late background knowledge aggregation as above. Context
+aggregation is achieved in a similar way. Both aggregations
+can be performed multiple times so as to get deep represen-
+tations.
+Next, we estimate the transition matching matrix M ∈
+R|K |×|X | between HK and HX , each element of which is
+calculated as follows:
+
+M[i, j ] = vT
+M tanh(WM 1hk
+
+i + WM 2hx
+
+j ),
+
+(3)
+
+where vM , WM 1 and WM 2 are parameters. We apply max
+pooling along the X dimension to get the transition weight
+vector wX→K ∈ R|K | :
+
+wX→K = max
+(M).
+
+X
+
+(4)
+
+Each element of wX→K represents the transition possibility
+w.r.t. the corresponding token in K .
+The weight vector wX→K only considers token-wise
+transitions. However, a single token cannot determine the
+general meaning of the next response due to a lack of a
+global perspective. To address this, we introduce the “m-
+size unfold & sum” operation (as shown in Figure 2), which
+ﬁrst extracts sliding adjacent weights of wX→K with an m-
+size window, and then sums them up. Speciﬁcally, each ele-
+ment of the semantic unit transition weight vector ˆwX→K =
+
+Context AggregationGRUGRU............ 1 2GRU | |GRU   GRU  | |GRU  1............StateInitializationGRUGRU............ 1 2GRU | |Background Knowledge Aggregation   → ............GKSGRU 3Maxm-size Unfold & Attentionm-size Unfold & Sum ̂  →  : +  ̂  →  :2  ̂  → 0: ...... ̂   : +  ̂   :2  ̂  0: ......Softmax5-size Unfold & Attention5-size Unfold & Sum ̂  →  : +5 ̂  → 5:10 ̂  → 0:5...... ̂   : +5 ̂  5:10 ̂  0:5..............................DistantSupervisionTopic Transition Vector  →  ()    ()    Background Pointer     →  ()  −1BackgroundAttention     →  ()  −1ContextAttentionConcat & ReadoutLinear & Softmax ()    LKS@tBackground Pointer   +1  →  () 0BackgroundAttention  1  →  () 0ContextAttentionConcat & ReadoutLinear & Softmax 1LKS@1 0()   1()   1 () 1Background Pointer  | |  →  () | |−1BackgroundAttention  | |  →  () | |−1ContextAttentionConcat & ReadoutLinear & Softmax | |LKS@|Y|Maximum LikelihoodEstimation Supervision()   | |()   | | () | |L+m(cid:88)
+i=L
+
+[ ˆwX→K0:m , . . . , ˆwX→KL:L+m , . . .] is calculated as follows:
+
+ˆwX→KL:L+m =
+
+wX→K [i].
+
+(5)
+
+L+m(cid:88)
+i=L
+
+We assume there is no overlap between two adjacent seman-
+tic units, which helps to reduce the size of ˆwX→K .
+Correspondingly, we fuse the “m-size unfold & attention”
+operation to obtain the semantic unit representations ˆHK =
+
+[ˆhK0:m , . . . , ˆhKL:L+m , . . .] from HK :
+
+ˆhKL:L+m =
+
+αihk
+
+i
+
+(6)
+
+αi = attention(hx|X | , [hk
+L , . . . , hk
+L+m ]),
+
+i
+
+hk
+
+where αi is the additive attention weight between hx|X | and
+(Bahdanau, Cho, and Bengio 2015). Note that αi is
+normalized to probabilities with a local softmax operation
+(within the m-size window). Each ˆhKL:L+m corresponds to
+a semantic unit (a text fragment) KL:L+m in background K .
+Finally, we get the topic transition vector hX→K with a
+soft weighted average over ˆHK :
+
+hX→K =
+P (KL:L+m | X ) ∝ softmax( ˆwX→KL:L+m ).
+
+L
+
+P (KL:L+m | X )ˆhKL:L+m
+
+(cid:88)
+
+State tracker
+
+The state tracker is responsible for initializing the decoding
+state at the start and updating it at each following time step.
+We get the initial decoding state hs
+0 as follows:
+
+hs
+0 = Ws [hx|X | , hX→K ] + b,
+
+(8)
+
+where Ws is the parameter and s is the bias.
+For updating, we employ another GRU that takes the gen-
+erated token and decoding state of the previous time step as
+input and outputs the updated decoding state:
+
+hs
+t = GRU(e(yt−1 ), hs
+t−1 ).
+
+(9)
+Here, y0 is set to a special token “<BOS>,” which indicates
+the start of decoding.
+
+Local Knowledge Selection (LKS) module
+
+At each decoding time step, we use the LKS module to pre-
+dict each token one by one by either generating from vo-
+cabulary (with probability P V (yt )) or selecting from back-
+ground K (with probability P K (yt )) under the guidance of
+the topic transition vector hX→K , as shown in Figure 2.
+Speciﬁcally, we ﬁrst concatenate hX→K , hs
+to get the guidance vector hg
+t at t:
+
+t and e(yt−1 )
+
+hg
+t = [hX→K , hs
+t , e(yt−1 )].
+
+(10)
+Then, we employ background attention to get the guidance-
+aware background representation ˆhK
+|K |(cid:88)
+in Eq. 11:
+
+t
+
+ˆhK
+t =
+
+αK
+
+i hk
+
+i ,
+
+(11)
+
+i=1
+
+αK
+i = attention(hg
+t , [hk
+1 , . . . , hk|K | ]).
+
+(7)
+
+where g is a learnable soft gate to switch between P V (yt )
+
+and P K (yt ).
+
+In a similar way, we obtain the guidance-aware context rep-
+resentation ˆhX
+t with context attention.
+We then construct the readout feature vector ˆhr
+t as fol-
+lows:
+
+ˆhr
+t = Wr [e(yt−1 ), hs
+t , hX→K , ˆhK
+t , ˆhX
+t ],
+
+(12)
+where Wr are the parameter and b is the bias. The readout
+feature vector is then passed through a linear layer to esti-
+mate P V (yt ) with a softmax layer over the vocabulary:
+
+P V (yt ) = softmax(WV ˆhr
+t ),
+
+(13)
+where WV ∈ R|V |×|F | are the parameters, |V | is the vo-
+cabulary size, and |F | the hidden size of the readout feature
+vector ˆhr
+t .
+For P K (yt ), we employ another background attention as
+in Eq. 11 to learn a pointer αP
+i as the probability of selecting
+a background token ki .
+Finally, we combine P V (yt ) and P K (yt ) as follows:
+
+P (yt ) = gP V (yt ) + (1 − g)
+
+g = σ(Whs
+t + b),
+
+P K (yt )
+
+(14)
+
+yt∈K
+
+(cid:88)
+
+Learning
+
+To maximize the prediction probability of the target re-
+sponse given the context and background, we design three
+objectives, namely the Maximum Likelihood Estimation
+loss, the Distant Supervision loss, and the Maximum Causal
+Entropy loss.
+The Maximum Likelihood Estimation (MLE) loss, which
+is commonly used, is deﬁned as follows:
+|Y |(cid:88)
+
+M(cid:88)
+
+log P (yt ),
+
+(15)
+
+Lmle (θ) = − 1
+M
+
+m=1
+
+t=1
+
+where θ are all the parameters of our model, and M is the
+number of training samples.
+The MLE loss only provides token-wise supervisions that
+lack a global perspective. To address this, we deﬁne the Dis-
+tant Supervision (DS) loss to supervise the learning of GKS
+(see Figure 2) as follows:
+
+Lds (θ) =
+
+1
+M
+
+DKL (P ( ˆHK )(cid:107)Q( ˆHK ))
+
+P ( ˆHK ) = softmax( ˆwX→K )
+Q( ˆHK ) = softmax(Jaccard( ˆK , Y )),
+
+(16)
+
+where ˆwX→K is the semantic unit transition weight vec-
+tor (Eq. 5) and ˆHK are the semantic unit presentations
+(Eq. 6); Y is the ground truth response; ˆK = [K0:m , . . . ,
+KL:L+m , . . .] which is obtained with the same unfold oper-
+ation as in Eq. 5 or 6. DKL is the KL-divergence, which is
+commonly used to measure the distance between two prob-
+ability distributions; P ( ˆHK ) are the estimated probabilities
+
+M(cid:88)
+
+m=1
+
+of selecting the semantic units of ˆHK , which are obtained by
+using a softmax over the semantic unit transition weight vec-
+tor; and, ﬁnally, Q( ˆHK ) are the distant ground truth super-
+visions, which are obtained by calculating the Jaccard sim-
+ilarity between each semantic unit KL:L+m and the ground
+truth response Y .
+Because Q( ˆHK ) is distance based, we use the Maximum
+Causal Entropy (MCE) loss to alleviate the negative effects
+of the noise introduced by imprecise Q( ˆHK ):
+|Y |(cid:88)
+
+(cid:88)
+
+M(cid:88)
+
+P (yt = w) log P (yt = w). (17)
+
+Lmce (θ) =
+
+1
+M
+
+m=1
+
+t=0
+
+w∈V
+
+The ﬁnal loss is a linear combination of the three loss func-
+tions:
+
+L(θ) = Lmle (θ) + Lds (θ) + Lmce (θ).
+
+(18)
+
+All parameters of GLKS are learned in an end-to-end back-
+propagation training paradigm.
+
+Experimental Setup
+
+Implementation details
+
+For a fair comparison, we stay close to previous studies re-
+garding hyper-parameters. We set the word embedding size
+and hidden state size to 300 and 256, respectively. The word
+embeddings are initialized with GloVe (Liu et al. 2019).
+The vocabulary size is limited to ≈26,000. We limit the
+context length of all models to 65 (Moghe et al. 2018;
+Meng et al. 2019). We select the best models of all meth-
+ods according to the validation set. We use gradient clipping
+with a maximum gradient norm of 2. We use the Adam op-
+We pre-train our model with the Lds (θ) loss for 10 epochs
+and then jointly train it with the other two losses. The code
+is available online.1
+
+timizer (α = 0.001, β1 = 0.9, β2 = 0.999, and  = 10−8 ).
+
+Dataset
+
+We choose the Holl-E dataset released by Moghe et al.
+(2018) for experiments, because it is commonly used and
+contains the necessary information (boundary annotations,
+factoid knowledge) required by some recent methods (Meng
+et al. 2019; Liu et al. 2019). It contains ground truth KS
+labels that allow us to analyze the performance of models.
+Holl-E is built for movie chats in which each response is
+explicitly generated by copying and/or modifying sentences
+from the background (Moghe et al. 2018). The background
+consists of plots, comments and reviews about movies col-
+lected from different websites. Holl-E has three versions ac-
+cording to the background: oracle background (256-word),
+mixed-short background (256-word), and mixed-long back-
+ground (1,200-word). Oracle background has just one kind
+of background information (plots, comments, etc.). We fol-
+low the original data split for training, validation and test,
+which contain 34,486, 4,388, and 4,318 samples respec-
+tively. There are two versions of the test set: one with a sin-
+gle golden reference (SR), the other with multiple golden
+references (MR).
+
+1 https://github.com/PengjieRen/GLKS
+
+Baseline
+
+We compare with all generation-based methods for which
+results on the Holl-E dataset have been reported at the time
+of writing:
+• S2S is a vanilla sequence-to-sequence model.
+• HRED considers hierarchical modeling of context (Ser-
+• S2SA fuses an attention mechanism to do KS at each de-
+ban et al. 2016).
+coding timestamp (Bahdanau, Cho, and Bengio 2015).
+• GTTP leverages a copying/pointer mechanism together
+with an attention mechanism to do KS at each decoding
+• Cake introduces a pre-selection process that uses dy-
+timestamp (See, Liu, and Manning 2017).
+namic bi-directional attention to improve KS (Zhang,
+Ren, and de Rijke 2019).
+• RefNet combines the advantages of BiDAF (Seo et al.
+2016) and GTTP (See, Liu, and Manning 2017) by ei-
+ther selecting a span from the background with a reference
+decoder or generating a token with a generation decoder
+(Meng et al. 2019).
+• AKGCM considers structured and unstructured knowl-
+edge for better KS (Liu et al. 2019). It uses policy net-
+work for KS on structured knowledge and GTTP for KS
+on unstructured knowledge and response generation.
+S2S and HRED do not use any background knowledge;
+RefNet needs extra span annotations; AKGCM uses a
+structured knowledge graph and needs to manually ground
+knowledge between structured and unstructured sources.
+
+Evaluation metrics
+
+We use ROUGE-1, ROUGE-2 and ROUGE-L as automatic
+evaluation metrics.2 Because the conversations are con-
+strained by the background material, ROUGE scores are re-
+liable. Nevertheless, we also randomly sample 500 test sam-
+ples to conduct human evaluations on Amazon Mechanical
+Turk. For each sample, we show the responses from all sys-
+tems to 3 workers and ask them to select all that are good3 in
+terms of four aspects: (1) Naturalness (N), i.e., whether the
+responses are conversational, natural and ﬂuent; (2) Infor-
+mativeness (I), i.e., whether the responses use some back-
+ground information; (3) Appropriateness (A), i.e., whether
+the responses are appropriate/relevant to the given context;
+and (4) Humanness (H), i.e., whether the responses look like
+they are written by a human.
+
+Automatic evaluation
+
+Results
+
+The results of all methods on different settings (oracle,
+mixed-short and mixed-long) are shown in Table 1.
+First, generally, GLKS achieves the best results on all
+metrics. GLKS signiﬁcantly outperforms two recent best
+performing methods (RefNet and AKGCM) on the mixed-
+short background. The improvements show that GLKS is
+much better at leveraging and locating the right background
+information despite GLKS not using any extra annotations
+
+2We leave out BLEU since both previous and our experiments
+show that it has consistent performance with ROUGE (Moghe et
+al. 2018; Meng et al. 2019)
+3We allow for an “all bad” option.
+
+Table 1: Automatic evaluation results (%). Bold face indi-
+cates leading results in terms of the corresponding metric.
+Signiﬁcant improvements over RefNet are marked with ∗
+(t-test, p < 0.01). SR and MR refer to test sets with sin-
+gle and multiple references. CaKe cannot run on the 1200-
+word background due to out of memory errors even with
+very small batch sizes (Zhang, Ren, and de Rijke 2019). The
+results of AKGCM are taken from the paper because the au-
+thors have not released their code.
+
+ROUGE-1
+ROUGE-2
+SR
+MR
+SR
+MR
+no background
+27.15
+30.91
+09.56
+11.85
+24.55
+25.38
+07.61
+08.35
+oracle background (256-word)
+27.97
+32.65
+14.50
+18.22
+29.82
+35.08
+17.33
+22.00
+42.82
+48.65
+30.37
+36.54
+42.87
+49.64
+30.73
+38.15
+
+ROUGE-L
+SR
+MR
+
+21.48
+18.87
+
+24.81
+19.67
+
+23.23
+25.08
+37.48
+37.11
+
+27.55
+30.06
+43.21
+43.77
+
+43.75∗ 50.67∗ 31.54∗ 39.20∗ 38.69∗ 45.64∗
+
+mixed-short background (256-word)
+26.36
+30.76
+13.36
+16.69
+21.96
+30.77
+36.06
+18.72
+23.70
+25.67
+41.26
+45.81
+29.43
+34.00
+36.01
+41.33
+47.00
+31.08
+36.50
+36.17
+–
+–
+29.29
+–
+34.72
+
+25.99
+30.69
+40.79
+41.72
+–
+
+44.52∗ 50.06∗ 33.05∗ 38.87∗ 39.63∗ 45.12∗
+
+mixed-long background (1,200-word)
+21.90
+24.90
+5.63
+7.00
+17.02
+23.64
+28.81
+10.11
+14.34
+17.60
+34.90
+42.08
+29.64
+
+22.12
+
+29.74
+
+35.30
+
+42.31
+
+21.86
+
+29.35
+
+30.36
+
+19.65
+22.04
+36.65
+
+37.30
+
+S2S
+HRED
+
+S2SA
+GTTP
+CaKe
+RefNet
+GLKS
+
+S2SA
+GTTP
+CaKe
+RefNet
+AKGCM
+GLKS
+
+S2SA
+GTTP
+RefNet
+GLKS
+
+(such as the span annotations used by RefNet) or informa-
+tion (such as the structured knowledge used by AKGCM).
+We analyze the improvements of GLKS in depth with an
+ablation study.
+Second, the improvements of GLKS on the oracle and
+mixed-short background are much larger than on the mixed-
+long background. The reason is that KS becomes much
+more difﬁcult when the background becomes longer. This
+is supported by the fact that the results of all methods drop
+around 10% compared with their results on the mixed-short
+background. This also means that there is still a long way
+to go for BBCs. GLKS and RefNet are comparable in the
+mixed-long background setting. GLKS only gains around
+0.3% (ROUGE-1) and 0.7% (ROUGE-L) improvement over
+RefNet. RefNet is slightly better than GLKS on ROUGE-2.
+This is because RefNet uses extra span annotations, which
+shows great superiority in this setting.
+
+Human evaluation
+
+We conduct human evaluations to further compare GLKS
+and two strong baselines. The results are shown in Ta-
+ble 2. The improved GTTP is equivalent to LKS in this
+paper. Both GLKS and RefNet are better than GTTP on
+Naturalness because GTTP frequently generates responses
+with no topics or irrelevant topics, which makes it difﬁcult
+for mturk workers to assess the ﬂuency. RefNet gets the
+
+Table 2: Human evaluation results. ≥ n means that at least n
+MTurk workers think it is a good response w.r.t. Naturalness
+(N), Informativeness (I), Appropriateness (A) and Human-
+ness (H).
+
+Improved GTTP
+
+RefNet
+
+GLKS
+
+≥2
+
+≥1 ≥2 ≥1 ≥2
+
+≥1
+
+I
+
+N 307
+271
+A 318
+H 332
+
+115
+89
+111
+123
+
+391
+
+411
+
+371
+394
+
+213
+
+244
+
+180
+225
+
+424
+
+401
+
+406
+436
+
+226
+
+199
+
+219
+263
+
+Table 3: Ablation study (%). -GKS, -Lds (θ) and -Lmce (θ)
+denote GLKS without the corresponding part.
+
+ROUGE-1
+SR
+MR
+41.80
+47.08
+41.27
+46.96
+43.69
+48.84
+
+44.52
+
+50.06
+
+-GKS
+
+-Lds (θ)
+-Lmce (θ)
+
+GLKS
+
+ROUGE-2
+SR
+MR
+29.88
+35.31
+29.49
+35.40
+32.30
+37.54
+
+33.05
+
+38.87
+
+ROUGE-L
+SR
+MR
+36.91
+42.10
+36.47
+42.12
+38.79
+43.86
+
+39.63
+
+45.12
+
+best votes on Informativeness which means it invokes back-
+ground knowledge more frequently. This is consistent with
+its modeling schema, which encourages the model to refer
+to background during generation. However, this does not
+mean GLKS can always locate the appropriate background
+knowledge. GLKS achieves the best result on Appropriate-
+ness, which means it is indeed better at KS and can generate
+responses with more appropriate/relevant topics. Unsurpris-
+ingly, GLKS gets the most votes on Humanness because its
+responses are more natural and appropriate.
+
+Ablation study
+
+Analysis
+
+To analyze where the improvements of GLKS come from,
+we conduct an ablation study as shown in Table 3. Gener-
+ally, all three parts (the GKS module, the DS Lds (θ), and
+the Maximum Causal Entropy (MCE) Lmce (θ)) are helpful
+because removing any of them will decrease the results con-
+sistently. GKS and Lds (θ) are much more effective because
+they yield around 3% improvements. This supports the mo-
+perspective with distant supervision into KS. Lmce (θ)) is
+tivations of our work which proposes to incorporate global
+introduced to alleviate the negative effects of the noise in-
+troduced by imprecise distant supervisions. The results of
+-Lmce (θ) in Table 3 demonstrate its usefulness. Even after
+removing all these modules, GLKS still outperforms vanilla
+GTTP. This is because we optimize the architecture with
+helpful tricks, e.g., using context states to aggregate back-
+ground and context representations (like in Eq. 2), combin-
+ing multiple representations to construct the readout feature
+vector (Eq. 12), etc.
+
+Hyper-parameter analysis
+
+There is a hyper-parameter m that controls the unfolding
+window size in Eq. 5 and 6. We plot the ROUGE scores on
+the validation and test sets in Fig. 3 to analyze its sensitivity.
+The ROUGE scores increase and decrease within the scope
+
+cause the model with only LKS lacks a global perspective
+as guidance, making it harder to make decisions and easier
+to make mistakes. In contrast, the model can avoid these is-
+sues and achieve better and more consistent KS when taking
+GKS into consideration (red box 3 in Fig. 4a and 4b).
+
+Case study
+
+Table 4: Case study.
+
+Backgound: ... later that evening , he intends to access kevin ’s room ,
+but kevin fools him into thinking that he has walked in on his father ,
+causing the concierge to ﬂee ... home alone 2 is a carbon copy , but it ’s
+also much better and more complex a movie than the ﬁrst ... regardless
+it ’s a classic and i watch the ﬁrst two movies every year ...
+
+H1: i loved all the tricks , and traps kevin created .
+H2: me too , i loved when using a tape recorder , he tapes a message
+and slows down his voice , placing a hotel reservation .
+H1: that was too funny , the hotel staff did n’t believe him though .
+
+GTTP
+
+it ’s a classic and i watch the ﬁrst two movies every year .
+
+RefNet
+
+LKS
+
+GLKS
+
+that it was so sad when he intends to access kevin ’s room , but kevin
+fools him into thinking that he has walked in on his father , causing the
+concierge to ﬂee .
+
+i know , it was a carbon copy , but it ’s also much better and more
+complex a movie than the ﬁrst .
+
+so true , later that evening , he intends to access kevin ’s room , but kevin
+fools him into thinking that he has walked in on his father , causing the
+concierge to ﬂee .
+
+We select an example from the test set to intuitively illus-
+trate the responses generated by different models, as shown
+in Table 4. We can see that all models have learnt to invoke
+knowledge during generation. However, GTTP and LKS
+are relatively bad at KS, resulting in using less appropriate
+knowledge. RefNet is good at KS and can generate natural
+responses. But it has difﬁculties in coordinating the gener-
+ation and reference decoding sometimes. As a result, it has
+a higher probability of generating contradictory responses.
+By comparison, GLKS can generate appropriate responses
+which yields better humanness.
+There are also failure cases for GLKS as well as the other
+models: one severe issue is that the models tend to invoke the
+same knowledge even though the context has changed some-
+what. This indicates that a mechanism is needed to track the
+already used knowledge.
+
+Conclusion and Future Work
+
+In this paper, we propose an end-to-end neural model for
+BBCs, which introduces a Global-to-Local Knowledge Se-
+lection (GLKS) mechanism to enhance KS. We also present
+a DS learning schema to learn GLKS effectively without us-
+ing any extra annotations or information. Experiments show
+that with GLKS, our model can generate more appropriate
+and human-like responses.
+As to future work, we intend to apply GLKS to other BBC
+tasks. Besides, GLKS can be advanced in many directions.
+First, better GKS modules can be designed to further im-
+prove KS especially when using very long background. Sec-
+ond, a mechanism can be incorporated into GLKS to enable
+the track of used knowledge in the context.
+
+Figure 3: Analysis of m. The trends of ROUGE-2 and
+ROUGE-L are similar to ROUGE-1.
+
+(a)
+
+Figure 4: KS Visualization. For each ﬁgure, from top to bot-
+tom, are: ground truth KS, GKS, LKS and GLKS.
+
+(b)
+
+of around 2% difference which means GLKS is not sensitive
+to m. The best results are achieved around m = 3, 4, 5 and
+the best validation results are achieved with m = 4. The
+results with m ≥ 3 are much better than those with m ≤ 2.
+Hence, m inﬂuences the performance and m = 4 is enough
+to discriminate different knowledge and guide KS.
+
+Visual analysis
+
+In Fig. 4 we visualize KS with different settings. The X
+axis corresponds to the background token sequence. The Y
+axis of the ﬁrst and left two ﬁgures denote KS probabilities
+and decoding time steps, respectively. The color depth in the
+lower two ﬁgure represents token-wise KS probabilities.
+We can see that without GKS, LKS can easily be fooled
+by similar but less appropriate knowledge (i.e., red box 1 and
+2 in Figure 4a and 4b respectively). As a result, the model
+starts with the wrong or less appropriate knowledge (red box
+4 in Figure 4a and 4b) or results in inconsistent KS (i.e.,
+red box 4, 5, 6 in Figure 4a) during generation. This is be-
+
+Acknowledgments
+
+We thank the anonymous reviewers for their helpful com-
+ments. This work is supported by Ahold Delhaize, the As-
+sociation of Universities in the Netherlands (VSNU), the In-
+novation Center for Artiﬁcial Intelligence (ICAI), the Nat-
+ural Science Foundation of China (61672324, 61672322,
+61972234, 61902219), the Natural Science Foundation of
+Shandong province (2016ZRE27468), the Tencent AI Lab
+Rhino-Bird Focused Research Program (JR201932), and the
+Fundamental Research Funds of Shandong University. All
+content represents the opinion of the authors, which is not
+necessarily shared or endorsed by their respective employ-
+ers and/or sponsors.
+
+References
+
+Bahdanau, D.; Cho, K.; and Bengio, Y. 2015. Neural ma-
+chine translation by jointly learning to align and translate. In
+ICLR.
+Chen, H.; Liu, X.; Yin, D.; and Tang, J. 2017. A survey on
+dialogue systems: Recent advances and new frontiers. ACM
+SIGKDD Explorations Newsletter 19(2):25–35.
+Cho, K.; van Merri ¨enboer, B.; Gulcehre, C.; Bahdanau, D.;
+Bougares, F.; Schwenk, H.; and Bengio, Y. 2014. Learn-
+ing phrase representations using RNN encoder-decoder for
+statistical machine translation. In EMNLP, 1724–1734.
+Dinan, E.; Roller, S.; Shuster, K.; Fan, A.; Auli, M.; and
+Weston, J. 2019. Wizard of wikipedia: Knowledge-powered
+conversational agents. In ICLR.
+Ghazvininejad, M.; Brockett, C.; Chang, M.-W.; Dolan, B.;
+Gao, J.; Yih, W.-t.; and Galley, M. 2018. A knowledge-
+grounded neural conversation model. In AAAI, 5110–5117.
+He, S.; Liu, C.; Liu, K.; and Zhao, J. 2017. Generating nat-
+ural answers by incorporating copying and retrieving mech-
+anisms in sequence-to-sequence learning. In ACL, 199–208.
+Jiang, S.; Ren, P.; Monz, C.; and de Rijke, M. 2019. Improv-
+ing neural response diversity with frequency-aware cross-
+entropy loss. In The Web Conference, 2879–2885.
+Li, J.; Galley, M.; Brockett, C.; Gao, J.; and Dolan, B. 2016.
+A diversity-promoting objective function for neural conver-
+sation models. In NAACL, 110–119.
+Li, Z.; Niu, C.; Meng, F.; Feng, Y.; Li, Q.; and Zhou, J. 2019.
+Incremental transformer with deliberation decoder for doc-
+ument grounded conversations. In ACL, 12–21.
+Lian, R.; Xie, M.; Wang, F.; Peng, J.; and Wu, H. 2019.
+Learning to select knowledge for response generation in di-
+alog systems. arXiv.
+Liu, S.; Chen, H.; Ren, Z.; Feng, Y.; Liu, Q.; and Yin, D.
+2018. Knowledge diffusion for neural dialogue generation.
+In ACL, 1489–1498.
+Liu, Z.; Niu, Z.-Y.; Wu, H.; and Wang, H. 2019. Knowledge
+aware conversation generation with explainable reasoning
+on augmented graph. arXiv.
+Lowe, R.; Pow, N.; Serban, I. V.; and Pineau, J. 2015. The
+ubuntu dialogue corpus: A large dataset for research in un-
+structured multi-turn dialogue systems. In SIGDIAL, 285–
+294.
+Meng, C.; Ren, P.; Chen, Z.; Monz, C.; Ma, J.; and de Rijke,
+
+M. 2019. RefNet: A reference-aware network for back-
+ground based conversation. arXiv.
+Moghe, N.; Arora, S.; Banerjee, S.; and Khapra, M. M.
+2018. Towards exploiting background knowledge for build-
+ing conversation systems. In EMNLP, 2322–2332.
+Moon, S.; Shah, P.; Kumar, A.; and Subba, R. 2019. Open-
+dialkg: Explainable conversational reasoning with attention-
+based walks over knowledge graphs. In ACL, 845–854.
+Qin, L.; Galley, M.; Brockett, C.; Liu, X.; Gao, X.; Dolan,
+B.; Choi, Y.; and Gao, J. 2019. Conversing by reading: Con-
+tentful neural conversation with on-demand machine read-
+ing. In ACL, 5427–5436.
+See, A.; Liu, P. J.; and Manning, C. D. 2017. Get to the
+point: Summarization with pointer-generator networks.
+In
+ACL, 1073–1083.
+Seo, M.; Kembhavi, A.; Farhadi, A.; and Hajishirzi, H. 2016.
+Bidirectional attention ﬂow for machine comprehension. In
+ICLR.
+Serban, I. V.; Sordoni, A.; Bengio, Y.; Courville, A. C.; and
+Pineau, J. 2016. Building end-to-end dialogue systems us-
+ing generative hierarchical neural network models. In AAAI,
+3776–3784.
+Shang, L.; Lu, Z.; and Li, H. 2015. Neural responding ma-
+chine for short-text conversation. In ACL, 1577–1586.
+Srivastava, R. K.; Greff, K.; and Schmidhuber, J. 2015.
+Training very deep networks. In NeurIPS, 2377–2385.
+Vougiouklis, P.; Hare, J.; and Simperl, E. 2016. A neural net-
+work approach for knowledge-driven response generation.
+In COLING, 3370–3380.
+Xing, C.; Wu, W.; Wu, Y.; Liu, J.; Huang, Y.; Zhou, M.; and
+Ma, W.-Y. 2017. Topic aware neural response generation.
+In AAAI, 3351–3357.
+Yan, R. 2018. Chitty-chitty-chat bot: Deep learning for con-
+versational AI. In IJCAI, 5520–5526.
+Young, T.; Cambria, E.; Chaturvedi, I.; Zhou, H.; Biswas, S.;
+and Huang, M. 2018. Augmenting end-to-end dialogue sys-
+tems with commonsense knowledge. In AAAI, 4970–4977.
+Zhang, S.; Dinan, E.; Urbanek, J.; Szlam, A.; Kiela, D.; and
+Weston, J. 2018a. Personalizing dialogue agents: I have a
+dog, do you have pets too? In ACL, 2204–2213.
+Zhang, Y.; Galley, M.; Gao, J.; Gan, Z.; Li, X.; Brockett, C.;
+and Dolan, B. 2018b. Generating informative and diverse
+conversational responses via adversarial information maxi-
+mization. In NeurIPS, 1810–1820.
+Zhang, Y.; Ren, P.; and de Rijke, M. 2019. Improving back-
+ground based conversation with context-aware knowledge
+pre-selection. In SCAI.
+Zhao, T.; Zhao, R.; and Eskenazi, M.
+2017. Learning
+discourse-level diversity for neural dialog models using con-
+ditional variational autoencoders. In ACL, 654–664.
+Zhou, H.; Young, T.; Huang, M.; Zhao, H.; Xu, J.; and Zhu,
+X. 2018. Commonsense knowledge aware conversation gen-
+eration with graph attention. In IJCAI, 4623–4629.
+Zhou, K.; Prabhumoye, S.; and Black, A. W. 2018. A dataset
+for document grounded conversations. In EMNLP, 708–713.
+
+

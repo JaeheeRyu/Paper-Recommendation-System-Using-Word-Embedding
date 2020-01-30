@@ -1,0 +1,704 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+C
+
+D
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+1
+7
+6
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+LL/SC and Atomic Copy: Constant Time, Space Efﬁcient
+Implementations using only pointer-width CAS
+
+Guy E. Blelloch1 and Yuanhao Wei1
+
+1Carnegie Mellon University
+
+November 22, 2019
+
+Abstract
+
+The Load-Link/Store-Conditional (LL/SC) primitive is considered the most suitable for implementing
+lock-free algorithms and data structures. However, the full semantics of LL/SC are not supported by any
+modern machine, so there has been a signiﬁcant amount of work on simulations of LL/SC using Compare
+and Swap (CAS), a synchronization primitive that enjoys widespread hardware support. However, all of the
+algorithms so far that are constant time either use unbounded sequence numbers (and thus base objects of
+unbounded size), or require Ω(M P ) space for M LL/SC object (where P is the number of processes).
+We present a constant time implementation of M LL/SC objects using only Θ(M + P 2 ) space and
+requiring only pointer-sized CAS objects. Our implementation can also be used to implement L-word
+LL/SC objects in Θ(L) time (for both LL and SC ) and Θ((M + P 2 )L) space. We focus on the setting
+where each process can have at most one LL/SC pair at a time. To support k overlapping LL/SC pairs per
+process, our algorithms incur an extra factor of k in their space usage.
+To achieve these bounds, we begin by implementing a new primitive called Single-Writer Copy which
+takes a pointer to a word sized memory location and atomically copies its contents into another memory
+location. The only restriction is that the destination of the copy must be single-writer, which means that only
+one process is allowed to write/copy into it. We believe this primitive will be very useful in designing other
+concurrent algorithms as well.
+
+1 Introduction
+
+In lock-free, shared memory programming, it’s well known that the choice of atomic primitives makes a big dif-
+ference in terms of ease of programability, efﬁciency, and even computability. Most processors today support
+a set of basic synchronization primitives such as Compare-and-Swap, Fetch-and-Add, Fetch-and-Store, etc.
+However, many useful primitives are not supported, which motivates the need for efﬁcient software implemen-
+tations of these primitives. In this work, we present constant time, space-efﬁcient implementations of a widely
+used primitive called Load-Link/Store-Conditional (LL/SC) as well as a new primitive we call Single-Writer
+Copy (swcopy). All our implementations use only pointer-width read, write, and CAS. In particular, restricting
+ourselves to pointer-width operations means that we do not use unbounded sequence numbers, which are often
+used in other LL/SC from CAS implementations [15, 14, 10]. Many other algorithms based on CAS also use
+unbounded sequence numbers (often alongside double-wide CAS) to get around the ABA problem and this is
+sometimes called the IBM tag methodology[12 , 6]. Our LL/SC implementation can be used to avoid the use of
+unbounded sequence numbers and double-wide CAS in these algorithms.
+We found that the Single-Writer Copy (swcopy) primitive greatly simpliﬁed our implementation of LL/SC,
+and we believe it will be useful in a wide range of other applications as well. The swcopy primitive can be
+used to atomically read one memory location and write the result into another. The memory location being read
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+can be arbitrary, but the location being written to has to be a special Destination object. A Destination object
+supports three operation, read, write, and swcopy and it allows any process to read from it, but only a single
+process to write or swcopy into it. We expect this primitive to be very useful in concurrent algorithms that use
+announcement arrays as it allows the algorithm to atomically read a memory location and announce the value
+that it read. We will see an example of this in Section 5.
+In this work, we focus on lock-free and wait-free solutions. Roughly speaking, a lock-free algorithm ensures
+that some process is always making progress regardless of how the processes are scheduled. In particular, this
+means lock-free algorithms do not suffer problems such as deadlock and livelock. However, lock-freedom still
+allows processes to be starved from ever making progress, which motivates the deﬁnition of wait-freedom.
+Roughly speaking, wait-freedom ensure that all processes are making progress regardless of how they are
+scheduled. All algorithms in this paper take in O(1) or O(L) time (where L is the number of words spanned
+by the implemented object), which is stronger than wait-freedom. The correctness condition we consider is
+linearizability, which intuitively means that all operations appear to take effect at a single point.
+In our results below, the time complexity of an operation is the number of instructions that it executes (both
+local and shared) and space complexity of an object is the number of words that it uses (both local and shared).
+There as been a signiﬁcant amount of prior work on implementing LL/SC from CAS [3, 15, 8, 10, 14] and we
+discuss them in more detail in Section 2. In this paper, we focus on the case where each process can have up to
+one outstanding LL/SC pair. The algorithms we present can also be extended to handle k outstanding LL/SC
+pairs per process with an extra k factor in the space complexity.
+
+Result 1 (Load-Link/Store-Conditional): A collection of M LL/SC objects operating on L-word values
+shared by P processes can be implemented with:
+
+1. O(L) worst-case time for both LL and SC,
+
+2. O((M + P 2 )L) space,
+
+3. single word (pointer-width) read, write, CAS.
+
+Result 2 (Single-Writer Copy): A collection of M Destination objects shared by P processes can be
+implemented with:
+
+1. O(1) worst-case time for read, write, and swcopy
+
+2. O(M + P 2 ) space
+
+3. single word (pointer-width) read, write, CAS.
+
+To help with implementing Single-Writer Copy, we implement a weaker version of LL/SC with the bounds
+below. Our version of weak LL/SC is even less restrictive than the weak LL/SC studied by prior work [2, 8, 15].
+We compare the two in more detail in Section 2.
+
+Result 3 (Weak Load-Link/Store Conditional): A collection of M weak LL/SC objects operating on
+L-word values shared by P processes can be implemented with:
+
+1. O(L) worst-case time for both LL and SC,
+
+2. O((M + P 2 )L) space,
+
+3. single word (pointer-width) read, write, CAS.
+
+2
+
+Our implementations of swcopy and LL/SC are closely related. We begin in Section 3 by implementing
+a weaker version of LL/SC (Result 3). Then, in Section 4, we use this weaker LL/SC to implement swcopy
+(Result 2), and ﬁnally, in Section 5, we use swcopy to implement the full semantics of LL/SC (Result 1). As we
+shall see, once we have swcopy, our algorithm for regular LL/SC is almost the same as our algorithm for weak
+LL/SC.
+
+2 Related Work
+
+Prior Work
+
+Word Size (W)
+
+Size of
+Implemented Object
+
+Time
+
+Space
+
+pointer-width
+
+W − 2 log P
+
+O(1)
+
+O(P 2M )
+
+Anderson and Moir
+[3], Figure 1
+
+Moir [15], Figure 4
+
+Moir [15], Figure 7
+
+Jayanti and Petrovic [8]
+
+Michael [14]
+
+unbounded*
+
+W ≥ 3 log P
+
+W ≥ 4 log P
+
+unbounded*
+
+Jayanti and Petrovic [10]
+
+unbounded*
+
+Jayanti and Petrovic [11]
+
+unbounded*
+
+Aghazadeh et al. [1]
+
+W ≥ 2 log M + 6 log P
+
+Anderson and Moir
+[2], Figure 2
+
+pointer-width
+
+Jayanti and Petrovic [9]
+
+pointer-width
+
+This Paper
+
+pointer-width
+
+W − tag_size
+
+W − 3 log P
+
+W
+
+LW
+
+LW
+
+W
+
+LW
+
+LW
+
+LW
+
+LW
+
+O(1)
+
+O(1)
+
+O(1)
+
+O(P + M )
+
+O(P 2 + P M )
+
+O(P M )
+
+O(L)1 O((P 2 + M )L)
+
+O(L) O((P 2 + M )L)
+
+O(1)
+
+O(L)
+
+O(P 2 + P M )
+
+O(M P 5L)
+
+O(L)
+
+O(P 2M L)
+
+O(L)
+
+O(P M L)
+
+O(L) O((P 2 + M )L)
+
+Table 1: Cost of implementing M LL/SC variables from CAS. Size is measured in number of bits.
+*uses unbounded sequence numbers
+
+LL/SC from CAS. Results for implementing LL/SC from CAS are summarized in Table 1. The “Size of
+Implemented Object” column lists largest possible LL/SC object supported by each algorithm. For example,
+W − 2 log P means that the implemented LL/SC object can store at most W − 2 log P bits, and LW means
+that the implemented object can be arbitrarily large. All the algorithm shown in the table are wait-free and have
+optimal time bounds.
+So far, all previous algorithms suffer from one of three drawbacks. They either (1) are not wait-free constant
+time [4, 7], (2) use unbounded sequence numbers [15, 14, 10, 11], or (3) require Ω(M P ) space [3, 8, 1, 2, 9, 15].
+There are also some other desirable properties that an algorithm can satisfy. For example, the algorithms by
+Jayanti et al. [11] and Doherty et al. [4] do not require knowing the number of processes in the system. Also,
+some algorithms are capable of implementing multi-word LL/SC from single-word CAS, whereas others only
+work when LL/SC values are smaller than word size.
+Weak LL/SC from CAS. A variant of WeakLLSC was introduced by [2] and also studied in [8, 15]. The
+version we consider is even less restrictive than theirs because they require a failed wLL operation to return the
+process id of the SC operation that caused it to fail whereas we don’t require failed wLL operations to return
+anything. While prior work is able to implement the stronger version of wLL, they either employ stronger
+primitives like LL/SC [2], use unbounded sequence numbers [15], require O(M P ) space for M WeakLLSC
+objects [2, 8], or require storing (4 log P )-bits in a single word [8]. To match the bounds stated in Result 3, we
+
+3
+
+deﬁne and implement a version of weak LL/SC that is sufﬁcient for our swcopy algorithm. Conveniently, the
+majority of our weak LL/SC algorithm from Section 3 can be reused when implementing full LL/SC in Section
+5.
+
+Atomic Copy. A similar primitive called memory-to-memory move was studied in Herlihy’s seminal Con-
+sensus Hierarchy paper [5]. The primitive allows atomic reads and writes to any memory location and supports
+a move instruction which atomically copies the value at one memory location into another. Herlihy showed that
+this primitive has consensus number inﬁnity. Our swcopy is a little different because it allows arbitrary atomic
+operations (e.g. Fetch-and-Add, Compare-and-Swap, Write, etc) on the source memory location as long as the
+source objects supports an atomic read. Another difference is that we restrict the destination of the copy to be
+single-writer.
+
+3 Weak LL/SC from CAS
+
+As a subroutine, our swcopy operation makes use of a weaker version of LL/SC. This weaker version supports
+two operations wLL and SC, and works the same way as regular LL/SC except that wLL is allowed to not return
+anything if the subsequent SC is guaranteed to fail. We call a wLL operation successful if it returns a value.
+Otherwise, we call it unsuccessful. Note that a wLL operation can only be unsuccessful if it is concurrent with
+a successful SC.
+This is similar to the version of weak LL/SC deﬁned by Anderson and Moir in [2] except that they require
+an unsuccessful wLL operation to also return the process id of the SC operation that caused it to be unsuccessful.
+In Section 3.1, we present a constant time algorithm for Weak LL/SC.
+
+3.1 Implementation of Weak LL/SC
+
+In this section, we show how to implement M WeakLLSC objects, each spanning L-words, in wait-free constant
+time and O((M + P 2 )L) space. The high level idea is to use a layer of indirection and use an algorithm similar
+to Hazard Pointers [13] to upper bound the memory usage. Each WeakLLSC object is represented using a
+pointer, buf, to an L-word buffer storing the current value of the object. To perform an SC, the process ﬁrst
+allocates a new L-word buffer, writes the new value in it, and then tries to write a pointer to this buffer into buf
+with a CAS. A wLL operation simply reads buf and returns the value that it points to. The problem with this
+algorithm is that it uses an unbounded amount of space. Our goal is to recycle buffer objects so that we use
+at most O(M + P 2 ) of them. This high level approach has been used in many previous algorithms [10, 12].
+However, since we are only interested in implementing WeakLLSC, we are able to avoid using unbounded
+sequence numbers and provide better time/space complexities.
+We recycle buffers with a variant of Hazard Pointers that is worst-case constant time rather than expected
+constant time. Before accessing a buffer, a wLL operation has to ﬁrst protect it by writing its address to an
+announcement array. To make sure that it’s announcement happened “in time”, the wLL operation re-reads buf
+and makes sure it is the same as what was announced. If buf has changed, then the wLL operation can return
+empty because it must have been concurrent with a successful SC and it can linearize immediately before the
+linearization point of the SC. If buf is equal to the announced pointer, then the buffer has been protected and
+the wLL operation can safely read from it.
+For the purpose of the SC operation, each process maintains two lists of buffers: a free list (ﬂist) and a
+retired list (rlist). In a SC operation, the process allocates by popping a buffer off its local free list. If the CAS
+instruction performed by the SC is successful, it adds the old value of the CAS to its retired list. Each process’s
+free list starts off with 2P buffers and we maintain the invariant that the free list and retired list always add up
+to 2P buffers. When the free list becomes empty and the retired list hits 2P buffers, the process moves some
+buffers from the retired list to the free list. To decide which buffers are safe to reuse, the process scans the
+announcement array (the scan doesn’t have to be atomic) and moves a buffer from the retired list to the free list
+
+4
+
+1 shared variables:
+Buffer* A[P]; // announcement array
+
+2
+
+4 local variables:
+list<Buffer*> flist;
+list<Buffer*> rlist;
+// initial size of flist is 2P
+// rlist is initially empty
+
+5
+6
+7
+8
+
+10 struct Buffer {
+// Member Variables
+Value[L] val;
+int pid;
+bool seen;
+
+11
+12
+13
+14
+
+16
+17
+18
+
+void init(Value[L] initial_val) {
+copy initial_val into val
+buf_pid = -1; seen = 0; } };
+
+20 struct WeakLLSC {
+// Member Variables
+Buffer* buf;
+
+21
+22
+
+24
+25
+26
+27
+
+// Constructor
+WeakLLSC(Value[L] initial_val) {
+buf = new Buffer();
+buf->init(initial_val); }
+
+//Destructor
+~WeakLLSC() {free(buf);}
+
+optional<Value[L]> wLL() {
+Buffer* tmp = buf;
+A[pid].write(tmp);
+if(*X == tmp) return tmp->val;
+else return empty; }
+
+bool SC(Value[L] new_val) {
+Buffer* old = A[pid].read();
+Buffer* new = flist.pop();
+buf->init(new_val);
+bool succ = CAS(&buf, old, new);
+if(succ) retire(old);
+else flist.add(new);
+A[pid].write(NULL);
+return succ; }
+
+void retire(Buffer* old) {
+rlist.add(old);
+if(rlist.size() == 2*P) {
+list<Buffer*> reserved = [];
+for(int i = 0; i < P; i++)
+reserved.add(A[i].read());
+
+28
+29
+
+31
+32
+33
+34
+35
+
+37
+38
+39
+40
+41
+42
+43
+44
+45
+
+47
+48
+49
+50
+51
+52
+53
+
+WeakLLSC objects. Therefore, it’s total space usage is O((M + P 2 )L). In addition, it only uses pointer-width
+read, write, CAS as atomic operations, so it fulﬁlls the claims in Result 3.
+
+4 Single-Writer Atomic Copy
+
+The copy primitive, swcopy, can be used to atomically read a value from some source memory location and
+write it into a Destination object. It is similar to the memory-to-memory move primitive that was studied in [5],
+except that our Destination objects are single-writer and we allow the source memory location to be modiﬁed
+by any instruction (e.g. write, fetch-and-add, swap, CAS, etc). The sequential speciﬁcations of swcopy and
+Destination objects are given below.
+
+Deﬁnition 4.1. A Destination object supports 3 operations read, write and swcopy with the following sequential
+speciﬁcations:
+
+• read(): returns the current value in the Destination object (initially ⊥).
+
+• write(Value v): sets v as the current value of the Destination object.
+
+• swcopy(Value* addr): reads the value pointed to by addr and sets it as the current value of the Destination
+object.
+
+Any number of processes can perform read operations, but only one process is allowed to write or swcopy into
+a particular Destination object.
+
+We restricted this interface to be single-writer because it was sufﬁcient for the use cases we consider. We
+ﬁnd that single-writer Destination objects are very useful in announcement array based algorithms where it is
+beneﬁcial for the read and the announcement to happen atomically. It’s possible to generalize this interface to
+support atomic copies that concurrently write to the same destination object. However, we are not sure what the
+desired behaviour should be in this case. One option would be to give atomic copy ‘store’ semantics where the
+value of the Destination object is determined by the last write or copy to that location. Another option would
+be to give atomic copy ‘CAS’ semantics where the copy is only successful if the Destination object stores the
+expected value. The right choice of deﬁnition will likely depend on the application.
+In Section 4.1, we present our implementation of swcopy.
+
+4.1 Algorithm for Single-Writer Atomic Copy
+
+In this section, we show how to implement Destination objects that support read, write, and swcopy in O(1)
+time and O(M + P 2 ) space (where M is the number of Destination objects).
+We represent a Destination object D internally using a triplet, D.val, D.ptr, and D.old. When there is no
+swcopy in progress, D.val stores the current value of the Destination object. When there is a copy in progress,
+D.ptr stores a pointer to the location that is being copied from. Finally, D.old stores the previous value of the
+Destination object. The variables D.val and D.ptr are stored together in a WeakLLSC object (deﬁned in Section
+3). This allows us to read from and write to them atomically as well as prevent any potential ABA problems.
+The downside is that the only way to read D.val or D.ptr is through a wLL operation which can continue to fail
+due to concurrent SC operations. For this reason, we keep D.old in a separate object, so that the readers can
+return D.old if they fail too many times on wLL. Readers will only perform SC operations that change D.ptr
+from not NULL to NULL. Therefore, the writer’s wLL will be successful whenever D.ptr is NULL.
+A swcopy(Value* src) on Destination object D begins by backing up the current value from D.val into D.old.
+At this point, D.ptr is guaranteed to be NULL, so the writer can successfully read D.val with a wLL. The swcopy
+proceeds by writing src into D.ptr with a SC. Finally, it reads the value v pointed to by src and tries to write
+(v, NULL) into (D.val, D.ptr) with a SC. It’s not a problem if the SC fails because that means another process
+
+6
+
+1 struct Data {Value val; Value* ptr;};
+2 struct Destination {
+// Member Variables
+WeakLLSC<Data> data;
+// data is initially h⊥, NULLi
+Value old;
+
+3
+4
+5
+6
+
+8
+9
+10
+11
+12
+13
+14
+15
+
+void swcopy(Value *src) {
+// This wLL() cannot fail
+old = data.wLL().val;
+data.SC(hempty, srci);
+Value val = *src;
+optional<Data> d = data.wLL();
+if(d != empty && d.ptr != NULL)
+data.SC(hval,NULLi); }
+
+16 void write(Value new_val) {
+data.wLL(); // cannot fail
+data.SC(hnew_val, NULLi); }
+
+17
+18
+
+20 Value read() {
+optional<Data> d = data.wLL();
+if(d == empty) {
+d = data.wLL();
+if(d == empty) return old;}
+if(d.ptr == NULL) return d.val;
+value v = *(d.ptr);
+if(data.SC(hval, NULLi)) return v;
+d = data.wLL();
+if(d != empty && d.ptr == NULL)
+return d.val;
+return old; } };
+
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+
+Figure 2: Atomic copy (single-writer). Code for process with id pid.
+
+has helped complete the copy. This algorithm ensures that D.ptr is NULL as long as there is no ongoing swcopy
+operation. Furthermore, when D.ptr is NULL, it will ensure that D.val stores the current value of D .
+To read from D, a process begins by trying to read the pair (D.val, D.ptr) with a wLL. If it fails on this wLL
+twice, then it is safe to return D.old because the value of D has been updated at least once during this read.
+Now we focus on the case were (D.val, D.ptr) is successfully read into local variables (val, ptr). If ptr is NULL,
+then val stores a consistent value, so the read returns it. If ptr is not NULL, then there is a concurrent swcopy
+operation and the read tries to help by reading the value v referenced by ptr and writing (v, NULL) into (D.val,
+D.ptr) with a SC. If the SC is successful, then the read returns v. Otherwise, the process performs one last wLL.
+If it is successful and sees that D.ptr is NULL, then it returns D.val. Otherwise, it is safe to return D.old.
+The write operation is the most straightforward to implement. Since each Destination object only has a
+single writer, a write operation simply uses a wLL and a SC to store the new value into D.val. There cannot be
+any successful SC operations concurrent with the wLL because a non-writer processes can only succeed on a
+SC during a swcopy operation. Therefore, the wLL in write always succeeds.
+In our algorithm, we assumed that values ﬁt in a single word so that they can be atomically read from and
+written to. However, this assumption is not necessary. The algorithm can be generalized to work for larger
+objects as long as they support an atomic read operation.
+Pseudo-code is showing in Figure 2. From the pseudo-code, we can see that each operation takes constant
+time. To implement M Destination objects, it uses M double-word-wide WeakLLSC objects and O(M ) pointer-
+width read, write, CAS objects. Using the algorithm from Result 3 to implement the WeakLLSC objects, we
+get an overall space usage of O(M + P 2 ), which satisﬁes the conditions in Result 2.
+
+5 LL/SC from CAS
+
+Now we have all the tools we need to implement LL/SC (Result 1). Our algorithm is presented in Section 5.1.
+
+5.1 Implementation of LL/SC from CAS
+
+This algorithm is almost identical to our algorithm for weak LL/SC from CAS (Section 3.1). To ensure that
+the LL operation always succeeds, we use swcopy to atomically read and announce the current buffer (lines 32
+and 33 of Figure 1). This means that the announcement array needs to be an array of Destination objects (from
+
+7
+
+1 shared variables:
+Destination<Buffer*> A[P];
+
+2
+
+4 struct LLSC {
+Buffer* buf;
+...
+value_t[L] LL() {
+A[pid].swcopy(buf);
+return A[pid].read()->val; }
+...
+
+5
+6
+7
+8
+9
+10
+11 };
+
+Figure 3: Amortized constant time implementation of L-word LL/SC from CAS. The algorithm is exactly the
+same as Algorithm 1 except for the parts that are shown. Code for process with id pid.
+
+Section 4.1) rather than raw pointers. Other than that, the algorithm remains the same. Figure 3 shows the
+difference between this algorithm and the weak LL/SC algorithm from Figure 1.
+This algorithm uses O((M + P 2 )L) pointer-width read, write, CAS objects just like in Figure 3, but it also
+uses P Destination objects for the announcement array. From Result 2, we know that P Destination objects can
+be implemented in constant time and O(P 2 ) space, so this algorithm achieves the bounds in Result 1.
+
+References
+
+[1] Zahra Aghazadeh and Philipp Woelfel. Upper bounds for boundless tagging with bounded objects. In
+Distributed Computing - 30th International Symposium, DISC 2016, Paris, France, September 27-29,
+2016. Proceedings, pages 442–457, 2016.
+
+[2] James H Anderson and Mark Moir. Universal constructions for large objects. In International Workshop
+on Distributed Algorithms, pages 168–182. Springer, 1995.
+
+[3] James H Anderson and Mark Moir. Universal constructions for multi-object operations. In PODC, vol-
+ume 95, pages 184–193. Citeseer, 1995.
+
+[4] Simon Doherty, Maurice Herlihy, Victor Luchangco, and Mark Moir. Bringing practical lock-free syn-
+chronization to 64-bit applications. In Proceedings of the twenty-third annual ACM symposium on Prin-
+ciples of distributed computing, pages 31–39. ACM, 2004.
+
+[5] Maurice Herlihy. Wait-free synchronization. ACM Transactions on Programming Languages and Systems
+(TOPLAS), 13(1):124–149, 1991.
+
+[6] IBM. IBM System/370 Extended Architecture, Principles of Operation. Technical report, Publication No.
+SA22-7085. 1983.
+
+[7] Amos Israeli and Lihu Rappoport. Disjoint-access-parallel implementations of strong shared memory
+primitives. In Proceedings of the thirteenth annual ACM symposium on Principles of distributed comput-
+ing, pages 151–160. ACM, 1994.
+
+[8] Prasad Jayanti and Srdjan Petrovic. Efﬁcient and practical constructions of ll/sc variables. In Proceedings
+of the twenty-second annual symposium on Principles of distributed computing, pages 285–294. ACM,
+2003.
+
+8
+
+[9] Prasad Jayanti and Srdjan Petrovic. Efﬁcient wait-free implementation of multiword ll/sc variables. In
+25th IEEE International Conference on Distributed Computing Systems (ICDCS’05), pages 59–68. IEEE,
+2005.
+
+[10] Prasad Jayanti and Srdjan Petrovic. Efﬁciently implementing a large number of ll/sc objects. In Interna-
+tional Conference On Principles Of Distributed Systems, pages 17–31. Springer, 2005.
+
+[11] Prasad Jayanti and Srdjan Petrovic. Efﬁciently implementing ll/sc objects shared by an unknown number
+of processes. In International Workshop on Distributed Computing, pages 45–56. Springer, 2005.
+
+[12] Maged M Michael. Aba prevention using single-word instructions. IBM Research Division, RC23089
+(W0401-136), Tech. Rep, 2004.
+
+[13] Maged M Michael. Hazard pointers: Safe memory reclamation for lock-free objects. IEEE Transactions
+on Parallel and Distributed Systems, 15(6):491–504, 2004.
+
+[14] Maged M Michael. Practical lock-free and wait-free ll/sc/vl implementations using 64-bit cas. In Inter-
+national Symposium on Distributed Computing, pages 144–158. Springer, 2004.
+
+[15] Mark Moir. Practical implementations of non-blocking synchronization primitives. In PODC, volume 97,
+pages 219–228. Citeseer, 1997.
+
+9
+
+

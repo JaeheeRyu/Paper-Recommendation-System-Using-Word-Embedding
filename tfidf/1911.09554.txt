@@ -1,0 +1,1526 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+4
+5
+5
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Discrete and Continuous Deep Residual Learning Over Graphs
+
+Pedro H.C. Avelar∗
+
+Anderson R. Tavares∗
+
+Marco Gori†
+
+Luis C. Lamb∗
+
+Abstract
+
+In this paper we propose the use of continuous residual
+modules for graph kernels in Graph Neural Networks. We
+show the how both discrete and continuous residual lay-
+ers allow for more robust training, being that continuous
+residual layers are those which are applied by integrating
+through an Ordinary Differential Equation (ODE) solver
+to produce their output. We experimentally show that
+these residuals achieve better results than the ones with
+non-residual modules when multiple layers are used, mit-
+igating the low-pass ﬁltering effect of GCN-based mod-
+els. Finally, we apply and analyse the behaviour of these
+techniques and give pointers to how this technique can be
+useful in other domains by allowing more predictable be-
+haviour under dynamic times of computation.
+
+1 Introduction
+
+Graph Neural Networks (GNNs) are a promising frame-
+work to combine deep learning models and symbolic rea-
+soning. Whereas conventional deep learning models, such
+as Convolutional Neural Networks (CNNs), effectively
+handle data represented in euclidean space, such as im-
+ages, GNNs generalise their capabilities to handle non-
+Euclidean data, such as relational data with complex rela-
+tionships and interdependencies between entities.
+Recently, deep learning techniques such as pooling, dy-
+namic times of computation, attention, and adversarial
+training, which advanced the state-of-the-art in conven-
+tional deep learning (e.g. in CNNs), have been investi-
+gated in GNNs as well [1, 15, 26, 30]. Discrete resid-
+ual modules, whose learned kernels are discrete deriva-
+tives over their inputs, have been proven effective to im-
+prove convergence and reduce the parameter space on
+CNNs, surpassing the state-of-the-art in image classiﬁ-
+cation and other applications [11]. Given their effective-
+ness, the technique has been applied in many different ar-
+eas and meta-models of deep learning to improve conver-
+gence and reduce the parameter space. Unfortunately, it
+
+∗Universidade Federal do Rio Grande do Sul, Brazil, emails:
+{phcavelar,artavares,lamb}@inf.ufrgs.br
+†Universit `a Degli Studi di Siena, Italy, email: marco@unisi.it
+
+has been shown that Graph Neural Networks (GNN) of-
+ten “fail to go deeper” [16, 29], with some work already
+arguing for residual connections [15] to alleviate, but not
+solve, this issue.
+Further, there has been recent work in producing con-
+tinuous residual modules [3] that are integrated through
+Ordinary Differential Equation (ODE) Solvers. They have
+shown how these models can be used to substitute both re-
+current and convolution-residual modules for small prob-
+lems such as recognising digits from the MNIST dataset,
+regressing a trajectory and generating spirals from latent
+data. Further work has already been done exploring gener-
+ative models [7], using adversarial training for generating
+both data from synthetic distributions as well as produc-
+ing high-quality samples from the MNIST and CIFAR-10
+datasets.
+In this paper we investigate the use of both discrete and
+continuous residual modules in learning kernels that oper-
+ate on relational data, providing improvements over their
+non-residual counterparts, as well as a comparative analy-
+sis of the beneﬁts and issues of applying these techniques
+to graph-structured data. The remainder of this paper is
+organised as follows: Section 2 presents a brief survey on
+Deep Learning models and formalisations for relational
+data – which we amalgamate under the GNN framework.
+In Section 3, we provide information on how to rework
+graph-based kernels into residual modules, to be used in
+the context of continuous-residual modules, and discuss
+their possible advantages and disadvantages. In Section 4,
+we provide the experimental results we collected from
+converting graph modules to work residually and com-
+pare them to their non-residual counterparts. Finally, in
+Section 6 we discuss related work, interpret the results,
+and point out directions for future research.
+
+2 On Graph Neural Networks
+
+In this section we describe the basics of well-known
+Graph Neural Network models. We do so by presenting
+some models which have been widely used in recent ap-
+plications. For more comprehensive reviews of the ﬁeld,
+please see e.g. [1, 4, 29].
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+One of the ﬁrst formalisations of GNNs [6] provided
+a way to assemble neural modules over graph-like struc-
+tures which was later applied to many different domains
+including ranking webpages, matching subgraphs, and
+recognising mutagenic compounds. In this ﬁrst
+itera-
+tion each node n would have a state xn , iteratively up-
+dated through the application of a parametric function fw ,
+which receives as input both the node’s label ln as well
+as the state and label from the nodes in its neighbourhood
+N (n), such that the update from a node in iteration t + 1
+is calculated as in Equation 1. The way this model was in-
+tended to work, as the authors ﬁrst envisioned, is that this
+updating would take place until the node’s states reach a
+ﬁxed point, after which they would be used for the solu-
+tion.
+
+xt+1
+
+n = fw (ln , xt
+
+N (n) , lN (n) )
+
+(1)
+This model was then later generalised to provide sup-
+port for different types of entities and relations [23], which
+makes it general enough to be seen as a the ﬁrst full re-
+alisation of GNN’s potential. There have been two main
+viewpoints used to describe GNNs in the literature re-
+cently: that of message-passing neural networks and that
+of convolutions on graphs. In this paper we focus on the
+graph convolutional viewpoint, more speciﬁcally on the
+one presented in [15]. We do not specify any equations
+for the MPNN viewpoint as this is trivially transferable
+from what is presented here.
+The idea of allowing convolutions over relational data
+stems from the concept that discrete spatial convolutions,
+widely used in the context of convolutions over images,
+are themselves a subset of convolutions in an arbitrary re-
+lational space, such as a graph or hypergraph, only be-
+ing restricted to the subset of grid-like graphs [29]. This
+idea gave rise to many different formalisations and mod-
+els that applied convolutions over relational data, which
+are classiﬁed [29] into spectral-based and spatial-based.
+Here, we refer to spectral-based approaches as graph con-
+volutional networks (GCNs). The model proposed in [15]
+deﬁnes approximate spectral graph convolutions and ap-
+ply them to build a layered model to allow the stacking
+of multiple convolutions, as deﬁned in Equation 2 below,
+where
+˜A(i, j ) is a normalisation component
+that is used to divide the incoming embedding for each
+vertex in the graph by its degree, ˜A = A + IN is the ad-
+jacency matrix (with added self-connections to allow the
+node to keep its own information) σ is any activation func-
+tion, and W l is the weight kernel for layer l.
+
+˜D(i,i) = (cid:80)
+j
+
+H l+1 = σ( ˜D− 1
+2 ˜A ˜D− 1
+2 H lW l )
+
+(2)
+Such model is a simple, yet elegant, formalisation of
+
+2
+
+the notion underlying graph convolutions. It allows one
+to stack multiple layers, which has been argued as one of
+the ways to improve model complexity and performance
+in deep learning [11], but it has been shown that stack-
+ing more layers can decrease performance on GCNs [16],
+which was one of the main motivators for applying con-
+tinuous residual modules in this paper.
+
+3 Designing Residual Graph Ker-
+nels
+
+The main idea behind Residual Networks is that the net-
+work is made to learn a residual function instead of a
+whole transformation [11, 8]. In this way, a module which
+would work as in Equation 3 is then transformed as in
+Equation 4, where H l denotes the input tensor and W l
+the function parameters at layer l in the neural network.
+
+H l+1 = f (H l , W l )
+
+H l+1 = f (H l , W l ) + H l
+
+(3)
+
+(4)
+
+While this idea can seem too simplistic to bring any
+beneﬁts, it has since been proven to improve performance
+in many different meta-models [11, 14, 27], and has been
+used to allow one to build CNNs with more layers than
+traditionally. As stated in Section 2, we wanted to be able
+to beneﬁt similarly from residual connections with graph
+data. One way to visualise how this change can help is
+that the function learned by the model is as an Euler dis-
+cretisation of a continuous transformation [3, 9, 18, 22].
+So instead of learning a full transformation of the input,
+it learns to map the derivative of the input, as shown rear-
+ranged in Equation 5 below1 .
+
+f (H (l), W (l), l) =
+
+H (l + 1) − H (l)
+(l + 1) − l
+
+≈ δH (l)
+δ l
+
+(5)
+
+In this section, we will focus on the intuition behind
+discrete and continuous residual layers on Graph Convo-
+lutional Networks.
+
+3.1 Residual Modules on Canonical CNNs
+
+One of the ﬁrst successes of this technique has been the
+use of such a kernel in the context of convolutional neu-
+ral networks applied over image data [11]. It has been ar-
+gued that this technique allows the networks to increase in
+
+1We use function notation for the continuous residual modules and
+their derivations to make the derivative more explicit
+
+depth while maintaining or reducing the parameter space
+learned, since each module has to learn only the trans-
+formation to be applied to the input instead of both the
+transformation and the application of such transformation.
+In the same vein, the residual connections create short-
+cuts for the gradients to pass through, reducing the ex-
+ploding/vanishing gradient problem for larger networks.
+All this helps accelerating convergence and improves the
+overall performance of the model, while still allowing one
+to perform more complex operations on data.
+Many different modules have been proposed and tested
+with this technique. One caveat, however, is that both the
+input and output of a residual module must either have
+the same dimensionality, or be expanded/contracted with
+arbitrary data to match the dimensionality of each other.
+
+3.2 Discrete Residual Modules on GCNs
+
+2 ˜A ˜D− 1
+
+One of the easiest GNN models from which we can ex-
+tend the idea of a Residual block is the one based on graph
+convolutions. Here, we focus on the canonical model pro-
+posed in [15] and explained in Section 2. For our experi-
+ments we use a slightly modiﬁed version, which does not
+perform symmetric normalisation, computing ˜D−1 ˜A in-
+stead of ˜D− 1
+2 , which will be used as the baseline
+for this technique in Section 4, but we keep the original
+presented in its original form [15].
+We argue that the GCN model is the easiest to re-frame
+into a Residual block since it is both based on the notion
+of convolution and provides as output a tensor with the
+same number of nodes as the input values – i.e. does not
+reduce the number of elements to be processed in the next
+feature map’s shape. The transformation of such a module
+into a residual one can be achieved by simply engineering
+it to contain the residual input, such as in Equation 6.
+
+In terms of residual layers, the learned derivative func-
+tion can be seen as producing a function that is contin-
+uous in the layer-space – that is, they produce a contin-
+uous equivalent of the non-residual layer. Furthermore,
+they provide a way to generate a continuous function on
+the layers themselves, tying nearby layer weights to each
+other while allowing for different transformations to be
+applied in each of them. If one sees these as recurrent
+functions, they can also be seen as producing recurrent
+networks that work in continuous spaces, instead of need-
+ing to use discretely sampled application of the recurrent
+network one can simply evaluate it at the required times.
+This idea can easily be applied to graph convolutional
+layers by producing a continuous equivalent of Equa-
+tion 6, as shown in Equation 7. With this, one arranges
+the graph convolutional modules in different graph con-
+ﬁgurations and solve the differential equations given this
+structural format.
+
+δH (l + 1)
+δ l
+
+= σ( ˜D− 1
+2 ˜A ˜D− 1
+2 H (l)W (l))
+
+(7)
+
+2 ˜A ˜D− 1
+
+Since, in the problem we consider, the graph structure
+is independent of the layer-space, we can set this part of
+the function ( ˜D− 1
+2 ) as ﬁxed on every batch and
+through each pass in the ODE solvers. In this learned
+function continues to be free of the graph structure for
+its application, using it only as a structure through which
+propagate information that is accumulated in the repeated
+neural modules for each node. A simple way to visualise
+this is to imagine a mass-spring system expressed as a
+graph: The learned function will then learn the dynamics
+of the mass-spring system for many different conﬁgura-
+tions, leading to it being useful in differently sized and
+arranged systems. This mass-spring intuition is the same
+used to explain Interaction Networks [2] and the Graph
+Network formalisation [1].
+
+H (l + 1) = H (l) + σ( ˜D− 1
+2 ˜A ˜D− 1
+2 H (l)W (l))
+
+3.3 Continuous Residual Modules
+Graphs
+
+(6)
+
+for
+
+Recently, Chen et. al. [3] proposed a model which approx-
+imates a continuous-time (or continuous-layer) derivative
+function which can be efﬁciently integrated through par-
+allel ODE solvers. These models are generated through
+taking the approximation presented in Equation 5 and us-
+ing ODE solvers to integrate them as needed, effectively
+learning a Lipschitz-continuous function that can be efﬁ-
+ciently evaluated at speciﬁed points for producing results
+regarding to those points.
+
+3.4 Multiple layers in Constant-Memory
+
+Chen et. al. [3] argue that the technique of allowing
+continuous-layer2 residual layers makes it possible to
+build a many-layered model in constant space instead of
+quadratic. That is, instead of stacking k layers with d × d
+dimensions for each kernel, one could build a single resid-
+ual layer with (d + 1) × (d + 1) dimensions, with the extra
+dimension being the layer component of the model. The
+intuition behind this is that the model parameter space will
+become dependant on the layer-space, with this it can be-
+have differently when evaluated on a point in the layer-
+space. This can be visualised in the difference between
+
+2 In the remainder of this paper we refer only to layers and layer-space
+for the CNN viewpoint, but one could re-interpret this as time in a RNN
+
+3
+
+Equations 8 and 9. In Equation 8 the learned kernel W has
+a dimension d × d, and we would need to stack k of such
+layers to produce k different transformations, whereas in
+Equation 9 the kernel W (cid:48) has (d+ 1)× (d+ 1) dimensions.
+These continuous pseudo-layers can then be evaluated in
+as many points as warranted in the ODE solver, effectively
+allowing a dynamic number of layers to be computed in-
+stead of a singular discrete composition.
+
+f (H (l)) = H (l)W (l)
+
+f (H (l), l) = concat(H (l), l)W (cid:48) (l)
+
+(8)
+
+(9)
+
+This technique, however, enforces that those pseudo-
+layers behave similarly for close points in the layer-space,
+effectively making them continuous. This constraint both
+forces the learned transformations to be closely related in
+the layer space as well as makes it so that the composition
+of these various layers is relatively well-behaved. Thus,
+we can expand the number of evaluated layers dynami-
+cally by choosing more points to integrate in. And even
+if we ﬁx the start and end-points for the integration over
+the layer-space, the learned network can be integrated in
+many points between these to provide an answer with the
+accuracy required from the ODE solver.
+Whenever we apply continuous residual layers in this
+work, we make use of this technique to allow the ODE
+solver to change the layer transformation slightly between
+each point in the layer-space. Thus, one could consider
+that the ODE-solved models we present in the results have
+more layers than reported, for this we argue that this dif-
+ference is at most linear when the residual layers consists
+of only a single residual GCN application, since the GCN
+layers themselves are single-layered and the additional
+layer-space value provided as input can only interfere in
+this linear application through its weights in the kernel
+matrix multiplication. We also believe a similar technique
+could, in theory, be applied without the use of an ODE-
+solver to integrate through the layers, but one would lose
+the beneﬁts of the ODE solver being able to deﬁne by it-
+self which points need to be evaluated.
+
+4 Experiments on semi-supervised
+classiﬁcation in citation networks
+
+In this section we evaluate the transformations discussed
+in Section 3 to small adaptations of GCN neural modules
+described in [15]. The task of interest is semi-supervised
+classiﬁcation in citation networks, where nodes are scien-
+tiﬁc papers and edges are citation links, and only a small
+
+4
+
+fraction of the nodes is labelled. The experiments are as
+in [15], with the same train/test/evaluation split (inher-
+ited from [32]) in Cora, Citeseer and Pubmed citation net-
+works. They have 6, 7 and 3 classes, respectively.
+To capture the difference in performance and stability
+due to applying residual blocks to GNNs, we adapted the
+Pytorch code of the original GCN paper 3 [15], chang-
+ing the initialisation, degree normalisation, and removing
+dropout on the input features in our GCN kernels. More-
+over, our GCN model follows Equation 10 for the layer-
+wise propagation rule instead of the original one. Simi-
+larly, the discrete residual module follows Equation 11,
+and the continuous one approximates Equation 12.
+
+H l+1 = σ( ˜D−1 ˜AH lW l )
+
+H l+1 = σ( ˜D−1 ˜AH lW l )
+
+δH (l)
+δ l
+
+= σ( ˜D−1 ˜AH (l)W (l))
+
+(10)
+
+(11)
+
+(12)
+
+4.1 Experimental Setup
+
+All experiments were developed in Python v3.6.7, and the
+libraries and frameworks used were Pytorch v1.0.1.post2,
+Scipy v1.2.1, Numpy v1.16.3, Matplotlib v3.0.3 and Net-
+workX v2.3. The experiments where time was reported
+were executed in a computer with a Intel R(cid:13) CoreTM i7-8700
+@ 3.2 GHz, with 32GB RAM, a NVIDIA R(cid:13) QuadroTM
+P6000 with CudaTM 10.1. Some experiments were also
+executed in a computer with a Intel R(cid:13) CoreTM i7-7700 @
+2.8 GHz, with 32GB RAM, a NVIDIA R(cid:13) GeForceTM 1070
+with CudaTM 9.2.
+
+4.2 Three-layered models
+
+In these experiments, we built neural networks with three
+graph convolutional layers whose feature dimensionali-
+ties were (h, h, c), with h being an hyperparameter of the
+model and c the number of classes in the dataset.
+We initially evaluate seven models, and run subsequent
+experiments for the best three. We also include a closer
+replication of [15] in Section 4.4, with discussion on
+the main differences between this and the original paper.
+The seven initially tested models use either dropout [12],
+group normalisation [28] (or both), and L2 normalisation
+of the parameters, as follows:
+
+3 See https://github.com/tkipf/pygcn for the model
+and https://github.com/tkipf/gcn for
+
+the datasets and
+
+test/train/evaluation splits.
+
+GCN-3 A model with the GCN layer as made available
+by [15], with dropout applied between each pair of
+layers.
+GCN-norm-3 Equivalent to GCN-3, but with dropout
+applied between the ﬁrst and second layer and group
+normalisation applied between the second and the
+third.
+RES-3 A model with a residual GCN kernel as deﬁned
+in Equation 11 instead of a normal GCN on the sec-
+ond layer, with dropout applied between each pair of
+layers.
+RES-norm-3 Equivalent to RES-3, but with dropout ap-
+plied between the ﬁrst and second layer and group
+normalisation applied between the second and the
+third.
+RES-fullnorm-3 Equivalent to RES-3, with group nor-
+malisation applied between each pair of layers.
+ODE-norm-3 A model with a continuous residual mod-
+ule as deﬁned in Equation 12 instead of a normal
+GCN on the second layer, dropout before the ODE-
+solved layer and group normalisation as part of the
+ODE-solved layer, applied to its input. The ODE-
+solved layer use the technique described in Sec-
+tion 3.4 to allow the learned continuous transforma-
+tion to be dependant on the time parameter evalua-
+tions.
+ODE-fullnorm-3 Contains the same continuous resid-
+ual module of ODE-norm-3 on the second layer, but
+group normalisation both before and as part of the
+ODE-solved layer, applied to its input. The ODE-
+solved uses the same technique of ODE-norm-3.
+
+can see that the residual models have a consistently better
+performance, as well as less variance. The residual mod-
+ules heavily beneﬁted from group normalisation, however
+they were slowed by this addition. The continuous GCN
+model achieved the best average accuracy in Cora and
+Pubmed, and was close to the best in Citeseer. However,
+it was much slower, partly due to the group normalisation
+inside the integrated function. We tried to train an ODE
+model with dropout in the integrated function or without
+any normalisation, but it failed to converge in the ﬁrst case
+and severely overﬁtted in the second. Even if we consider
+only the best over all runs, RES-norm-3 performed better
+than any GCN-3 variant, and ODE-norm-3 was less sen-
+sitive to weight initialisation, by showing a consistently
+lower standard deviation.
+To further validate these results, we ran statistical tests
+on the accuracies to see whether the differences between
+non-residual and residual layers were statistically sig-
+niﬁcant, the p-values for the Mann-Whitney U-test and
+Kruskal-Wallis H-test were both lower than 10−10 in the
+Pubmed dataset, and even lower in the other two, when
+comparing a residual (RES, RES-norm and ODE, ODE-
+norm) module with a non-residual module (GCN, GCN-
+norm). The performance of the discrete and continuous
+residual modules was statistically similar, with p-values
+higher than 5% for all datasets. Figures 1, 2 and 3 show
+the histograms of the accuracies over these runs for each
+“norm” model, and can help in visualising that the resid-
+ual ones are signiﬁcantly better in average.
+
+Having constructed the networks above, we ran the ex-
+periments of [15] for semi-supervised classiﬁcation in the
+Cora, Citeseer and Pubmed citation networks, using the
+same train-validation-test splits, over 2500 runs in the dis-
+crete models and 250 in the continuous ones, averaging
+the results to minimise the inﬂuence of random param-
+eter initialisation. All models were trained with h = 16,
+which was kept from the original code as the default, since
+[26] showed that increasing the number of features did
+not seem to improve performance on the GCN, a learning
+rate of 0.01, 50% dropout and L2 normalisation on the
+weights, scaled by 5 × 10−4 . All learned kernels weights
+and biases are initialised with the uniform distribution
+k), where k =
+Table 1 shows the average, standard deviation, best
+(max) and worst (min) values over all the runs for ac-
+curacy as well as average loss and runtime. There, one
+
+U (−√
+
+√
+
+k ,
+
+1
+
+out features .
+
+Figure 1: 50-bin histogram of the accuracies, comparing
+the models on the Citeseer dataset.
+
+4.3 k-layered models
+
+For the second battery of tests, we present the results for
+the Pubmed dataset4 . The “K” models work in the same
+way as the “3” models from Section 4.2, except that they
+have K layers instead of 3, with the normalisation between
+the ﬁrst and second layer being the same, and on the other
+
+4We only present for the Pubmed since it is the best case for the
+baseline non-residual model, as per Figure 3.
+
+5
+
+40455055606570Accuracy (%)0.00.10.20.30.4FrequencyGCN-norm-3RES-norm-3ODE-norm-3Model
+
+Avg
+
+Acc (%)
+Std
+Min Max
+
+Loss
+Avg
+
+Time (s)
+Avg
+
+Citeseer
+
+Presented in [15]
+GCN-3
+GCN-norm-3
+RES-3
+RES-norm-3
+RES-fullnorm
+ODE-norm-3
+ODE-fullnorm-3
+
+Presented in [15]
+GCN-3
+GCN-norm-3
+RES-3
+RES-norm-3
+RES-fullnorm
+ODE-norm-3
+ODE-fullnorm-3
+
+Presented in [15]
+GCN-3
+GCN-norm-3
+RES-3
+RES-norm-3
+RES-fullnorm
+ODE-norm-3
+ODE-fullnorm-3
+
+70.30
+61.70
+61.66
+65.87
+
+70.08
+
+16.17
+70.04
+18.28
+
+81.50
+76.01
+75.95
+78.98
+81.06
+15.07
+
+81.08
+
+14.09
+
+79.00
+77.19
+77.19
+77.45
+78.13
+32.82
+
+78.18
+
+36.40
+
+-
+3.32
+3.29
+1.46
+0.79
+4.99
+
+0.72
+
+2.59
+
+-
+68.80
+68.70
+70.10
+
+72.30
+
+23.10
+71.80
+23.10
+
+-
+37.20
+38.60
+58.10
+67.40
+7.70
+
+67.50
+
+16.00
+
+Cora
+
+-
+2.59
+2.68
+1.32
+0.72
+8.87
+
+0.67
+
+6.49
+
+-
+56.70
+56.70
+70.60
+
+78.70
+
+6.40
+78.60
+6.40
+
+Pubmed
+
+-
+1.01
+0.99
+0.77
+0.44
+11.11
+
+0.34
+
+9.20
+
+-
+68.10
+67.70
+74.20
+76.10
+18.00
+
+77.20
+
+18.00
+
+-
+81.50
+81.70
+82.20
+
+83.20
+
+31.90
+82.70
+31.90
+
+-
+79.30
+79.30
+79.20
+
+79.50
+
+41.30
+79.20
+41.30
+
+-
+1.3344
+1.3356
+1.1069
+
+1.0132
+
+1.7918
+1.0163
+1.7918
+
+-
+0.8554
+0.8554
+
+0.7114
+
+0.7275
+1.9459
+0.7333
+1.9458
+
+-
+0.7378
+0.7375
+0.7081
+
+0.5602
+
+1.0986
+
+0.5602
+
+1.0986
+
+7
+
+1.4325
+
+1.4399
+1.4480
+2.2851
+3.1579
+69.7444
+61.0533
+
+4
+
+1.3841
+
+1.3944
+1.3888
+2.0943
+2.7927
+62.2312
+54.8411
+
+38
+
+5.6163
+
+5.6146
+5.6194
+10.5187
+15.4539
+346.6378
+289.2936
+
+Table 1: Comparison of the performance in the reproduc-
+tion of the experiments of [15]. The experiments were
+run 2500 times for the non-continuous models (those that
+don’t start with “ODE”), and 250 times for the continu-
+ous ones. We report the average, standard deviation, min-
+imum and maximum accuracy of these runs to minimise
+the effect of the variables’ random initialisation. The best
+model (except the original of [15]) is marked in bold for
+each metric. Runtime of the original paper is presented for
+completeness, as it was obtained in a different setup.
+
+Figure 2: 50-bin histogram of the accuracies, comparing
+the models on the Cora dataset.
+
+Figure 3: 50-bin histogram of the accuracies, comparing
+the models on the Pubmed dataset.
+
+layers being the same as the normalisation between the
+second and third layer in the “3” model. All models had
+ReLU activations after every layer but the last, applied
+before the normalisation. On the last layer all models had
+a log softmax applied to each node’s output. The residual
+modules with connections every two layers had a residual
+connection on the last layer if the number of layers is odd.
+The ODE-solved modules with residual connections every
+two layers used a time component as input to both layers,
+appended to every node’s feature vector. All ODE models
+are solved using the adjoint method described in [3].
+We trained the models for a maximum of 200 epochs,
+stopping earlier if the validation accuracy of the model
+was higher than 90% of the lowest accuracy of the models
+in Table 1 and the validation loss was lower than 110%
+of the highest test loss obtained during the same test. As
+one can see in Figures 4, 5, 6, in these tests the many-
+layered non-residual models often failed to converge be-
+fore the deﬁned maximum number of epochs and had a
+worse performance when compared to the residual mod-
+els. Figure 5, in particular, shows that the residual mod-
+els converge to a better validation accuracy (and thus hit
+the early stopping criteria) at less than half the maximum
+number of iterations proposed in [15], while also some
+also show to be more immune or even beneﬁt from more
+layers to converge faster. We also ran this experiment for
+more training iterations and deeper networks: the non-
+residual models were all prone to overﬁtting while the
+residual models were more or less immune to it, achiev-
+ing good test accuracy even the earlier stopping criteria
+was not met.
+The performance degradation caused by stacking more
+layers may be also partially explained due to the fact that
+the early stopping threshold included not only an accu-
+racy threshold but also a loss one, which may have caused
+some of the models to overﬁt the training data. The rea-
+son for using a loss threshold along the accuracy on the
+validation set is that we wanted our model to be conﬁdent
+enough about its predictions and not only accurate. We
+also ran this experiment for a larger number of layers and
+
+6
+
+6065707580Accuracy (%)0.00.10.20.30.40.50.6FrequencyGCN-norm-3RES-norm-3ODE-norm-368707274767880Accuracy (%)0.000.250.500.751.001.251.50FrequencyGCN-norm-3RES-norm-3ODE-norm-3Figure 4: Average ﬁnal test accuracy of the models which
+hit the early stopping criteria in the Pubmed dataset.
+
+Figure 7: Average ﬁnal test accuracy of the models which
+hit the early stopping criteria in the Cora dataset by fol-
+lowing the paper more closely.
+
+Figure 5: Average number of iterations that the models hit
+the early stopping criteria in the Pubmed dataset, stop-
+ping at a maximum of 200 epochs.
+
+the results seemed stable throughout, we chose to present
+here only from layers 3 through 5 since in this range the
+performance degradation of non-residual GCNs is already
+visible.
+
+4.4 Details on replicating the GCN experi-
+ment
+
+Note that all the experiments we’ve done here, with three-
+layered networks, perform slightly worse than a two-
+layered network (the original of [15]) in most datasets.
+The original paper already shows that two seems to be
+the optimal number of layers for this dataset, and in the
+original paper they used a different kernel initialization
+method. The main point of our experiments was to show
+
+the immunity of the residual networks to the number
+of layers and initial parameter intialisation. We trained
+a two-layered discrete residual network, taking only a
+slice of the output of the layer as the ﬁnal features5 , this
+model performed similarly to the non-residual module,
+and achieved performance near to the one presented in the
+original paper.
+Another difference between what we present here and
+the results originally published (one of the parts where the
+code we used was “subtly different” from the one which
+produced the published results) is that the original pa-
+per used a different kernel initialisation (the Xavier/Glorot
+initialisation described in [5]). We tested the models with
+the Glorot initialisation but the models still seemed to
+slightly underperform the results shown in the original pa-
+per.
+The ﬁnal trick to replicate the GCN experiment was
+to dropout in the input, whose results are in Table 2.
+The two-layered GCN model achieved the same perfor-
+mance as in the original paper and the null hypothesis
+was rejected when comparing the GCN model to the ODE
+model, with the ODE model being slightly inferior than
+the GCN model. One can also look at Figures 7, 8, and 9
+for results similar to the ones discussed in the other sec-
+tions for the Cora dataset. These changes also allow more
+layers on the non-residual model before its performance
+degrades too much.
+
+5 Discussion
+
+In this paper we provide, to the best of our knowledge, the
+ﬁrst application of continuous-depth in a GNN. We engi-
+neer such a network by ﬁxing the input graph before pre-
+forming the integral through an ODE solver. This creates
+a ODE system to be solved with the input graph’s shape,
+
+Figure 6: Ratio of models that hit the early stopping crite-
+ria in the Pubmed dataset.
+
+5 This was done so that the layer has the same number of in and out
+features
+
+7
+
+345Layers0.014.328.642.957.171.485.7100.0Accuracy (%)GCNKRESK1RESK2RESK1normRESK2normODEK1ODEK2345Layers050100150200ConvergencemodelGCNKRESK1RESK2RESK1normRESK2normODEK1ODEK212345Layers0.00.20.40.60.81.0Convergence RatioGCNKRESK1RESK2RESK1normRESK2normODEK1ODEK223456789101112Layers0.014.328.642.957.171.485.7100.0Accuracy (%)GCNKRESK1RESK2RESK1normRESK2normModel
+
+Acc (%)
+Std Min Max
+
+Loss
+Avg
+
+Avg
+
+Citeseer
+
+Presented in [15] 70.30
+GCN-3
+65.71
+GCN-norm-3
+65.49
+RES-3
+66.78
+RES-norm-3
+70.75
+ODE-norm-3
+69.51
+
+Presented in [15] 81.50
+GCN-3
+79.41
+GCN-norm-3
+79.59
+RES-3
+80.33
+RES-norm-3
+81.87
+ODE-norm-3
+81.52
+
+-
+2.04
+1.98
+1.39
+0.85
+1.09
+
+Cora
+
+-
+1.52
+1.46
+1.21
+0.70
+0.75
+
+Pubmed
+
+Presented in [15] 79.00
+GCN-3
+77.49
+GCN-norm-3
+77.41
+RES-3
+77.59
+RES-norm-3
+79.11
+ODE-norm-3
+78.50
+
+-
+0.78
+0.88
+0.87
+0.60
+0.47
+
+-
+55.60
+56.50
+63.10
+68.50
+67.30
+
+-
+75.80
+75.70
+77.90
+80.10
+79.20
+
+-
+75.20
+75.30
+75.30
+77.20
+77.20
+
+-
+69.10
+69.30
+69.80
+73.00
+72.10
+
+-
+82.80
+82.20
+82.80
+83.50
+83.10
+
+-
+79.00
+79.00
+79.20
+80.10
+79.80
+
+-
+1.1202
+1.1306
+1.0776
+1.0433
+1.0616
+
+-
+0.6776
+0.6748
+0.6469
+0.7710
+0.7841
+
+-
+0.7063
+0.7121
+0.6924
+0.5679
+0.5904
+
+Table 2: Comparison of the performance in the reproduc-
+tion of the experiments done in [15]. The experiments
+were run 100 times for all models. The results shown here
+are the average, standard deviation, minimum and maxi-
+mum accuracy of these runs, as well as the average loss.
+
+Figure 8: Average number of iterations that the models hit
+the early stopping criteria in the Cora dataset by follow-
+ing the paper more closely, stopping at a maximum of 200
+epochs.
+
+Figure 9: Ratio of models that hit the early stopping cri-
+teria in the Cora dataset by following the paper more
+closely.
+
+8
+
+without using the matrix as a input parameter to the ODE
+solver, which drastically reduces the memory usage. With
+this, the learned residual layer applies a continuous opera-
+tion through the layer-space, which can behave better than
+using discrete transformations on the input.
+Although the results we present here do not make such
+a strong case for the ODE-solved layers, we believe this to
+be mostly due to the application that the original GCN pa-
+per was applied to. The GCN model performed best with
+only two layers, which indicates that the datasets may not
+need, and may even be penalised by using, the information
+of a larger neighbourhood. Further experiments on prob-
+lems which may require a more distant neighbourhood
+would surely showcase this model better, we nonetheless
+wanted to present our ﬁrst results using the same dataset
+as the canonical GCN paper to provide an even footing,
+and to do this we utilised 3-layered models to allow the
+residual modules to learn features intrinsic to their feature
+space.
+Furthermore, the stacking of ODE-solved layers as pre-
+sented in the “more layers” experiments is not common,
+since the technique that allows multiple layers in constant
+memory is generally sufﬁcient to produce an approxima-
+tion of a many-layered network. Nonetheless, the stabil-
+ity seen throughout this application show that the beneﬁt
+of residual learning still applies: allowing the network to
+keep its performance even when more layers are stacked.
+The main advantage we believe that continuous resid-
+ual layers can provide on graph-structured data would be
+to allow a more predictable behaviour on the learned func-
+tions, as was shown to be the case in other meta-models
+in [3, 7]. This, we believe, would allow complex systems
+to be modelled as ordinary differential equations, which
+have a vast literature of theoretical analysis that could
+greatly beneﬁt the Deep Learning community.
+
+6 Related Work
+
+The paper which provided the original GCN formalisa-
+tion [15] already experimented with residual connections
+and showed that these allow training a GCN with more
+layers, but did not experiment with continuous residual
+GCN layers, which is the main contribution of this pa-
+per. The application and study of discrete residual learn-
+ing over other meta-models has been already explored
+in, for example, [8, 14, 15, 27, 33]. Furthermore, the
+application of continuous residual learning has been ex-
+plored in [3, 7, 9, 18, 22], here we found no work on
+applying this technique to graph-structured data. The ap-
+plication of Deep Learning for learning characteristics
+over social networks has been studied, for example, in
+
+23456789101112Layers050100150200ConvergencemodelGCNKRESK1RESK2RESK1normRESK2norm12345Layers0.00.20.40.60.81.0Convergence RatioGCNKRESK1RESK2RESK1normRESK2norm[15, 16, 20, 21, 30].
+Many other papers have tried to improve over the work
+of [15]. For example, [30] shows that allowing multiple-
+layered convolutional kernels improve the expressivity
+of the GCN model, and that the neighbour aggregation
+method used in such a model also impacts on the num-
+ber of graphs it can tell apart, proving that a sum aggre-
+gation should be preferred over a mean or max aggrega-
+tion. Other work allow attentional pooling of each node’s
+neighbours [26], and also show an improvement in per-
+formance. In [10], they experiment with different aggre-
+gation/pooling functions for a GCN, and [4] uses an edge-
+annotated pooling in his MPNN. Preliminary experiments
+with these models did not yield promising results and thus
+we left them for future work, focusing here on the canon-
+ical GCN model [15] as our baseline.
+Some models in the GNN literature also employ meth-
+ods that can be seen as similar to residual connections. For
+example, one could interpret the LSTM and GRU mod-
+ules, which are often applied in GNNs [4, 17, 24], as pro-
+viding a similar feature to residual connections [8], since
+they may allow information to pass along time-steps un-
+changed if the network learns to do so. Also, some previ-
+ously published results [19, 30] use many or all the lay-
+ers of their GNN model being used to perform gradient
+descent. This in some sense also allows the gradients to
+reach speciﬁc parts of the network without being polluted
+with further transformations. These models allow many-
+layered networks to be effectively learned and could be
+seen as having a similar effect to residual modules, how-
+ever this is more computationally expensive than allowing
+residual connections.
+
+7 Conclusions and Future Work
+
+The results presented here suggest the application of this
+technique over other problems, specially those for which
+the use of a many-layered GNN is mandatory. Prime ex-
+amples of these are the Edge Network MPNN model [4],
+the myriad implementations of the Graph Network [1] for-
+malisation, and the many variations on the stateless GCN
+model [10, 26, 30]. More speciﬁcally, we believe that In-
+teraction Networks [2] could greatly beneﬁt from being
+transformed to a continuous spectrum, since the physics
+relations they reason about are inherently deﬁned in a con-
+tinuous space. Other model which would be scientiﬁcally
+interesting to explore are GNNs which reason about tem-
+poral graphs [13, 25, 31], we believe our formalisation
+here could be expanded to allow the graph topology and
+labels to change over the layer-space, allowing graphs that
+change through a layer-continuous function.
+
+Another venue for future work is further investiga-
+tion on whether depth in relational data leads to better
+performance or whether there are limits to this applica-
+tion on graphs, some of which has already been inves-
+tigated by [16, 30]. One could also consider to research
+whether the dynamic number of layers/time-steps enjoyed
+by continuous residual layers allows learning transforma-
+tions in the same vein as the ones achieved in [24] and
+[19], whose models’ learned transformations can be ex-
+panded for more time-steps of computation than orig-
+inally trained and whose results improve incrementally
+over function applications. We believe that the results pre-
+sented in [3, 7], fostered by the continuity of the ODE
+models, are a strong indicator of this, while also being
+a starting point for analysing what transformations can
+achieve a similar non-decreasing performance improve-
+ment over more steps of computation.
+Finally, another possible work would be related to
+improving the computational performance of the ODE
+solvers used in tandem with the neural networks presented
+here. Chen et al. [3] already produced outstanding results
+with their adjoint method, which we make use of in this
+paper, but the learned network still needs many more ap-
+plications than may be really necessary when learning
+with graph-structured data, and each application consid-
+ered during integration implies in the multiplication of the
+full adjacency matrix, which is far too costly for larger
+graphs. A form of applying the neighbourhood aggrega-
+tion without depending on costly transformations such as
+matrix multiplications, sparse or dense, would surely ben-
+eﬁt this technique in the domain of graphs.
+
+Acknowledgements
+
+We would like to thank NVIDIA Corporation for the
+Quadro GPU granted to our research group. This work
+is partly supported by Coordenac¸ ˜ao de Aperfeic¸ oamento
+de Pessoal de N´ıvel Superior (CAPES) – Finance Code
+001 and by the Brazilian Research Council CNPq. We
+would also like to thank the Pytorch developers and the
+authors who made their source code available to foster
+reproducibility in research, and thanks also to Henrique
+Lemos and Rafael Baldasso Audibert for their helpful dis-
+cussions and help reviewing the paper.
+
+References
+
+[1] Peter W. Battaglia, Jessica B. Hamrick, Victor
+Bapst, Alvaro Sanchez-Gonzalez, Vin´ıcius Flores
+Zambaldi, Mateusz Malinowski, Andrea Tacchetti,
+
+9
+
+David Raposo, Adam Santoro, Ryan Faulkner,
+C¸ aglar G ¨ulc¸ ehre, H. Francis Song, Andrew J.
+Ballard, Justin Gilmer, George E. Dahl, Ashish
+Vaswani, Kelsey R. Allen, Charles Nash, Victoria
+Langston, Chris Dyer, Nicolas Heess, Daan Wier-
+stra, Pushmeet Kohli, Matthew Botvinick, Oriol
+Vinyals, Yujia Li, and Razvan Pascanu. Relational
+inductive biases, deep learning, and graph networks.
+CoRR, abs/1806.01261, 2018.
+
+[2] Peter W. Battaglia, Razvan Pascanu, Matthew Lai,
+Danilo Jimenez Rezende, and Koray Kavukcuoglu.
+Interaction networks for learning about objects, rela-
+tions and physics. In NIPS, pages 4502–4510, 2016.
+
+[3] Tian Qi Chen, Yulia Rubanova, Jesse Bettencourt,
+and David Duvenaud. Neural ordinary differential
+equations. In NeurIPS, pages 6572–6583, 2018.
+
+[4] Justin Gilmer, Samuel S. Schoenholz, Patrick F. Ri-
+ley, Oriol Vinyals, and George E. Dahl. Neural mes-
+sage passing for quantum chemistry. In ICML, vol-
+ume 70 of Proceedings of Machine Learning Re-
+search, pages 1263–1272. PMLR, 2017.
+
+[5] Xavier Glorot and Yoshua Bengio. Understanding
+the difﬁculty of training deep feedforward neural
+networks. In AISTATS, volume 9 of JMLR Proceed-
+ings, pages 249–256. JMLR.org, 2010.
+
+[6] Marco Gori, Gabriele Monfardini, and Franco
+Scarselli. A new model for learning in graph do-
+mains. In IJCNN, volume 2, pages 729–734. IEEE,
+2005.
+
+[7] Will Grathwohl, Ricky T. Q. Chen, Jesse Bet-
+tencourt,
+Ilya Sutskever, and David Duvenaud.
+FFJORD:
+free-form continuous dynamics
+for
+scalable reversible generative models.
+CoRR,
+abs/1810.01367, 2018.
+
+[8] Klaus Greff, Rupesh Kumar Srivastava, and J ¨urgen
+Schmidhuber. Highway and residual networks learn
+unrolled iterative estimation.
+In ICLR (Poster).
+OpenReview.net, 2017.
+
+[9] Eldad Haber and Lars Ruthotto. Stable architectures
+for deep neural networks. CoRR, abs/1705.03341,
+2017.
+
+[10] William L. Hamilton, Zhitao Ying, and Jure
+Leskovec. Inductive representation learning on large
+graphs. In NIPS, pages 1024–1034, 2017.
+
+[11] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and
+Jian Sun. Deep residual learning for image recog-
+nition.
+In CVPR, pages 770–778. IEEE Computer
+Society, 2016.
+
+[12] Geoffrey E. Hinton, Nitish Srivastava, Alex
+Krizhevsky, Ilya Sutskever, and Ruslan Salakhut-
+dinov.
+Improving neural networks by prevent-
+ing co-adaptation of feature detectors.
+CoRR,
+abs/1207.0580, 2012.
+
+[13] Woojeong Jin, Changlin Zhang, Pedro A. Szekely,
+and Xiang Ren. Recurrent event network for rea-
+soning over temporal knowledge graphs. CoRR,
+abs/1904.05530, 2019.
+
+[14] Jaeyoung Kim, Mostafa El-Khamy, and Jungwon
+Lee. Residual LSTM: design of a deep recurrent
+architecture for distant speech recognition.
+In IN-
+TERSPEECH, pages 1591–1595. ISCA, 2017.
+
+[15] Thomas N. Kipf and Max Welling. Semi-supervised
+classiﬁcation with graph convolutional networks. In
+ICLR (Poster). OpenReview.net, 2017.
+
+[16] Qimai Li, Zhichao Han, and Xiao-Ming Wu. Deeper
+insights into graph convolutional networks for semi-
+supervised learning.
+In AAAI, pages 3538–3545.
+AAAI Press, 2018.
+
+[17] Yujia Li, Daniel Tarlow, Marc Brockschmidt, and
+Richard S. Zemel. Gated graph sequence neural net-
+works. In ICLR (Poster), 2016.
+
+[18] Yiping Lu, Aoxiao Zhong, Quanzheng Li, and Bin
+Dong. Beyond ﬁnite layer neural networks: Bridging
+deep architectures and numerical differential equa-
+tions. In ICML, volume 80 of Proceedings of Ma-
+chine Learning Research, pages 3282–3291. PMLR,
+2018.
+
+[19] Rasmus Berg Palm, Ulrich Paquet, and Ole Winther.
+Recurrent relational networks.
+In NeurIPS, pages
+3372–3382, 2018.
+
+[20] Shirui Pan, Jia Wu, Xingquan Zhu, Guodong Long,
+and Chengqi Zhang.
+Finding the best not
+the
+most: regularized loss minimization subgraph selec-
+tion for graph classiﬁcation. Pattern Recognition,
+48(11):3783–3796, 2015.
+
+[21] Shirui Pan, Xingquan Zhu, Chengqi Zhang, and
+Philip S. Yu. Graph stream classiﬁcation using la-
+beled and unlabeled graphs. In ICDE, pages 398–
+409. IEEE Computer Society, 2013.
+
+10
+
+[33] Julian Georg Zilly, Rupesh Kumar Srivastava, Jan
+Koutn´ık, and J ¨urgen Schmidhuber. Recurrent high-
+way networks. In ICML, volume 70 of Proceedings
+of Machine Learning Research, pages 4189–4198.
+PMLR, 2017.
+
+[22] Lars Ruthotto and Eldad Haber. Deep neural net-
+works motivated by partial differential equations.
+CoRR, abs/1804.04272, 2018.
+
+[23] Franco Scarselli, Marco Gori, Ah Chung Tsoi,
+Markus Hagenbuchner, and Gabriele Monfardini.
+The graph neural network model.
+IEEE Transac-
+tions on Neural Networks, 20(1):61–80, 2009.
+
+[24] Daniel Selsam, Matthew Lamm, Benedikt B ¨unz,
+Percy Liang, Leonardo de Moura, and David L. Dill.
+Learning a SAT solver from single-bit supervision.
+CoRR, abs/1802.03685, 2018.
+
+[25] Rakshit Trivedi, Hanjun Dai, Yichen Wang, and
+Le Song. Know-evolve: Deep temporal reason-
+ing for dynamic knowledge graphs. In ICML, vol-
+ume 70 of Proceedings of Machine Learning Re-
+search, pages 3462–3471. PMLR, 2017.
+
+[26] Petar Velickovic, Guillem Cucurull, Arantxa
+Casanova, Adriana Romero, Pietro Li `o, and Yoshua
+Bengio.
+Graph attention networks.
+In ICLR
+(Poster). OpenReview.net, 2018.
+
+[27] Yiren Wang and Fei Tian. Recurrent residual learn-
+ing for sequence classiﬁcation.
+In EMNLP, pages
+938–943. The Association for Computational Lin-
+guistics, 2016.
+
+[28] Yuxin Wu and Kaiming He. Group normalization.
+In ECCV (13), volume 11217 of Lecture Notes in
+Computer Science, pages 3–19. Springer, 2018.
+
+[29] Zonghan Wu, Shirui Pan, Fengwen Chen, Guodong
+Long, Chengqi Zhang, and Philip S. Yu. A com-
+prehensive survey on graph neural networks. CoRR,
+abs/1901.00596, 2019.
+
+[30] Keyulu Xu, Weihua Hu, Jure Leskovec, and Stefanie
+Jegelka. How powerful are graph neural networks?
+In ICLR. OpenReview.net, 2019.
+
+[31] Sijie Yan, Yuanjun Xiong, and Dahua Lin. Spatial
+temporal graph convolutional networks for skeleton-
+based action recognition.
+In AAAI, pages 7444–
+7452. AAAI Press, 2018.
+
+[32] Zhilin Yang, William W. Cohen, and Ruslan
+Salakhutdinov. Revisiting semi-supervised learn-
+ing with graph embeddings.
+In ICML, volume 48
+of JMLR Workshop and Conference Proceedings,
+pages 40–48. JMLR.org, 2016.
+
+11
+
+

@@ -1,0 +1,2280 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+7
+2
+7
+8
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Layer-wise Adaptive Gradient Sparsiﬁcation for Distributed Deep Learning with
+Convergence Guarantees
+
+Shaohuai Shi, Zhenheng Tang, Qiang Wang, Kaiyong Zhao and Xiaowen Chu
+
+Department of Computer Science, Hong Kong Baptist University
+{csshshi,zhtang,qiangwang,kyzhao,chxw}@comp.hkbu.edu.hk
+
+Abstract
+
+To reduce the long training time of large deep neural network
+(DNN) models, distributed synchronous stochastic gradient
+descent (S-SGD) is commonly used on a cluster of workers.
+However, the speedup brought by multiple workers is limited
+by the communication overhead. Two approaches, namely
+pipelining and gradient sparsiﬁcation, have been separately
+proposed to alleviate the impact of communication overheads.
+Yet, the gradient sparsiﬁcation methods can only initiate the
+communication after the backpropagation, and hence miss
+the pipelining opportunity. In this paper, we propose a new
+distributed optimization method named LAGS-SGD, which
+combines S-SGD with a novel layer-wise adaptive gradient
+sparsiﬁcation (LAGS) scheme. In LAGS-SGD, every worker
+selects a small set of “signiﬁcant” gradients from each layer in-
+dependently whose size can be adaptive to the communication-
+to-computation ratio of that layer. The layer-wise nature of
+LAGS-SGD opens the opportunity of overlapping communica-
+tions with computations, while the adaptive nature of LAGS-
+SGD makes it ﬂexible to control the communication time.
+We prove that LAGS-SGD has convergence guarantees and
+it has the same order of convergence rate as vanilla S-SGD
+under a weak analytical assumption. Extensive experiments
+are conducted to verify the analytical assumption and the con-
+vergence performance of LAGS-SGD. Experimental results
+show that LAGS-SGD achieves from around 40% to 95% of
+the maximum beneﬁt of pipelining on a 16-node GPU cluster.
+Combining the beneﬁt of pipelining and sparsiﬁcation, the
+speedup of LAGS-SGD over S-SGD ranges from 2.86× to
+8.52× on our tested CNN and LSTM models, without losing
+obvious model accuracy.
+
+1
+
+Introduction
+
+With increasing data volumes and model sizes of deep neural
+networks (DNNs), distributed training is commonly adopted
+to accelerate the training process among multiple workers.
+Current distributed stochastic gradient descent (SGD) ap-
+proaches can be categorized into three types, synchronous
+(Dekel et al. 2012; Li et al. 2014; Jia et al. 2018), asyn-
+chronous (Zinkevich et al. 2010) and stall synchronous (Ho et
+al. 2013). Synchronous SGD (S-SGD) with data-parallelism
+is the most widely used one in distributed deep learning
+due to its good convergence properties (Dean et al. 2012;
+Goyal et al. 2017). However, S-SGD requires iterative syn-
+
+chronization and communication of dense gradient/parameter
+aggregation among all the workers. Compared to the comput-
+ing speed of modern accelerators (e.g., GPUs and TPUs), the
+network speed is usually slow which makes communications
+a potential system bottleneck. Even worse, the communica-
+tion time usually grows with the size of the cluster (You,
+Buluc¸ , and Demmel 2017). Many recent studies focus on al-
+leviating the impact of communications in S-SGD to improve
+the system scalability. These studies include the system-level
+methods and the algorithm-level methods.
+On the system level, pipelining (Zhang et al. 2017;
+Mori et al. 2017; Li et al. 2018; Shi, Chu, and Li 2019;
+Harlap et al. 2019; Shi, Chu, and Li 2018) is used to overlap
+the communications with the computations by exploiting the
+layer-wise structure of backpropagation during the training
+process of deep models. On the algorithmic level, researchers
+have proposed gradient quantization (fewer bits for a number)
+and sparsiﬁcation (zero-out gradients that are not necessary
+to be communicated at the current iteration) techniques for
+S-SGD to reduce the communication trafﬁc with negligi-
+ble impact on the model convergence (Alistarh et al. 2017;
+Chen et al. 2018; Lin et al. 2018; Wen et al. 2017; Wu et al.
+2018). The gradient sparsiﬁcation method is more aggres-
+sive than the gradient quantization method in reducing the
+communication size. For example, Top-k sparsiﬁcation (Aji
+and Heaﬁeld 2017; Lin et al. 2018) with error compensation
+can zero-out 99% − 99.9% local gradients without loss of
+accuracy while quantization from 32-bit ﬂoating points to
+1-bit has a maximum of 32× size reduction (Wen et al. 2017).
+In this paper, we mainly focus on the sparsiﬁcation methods,
+while our proposed algorithm and analysis are also applicable
+to the quantization methods.
+A number of recent work has investigated the theoretical
+convergence properties of the gradient sparsiﬁcation schemes
+under different analytical assumptions (Wangni et al. 2018;
+Stich, Cordonnier, and Jaggi 2018; Alistarh et al. 2018;
+Jiang and Agrawal 2018; Ivkin et al. 2019). However, these
+gradient sparsiﬁcation methods ignore the layer-wise struc-
+ture of DNN models and treat all model parameters as a
+single vector to derive the convergence bounds, which implic-
+itly requires a single-layer communication (You, Buluc¸ , and
+Demmel 2017) at the end of each SGD iteration. Therefore,
+
+ 
+ 
+ 
+ 
+ 
+ 
+the current gradient sparsiﬁcation S-SGD (denoted by SLGS-
+SGD hereafter) cannot overlap the gradient communications
+with backpropagation computations, which limits the system
+scaling efﬁciency. To tackle this challenge, we propose a
+new distributed optimization algorithm named LAGS-SGD
+which exploits a layer-wise adaptive gradient sparsiﬁcation
+(LAGS) scheme atop S-SGD to increase the system scalabil-
+ity. We also derive the convergence bounds for LAGS-SGD.
+Our theoretical convergence results on LAGS-SGD conclude
+that high compression ratios would slow down the model
+convergence rate, which indicates that one should choose
+the compression ratios for different layers as low as possi-
+ble. The adaptive nature of LAGS-SGD provides ﬂexible
+options to choose the compression ratios according to the
+communication-to-computation ratios. We evaluate our pro-
+posed algorithm on various DNNs to verify the soundness
+of the weak analytic assumption and the convergence results.
+Finally, we demonstrate our system implementation of LAGS-
+SGD to show the wall-clock training time improvement on
+a 16-node GPU cluster connected with 1Gbps Ethernet. The
+contributions of this work are summarized as follows.
+• We propose a new distributed optimization algorithm
+named LAGS-SGD with convergence guarantees. The pro-
+posed algorithm enables us to embrace the beneﬁts of both
+pipelining and gradient sparsiﬁcation.
+• We provide thorough convergence analysis of LAGS-SGD
+on non-convex smooth optimization problems, and the
+derived theoretical results indicate that LAGS-SGD has a
+consistent convergence guarantee with SLGS-SGD, and it
+has the same order of convergence rate with S-SGD under
+a weak analytical assumption.
+• We empirically verify the analytical assumption and the
+convergence performance of LAGS-SGD on various deep
+neural networks including CNNs and LSTM in a dis-
+tributed setting.
+• We implement LAGS-SGD atop PyTorch1 , which is one
+of the popular deep learning frameworks, and evaluate
+the training efﬁciency of LAGS-SGD on a 16-GPU cluster
+connected with 1Gbps Ethernet. Experimental results show
+that LAGS-SGD can achieve around 40% to 95% of the
+maximum beneﬁt of pipelining over state-of-the-art SLGS-
+SGD. Compared to S-SGD without sparsiﬁcation, LAGS-
+SGD can train the model up to 8.52× faster with little
+impact on the model accuracy.
+
+2 Related Work
+
+Many recent works have provided convergence analysis for
+distributed SGD with quantiﬁed or sparsiﬁed gradients that
+can be biased or unbiased.
+For the unbiased quantiﬁed or sparsiﬁed gradients, re-
+searchers (Alistarh et al. 2017; Wen et al. 2017) derived
+the convergence guarantees for lower-bit quantiﬁed gradients,
+while the quantization operator applied on gradients should
+be unbiased to guarantee the theoretical results. On the gra-
+dient sparsiﬁcation algorithm whose sparsiﬁcation method
+
+1 https://pytorch.org/
+
+is also unbiased, Wangni et al. (Wangni et al. 2018) derived
+the similar theoretical results. However, empirical gradient
+sparsiﬁcation methods (e.g., Top-k sparsiﬁcation (Lin et al.
+2018)) can be biased, which require some other analytical
+techniques to derive the bounds. In this paper, we also mainly
+focus on the bias sparsiﬁcation operators like Top-k sparsiﬁ-
+cation.
+For the biased quantiﬁed or sparsiﬁed gradients, Cordon-
+nier (Cordonnier 2018) and Stich et al. (Stich, Cordonnier,
+and Jaggi 2018) provided the convergence bound for top-k
+or random-k gradient sparsiﬁcation algorithms on only con-
+vex problems. Jiang et al. (Jiang and Agrawal 2018) derived
+similar theoretical results, but they exploited another strong
+assumption that requires each worker to select the same k
+components at each iteration so that the whole d (the dimen-
+sion of model/gradient) components are exchanged after a
+certain number of iterations. Alistarh et al. (Alistarh et al.
+2018) relaxed these strong assumptions on sparsiﬁed gradi-
+ents, and further proposed an analytical assumption, in which
+the (cid:96)2 -norm of the difference between the top-k elements
+on fully aggregated gradients and the aggregated results on
+locally top-k gradients is bounded. Though the assumption
+is relaxed, it is difﬁcult to verify in real-world applications.
+Our convergence analysis is relatively close to the study (Shi
+et al. 2019b) which provided convergence analysis on the
+biased Top-k sparsiﬁcation with an easy-to-verify analytical
+assumption.
+The above mentioned studies, however, view all the model
+parameters (or gradients) as a single vector to derive the con-
+vergence bounds, while we propose the layer-wise gradient
+sparsiﬁcation algorithm which breaks down full gradients
+into multiple pieces (i.e., multiple layers). It is obvious that
+breaking a vector into pieces and selecting top-k elements
+from each piece generates different results from the top-k
+elements on the full vector, which makes the proofs of the
+bounds of LAGS-SGD non-trivial. Recently, (Zheng, Huang,
+and Kwok 2019) proposed the blockwise SGD for quantiﬁed
+gradients, but it lacks convergence guarantees for sparsiﬁed
+gradients. Simultaneous to our work, (Dutta et al. 2020) pro-
+posed related layer-wise compression schemes.
+
+3 Preliminaries
+
+We consider the common settings of distributed synchronous
+non-convex objective function f : Rd → R by:
+SGD with data-parallelism on P workers to minimize the
+
+P(cid:88)
+
+p=1
+
+xt+1 = xt − αt
+
+1
+P
+
+Gp (xt ),
+
+(1)
+
+where xt ∈ Rd is the stacked layer-wise model parameters
+of the target DNN at iteration t, Gp (xt ) is the stochastic gra-
+dients of the DNN parameters at the pth worker with locally
+sampled data, and αt ∈ R is the step size (i.e., learning rate)
+at iteration t. Let L denote the number of learnable layers of
+the DNN, and x(l) ∈ Rd(l) denote the parameter vector of
+the lth learnable layer with d(l) elements2 . Thus, the model
+
+2This generalization is also applicable to the current deep learn-
+ing frameworks (e.g., PyTorch), in which the parameters of one
+
+P(cid:88)
+
+(cid:101)Gp (xt ),
+
+parameter x can be represented by the concatenation of L
+layer-wise parameters. Using (cid:116) as the concatenation operator,
+the stacked vector can be represented by
+
+x = (cid:116)L
+l=1x(l) = x(1)(cid:116)x(2)(cid:116)...(cid:116)x(L) = [x(1) , x(2) , ..., x(L) ].
+
+(2)
+
+Pipelining between communications and computa-
+
+tions. Due to the fact that the gradient computation of layer
+l − 1 using the backpropagation algorithm has no dependency
+on the gradient aggregation of layer l, the layer-wise commu-
+nications can then be pipelined with layer-wise computations
+(Zhang et al. 2017; Shi, Wang, and Chu 2018) as shown in
+Fig. 1(a). It can be seen that some communication time can
+be overlapped with the computations so that the wall-clock
+iteration time is reduced. Note that the pipelining technique
+with full gradients has no side-effect on the convergence,
+and it becomes very useful when the communication time is
+comparable to the computing time.
+In the gradient sparsiﬁcation
+method, the Top-k sparsiﬁcation with error compensation
+(Aji and Heaﬁeld 2017; Lin et al. 2018) is widely used for dis-
+tributed training, and its convergence property has been em-
+pirically (Aji and Heaﬁeld 2017; Lin et al. 2018) veriﬁed and
+theoretically (Alistarh et al. 2018; Jiang and Agrawal 2018;
+Stich, Cordonnier, and Jaggi 2018) proved under some as-
+sumptions. The model update formula of Top-k S-SGD can
+be represented by
+
+Top-k sparsiﬁcation.
+
+1
+P
+
+xt+1 = xt − αt
+
+(3)
+where (cid:101)Gp (xt ) = TopK(Gp (xt ), k) is the selected top-k gra-
+dients at worker p. For any vector x ∈ Rd and a given k ≤ d,
+TopK(x, k) ∈ Rd and its ith (i = 1, 2, ..., d) element is:
+
+p=1
+
+TopK(x, k)i =
+
+if |xi | > thr
+
+otherwise
+
+,
+
+(4)
+
+(cid:26)xi ,
+0,
+
+where xi is the ith element of x and thr is the k th largest
+value of |x|. As shown in Fig. 1(b), in each iteration, at the
+end of the backpropagation pass, each worker selects top-
+k gradients from its whole set of gradients. The selected k
+gradients are exchanged with all other workers in the decen-
+tralized architecture or sent to the parameter server in the
+centralized architecture for averaging.
+
+4 Layer-wise Adaptive Gradient
+Sparsiﬁcation
+
+Algorithm
+
+To enjoy the beneﬁts of the pipelining technique and the
+promising gradient sparsiﬁcation technique, we propose the
+LAGS-SGD algorithm, which exploits a layer-wise adaptive
+gradient sparsiﬁcation (LAGS) scheme atop S-SGD.
+In LAGS-SGD, we apply gradient sparsiﬁcation with error
+compensation on each layer separately. Instead of select-
+ing the top-k values from all gradients to be communicated,
+each worker selects top-k (l) gradients from layer l so that it
+
+layer may be separated into two tensors (weights and bias).
+
+does not need to wait for the completion of backpropagation
+pass before communicating the sparsiﬁed gradients. LAGS-
+SGD not only signiﬁcantly reduces the communication trafﬁc
+(hence the communication time) using the gradient sparsiﬁca-
+tion, but it also makes use of the layered structure of DNNs
+to overlap the communications with computations. As shown
+in Fig. 1(c), at each iteration, after the gradients G(x)(l) of
+layer l have been calculated, TopK(G(x)(l) , k(l) ) is selected
+to be exchanged among workers immediately.
+Formally, let vt denote the model parameter and p
+t denote
+the local gradient residual of worker p at iteration t. In LAGS-
+SGD on distributed P workers, the update formula of the
+layer-wise parameters becomes
+
+v(l)
+t+1 = v(l)
+
+t − 1
+P
+
+TopK
+
+αtGp (vt )(l) + p,(l)
+t
+
+(5)
+for l = 1, 2, ..., L. The pseudo-code of LAGS-SGD is shown
+in Algorithm 1.
+
+(cid:16)
+
+P(cid:88)
+
+p=1
+
+, k(l)(cid:17)
+
+,
+
+Algorithm 1 LAGS-SGD at worker p
+Input: Stochastic gradients Gp (·) at worker p
+Input: Conﬁgured layer-wise number of gradients: k (l) , l =
+
+1, 2, ..., L
+
+Input: Conﬁgured learning rates αt
+
+1: for t = 1 → L do
+
+Initialize v(l)
+
+0 = p,(l)
+
+0 = 0;
+
+3: end for
+4: for t = 1 → T do
+for l = L → 1 do
+
+Feed-forward computation;
+
+2:
+
+5:
+6:
+7:
+8:
+9:
+10:
+11:
+
+t = (cid:80)P
+t−1 + αt−1Gp (vt−1 )(l) ;
+t − TopK(accp,(l)
+, k(l) );
+p=1 TopK(accp,(l)
+, k(l) );
+
+accp,(l)
+= p,(l)
+t
+p,(l)
+= accp,(l)
+t
+g(l)
+v(l)
+t = v(l)
+t−1 − 1
+P g(l)
+t
+
+;
+
+t
+
+t
+
+end for
+12: end for
+
+Convergence Analysis
+
+We ﬁrst introduce some notations and assumptions for our
+convergence analysis, and then present the theoretical results
+of the convergence properties of LAGS-SGD.
+
+Notations and Assumptions. Let (cid:107) · (cid:107) denote (cid:96)2 -norm. We
+
+mainly discuss the non-convex objective function f : Rd →
+R which has a Lipschitz continuity of C , i.e.,
+
+(cid:107)∇f (x) − ∇f (y)(cid:107) ≤ C (cid:107)x − y(cid:107), ∀x, y ∈ Rd .
+
+(6)
+Let x∗ denote the optimal solution of the objective function
+f . We assume that the sampled stochastic gradients G(·) are
+unbiased, i.e., E[G(vt )] = ∇f (vt ). We also assume that the
+second moment of the average of P stochastic gradients has
+the following bound:
+
+Gp (x)(cid:107)2 ] ≤ M 2 , ∀x ∈ Rd .
+
+(7)
+
+P(cid:88)
+
+p=1
+
+E[(cid:107) 1
+
+P
+
+Figure 1: Comparison between three distributed training algorithms: (a) the pipeline of layer-wise gradient communications and
+backpropagation computations without gradient sparsiﬁcation (Dense-SGD), (b) the single-layer gradient sparsiﬁcation (SLGS)
+without pipelining, and (c) our proposed layer-wise adaptive gradient sparsiﬁcation (LAGS) with pipelining.
+
+We make an analytical assumption on the aggregated results
+from the distributed sparsiﬁed vectors.
+Assumption 1. For any P vectors xp ∈ Rd (p = 1, 2, ...P )
+in P workers, and each vector is sparsiﬁed as TopK(xp , k)
+locally. The aggregation of TopK(xp , k) selects k larger val-
+ues than randomly selecting k values from the accumulated
+vectors, i.e.,
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) P(cid:88)
+
+p=1
+
+xp − P(cid:88)
+
+p=1
+
+TopK(xp , k)
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+
+≤
+
+E
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) P(cid:88)
+
+p=1
+
+xp − RandK
+
+(cid:32) P(cid:88)
+
+p=1
+
+xp , k
+
+(cid:33)(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2 ,
+
+(8)
+
+where RandK(x, k) ∈ Rd is a vector whose k elements are
+randomly selected from x following a uniform distribution,
+and the other d − k elements are zeros.
+duce an auxiliary random variable xt ∈ Rd , which is updated
+Similar to (Alistarh et al. 2018; Shi et al. 2019b), we intro-
+by the non-sparsiﬁed gradients, i.e.,
+
+xt+1 = xt − αtG(vt ),
+where G(vt ) = 1
+p=1 Gp (vt ) and x0 = 0. The error
+
+(9)
+
+P
+
+(cid:80)P
+
+between xt and vt can be represented by
+
+t = vt − xt =
+
+1
+P
+
+P(cid:88)
+
+p=1
+
+p
+t .
+
+(10)
+
+Main Results. Here we present the major lemmas and the-
+orems to prove the convergence of LAGS-SGD, and some
+proof details are deferred to the supplementary material. Our
+results are mainly the derivation of the standard bounds in
+non-convex settings (Bottou, Curtis, and Nocedal 2018), i.e.,
+
+lim
+
+T →∞
+
+1(cid:80)T
+
+t=1 αt
+
+T(cid:88)
+
+t=1
+
+αtE[(cid:107)∇f (vt )(cid:107)2 ] = 0,
+
+and E[
+
+1
+T
+
+T(cid:88)
+
+t=1
+
+(cid:107)∇f (vt )(cid:107)2 ] ≤ B ,
+
+(11)
+
+for some constants B and the number of iterations T .
+Lemma 1. For any P vectors xp ∈ Rd , p = 1, 2, ..., P ,
+and every vector can be broken down into L pieces, that is
+
+xp = (cid:116)L
+l=1xp,(l) and xp,(l) ∈ Rd(l) , it holds that
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) P(cid:88)
+
+p=1
+
+xp − (cid:116)L
+
+l=1
+
+(cid:32) P(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) P(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+
+p=1
+
+TopK(xp,(l) , k(l) )
+
+(cid:33)(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+
+≤(1 − 1
+)
+xp
+,
+1, 2, ..., L, 0 < k (l) ≤ d(l) and (cid:80)L
+where cmax = max{c(1) , c(2) , ..., c(L) }, c(l) = d(l)
+k(l) for l =
+
+cmax
+
+p=1
+
+(12)
+
+l=1 d(l) = d.
+
+Proof. First we use the fact that has been proved in (Stich,
+operator, i.e., for any vectors x ∈ Rd and 0 < k ≤ d, we
+Cordonnier, and Jaggi 2018) in the bound of the RandK
+have
+
+Eω [(cid:107)x − RandK(x, k)(cid:107)2 ]
+1
+
+=
+
+|Ωk |
+
+(cid:88)
+
+ω∈Ωk
+
+d(cid:88)
+(cid:32) P(cid:88)
+
+i=1
+
+x2
+
+i
+
+I{i (cid:54)∈ ω} = (1 − k
+
+d
+
+)(cid:107)x(cid:107)2 .
+
+Then under Assumption 1, we obtain
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) P(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)(cid:116)L
+(cid:32) P(cid:88)
+L(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) P(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) P(cid:88)
+(cid:18)
+(cid:19) (cid:13)(cid:13)(cid:13)(cid:13)(cid:13) P(cid:88)
+(cid:19) L(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) P(cid:88)
+
+p=1
+
+xp − (cid:116)L
+
+xp,(l) − P(cid:88)
+l=1
+p=1
+xp,(l) − P(cid:88)
+p=1
+p=1
+p=1
+
+TopK(xp,(l) , k(l) )
+
+(cid:33)(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+(cid:33)(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+(cid:33)(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+(cid:19) (cid:13)(cid:13)(cid:13)(cid:13)(cid:13) P(cid:88)
+
+=
+
+l=1
+
+TopK(xp,(l) , k(l) )
+
+=
+
+l=1
+
+p=1
+
+TopK(xp,(l) , k(l) )
+
+≤ L(cid:88)
+
+l=1
+
+E
+
+p=1
+
+xp,(l) − RandK
+
+(cid:32) P(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+
+p=1
+
+xp,(l) , k(l)
+
+=
+
+L(cid:88)
+(cid:18)
+
+l=1
+
+1 − k (l)
+
+d(l)
+
+p=1
+
+xp,(l)
+
+≤
+
+1 − 1
+
+cmax
+
+l=1
+
+p=1
+
+xp,(l)
+
+=
+
+(cid:18)
+
+1 − 1
+
+cmax
+
+p=1
+
+xp
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+
+.
+
+ForwardBLBL-1B1...Comm.LComm.L-1...Comm.1ForwardUpdateUpdate...Hidden overheadTimeBLBL-1B1...UpdateUpdate...Comm.L,L-1,…,1Comp.Comp.Decomp.Decomp.TimeForwardForwardBLBL-1B1...UpdateUpdate...TimeForwardForwardBLBL-1B1...Update...TimeForwardForwardForwardBackwardCommunicationUpdateCompressionDe-compressionForwardBackwardCommunicationUpdateCompressionDe-compressionForwardBackwardCommunicationUpdateCompressionDe-compression(a)(b)(c)(cid:18)(cid:18)
+
+t(cid:88)
+
+i=1
+
+The inequality (12) is a sufﬁcient condition to derive the
+convergence properties of Algorithm 1. Proof details of the
+following corollaries and theorem are provided in the supple-
+mentary material.
+Corollary 1. For any iteration t ≥ 1 and η > 0:
+
+(cid:19)
+
+(cid:19)i
+
+E[(cid:107)vt − xt(cid:107)2 ] ≤ 1
+η
+
+1 − 1
+
+cmax
+
+(1 + η)
+
+α2
+t−iM 2 .
+
+(13)
+Corollary 1 implies that the parameters with sparsiﬁed
+layer-wise gradients have bounds compared to the parameters
+with dense gradients.
+Theorem 1. Under the assumptions deﬁned in the objective
+function f , after running T iterations with Algorithm 1, we
+have
+
+1(cid:80)T
+αtE[(cid:107)∇f (vt )(cid:107)2 ]
+≤ 4(f (x0 ) − f (x∗ ))
+
+t=1 αt
+
+t=1
+
+2(C + 2C 2D
+
+(cid:80)T
+
+η
+
+)M 2 (cid:80)T
+
+t=1 α2
+t
+
+, (14)
+if one chooses a step size schedule such that ∃D > 0 and
+
+t=1 αt
+
+t=1 αt
+
++
+
+(cid:19)
+
+(cid:19)i α2
+αt
+
+t−i
+
+1 − 1
+
+cmax
+
+(1 + η)
+
+≤ D
+
+(15)
+
+T(cid:88)
+
+(cid:18)(cid:18)
+
+(cid:80)T
+t(cid:88)
+
+i=1
+
+∃η > 0,
+
+holds at any iteration t > 0.
+Theorem 1 indicates that if one chooses the step sizes
+to satisfy inequality (15), then the right hand side of (14)
+converges as T → ∞, so that Algorithm 1 is guaranteed to
+converge. If we let (1 − 1
+)(1 + η) < 1 which is easily
+satisﬁed then inequality (15) holds for constant step sizes and
+diminishing step sizes. Therefore, if the step sizes are further
+conﬁgured as
+
+cmax
+
+lim
+
+T →∞
+
+αt = ∞ and lim
+
+T →∞
+
+t < ∞,
+α2
+
+(16)
+
+then the right hand side of inequality (14) converges to zero,
+which ensures the convergence of Algorithm 1.
+Corollary 2. Under the same assumptions in Theorem 1, if
+T , ∀t > 0, where θ > 0 is a constant, then we
+have the convergence rate bound for Algorithm 1 as:
+
+αt = θ/
+
+√
+
+T(cid:88)
+
+t=1
+
+T(cid:88)
+
+t=1
+
+T(cid:88)
+
+t=1
+
+E[
+
+1
+T
+
+(cid:107)∇f (vt )(cid:107)2 ] ≤ 4θ−1 (f (x0 ) − f (x∗ )) + 2θCM 2
+T
+
+√
+
+4C 2M 2 (c3
+
+max − cmax )θ2
+
++
+
+,
+
+(17)
+
+T
+
+if the total number of iterations T is large enough.
+In Corollary 2, if T is large enough, then the right hand
+side of Eq. (17) is dominated by the ﬁrst term. It implies that
+Algorithm 1 has a convergence rate of O(1/
+T ), which is
+the same as the vanilla SGD (Dekel et al. 2012). However, the
+
+√
+
+second term of Eq. (17) also indicates that higher compress
+ratios (i.e., cmax ) lead to a larger bound of the convergence
+rate. In real-world settings, one may have a ﬁxed number of
+iteration budget T to train the model, so high compression
+ratios could slowdown the convergence speed. On the one
+hand, if we choose lower compression ratios, then the algo-
+rithm has a faster convergence rate (less number of iterations).
+On the other hand, lower compression ratios have a larger
+communication size and thus may result in longer wall-clock
+time per iteration. Therefore, the adaptive selection of the
+compression ratios tackles the problem properly.
+
+5 System Implementation and Optimization
+
+The layer-wise sparsiﬁcation nature of LAGS-SGD enables
+the pipelining technique to hide the communication over-
+heads, while the efﬁcient system implementation of commu-
+nication and computation parallelism with gradient sparsi-
+ﬁcation is non-trivial due to three reasons: 1) Layer-wise
+communications with sparsiﬁed gradients indicate that there
+exist many small size messages to be communicated across
+the network, while collectives (e.g., AllReduce) with small
+messages are latency-sensitive. 2) Gradient sparsiﬁcation
+(especially top-k selection on GPUs) would introduce extra
+computation time. 3) The convergence rate of LAGS-SGD is
+negatively effected by the compression ratio, and one should
+decide proper compression ratios to trade-off the number of
+iteration to converge and the iteration wall-clock time.
+First, we exploit a heuristic method to merge extremely
+small sparsiﬁed tensors to a single one for efﬁcient commu-
+nication to address the ﬁrst problem. Speciﬁcally, we use a
+memory buffer to temporarily store the sparsiﬁed gradients,
+and aggregate the buffered gradients once the buffer becomes
+full or the gradients of the ﬁrst layer have been calculated.
+Second, we implement the double sampling method (Lin et
+al. 2018) to approximately select the top-k gradients, which
+can signiﬁcantly reduce the top-k selection time on GPUs. Fi-
+nally, to achieve a balance between the convergence rate and
+the training wall-clock time, we propose to select the layer-
+wise compression ratio according to the communication-to-
+computation ratio. To be speciﬁc, we select a compression
+ratio c(l) = d(l) /k (l) for layer l such that its communication
+overhead is appropriately hidden by the computation. Given
+an upper bound of the compression ratio (e.g., cu = 1000),
+the algorithm determines c(l) according to the following
+three metrics: 1) Backpropagation computation time of the
+pipelined layers (i.e., t(l−1)
+comp ); 2) Communication time of the
+current layer t(l)
+comm under a speciﬁc compression ratio c(l) ,
+which can be predicted using the communication model of
+the AllGather or AllReduce collectives (e.g., (Li et al. 2018;
+Renggli et al. 2018)) according to the size of gradients and
+the inter-connection (e.g., latency and bandwidth) between
+workers; 3) Extra overhead involved by the sparsiﬁcation op-
+erator (t(l)
+spar ), which generally includes a pair of operations
+(compression and de-compression). Therefore, the selected
+value of c(l) can be generalized as
+
+c(l) = max{cu , min {c|t(l)
+
+spar ≤ t(l−1)
+comp }}.
+comm (c) + t(l)
+
+(18)
+
+Bound of Pipelining Speedup
+
+Veriﬁcation of Assumption 1 and Convergences
+
+In LAGS-SGD, the sparsiﬁcation technique is used to reduce
+the overall communication time, and the pipelining technique
+is used to further overlap the already reduced communica-
+tion time with computation time. With efﬁcient system im-
+plementation of LAGS-SGD, we can analyze the optimal
+speedup of LAGS-SGD over SLGS-SGD in terms of wall-
+clock time under the same compression ratios. Let tf , tb
+and tc denote the forward computation, backward compu-
+tation and gradient communication time at each iteration
+respectively. We assume that the sparsiﬁcation overhead can
+be ignored as we use the efﬁcient sampling method. Com-
+pared to SLGS-SGD, LAGS-SGD reduces the wall-clock
+time by pipelining the communications with computations,
+and the maximum overlapped time is thidden = min{tb , tc }
+(i.e., either backpropagation computations or communica-
+tions are completely overlapped). So the maximum speedup
+of LAGS-SGD over SLGS-SGD can be calculated as S =
+
+(tf + tb + tc )/(tf + tb + tc − thidden ). Let r = tc /tb denote
+
+the communication-to-computation ratio. The ideal speedup
+can be represented by
+
+Smax = 1 +
+
+1
+min(tc ,tb ) + max(r, 1/r)
+
+tf
+
+.
+
+(19)
+
+The equation shows that
+the maximum speedup of
+LAGS-SGD over SLGS-SGD mainly depends on the
+communication-to-computation ratio (and hence the com-
+pression ratios), and is bounded by 1 + tb /(tf + tb ). If r is
+close to 1, then LAGS-SGD has the potential to achieve the
+highest speedup by completely hiding either the backpropa-
+gation computation or the communication time.
+
+6 Experiments
+
+Experimental Settings
+
+We conduct the similar experiments as the work (Lin et al.
+2018), which cover two types of applications with three
+data sets: 1) image classiﬁcation by convolutional neural
+networks (CNNs) such as ResNet-20 (He et al. 2016) and
+VGG-16 (Simonyan and Zisserman 2014) on the Cifar-10 3
+data set and Inception-v4 (Szegedy et al. 2017) and ResNet-
+50 (He et al. 2016) on the ImageNet (Deng et al. 2009) data
+set; 2) language model by a 2-layer LSTM model (LSTM-
+PTB) with 1500 hidden units per layer on the PTB (Marcus,
+Marcinkiewicz, and Santorini 1993) data set. The the eval-
+uated models, the hyper-parameters are set as follows. On
+Cifar-10, the mini-batch size for each worker is 32, and the
+base learning rate is 0.1; On ImageNet, the mini-batch size for
+each worker is also 32, and the learning rate is 0.01; On PTB,
+the mini-batch size and learning rate is 20 and 22 respec-
+tively. We set the compression ratios as 1, 000 and 250 for
+CNNs and LSTM respectively. In all compared algorithms,
+the hyper-parameters are kept the same and experiments are
+conducted on a distributed 16-GPU environment.
+
+3 http://www.cs.toronto.edu/kriz/cifar.html
+
+To show the soundness of Assumption 1 and the convergence
+results, we conduct the experiments with 16 workers to train
+the models. We deﬁne metrics δ (l) (l = 1, 2, ..., L) for each
+learnable layer during the training process at each iteration
+with Algorithm 1, and
+
+(cid:13)(cid:13)(cid:13)(cid:80)P
+(cid:13)(cid:13)(cid:13)(cid:80)P
+
+p=1 xp,(l) − (cid:80)P
+p=1 TopK(xp,(l) , k(l) )
+p=1 xp,(l) − RandK
+
+(cid:16)(cid:80)P
+
+p=1 xp,(l) , k(l)
+
+(cid:13)(cid:13)(cid:13)2
+(cid:17)(cid:13)(cid:13)(cid:13)2 ,
+
+δ (l) =
+
+where xp,(l) = Gp (vt )(l) + p,(l)
+t
+
+(20)
+. Assumption 1 holds if
+δ (l) ≤ 1 (l = 1, 2, ..., L). We measure δ (l) on ResNet-20,
+VGG-16 and LSTM-PTB during training, and the results
+are shown in Fig. 2. It is seen that δ (l) < 1 throughout the
+training process, which implies that Assumption 1 holds. The
+evaluated models all converge in a certain number of epochs,
+which veriﬁes the convergence bound of LAGS-SGD.
+
+Comparison of Convergence Rates
+
+In this subsection we compare the validation accuracy of
+LAGS-SGD with Dense-SGD and SLGS-SGD under the
+same number of training epochs. The convergence compar-
+ison is shown in Fig. 3. The top-1 validation accuracy (the
+higher the better) on CNNs and the validation perplexity (the
+lower the better) on LSTM show that LAGS-SGD has very
+close convergence performance to SLGS-SGD. Compared to
+Dense-SGD, SLGS-SGD and LAGS-SGD both have slight
+accuracy losses. The problem could be resolved by some
+training tricks like warm-up and momentum correction meth-
+ods (Lin et al. 2018). The ﬁnal evaluation results are shown
+in Table 1. The nearly consistent convergence performance
+between LAGS-SGD and Dense-SGD verify our theoretical
+results on the convergence rate.
+
+Table 1: Comparison of evaluation performance. Top-1 vali-
+dation accuracy for CNNs and perplexity for LSTM-PTB.
+Model
+Dense-SGD SLGS-SGD LAGS-SGD
+ResNet-20
+VGG-16
+ResNet-50
+LSTM-PTB
+
+0.9092
+0.9278
+0.7191
+106.7
+
+0.9024
+0.9227
+0.7183
+109.4
+
+0.8985
+0.9255
+0.7211
+105.7
+
+Wall-clock Time Performance and Discussions
+
+To illustrate the performance gain of our LAGS-SGD over
+SLGS-SGD, we evaluate the average iteration time on
+ResNet-50 and Inception-v4 on ImageNet, and LSTM-PTB
+on PTB on the 16-GPU cluster connected with 1 Gbps Ether-
+net. Each node contains an Intel CPU (Celeron N3350) and an
+Nvidia GPU (P102-100) with Ubuntu-16.04 and CUDA-9.0.
+The main libraries used in our experiments are PyTorch-v0.4,
+OpenMPI-3.1.14 , Horovod-v0.14 5 and NCCL-v2.1.156 . The
+
+4 https://www.open-mpi.org
+5 https://github.com/horovod/horovod
+6 https://developer.nvidia.com/nccl
+
+Figure 2: The values of δ (l) (7 layers are displayed for better visualization), and the training loss of LAGS-SGD on 16 workers.
+
+SLGS-SGD on ResNet-50 and Inception-v4 models are very
+close to the maximum speedups as the communications and
+computations are both dominated by convolution layers. Fur-
+thermore, compared to Dense-SGD, LAGS-SGD runs from
+2.86× to 8.52× improved training speeds on the evaluated
+models.
+The layer-wise nature of LAGS-SGD also enables the
+possibility of scheduling between communications and com-
+putations to improve the scalability (Shi, Chu, and Li 2019;
+Wang, Pi, and Zhou 2019; Shi et al. 2019a). We leave this as
+our future work.
+
+Figure 3: The comparison of convergence performance. Top-1
+validation accuracy for CNNs and perplexity for LSTM-PTB.
+
+experimental results are shown in Table 2, which demonstrate
+that LAGS-SGD performs around 30% faster than SLGS-
+SGD on ResNet-50 and Inception-v4, while it achieves 11%
+improvement over SLGS-SGD on LSTM-PTB. The max-
+imum possible speedup of pipelining over SLGS-SGD is
+calculated by Eq. 19 and shown as Smax in Table 2. Our
+LAGS-SGD achieves 59.6%, 96.5% and 39.3% of Smax on
+ResNet-50, Inception-v4 and LSTM-PTB respectively.
+We notice that the achieved speedup of LAGS-SGD over
+SLGS-SGD on the LSTM-PTB model is relatively small
+compared to the optimum. The main reason is the unbal-
+anced layer-wise computations and communications. In the
+real applications, the achievable speedup also depends on
+the opportunity of the overlap between communications and
+computations. For example, if a model whose last layer is
+computation-intensive, while its ﬁrst layer is communication-
+intensive, then the speedup of pipelining is marginal as the
+computation of last layer and the communication of ﬁrst
+layer cannot be overlapped as shown in Fig. 1(c). On the
+other hand, the achieved improvements of LAGS-SGD over
+
+Table 2: Comparison of the average iteration wall-clock time
+(in seconds) of 1000 running iterations. S1 and S2 indicate
+the speedups of LAGS-SGD over Dense-SGD and SLGS-
+SGD respectively. Smax is the maximum speedup of pipelin-
+ing over SLGS-SGD.
+Model
+Dense SLGS LAGS
+ResNet-50
+Inception-v4 3.85s
+LSTM-PTB 7.80s
+
+S1
+2.86 1.31
+3.08 1.28
+8.52 1.11
+
+1.52
+1.29
+1.28
+
+S2 Smax
+
+1.45s
+
+0.67s
+1.60s
+1.02s
+
+0.51s
+1.25s
+0.92s
+
+7 Conclusion
+
+In this paper, we proposed a new distributed optimization al-
+gorithm for deep learning named LAGS-SGD, which exploits
+a novel layer-wise adaptive gradient sparsiﬁcation scheme to
+embrace the promising pipelining techniques and gradient
+sparsiﬁcation methods. LAGS-SGD not only takes advantage
+of the gradient sparsiﬁcation algorithm to reduce the commu-
+nication size, but also makes use of the pipelining technique
+to further hide the communication overhead. We provided
+detailed theoretical analysis for LAGS-SGD which showed
+that LAGS-SGD has convergence guarantees and the con-
+sistent convergence rate as the original Dense-SGD under a
+weak analytical assumption. We ran extensive experiments to
+verify the soundness of the analytical assumption and theoret-
+ical results. Experimental results on a 16-node GPU cluster
+connected with 1Gbps Ethernet network demonstrated that
+LAGS-SGD achieves much faster training speed (the wall-
+clock time) than the state-of-the-art sparsiﬁed S-SGD and
+Dense-SGD with comparable model accuracy.
+
+0255075100125# of epochs0.00.51.01.52.0training lossResNet-200255075100125# of epochs0.00.51.01.5training lossVGG-16010203040# of epochs7.07.58.0training lossLSTM-PTB0.800.850.900.951.000.800.850.900.951.000.800.850.900.951.00751000.9751.000751000.981.002030400.9751.000loss1 ref.(1)(2)(3)(4)(5)(6)(7)020406080100120# of epochs20406080val accuracyResNet-20 on Cifar-10020406080100120# of epochs20406080val accuracyVGG-16 on Cifar-100204060# of epochs0204060val accuracyResNet-50 on ImageNet010203040# of epochs200400600800perplexityLSTM-PTB on PTB10012089.590.090.591.010012092.092.555606570723035110115Dense-SGDSLGS-SGDLAGS-SGDReferences
+
+[Aji and Heaﬁeld 2017] Aji, A. F., and Heaﬁeld, K. 2017.
+Sparse communication for distributed gradient descent. In
+Proceedings of the 2017 Conference on Empirical Methods
+in Natural Language Processing, 440–445.
+[Alistarh et al. 2017] Alistarh, D.; Grubic, D.; Li, J.; Tomioka,
+R.; and Vojnovic, M. 2017. QSGD: Communication-efﬁcient
+SGD via gradient quantization and encoding. In Advances in
+Neural Information Processing Systems, 1709–1720.
+[Alistarh et al. 2018] Alistarh, D.; Hoeﬂer, T.; Johansson, M.;
+Konstantinov, N.; Khirirat, S.; and Renggli, C. 2018. The
+convergence of sparsiﬁed gradient methods. In Advances in
+Neural Information Processing Systems, 5977–5987.
+[Bottou, Curtis, and Nocedal 2018] Bottou, L.; Curtis, F. E.;
+and Nocedal, J. 2018. Optimization methods for large-scale
+machine learning. Siam Review 60(2):223–311.
+[Chen et al. 2018] Chen, C.-Y.; Choi, J.; Brand, D.; Agrawal,
+A.; Zhang, W.; and Gopalakrishnan, K. 2018. AdaComp:
+Adaptive residual gradient compression for data-parallel dis-
+tributed training. In Proceedings of the Thirty-Second AAAI
+Conference on Artiﬁcial Intelligence.
+[Cordonnier 2018] Cordonnier, J.-B. 2018. Convex optimiza-
+tion using sparsiﬁed stochastic gradient descent with memory.
+Technical report.
+[Dean et al. 2012] Dean, J.; Corrado, G.; Monga, R.; Chen,
+K.; Devin, M.; Mao, M.; Senior, A.; Tucker, P.; Yang, K.; Le,
+Q. V.; et al. 2012. Large scale distributed deep networks. In
+Advances in neural information processing systems, 1223–
+1231.
+[Dekel et al. 2012] Dekel, O.; Gilad-Bachrach, R.; Shamir,
+O.; and Xiao, L. 2012. Optimal distributed online prediction
+using mini-batches. Journal of Machine Learning Research
+13(Jan):165–202.
+[Deng et al. 2009] Deng, J.; Dong, W.; Socher, R.; Li, L.-J.;
+Li, K.; and Fei-Fei, L. 2009. ImageNet: A large-scale hi-
+erarchical image database. In Computer Vision and Pattern
+Recognition, 2009. CVPR 2009. IEEE Conference on, 248–
+255. IEEE.
+[Dutta et al. 2020] Dutta, A.; Bergou, E. H.; Abdelmoniem,
+A. M.; Ho, C.-Y.; Sahu, A. N.; Canini, M.; and Kalnis, P.
+2020. On the discrepancy between the theoretical analysis
+and practical implementations of compressed communication
+for distributed deep learning. In Proc. of AAAI.
+[Goyal et al. 2017] Goyal, P.; Doll ´ar, P.; Girshick, R.; Noord-
+huis, P.; Wesolowski, L.; Kyrola, A.; Tulloch, A.; Jia, Y.;
+and He, K. 2017. Accurate, large minibatch SGD: Training
+ImageNet in 1 hour. arXiv preprint arXiv:1706.02677.
+[Harlap et al. 2019] Harlap, A.; Narayanan, D.; Phanishayee,
+A.; Seshadri, V.; Devanur, N.; Ganger, G.; and Gibbons, P.
+2019. PipeDream: Fast and efﬁcient pipeline parallel DNN
+training. Proceedings of the 2nd SysML Conference.
+[He et al. 2016] He, K.; Zhang, X.; Ren, S.; and Sun, J. 2016.
+Deep residual learning for image recognition. In Proceed-
+ings of the IEEE conference on computer vision and pattern
+recognition, 770–778.
+
+[Ho et al. 2013] Ho, Q.; Cipar, J.; Cui, H.; Lee, S.; Kim, J. K.;
+Gibbons, P. B.; Gibson, G. A.; Ganger, G.; and Xing, E. P.
+2013. More effective distributed ML via a stale synchronous
+parallel parameter server. In Advances in neural information
+processing systems, 1223–1231.
+[Ivkin et al. 2019] Ivkin, N.; Rothchild, D.; Ullah, E.; Braver-
+man, V.; Stoica, I.; and Arora, R. 2019. Communication-
+efﬁcient distributed SGD with sketching. arXiv preprint
+arXiv:1903.04488.
+[Jia et al. 2018] Jia, X.; Song, S.; Shi, S.; et al. 2018. Highly
+scalable deep learning training system with mixed-precision:
+Training ImageNet in four minutes. NeurIPS Workshop ML-
+Sys.
+[Jiang and Agrawal 2018] Jiang, P., and Agrawal, G. 2018.
+A linear speedup analysis of distributed deep learning with
+sparse and quantized communication. In Advances in Neural
+Information Processing Systems, 2530–2541.
+[Li et al. 2014] Li, M.; Zhang, T.; Chen, Y.; and Smola, A. J.
+2014. Efﬁcient mini-batch training for stochastic optimiza-
+tion. In Proceedings of the 20th ACM SIGKDD international
+conference on Knowledge discovery and data mining, 661–
+670. ACM.
+[Li et al. 2018] Li, Y.; Yu, M.; Li, S.; Avestimehr, S.; Kim,
+N. S.; and Schwing, A. 2018. Pipe-SGD: A decentralized
+pipelined SGD framework for distributed deep net training.
+In Advances in Neural Information Processing Systems, 8045–
+8056.
+[Lin et al. 2018] Lin, Y.; Han, S.; Mao, H.; Wang, Y.; and
+Dally, W. J. 2018. Deep gradient compression: Reducing
+the communication bandwidth for distributed training. In
+International Conference on Learning Representations.
+[Marcus, Marcinkiewicz, and Santorini 1993] Marcus, M. P.;
+Marcinkiewicz, M. A.; and Santorini, B. 1993. Building
+a large annotated corpus of English: The Penn Treebank.
+Computational linguistics 19(2):313–330.
+[Mori et al. 2017] Mori, H.; Youkawa, T.; Izumi, S.; Yoshi-
+moto, M.; Kawaguchi, H.; and Inoue, A. 2017. A layer-
+block-wise pipeline for memory and bandwidth reduction
+in distributed deep learning.
+In 2017 IEEE 27th Interna-
+tional Workshop on Machine Learning for Signal Processing
+(MLSP), 1–6. IEEE.
+[Renggli et al. 2018] Renggli, C.; Alistarh, D.; Hoeﬂer, T.;
+and Aghagolzadeh, M. 2018. SparCML: High-performance
+sparse communication for machine learning. arXiv preprint
+arXiv:1802.08021.
+[Shi et al. 2019a] Shi, S.; Wang, Q.; Zhao, K.; et al. 2019a.
+A distributed synchronous SGD algorithm with global Top-k
+sparsiﬁcation for low bandwidth networks. In 39th IEEE
+International Conference on Distributed Computing Systems,
+ICDCS 2019, 2238–2247.
+[Shi et al. 2019b] Shi, S.; Zhao, K.; Wang, Q.; Tang, Z.; and
+Chu, X. 2019b. A convergence analysis of distributed SGD
+with communication-efﬁcient gradient sparsiﬁcation. In Pro-
+ceedings of the Twenty-Eighth International Joint Conference
+on Artiﬁcial Intelligence, IJCAI-19, 3411–3417.
+[Shi, Chu, and Li 2018] Shi, S.; Chu, X.; and Li, B. 2018.
+
+A DAG model of synchronous stochastic gradient descent
+in distributed deep learning.
+In 24th IEEE International
+Conference on Parallel and Distributed Systems, ICPADS
+2018, Singapore, December 11-13, 2018, 425–432.
+[Shi, Chu, and Li 2019] Shi, S.; Chu, X.; and Li, B. 2019.
+MG-WFBP: Efﬁcient data communication for distributed
+synchronous SGD algorithms. In INFOCOM 2019-IEEE
+Conference on Computer Communications, IEEE.
+[Shi, Wang, and Chu 2018] Shi, S.; Wang, Q.; and Chu, X.
+2018. Performance modeling and evaluation of distributed
+deep learning frameworks on GPUs. In IEEE DataCom.
+[Simonyan and Zisserman 2014] Simonyan, K., and Zisser-
+man, A. 2014. Very deep convolutional networks for large-
+scale image recognition. arXiv preprint arXiv:1409.1556.
+[Stich, Cordonnier, and Jaggi 2018] Stich, S. U.; Cordonnier,
+J.-B.; and Jaggi, M. 2018. Sparsiﬁed SGD with memory. In
+Advances in Neural Information Processing Systems, 4452–
+4463.
+[Szegedy et al. 2017] Szegedy, C.; Ioffe, S.; Vanhoucke, V.;
+and Alemi, A. A. 2017. Inception-v4, inception-resnet and
+the impact of residual connections on learning. In Thirty-First
+AAAI Conference on Artiﬁcial Intelligence.
+[Wang, Pi, and Zhou 2019] Wang, S.; Pi, A.; and Zhou, X.
+2019. Scalable distributed DL training: Batching communi-
+cation and computation. In Proc. of AAAI.
+[Wangni et al. 2018] Wangni, J.; Wang, J.; Liu, J.; and Zhang,
+T. 2018. Gradient sparsiﬁcation for communication-efﬁcient
+distributed optimization. In Advances in Neural Information
+Processing Systems, 1306–1316.
+[Wen et al. 2017] Wen, W.; Xu, C.; Yan, F.; Wu, C.; Wang,
+Y.; Chen, Y.; and Li, H. 2017. Terngrad: Ternary gradients
+to reduce communication in distributed deep learning. In
+Advances in neural information processing systems, 1509–
+1519.
+[Wu et al. 2018] Wu, J.; Huang, W.; Huang, J.; and Zhang,
+T. 2018. Error compensated quantized SGD and its applica-
+tions to large-scale distributed optimization. International
+Conference on Machine Learning.
+[You, Buluc¸ , and Demmel 2017] You, Y.; Buluc¸ , A.; and
+Demmel, J. 2017. Scaling deep learning on GPU and Knights
+Landing clusters. In Proceedings of the International Confer-
+ence for High Performance Computing, Networking, Storage
+and Analysis, 9. ACM.
+[Zhang et al. 2017] Zhang, H.; Zheng, Z.; Xu, S.; Dai, W.;
+Ho, Q.; Liang, X.; Hu, Z.; Wei, J.; Xie, P.; and Xing, E. P.
+2017. Poseidon: An efﬁcient communication architecture for
+distributed deep learning on GPU clusters. In 2017 USENIX
+Annual Technical Conference (USENIX ATC 17), 181–193.
+[Zheng, Huang, and Kwok 2019] Zheng, S.; Huang, Z.; and
+Kwok, J. T. 2019. Communication-efﬁcient distributed block-
+wise momentum SGD with error-feedback. arXiv preprint
+arXiv:1905.10936.
+[Zinkevich et al. 2010] Zinkevich, M.; Weimer, M.; Li, L.;
+and Smola, A. J. 2010. Parallelized stochastic gradient de-
+scent. In Advances in neural information processing systems,
+2595–2603.
+
+A Supplementary Material
+
+Proof of Corollary 1
+
+Proof. For ease of presentation, we use the following abbre-
+viations:
+
+G(vt ) =
+
+1
+P
+
+P(cid:88)
+
+p=1
+
+Gp (vt ),
+
+(21)
+
+gt =
+
+P(cid:88)
+
+p=1
+
+(αtGp (vt ) + p
+t ),
+
+(22)
+
+and
+
+g(l)
+
+t =
+
+P(cid:88)
+
+p=1
+
+(αtGp (vt )(l) + p,(l)
+t
+
+), for l = 1, 2, ..., L. (23)
+
+We have gt = (cid:116)L
+According to the update formulas of vt+1 and xt+1 , we have
+
+l=1g(l)
+
+t and (l)
+
+t = g(l)
+
+t −(cid:80)P
+
+p=1 αtGp (vt )(l) .
+
+(cid:107)vt+1 − xt+1(cid:107)2
+
+=(cid:107)vt − 1
+P
+
+(cid:116)L
+
+l=1
+
+P(cid:88)
+P(cid:88)
+P(cid:88)
+P(cid:88)
+P(cid:88)
+
+p=1
+
+TopK(αtGp (vt )(l) + p,(l)
+
+t
+
+, k(l) )
+
+− (xt − 1
+P
+
+(cid:116)L
+
+l=1
+
+p=1
+
+αtGp (vt )(l) )(cid:107)2
+
+=(cid:107) (cid:116)L
+
+l=1 (v(l)
+
+t − 1
+P
+
+p=1
+
+TopK(gp,(l) , k(l) ))
+
+− (cid:116)L
+
+l=1 (x(l)
+
+t − 1
+P
+
+p=1
+
+αtGp (vt )(l) )(cid:107)2
+
+=(cid:107) (cid:116)L
+
+l=1 (v(l)
+
+t − 1
+P
+
+p=1
+
+TopK(gp,(l) , k(l) )
+
+− x(l)
+
+t +
+
+1
+P
+
+P(cid:88)
+P(cid:88)
+P(cid:88)
+P(cid:88)
+
+p=1
+
+αtGp (vt )(l) )(cid:107)2
+
+=
+
+L(cid:88)
+
+l=1
+− x(l)
+
+(cid:107)v(l)
+
+t − 1
+P
+
+p=1
+αtGp (vt )(l) (cid:107)2
+
+TopK(gp,(l) , k(l) )
+
+t +
+
+1
+P
+
+p=1
+
+=
+
+L(cid:88)
+
+l=1
+
+(cid:107) − 1
+
+P
+
+p=1
+
+TopK(gp,(l) , k(l) )
+
++
+
+1
+P
+
+P(cid:88)
+
+p=1
+
+p,(l)
+
+t +
+
+1
+P
+
+P(cid:88)
+
+p=1
+
+αtGp (vt )(l)(cid:107)2
+
+=
+
+L(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) 1
+P(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)(cid:116)L
+(cid:32)
+P(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) 1
+P(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) 1
+P(cid:88)
+
+l=1
+
+P
+
+p=1
+
+gp,(l)
+
+t − 1
+P
+
+P(cid:88)
+P(cid:88)
+(cid:32) P(cid:88)
+
+p=1
+
+TopK
+
+(cid:16)
+
+gp,(l) , k(l)(cid:17)(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+gp,(l) , k(l)(cid:17)(cid:33)(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+gp,(l) , k(l)(cid:17)(cid:33)(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+.
+gp,(l) , k(l)(cid:17)(cid:33)(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+= (1 − 1
+) (cid:107)αtG(vt ) + vt − xt(cid:107)2
+
+=
+
+l=1
+
+1
+P
+
+p=1
+
+gp,(l)
+
+t − 1
+P
+
+p=1
+
+TopK
+
+(cid:16)
+
+=
+
+P
+
+p=1
+
+t − 1
+gp
+P
+
+(cid:116)L
+
+l=1
+
+p=1
+
+TopK
+
+(cid:16)
+
+Applying Lemma 1, we have
+
+(cid:107)vt+1 − xt+1 (cid:107)2
+
+=
+
+P
+
+p=1
+
+t − 1
+gp
+P
+
+(cid:116)L
+
+l=1
+
+(cid:32) P(cid:88)
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+
+p=1
+
+TopK
+
+(cid:16)
+
+≤(1 − 1
+
+cmax
+
+)
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) 1
+(cid:18)
+
+P
+(1 + η)(cid:107)αtG(vt )(cid:107)2 + (1 +
+
+P(cid:88)
+
+p=1
+
+gp
+
+t
+
+cmax
+
+≤(1 − 1
+
+cmax
+
+)
+
+1
+η
+
+)(cid:107)vt − xt(cid:107)2
+
+(cid:19)
+
+,
+
+where η > 0. Iterating the above inequality from i = 0 → t
+yields:
+
+(cid:107)vt − xt(cid:107)2
+≤(1 − 1
+
+cmax
+
+)(1 +
+
+1
+η
+
+)
+
+t(cid:88)
+
+i=1
+
+((1 − 1
+
+cmax
+
+)(1 + η))i−1 (cid:107)αt−iG(vt−i )(cid:107)2
+
+=
+
+1
+η
+
+t(cid:88)
+
+i=1
+
+((1 − 1
+
+cmax
+
+)(1 + η))i (cid:107)αt−iG(vt−i )(cid:107)2
+
+Taking the expectation and using the bound of the second
+moment on stochastic gradients: E[(cid:107)G(vt )(cid:107)2 ] ≤ M 2 , we
+obtain
+
+E (cid:2)(cid:107)vt − xt(cid:107)2 (cid:3)
+
+≤ 1
+
+η
+
+t(cid:88)
+t(cid:88)
+
+i=1
+
+(cid:18)
+(cid:18)
+
+(1 − 1
+
+cmax
+
+)(1 + η)
+
+(cid:19)i
+(cid:19)i
+
+E (cid:2)(cid:107)αt−iG(vt−i )(cid:107)2 (cid:3)
+
+≤ 1
+
+η
+
+i=1
+
+(1 − 1
+
+cmax
+
+)(1 + η)
+
+α2
+t−iM 2 ,
+
+which concludes the proof.
+
+Proof of Theorem 1
+
+Proof. We use the Lipschitz continuity property of f and
+Corollary 1 to derive the bound of (14). First, with the Lips-
+chitz constant C of f , we have
+
+f (xt+1 ) − f (xt ) ≤∇f (xt )T (xt+1 − xt ) +
+C
+(cid:107)xt+1 − xt(cid:107)2
+2
+=αt∇f (xt )T G(vt ) +
+α2
+t C
+(cid:107)G(vt )(cid:107)2 .
+2
+
+Taking the expectation with respective to sampling at iteration
+t, it yields
+
+Et [f (xt+1 )] − f (xt )
+≤αt∇f (xt )T Et [G(vt )] +
+α2
+t C
+Et [(cid:107)G(vt )(cid:107)2 ]
+2
+=αt∇f (xt )T ∇f (vt ) +
+α2
+t C
+Et [(cid:107)G(vt )(cid:107)2 ]
+2
+= − αt
+(cid:107)∇f (xt )(cid:107)2 − αt
+(cid:107)∇f (vt )(cid:107)2
+2
+2
+αt
+(cid:107)∇f (xt ) − ∇f (vt )(cid:107)2 +
+α2
+t C
+Et [(cid:107)G(vt )(cid:107)2 ]
+2
+2
+(cid:107)∇f (xt )(cid:107)2 +
+αtC 2
+(cid:107)vt − xt(cid:107)2 +
+α2
+t CM 2
+2
+2
+2
+= − αt
+((cid:107)∇f (xt )(cid:107)2 + C 2(cid:107)vt − xt(cid:107)2 )
+2
+α2
+t CM 2
++ αtC 2(cid:107)vt − xt(cid:107)2 +
+2
+
++
+
+≤ − αt
+
+.
+
+Taking the expectation with respective to the gradients before
+iteration t, it yields
+
+E[f (xt+1 )] − E[f (xt )]
+E[(cid:107)∇f (xt )(cid:107)2 + C 2(cid:107)vt − xt(cid:107)2 ]
+2
++ αtC 2E[(cid:107)vt − xt(cid:107)2 ] +
+α2
+t CM 2
+2
+
+≤ − αt
+
+.
+
+Using Corollary 1, we obtain
+
+E[f (xt+1 )] − E[f (xt )]
+≤ αtC 2
+((1 − 1
+η
+− αt
+2
+
+t(cid:88)
+
+i=1
+
+cmax
+
+)(1 + η))iα2
+t−iM 2 +
+E[(cid:107)∇f (xt )(cid:107)2 + C 2 (cid:107)vt − xt(cid:107)2 ]
+)(1 + η))i α2
+αt
+E[(cid:107)∇f (xt )(cid:107)2 + C 2 (cid:107)vt − xt(cid:107)2 ].
+
+α2
+t CM 2
+2
+
+=
+
+α2
+η
+− αt
+2
+
+t C 2
+
+t(cid:88)
+
+i=1
+
+((1 − 1
+
+cmax
+
+t−i
+
+M 2 +
+
+α2
+t CM 2
+2
+
+If (15) holds, then we have
+
+E[f (xt+1 )] − E[f (xt )]
+≤(C +
+2C 2D
+M 2α2
+− αt
+η
+2
+2
+
+)
+
+t
+
+E[(cid:107)∇f (xt )(cid:107)2 + C 2 (cid:107)vt − xt(cid:107)2 ].
+
+Adjusting the order, we obtain
+
+αtE[(cid:107)∇f (xt )(cid:107)2 + C 2(cid:107)vt − xt(cid:107)2 ]
+≤2(E[f (xt )] − E[f (xt+1 )]) + (C +
+
+2C 2D
+η
+
+)M 2α2
+
+t . (24)
+
+We further apply the property of f , that is
+
+(cid:107)∇f (vt )(cid:107)2 = (cid:107)∇f (vt ) − ∇f (xt ) + ∇f (xt )(cid:107)2
+≤ 2(cid:107)∇f (vt ) − ∇f (xt )(cid:107)2 + 2(cid:107)∇f (xt )(cid:107)2
+≤ 2C 2(cid:107)vt − xt(cid:107)2 + 2(cid:107)∇f (xt )(cid:107)2 .
+
+Together with (24), it yields
+
+αtE[(cid:107)∇f (vt )(cid:107)2 ]
+≤2αtE[C 2 (cid:107)vt − xt(cid:107)2 + (cid:107)∇f (xt )(cid:107)2 ]
+≤4(E[f (xt )] − E[f (xt+1 )]) + 2(C +
+
+2C 2D
+η
+
+)M 2α2
+t .
+
+Summing up the inequality for t = 1, 2, ..., T , it yields
+
+T(cid:88)
+
+t=1
+
+αtE[(cid:107)∇f (vt )(cid:107)2 ]
+
+≤4(f (x0 ) − f (x∗ )) + 2(C +
+
+2C 2D
+η
+
+)M 2
+
+T(cid:88)
+
+t=1
+
+α2
+t .
+
+Multiplying
+
+1(cid:80)T
+
+t=1 αt
+
+in both sides, it yields
+
+1(cid:80)T
+αtE[(cid:107)∇f (vt )(cid:107)2 ]
+≤ 4(f (x0 ) − f (x∗ ))
+
+t=1 αt
+
+T(cid:88)
+
+t=1
+
+(cid:80)T
+
+t=1 αt
+
++
+
+2(C + 2C 2D
+
+η
+
+)M 2 (cid:80)T
+
+t=1 α2
+t
+
+(cid:80)T
+
+t=1 αt
+
+,
+
+which concludes the proof.
+
+Proof of Corollary 2
+
+Proof. As αt = θ/
+
+√
+
+T , we simplify the notations by: α =
+)(1 + η). Then the left hand
+
+αt = θ/
+
+√
+
+T and τ = (1 − 1
+
+cmax
+
+side of (15) becomes
+
+t(cid:88)
+t(cid:88)
+
+i=1
+
+((1 − 1
+
+cmax
+
+)(1 + η))i α2
+αt
+
+t−i
+
+=
+
+i=1
+
+τ i α2
+αt
+τ (1 − τ t )
+1 − τ
+
+t−i
+
+= α
+
+t(cid:88)
+
+i=1
+
+τ i
+
+=α
+
+.
+
+Choosing η = 1
+hold, we have
+
+cmax
+
+to make 0 ≤ τ = (1 − 1
+
+cmax
+
+)(1 + η) < 1
+
+lim
+
+t→∞ α
+Then inequality (15) holds when D = ατ
+1−τ . By applying
+Theorem 1, we obtain
+
+τ (1 − τ t )
+1 − τ
+
+=
+
+ατ
+1 − τ
+
+.
+
+E
+
+(cid:34)
+
+1
+(cid:107)∇f (vt )(cid:107)2
+T
+≤ 4(f (x0 ) − f (x∗ ))
+2C 2D
++ 2(C +
+αT
+η
+4θ−1 (f (x0 ) − f (x∗ ))
+2CM 2 θ√
++
+T
+T
+4θ−1 (f (x0 ) − f (x∗ )) + 2θCM 2
+T
+
+T(cid:88)
+
+t=1
+
+(cid:35)
+
+)M 2α
+
+=
+
+√
+
++
+
+4
+
+(1−τ )η C 2M 2 θ2
+τ
+
+T
+4C 2M 2 (c3
+
+=
+
+√
+
++
+
+max − cmax )θ2
+
+T
+
+,
+
+which concludes the proof.
+
+

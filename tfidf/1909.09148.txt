@@ -1,0 +1,1399 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+8
+4
+1
+9
+0
+
+.
+
+9
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Data Augmentation Revisited:
+Rethinking the Distribution Gap between Clean and Augmented Data
+
+Zhuoxun He 1 Lingxi Xie 2 Xin Chen 3 Ya Zhang 1 Yanfeng Wang 1 Qi Tian 2
+1 Shanghai Jiao Tong University
+2Huawei Noahs Ark Labc
+3Tongji University
+{zhuoxun, ya zhang, wangyanfeng}@sjtu.edu.cn
+198808xc@gmail.com
+chenxin061@hotmail.com tian.qi1@huawei.com
+
+Abstract
+
+Data augmentation has been widely applied as an ef-
+fective methodology to improve generalization in partic-
+ular when training deep neural networks. Recently, re-
+searchers proposed a few intensive data augmentation tech-
+niques, which indeed improved accuracy, yet we notice that
+these methods augment data have also caused a consider-
+able gap between clean and augmented data. In this pa-
+per, we revisit this problem from an analytical perspective,
+for which we estimate the upper-bound of expected risk us-
+ing two terms, namely, empirical risk and generalization
+error, respectively. We develop an understanding of data
+augmentation as regularization, which highlights the ma-
+jor features. As a result, data augmentation signiﬁcantly
+reduces the generalization error, but meanwhile leads to a
+slightly higher empirical risk. On the assumption that data
+augmentation helps models converge to a better region, the
+model can beneﬁt from a lower empirical risk achieved by
+
+a simple method, i.e., using less-augmented data to reﬁne
+the model trained on fully-augmented data. Our approach
+
+achieves consistent accuracy gain on a few standard image
+classiﬁcation benchmarks, and the gain transfers to object
+detection.
+
+1. Introduction
+
+With the availability of powerful computational re-
+sources nowadays, it is possible to train very deep neu-
+ral networks that have been veriﬁed to achieve good per-
+formance in a wide range of computer vision tasks in-
+cluding image classiﬁcation [26, 37, 19, 21], object detec-
+tion [33, 29], semantic segmentation [2, 5], etc. On the other
+hand, complicated models with tens of millions of param-
+eters are often difﬁcult to train with limited training data,
+and many techniques [36, 23] have been proposed to stable
+training and improve generalization.
+As a common training trick, data augmentation is de-
+
+1
+
+Figure 1. Cross-entropy loss curves in training PreActResNet-
+18 on CIFAR100, with two popular data augmentation methods,
+namely, Mixup and AutoAugment. Mind the gap between clean
+and augmented training data, while the model is trained on aug-
+mented data during whole conventional training process. As indi-
+cated by (cid:63), our approach is to train the model on augmented data
+in the ﬁrst 400 epochs, and on original data in the ﬁnal 50 epochs,
+which helps to achieve lower testing losses, i.e., higher accuracy.
+
+signed to increase the diversity of training data without ac-
+tually collecting new data. Essentially, it is initially driven
+by the fact that slight modiﬁcation on an image will not
+change the high-level semantics of an image. Standard
+data augmentation methods used in deep network training
+involves scale and aspect ratio distortions, random crops,
+and horizontal ﬂips. However, several sophisticated meth-
+ods changing the original image a lot, such as Mixup [46],
+Cutout [10], and Cutmix [43], were proposed to improve the
+generalization of models. Recently, researchers also used
+AutoML to learn an optimal set of parameters for augmen-
+tation [8, 28], and achieved state-of-the-art performance in
+a few image classiﬁcation benchmarks.
+With these complicated data augmentation methods be-
+ing proposed, quite high training loss, even higher than the
+testing loss, can be got at the end of the training stage.
+The question of why models with such high training loss
+can generalize well remains mostly uncovered. This pa-
+per delves deep into this issue by reformulating the upper-
+bound of expected risk for models trained with data aug-
+
+0100200300400Epoch01234LossMixup0100200300400Epoch01234LossAutoAugmenttraining dataaugmented training datatest datatraining objective 
+ 
+ 
+ 
+ 
+ 
+mentation, which implies it is that the empirical risk on
+original data, but not augmented data, and the generaliza-
+tion error impact the performance of models. Then the
+effectiveness of intensive data augmentation is equivalent
+to how to guarantee the convergence of the empirical risks
+when a large distribution gap between clean and augmented
+data. By partitioning features into major and minor features,
+we develop an understanding of intensive data augmenta-
+tion as regularization on the minor features to guarantee the
+convergence of the empirical risk on clean data. Even so,
+the model trained on augmented data has a slightly higher
+empirical risk in general while generalizes better.
+Motivated by this observation, we propose an effective
+training strategy to reduce the empirical risk and improve
+performance further on the assumption that models trained
+with data augmentation arrive in a better region. Compared
+to conventional training strategy in which augmented data
+are used during the whole process, our approach is to switch
+off these intensive data augmentation methods at the last
+few training epochs. This is to conﬁrm that there is no in-
+tensive distribution gap between clean and augmented data
+at the end of the training stage, which we believe is a safe
+opportunity of transferring the trained model to the testing
+scenario. As shown in Figure 1, by plotting the curves dur-
+ing the training process, we observe that reﬁning the models
+without intensive data augmentation decreases the empirical
+risk further, and meanwhile, a lower testing loss is achieved.
+We evaluate our training strategy in a few popular image
+classiﬁcation benchmarks including CIFAR10, CIFAR100,
+Mini-ImageNet, and ImageNet. In all these datasets, the re-
+ﬁned model achieves consistent, sometimes signiﬁcant, ac-
+curacy gain, with computational costs in training and testing
+remain unchanged. Besides, we ﬁne-tune the pre-trained
+models on ImageNet on PascalVOC following the standard
+strategy. The pre-trained models with our approach show a
+signiﬁcant improvement in the detection task, while it was
+believed these intensive data augmentation methods were
+inappropriate for detection. Beyond image recognition ex-
+periments, our research sheds light on a new optimization
+method, which involves using augmented data followed by
+clean data to optimize global and local properties, and is
+worth being further studied in the future.
+
+2. Related Work
+
+The statistical learning theory [40] suggested that the
+generalization of the learning model was characterized by
+the capacity of the model and the amount of training data.
+Data augmentation methods have been commonly adopted
+in deep learning by creating artiﬁcial data to improve model
+robustness, especially in image classiﬁcation [26, 37]. Ba-
+sic image augmentation methods mainly include elastic dis-
+tortions, scale, translation, and rotation [7, 35]. For natural
+image datasets, random cropping and horizontal ﬂipping are
+
+common. Besides, scaling hue, saturation, and brightness
+also improve performance [21]. These methods were usu-
+ally designed by retaining semantic information unchanged
+while generating various images.
+Recently, some methods to synthesize training data were
+proposed. Mixup [46, 38] combined two samples linearly
+in pixel level, where the target of the synthetic image was
+the linear combination of one-hot label encodings. There
+are a few variants of Mixup [17, 41], as well as a re-
+cent effort named Cutmix [43] which combined Mixup and
+Cutout [10] by cutting and pasting patches. Compared to
+moderate data augmentation, images generated by Mixup
+and its variants are much more different from original data
+and unreal to human perception.
+For different datasets, the best augmentation strategies
+can be different. Learning more sensible data augmenta-
+tions for speciﬁc datasets has been explored [27, 32, 39].
+AutoAugment [8] used a search algorithm based on re-
+inforcement learning to ﬁnd the best data augmentation
+strategies from a discrete search space that is composed
+of augmentation operations. Population Based Augmen-
+tation [24, 22] proposed to search for augmentation pol-
+icy schedules instead of ﬁxed augmentation policies. Fur-
+thermore, Fast AutoAugment [28] largely accelerated Au-
+toAugment by avoiding training on each policy. More re-
+cently, augmentation in the deep feature space by intra-class
+covariance matrices was efﬁciently implemented with a new
+loss function [42].
+Compared to numerous works in the empirical aspect,
+relatively few theoretical works explained the effective-
+ness of data augmentation, especially in deep learning.
+Bishop [3] showed that training with noise had the effect
+of regularization in expectation. Rajput et al. analyzed the
+performance of data augmentation through the lens of mar-
+gin [31]. Dao et al. [9] connected data augmentation with
+kernels, and show that data augmentation as feature aver-
+aging and variance regularization. In this paper, we take a
+different path to analyze the impacts of data augmentation
+from the upper bound of expected risk.
+The generalization ability of DNN is also greatly af-
+fected by optimization methods [18, 45, 25]. Even with
+some regularization methods [36, 23], the objective func-
+tion can not converge to the global minimum. The DNN
+tends to learn low-level features ﬁrstly which can be eas-
+ier to learn for machines such as size, color, and tex-
+ture [13, 14, 15]. Brendel and Bethge [4] found that the
+decision-making behavior of current neural network archi-
+tectures was mainly based on relatively weak and local fea-
+tures, and high-level features, e.g., shape, that can better im-
+prove model robustness were not sufﬁciently learned. Re-
+cent works [1, 16] found that regularization does not need
+to exist in the whole training process, which is compatible
+with our work.
+
+3. Data Augmentation Revisited
+
+In this section, we revisit data augmentation by identify-
+ing the loss terms that compose the upper-bound of the ex-
+pected risk. Then, we provide an explanation on how data
+augmentation works as regularization, followed by a sim-
+ple and practical approach to improve the performance of
+models trained by data augmentation.
+
+3.1. Statistical Learning with Data Augmentation
+
+Let X and Y be the data and label spaces, respectively.
+Each sample is denoted by (x, y) ∼ P , where P is the joint
+distribution of data and label. Consider a regular statistical
+learning process. The goal of learning is to ﬁnd a func-
+tion f : X (cid:55)→ Y which minimizes the expected value of a
+pre-deﬁned loss term, (cid:96)(f (x), y), over the distribution of P .
+This is known as the expected risk:
+
+(cid:90)
+
+R(f |P ) =
+
+(cid:96)(f (x), y)dP (x, y).
+
+However, the data distribution is unknown in practical situ-
+ations. Therefore, a common solution is the empirical risk
+minimization (ERM) principle [40], which optimizes an em-
+pirical risk in a training dataset {(xn , yn )}N
+n=1 that mimics
+the data distribution:
+
+N(cid:88)
+
+n=1
+
+ˆR(f |P ) =
+
+1
+N
+
+(cid:96) (f (xn ) , yn ) .
+
+The accuracy of estimating the expected risk goes up
+with N , the amount of training data. In practice, especially
+when there is limited data, increasing N with data augmen-
+tation is a popular and effective solution. It deﬁnes a func-
+tion g ∈ G : X (cid:55)→ X , which generates ‘new’ data ˜xn with a
+combination of operations on xn – since these operations do
+not change the semantics, ˜xn naturally shares the same label
+with xn , i.e., ˜yi = yn Note that data augmentation actually
+changes the distribution of P and we denote the new distri-
+bution by Paug , which is to say, the goal has been changed
+from minimizing ˆR(f |P )) to minimizing ˆR(f |Paug ):
+
+ˆR(f |Paug ) =
+
+1
+N
+
+N(cid:88)
+
+n=1
+
+For (x, y) and (x(cid:48) , y (cid:48) ) ∼ P , the generated data ( ˜x, ˜y) by
+Mixup [46] is obtained as follows:
+
+˜x = λ · x + (1 − λ) · x(cid:48) , ˜y = λ · y + (1 − λ) · y (cid:48) ,
+
+(1)
+where λ ∼ Beta(γ , γ ) and γ is the combination ratio (a
+hyperparameter). Manifold Mixup [41] randomly performs
+the linear combination at an eligible layer that can be input
+layer and some hidden layer.
+Cutmix [43] combines CutOut [10] and Mixup, provid-
+ing a patch-wise, weighted overlay by:
+
+˜x = M (cid:12) x + (1 − M) (cid:12) x(cid:48) , ˜y = λ · y + (1 − λ) · y (cid:48) , (2)
+
+where M is a binary mask indicating the positions of drop-
+out and ﬁll-in, (cid:12) denotes element-wise multiplication and
+λ ∼ Beta(1, 1) is the combination ratio.
+Instead of manually designing data augmentation tricks,
+AutoAugment [8] applied an automated way of learning pa-
+rameters for augmentation. A large space with different
+kinds of operations was pre-deﬁned, and the policy of aug-
+mentation was optimized with reinforcement learning. This
+is to say, the function g applied to each sample for augmen-
+tation can be even more complicated compared to those in
+conventional approaches.
+
+3.2. Rethinking the Mechanism of Augmentation
+
+According to VC theory [40], the consistency and gener-
+alization of ERM principle have been justiﬁed in theoretical
+aspect. Consider a binary classiﬁer f ∈ F , which has ﬁ-
+nite VC-Dimension |F |VC . With probability 1 − δ , a upper
+bound of the expected risk is formulated by
+
+(cid:18)(cid:18) |F |VC − log δ
+
+(cid:19)α(cid:19)
+
+N
+
+,
+
+(3)
+
+R(f ) (cid:54) ˆR(f ) + O
+
+2
+
+(cid:54) α (cid:54) 1. In the simply (separable) case, α = 1,
+where 1
+and in the complex (non-separable) case, α = 1
+2 .
+Based on this theory, data augmentation creates sensible
+data to increase the training data size. Assume there is a
+ﬁnite number of augmented training data. For the model
+trained over the augmented data distribution Paug , we have
+
+(cid:18)(cid:18) |F |VC − log δ
+
+(cid:19)α(cid:19)
+
+M × N
+
+,
+
+(4)
+
+(cid:96) (f ( ˜xn ) , ˜yn )) .
+
+R(faug |Paug ) (cid:54) ˆR(faug |Paug ) + O
+
+The strategy of data augmentation can be conservative,
+in which only a small number of ‘safe’ operations such as
+horizontal ﬂip and cropping are considered, or aggressive,
+in which ‘dangerous’ or a series of operations can be used
+to cause signiﬁcant changes on image appearance. Here
+we brieﬂy introduce several aggressive data augmentation
+methods, all of which were proposed recently and veriﬁed
+effectiveness in image classiﬁcation tasks.
+
+where M is a ﬁnite constant.
+Although the generalization error in Equation (4) is
+smaller than that in Equation (3), there is a difference be-
+tween other risk terms. Note P ⊆ Paug , and Paug can be
+more difﬁcult to learned. Suppose that
+
+R(faug |Paug ) − R(faug |P ) = ε1 (cid:62) 0,
+ˆR(faug |Paug ) − ˆR(faug |P ) = ε2 (cid:62) 0.
+
+Thus, the inequality is reformulated by
+
+R(faug |P ) (cid:54) ˆR(faug |P ) + O
+
+(cid:18)(cid:18) |F |VC − log δ
+
+M × N
+
+(cid:19)α(cid:19)
+
++ ε,
+
+(5)
+where ε = ε2 − ε1 . Since both ε1 and ε2 are caused by
+the distribution gap between P and Paug , it is reasonable to
+assume ε is sufﬁciently small.
+As a result, Equation (5) highlights that the beneﬁts of
+learning with data augmentation mainly arise due to two
+factors:
+1) the empirical risk ˆR(faug |P ) being small,
+2) the amount of augmented data being large,
+The conclusions provide a deep insight, i.e., it is the value of
+ˆR(faug |P ) but not ˆR(faug |Paug ) impacts the effectiveness
+of data augmentation.
+is trained on ˆR(faug |Paug ),
+Since the model
+fac-
+tor 1) requires the consistency between ˆR(faug |P ) and
+ˆR(faug |Paug ). If no distribution gap exists, i.e., P = Paug ,
+the consistency is guaranteed. Unfortunately, there is some
+kind of trade-off between the amount of augmented data
+and the distribution gap. Recent augmentation methods
+that generate many augmented images by changing images
+much in appearance can lead to an intensive distribution
+gap, such as Mixup, AutoAugment and so on. Intuitively,
+convergence of ˆR(faug |P ). However, previous empirical
+such an intensive distribution gap would greatly impact the
+results demonstrate their effectiveness and verify the con-
+vergence of ˆR(faug |P ).
+
+3.3. Convergence of the Empirical Risk
+
+The effectiveness of intensive data augmentation can be
+described as the following question:
+How can one guarantee the consistency between
+ˆR(faug |P ) and ˆR(faug |Paug ), when a large distribution
+gap between clean and augmented data exists?
+
+Let H ⊆ RD and h(x) = (h1 (x), h2 (x), . . . , hD (x))(cid:62)
+
+denote latent space (feature space) and the feature vector
+of x respectively. Suppose a perfect classiﬁer is given by
+the true conditional distribution is Q(y |h). We partition
+
+the features into major features and minor features by in-
+
+formation gain. For major features, the possibility density
+q(y |hd ) concentrates on some point mass. For minor fea-
+tures, the possibility density q(y |hd ) is relatively uniform.
+with a linear softmax classiﬁer W = [w1 , w2 , ..., wC ] ∈
+To simplify the question, we explore it in conjunction
+RD×C , where C is the number of categories. The predicted
+
+label is given by ˆy = [p1 , p2 , ..., pC ]:
+exp(w(cid:62)
+i h)
+j=1 exp(w(cid:62)
+j h)
+
+(cid:80)C
+
+(cid:80)C
+
+pi =
+
+=
+
+1
+j=1 exp((wj − wi )(cid:62)h)
+
+(6)
+
+1
+N
+
+(cid:80)N
+
+n=1 (cid:96) (cid:0)W(cid:62)h (xn ) , yn
+
+(cid:1), the related terms with some
+In the objective function on original data ˆR =
+feature hd are (wi,d − wj,d )hd for 1 (cid:54) i, j (cid:54) C . When hd
+is a minor feature, the variation of hd should not change the
+results much, which requires the weights |wi,d − wj,d | →
+0. Further, this can be reformulated as wi,d ≈ wj,d for
+For intensive data augmentation g ∼ G which brings a
+large distribution gap between clean and augmented data,
+we have ||h(g(x)) − h(x)||2 > 0 , where 0 > 0 is a rel-
+ative large value. Then, objective function with data aug-
+mentation is given as follow:
+
+1 (cid:54) i, j (cid:54) C .
+
+N(cid:88)
+
+n=1
+
+ˆRaug =
+
+1
+N
+
+Eg∼G (cid:2)(cid:96) (cid:0)W(cid:62)h (g(xn )) , yn
+
+(cid:1)(cid:3) .
+
+As the analysis in [9], we expand each term of the objective
+function with data augmentation using Taylor expansion:
+
+(7)
+
+Eg∼G [(cid:96)(W(cid:62)h (g(x)) , y)] =
+(cid:96) (cid:0)W(cid:62) ¯h, y(cid:1) +
+where ¯h = Eg∼G [h(g(x))], ∆ = W(cid:62) (cid:0) ¯h − h(g(x))(cid:1) and
+1
+Eg∼G [∆(cid:62)H(τ , y)∆]
+2
+
+H is the Hessian matrix. Dao et al. [9] proposed data
+augmentation as feature averaging and variance regulariza-
+tion. Here we further discuss the effects of intensive data
+augmentation to emphasise the regularization on the corre-
+sponding weights of minor features.
+For cross-entropy loss with softmax, the H is positive
+semi-deﬁnite and independent of y . Then, the second-order
+term in Equation (7) requires that wi,d → 0 for all i, if
+the variance of hd (g(x)) is large. Since the intensive data
+augmentation must cause large variances of some features
+and such regularization on wi,k is not appropriate for major
+features, a reasonable solution is given:
+1) for major features, |hd (g(x)) − hd (x)| < ζ1 ,
+2) for minor features, |hd (g(x)) − hd (x)| > 1 ,
+where ζ1 > 0 is a small value, and 1 (cid:62) ζ1 .
+These two inequalities highlight that the major features
+that are important to classify should be preserved as much
+and the minor features can be changed a lot after data aug-
+mentation. Comparing that ˆR restricts wi,d ≈ wj,d for
+1 (cid:54) i, j (cid:54) C , ˆRaug directly restricts wi,d → 0 for mi-
+nor features hd . While maintaining the optimized objective
+consistent, the intensive data augmentation also regularizes
+the corresponding weights of minor features.
+This is consistent with the empirical results [8], whose
+augmentation policies are selected by ˆR on a validation set.
+For numeral recognition, the transformation invert is suc-
+cessful to be used, even though the numeral speciﬁc color
+is changed to that not involved in the original dataset. On
+
+4. Experiments
+
+4.1. Results on CIFAR10 and CIFAR100
+
+• Dataset and Settings
+
+The CIFAR10 both consist of 60,000 32 × 32 color
+images in 10 classes, where 5,000 training images per
+class as well as 1,000 testing images per class. The CI-
+FAR100 contains 500 training images and 100 testing im-
+ages per class in a total of 100 classes. On CIFAR10
+and CIFAR100, we train both two variants of residual net-
+works [19], PreActResNet-18 [20] and WideResNet-28-
+10 [44], and a stronger backbones: Shake-Shake [12]. We
+partition the training procedure into two stages:
+training
+with intensive data augmentation and reﬁnement.
+For the stage with intensive data augmentation, we train
+PreActResNet-18 and WideResNet-28-10 on a single GPU
+using PyTorch for 400 epochs on training set with a mini-
+batch size of 128. For PreActResNet-18, the learning rate
+starts at 0.1 and is divided by 10 after 150, 275 epochs,
+and weight decay is set to be 10−4 . For WideResNet-28-
+10, the learning rate starts at 0.1 and is divided by 5 af-
+ter 120, 240, 320 epochs except for using a Cosine learn-
+ing rate decay [30] for AutoAugment, and weight decay
+is set to be 5 × 10−4 . Following the settings in Zhang et
+al. [46] and Cubuk et al. [8], we set dropout rate to be 0.3 for
+WideResNet-28-10 with AutoAugment, and 0 in other ex-
+periments. For Shake-Shake model, we train the model on
+2 GPUs for 1800 epochs with a mini-batch size of 128. The
+learning rate starts at 0.01 with Cosine decay, and weight
+decay is set to be 10−3 .
+All intensive data augmentation methods are incorpo-
+rated with standard data augmentation: random crops, hor-
+izontal ﬂips with a probability of 50%. For the coefﬁcient
+λ ∼ Beta(γ , γ ) in Mixup and Manifold Mixup, γ = 1. Fol-
+lowing the paper [43], Cutmix is implemented with a prob-
+ability of 50% during training. For AutoAugment, we ﬁrst
+apply the standard data augmentation methods, then apply
+the AutoAugment policy, then apply Cutout with 16 × 16
+pixels [10] following Cubuk et al. [8]. Note that we directly
+use the AutoAugment policies reported in [8].
+We reﬁne the models without these intensive data aug-
+mentation methods. Since the standard data augmentation
+methods bring a small distribution gap between clean and
+augmented data, we preserve the standard data augmenta-
+tion when reﬁning, which will be discussed in detail later.
+For PreActResNet-18 and WideResNet-28-10, the models
+are reﬁned for 50 epochs, and for Shake-Shake, the models
+are reﬁned for 200 epochs. During reﬁnement, the learning
+rate keeps a small value. For the models trained with the
+step-wise learning rate decay, the learning rate is set to be
+the same as that in the ﬁnal epoch of the last stage, and for
+the models trained with the Cosine learning rate decay, the
+learning is adjusted to a reasonably small value.
+
+Figure 2. The contour maps of the empirical risks on the function
+space F . Left: ˆR(f |P ). Right: ˆR(f |Paug ), where the “×” de-
+notes the global minimum of ˆR(f |P ).
+
+the other hand, the transformation horizontal ﬂipping used
+commonly in natural images is never used in numeral recog-
+nition. It is consistent with prior knowledge that the relative
+color of the numeral and its background and the direction
+of the numeral are major features, but the speciﬁc color of
+numeral is a minor feature.
+
+3.4. Reﬁned Data Augmentation
+
+As discussed in the last subsection, intensive data aug-
+mentation methods highlight the major features, while los-
+ing some minor features.
+In such way, data augmenta-
+tion keeps the consistency of ˆR(f |P ) and ˆR(f |Paug ) and
+regularize the corresponding weights of minor features.
+From this perspective, data augmentation as a regularization
+scheme imposing some constraints on the function space F
+by prior knowledge, which forces the model to focus on the
+major features.
+Figure 2 depicts the effect of data augmentation on
+changing the empirical risk ˆR(f ) on the function space
+F . Data augmentation helps the neural network learn ma-
+jor features, which reduces the number of local minimums
+and keeps the direction of convergence relatively consistent.
+Compared with ˆR(f |Paug ), ˆR(f |P ) can easily converge to
+a local minimum that is far away from the global minimum.
+To go a step further, since the analysis based on Equation
+(7) has introduced some approximation, the optimal func-
+tion f † of ˆR(f |Paug ) is not guaranteed to be a minimum
+of ˆR(f |P ). Associated the empirical results, ˆR(f ∗ |P ) (cid:54)
+ˆR(f † |P ) in general, where f ∗ is optimized on ˆR(f |P ),
+while f † generalizes better. Please refer to Table 1 and Ta-
+ble 2 for experimental veriﬁcations. Therefore, it is reason-
+able to believe that f † converges to a better region close to
+the global minimum.
+Motivated by this, we propose a method called reﬁned
+data augmentation, i.e., reﬁning the models without inten-
+sive data augmentation at the end of the training stage. On
+one hand, the distribution gap between clean and augmented
+data obstructs ˆR(f |P ) to converge further, and a small em-
+pirical risk can beneﬁt the performance of models. On the
+other hand, the relatively minor features ignored by inten-
+sive data augmentation are also informative for classifying.
+
+Model
+
+Augmentation w/ Reﬁnement
+C10
+C100
+C10
+C100
+
+Method
+
+Augmentation w/ Reﬁnement
+
+ˆRaug
+
+ˆR
+
+ˆRaug
+
+ˆR
+
+94.48
+
+96.26
+96.07
+96.38
+96.20
+
+94.63
+
+95.92
+95.81
+96.21
+96.02
+
+75.79
+78.95
+80.19
+79.75
+79.33
+
+76.06
+80.85
+81.39
+80.46
+80.09
+
+PreActResNet-18
+Standard
+Mixup
+Manifold Mixup
+Cutmix
+AutoAugment
+WideResNet-28-10
+Standard
+96.11
+Mixup
+97.05
+Manifold Mixup
+97.13
+Cutmix
+97.11
+AutoAugment
+97.59
+Shake-Shake (26 2x96d)
+Standard
+97.00
+82.87
+Mixup
+97.80
+84.22
+Cutmix
+97.77
+84.51
+97.76
+AutoAugment
+98.02
+85.62
+98.05
+Table 1. Classiﬁcation accuracy (%) on CIFAR10 and CIFAR100.
+
+81.15
+82.11
+83.02
+82.75
+83.85
+
+-
+
+97.52
+97.32
+97.24
+97.73
+
+-
+
+84.25
+84.77
+83.40
+85.24
+
+-
+
+98.02
+
+-
+
+85.19
+84.64
+86.13
+
+• Quantitative Results
+
+In Table 1, the mean values are calculated in three in-
+dependent experiments by the median of the last 10 epochs
+in each experiment for PreActResNet18 and WideResNet-
+28-10. Our methods show a consistent improvement with
+different data augmentation methods on various backbones.
+Especially for Mixup, reﬁning the models with standard
+data augmentation improves the accuracy signiﬁcantly on
+CIFAR100. While the networks searched by P-DARTS [6]
+achieves 97.81% test accuracy after being trained with
+AutoAugment for 600 epochs on CIFAR10, our method
+achieves a 97.97% accuracy with 550 epochs using Au-
+toAugment and 50 epochs for reﬁnement.
+Specially, we also conduct the experiments that reﬁne the
+models trained with the standard data augmentation with-
+out any data augmentation methods for PreActResNet-18.
+There is a 0.27% accuracy gain on CIFAR100, while a
+0.15% drop on CIFAR10. On the other hand, for other in-
+tensive augmentation methods, removing all data augmen-
+tations during reﬁnement shows no signiﬁcant difference
+with the experiments that preserve the standard data aug-
+mentations on CIFAR100. Therefore, we suggest to pre-
+serve the standard data augmentation during reﬁnement.
+
+• Qualitative Analysis
+
+In Table 2, cross-entropy (CE) losses on clean and aug-
+mented data are calculated to quantify the distribution gap
+between clean and augmented data to some extent. Dur-
+ing reﬁnement, the ˆRaug is calculated with standard aug-
+mented data, which reﬂects a small distribution gap with
+clean data. Mixup brings the most signiﬁcant difference
+between clean and augmented data, which can explain the
+
+Standard
+3.3
+1.1
+-
+Mixup
+1356
+98
+4.7
+Manifold Mixup
+1253
+67
+4.2
+Cutmix
+785
+14
+1.9
+AutoAugment
+245
+0.9
+1.5
+Table 2. Cross-entropy losses (×10−3 ) of augmented and clean
+training data on CIFAR100 for PreActResNet-18. ˆRaug and ˆR
+repectly refer to ˆR(f |Paug ) and ˆR(f |P ).
+
+1.0
+2.4
+2.2
+0.8
+0.8
+
+signiﬁcant improvement with reﬁnement for Mixup. Inter-
+estingly, AutoAugment achieves a low CE loss on cleaning
+training data, yet reﬁnement still works well to achieve a
+lower CE loss on clean data. These results suggest that data
+augmentation indeed helps the model converge to a better
+region, which can be hard to be arrived for directly training
+on clean data, and the gap between clean and augmented
+data obstructs the further convergence.
+Since certain directions in the deep feature space imply
+meaningful semantic information [41, 42], we compute a
+singular value decomposition for the intra-class covariance
+matrix and the covariance matrix of all classes in the penul-
+timate layer of PreActResNet-18 on CIFAR100 to analyze
+the variation of representations learned with different aug-
+mentation methods and reﬁnement. The singular values are
+plotted and ordered form largest to smallest in Figure 3.
+Here we only present the results of Mixup, since Manifold
+Mixup and Cutmix perform very similarly to Mixup.
+
+Figure 3. SVD on the representations in the penultimate layer of
+PreActResNet18 (512 neurons) on CIFAR100.
+
+We ﬁnd that reﬁnement tends to draw the distribution of
+singular values back to the original model to some extent
+for the intra-class covariance matrix. The singular values of
+models trained with Mixup-based methods and AutoAug-
+ment respectively are smaller and larger than the original
+model, while the singular values become closer to original
+
+01002003004005000246Standard01002003004005000.000.250.500.751.001.25MixupRefinement01002003004005000246810AutoAugmentRefinementSingular Value (×103) of Representations for Class 0Singular Value (Ordered Largest to Smallest)0100200300400500024681012Standard01002003004005000.00.51.01.5MixupRefinement0100200300400500024681012AutoAugmentRefinementSingular Value (×105) of Representations for All ClassesSingular Value (Ordered Largest to Smallest)Model
+PreActResNet-18
+
+T1 = 400, T2 = 50
+T1 = 1000, T2 = 200
+
+WideResNet28-10
+
+AutoAugment w/ Reﬁnement
+
+79.33
+78.16
+
+80.09
+80.38
+
+T1 = 200, T2 = 50
+T1 = 400, T2 = 50
+
+83.73
+83.85
+Table 3. Classiﬁcation accuracy (%) for different training epochs
+with AutoAugment on CIFAR100. T1 and T2 refer to the num-
+ber of epochs with AutoAugment and the number of reﬁnement
+epochs, respectively.
+
+84.06
+85.24
+
+10, Cosine learning rate decay is implemented.
+Moreover, we try to weaken the intensity of data aug-
+mentation gradually so that reﬁning models from aug-
+mented data to clean data gradually. For Mixup, γ is de-
+creased to 0 gradually. For Cutmix and AutoAugment, we
+decrease the probability to implement data augmentation
+gradually. The results show no signiﬁcant difference with
+the earlier experiments.
+
+4.2. Results on Tiny-ImageNet
+
+Tiny-ImageNet consists of 200 64 × 64 image classes
+with 500 training and 50 validation per class. We train
+PreActResNet-18 for 400 epochs with intensive data aug-
+mentation, and reﬁning the models for 50 epochs. Other
+hyper-parameters about model training are the same as the
+settings in previous experiments.
+The augmentation policies found by AutoAugment is
+searched on CIFAR10 and ImageNet. Here we imple-
+ment both CIFAR-policy and ImageNet-policy on Tiny-
+ImageNet. Following the setting in the paper [8], we ap-
+ply Cutout with 32 × 32 pixels after CIFAR-policy. The
+results are listed in Table 4, including in different distribu-
+tions λ ∼ Beta(γ , γ ) for Mixup and Manifold Mixup and
+different probabilities p to implement Cutmix. Consistent
+gains are achieved over various data augmentation meth-
+ods. It is worth emphasizing that greater improvements on
+the last results than the best results in most cases, which
+means reﬁnement alleviates the over-ﬁtting on augmented
+data.
+
+4.3. Results on ImageNet (ILSVRC2012)
+
+On the ILSVRC2012 classiﬁcation dataset [34], we train
+models with initial learning rate 0.1 and a mini-batch size
+of 256 on 8 GPUs and follow the standard data augmenta-
+tion: scale and aspect ratio distortions, random crops, and
+horizontal ﬂips. For Mixup, the models are trained for 200
+epochs, and the learning rate is divided by 10 at epochs 60,
+120, 180. For AutoAugment, ResNet-50 is trained for 300
+epochs, and the learning rate is divided by 10 at epochs 75,
+150, and 225, while ResNet-101 is trained for 200 epochs.
+
+Figure 4. Test error (averaged over 5 runs) of PreActResNet-18
+trained on CIFAR100 when Mixup is removed at different epochs
+(total of 400 training epochs). The bars represent the range of test
+errors for each number.
+
+values after reﬁnement. It is interesting to ﬁnd the differ-
+ent effects brought by Mixup-based methods and AutoAug-
+ment, which have not been noticed and researched as so
+far. A possible interpretation is that Mixup-based methods
+mainly affect the inter-class distances while AutoAugment
+introduces more features and induces invariance.
+Especially, for the covariance matrix of all classes, the
+curves for intensive data augmentation become steep near
+the 100th largest singular value. Notably, CIFAR100 has
+100 categories and the last layer is a linear softmax classi-
+ﬁer. The representation space will be more discriminative if
+the rank is larger than 100. However, compared with those
+larger singular values, the 100th largest singular value is al-
+most 0 for the original model, which can be difﬁcult for
+the classiﬁer to learn. Such relative enlargement of singular
+values near the 100th largest can explain the effectiveness
+of these intensive data augmentation methods. After reﬁne-
+ment, this characteristic is still preserved while the distribu-
+tion of singular values is drawn back to some extent.
+
+• Ablation Studies
+
+In previous experiments, we train models for a few more
+epochs to reﬁne. Here we keep the total training epochs
+constant to verify the effectiveness of our method. We train
+PreActResNet-18 on CIFAR100 with Mixup, and the learn-
+ing rate is divided by 10 at epochs 150 and 275. Figure 4
+shows the test error curve with different epochs, at which
+Mixup is removed, when a total of 400 training epochs. Es-
+pecially, Mixup removal at 400 epoch means no reﬁnement
+is performed. Besides, if we train models on CIFAR with
+intensive data augmentation for a ﬁxed number of epochs,
+reﬁning epochs will not inﬂuence results once convergence.
+We also ﬁnd that increasing the number of training
+epochs with intensive data augmentation beneﬁts the perfor-
+mances after reﬁnement, even though AutoAugment causes
+an obvious over-ﬁtting on augmented data with long train-
+ing epochs. Table 3 shows reﬁnement improves accuracy
+signiﬁcantly, and suppresses the over-ﬁtting on augmented
+data. For PreActResNet-18 of T1 = 1000, the learning rates
+divided by 10 at epochs 400 and 800. For WideResNet-28-
+
+PreActResNet-18 Augmentation w/ Reﬁnement
+Best
+Last
+Best
+Last
+60.84
+60.68
+-
+-
+
+63.18
+63.95
+
+63.08
+63.34
+
+64.54
+65.45
+
+64.20
+65.08
+
+63.66
+64.88
+
+63.28
+64.43
+
+64.54
+65.98
+
+64.33
+65.80
+
+64.90
+65.97
+
+64.61
+65.23
+
+65.84
+66.29
+
+65.59
+65.87
+
+Standard
+Mixup
+
+γ = 0.2
+γ = 0.5
+
+Manifold Mixup
+
+γ = 0.2
+γ = 0.5
+
+Cutmix
+
+p = 0.5
+p = 1
+
+Model
+
+Augmentation
+Top-1
+Top-5
+
+w/ Reﬁnement
+Top-1
+Top-5
+
+93.19
+93.75
+93.78
+93.70
+
+76.39
+77.47
+77.26
+77.83
+
+ResNet-50
+Standard
+Mixup (γ = 0.2)
+Mixup (γ = 0.5)
+AutoAugment
+ResNet-101
+Standard
+78.13
+93.71
+Mixup (γ = 0.5)
+79.41
+94.70
+AutoAugment
+79.20
+94.45
+Table 5. Classiﬁcation accuracy (%) on ImageNet.
+
+77.69
+77.65
+77.98
+
+79.61
+79.33
+
+-
+
+-
+
+-
+
+-
+
+93.83
+93.93
+93.86
+
+94.73
+94.46
+
+AutoAugment
+CIFAR-Policy
+65.08
+64.29
+ImageNet-Policy
+61.06
+60.65
+Table 4. Classiﬁcation accuracy (%) on the validation set of Tiny-
+ImageNet. Both best and last results are reported.
+
+65.31
+61.82
+
+65.12
+61.75
+
+We reﬁne all models with standard data augmentation for 20
+epochs by a learning rate of 10−4 . In Table 5, ResNet-50 for
+Mixup of γ = 0.5 performs worse than Mixup of γ = 0.2,
+however, they achieve similar accuracy after being reﬁned.
+Since γ is to control the strength of interpolation, which
+can be understood to control the distribution gap, such re-
+sults reﬂect the reﬁnement also helps to weaken the negative
+impacts of the distribution gap.
+
+4.4. Transferring to Object Detection
+
+To verify the effectiveness of our approach further, we
+conduct experiments on object detection in the PascalVOC
+2007 dataset [11] by the pre-trained ResNet-50 that are
+trained in section 4.3. The all detection models are trained
+following the standard strategy with Faster R-CNN [33]
+whose backbone is initialized with the pre-trained ResNet-
+50. The models are trained for 12 epochs with a mini-batch
+size of 16, and the learning rate starts at 0.01 and is divided
+by 10 after 9 epochs.
+In Table 6, the pre-trained backbone models of Mixup
+and AutoAugment fail to improve the performance on ob-
+ject detection task over the original model, although they
+perform well on the classiﬁcation task in ILSVRC2012. In-
+terestingly, the pre-trained models with reﬁnement achieve
+higher mAP than not only the models without reﬁnement
+but also the original model. Here, we try to give a rea-
+sonable explanation for this. Different from classiﬁcation,
+detection needs additive features about location. However,
+these intensive augmentation designed only for classiﬁca-
+tion could treat the features about location as minor fea-
+tures and ignore them, as mentioned in section 3.3. Af-
+ter reﬁnement, the features about location are learned more
+precisely, which can help models transfer to detection. This
+
+Method
+Augmentation w/ Reﬁnement
+Standard
+72.0
+-
+Mixup
+67.4
+AutoAugment
+70.5
+Table 6. mAP (%) on PascalVOC 2007 object detection, obtained
+by training the pre-trained ResNet-50 on ILSVRC2012 with Faster
+R-CNN. The augmentation and reﬁnement refer to different train-
+ing methods on ILSVRC2012.
+
+73.3
+73.1
+
+means the complicated data augmentation methods, which
+were applied in classiﬁcation and viewed as inappropriate
+for detection before, can also beneﬁt detection models with
+our approach.
+
+5. Conclusions
+
+This paper presents a simple yet effective approach for
+network optimization, which adopts (usually complicated)
+augmentation for generating abundant training data, but
+switch off these intensive data augmentation to reﬁne the
+model in the last training epochs. In this way, the model of-
+ten arrives at a reduced testing loss, with the generalization
+error and empirical loss balanced. We also show intuitively
+that augmented training enables the model to traverse over
+a large range in the feature space, while reﬁnement assists
+it to get close to a local minimum. Consequently, models
+trained in this manner achieve higher accuracy in a wide
+range of visual recognition tasks, including in a transfer sce-
+nario.
+Our work sheds light on another direction of data aug-
+mentation which is complementary to the currently popu-
+lar trend that keeps designing more complicated manners
+for data generation.
+It is also interesting to combine re-
+ﬁned augmentation with other algorithms, e.g., a cosine-
+annealing schedule for reﬁnement, or add this option to the
+large space explored in automated machine learning.
+
+References
+
+[1] Alessandro Achille, Matteo Rovere, and Stefano Soatto.
+Critical learning periods in deep neural networks. In Inter-
+national Conference on Learning Representations, 2018.
+[2] Vijay Badrinarayanan, Alex Kendall, and Roberto Cipolla.
+Segnet: A deep convolutional encoder-decoder architecture
+for image segmentation. IEEE Transactions on Pattern Anal-
+ysis and Machine Intelligence, 39(12):2481–2495, 2017.
+[3] Chris M Bishop.
+Training with noise is equivalent to
+tikhonov regularization. Neural computation, 7(1):108–116,
+1995.
+[4] Wieland Brendel and Matthias Bethge. Approximating
+CNNs with bag-of-local-features models works surprisingly
+well on imagenet. In International Conference on Learning
+Representations, 2019.
+[5] Liang-Chieh Chen, Yukun Zhu, George Papandreou, Florian
+Schroff, and Hartwig Adam. Encoder-decoder with atrous
+separable convolution for semantic image segmentation. In
+European Conference on Computer Vision, 2018.
+[6] Xin Chen, Lingxi Xie, Jun Wu, and Qi Tian. Progressive dif-
+ferentiable architecture search: Bridging the depth gap be-
+tween search and evaluation. In Internation Conference on
+Computer Vision, 2019.
+[7] Dan Ciregan, Ueli Meier, and Jurgen Schmidhuber. Multi-
+column deep neural networks for image classiﬁcation. In the
+IEEE Conference on Computer Vision and Pattern Recogni-
+tion, 2012.
+[8] Ekin D. Cubuk, Barret Zoph, Dandelion Mane, Vijay Va-
+sudevan, and Quoc V. Le. Autoaugment: Learning augmen-
+tation strategies from data. In the IEEE Conference on Com-
+puter Vision and Pattern Recognition, June 2019.
+[9] Tri Dao, Albert Gu, Alexander Ratner, Virginia Smith, Chris
+De Sa, and Christopher Re. A kernel theory of modern
+data augmentation. In International Conference on Machine
+Learning, 2019.
+[10] Terrance DeVries and Graham W Taylor. Improved regular-
+ization of convolutional neural networks with cutout. arXiv
+preprint arXiv:1708.04552, 2017.
+[11] Mark Everingham, Luc Van Gool, Christopher KI Williams,
+John Winn, and Andrew Zisserman. The pascal visual object
+classes (voc) challenge. International Journal of Computer
+Vision, 88(2):303–338, 2010.
+[12] Xavier Gastaldi. Shake-shake regularization. arXiv preprint
+arXiv:1705.07485, 2017.
+[13] Leon Gatys, Alexander S Ecker, and Matthias Bethge. Tex-
+ture synthesis using convolutional neural networks. In Ad-
+vances in Neural Information Processing Systems, 2015.
+[14] Leon A Gatys, Alexander S Ecker, and Matthias Bethge.
+Texture and art with deep neural networks. Current Opin-
+ion in Neurobiology, 46:178 – 186, 2017. Computational
+Neuroscience.
+[15] Robert Geirhos, Patricia Rubisch, Claudio Michaelis,
+Matthias Bethge, Felix A. Wichmann, and Wieland Brendel.
+Imagenet-trained CNNs are biased towards texture; increas-
+ing shape bias improves accuracy and robustness. In Inter-
+national Conference on Learning Representations, 2019.
+
+[16] Aditya Golatkar, Alessandro Achille, and Stefano Soatto.
+Time matters in regularizing deep networks: Weight decay
+and data augmentation affect early learning dynamics, matter
+little near convergence. In Advances in Neural Information
+Processing Systems, 2019.
+[17] Hongyu Guo, Yongyi Mao, and Richong Zhang. Mixup as
+locally linear out-of-manifold regularization.
+In the AAAI
+Conference on Artiﬁcial Intelligence,, 2019.
+[18] Moritz Hardt, Ben Recht, and Yoram Singer. Train faster,
+generalize better: Stability of stochastic gradient descent. In
+International Conference on Machine Learning, 2016.
+[19] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.
+Deep residual learning for image recognition. In the IEEE
+Conference on Computer Vision and Pattern Recognition,
+2016.
+[20] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.
+Identity mappings in deep residual networks. In European
+Conference on Computer Vision. Springer, 2016.
+[21] Tong He, Zhi Zhang, Hang Zhang, Zhongyue Zhang, Jun-
+yuan Xie, and Mu Li. Bag of tricks for image classiﬁcation
+with convolutional neural networks. In the IEEE Conference
+on Computer Vision and Pattern Recognition, 2019.
+[22] Daniel Ho, Eric Liang, Ion Stoica, Pieter Abbeel, and Xi
+Chen. Population based augmentation: Efﬁcient learning of
+augmentation policy schedules. In International Conference
+on Machine Learning, 2019.
+[23] Sergey Ioffe and Christian Szegedy. Batch normalization:
+Accelerating deep network training by reducing internal co-
+variate shift. In International Conference on Machine Learn-
+ing, 2015.
+[24] Max Jaderberg, Valentin Dalibard, Simon Osindero, Woj-
+ciech M Czarnecki, Jeff Donahue, Ali Razavi, Oriol Vinyals,
+Tim Green, Iain Dunning, Karen Simonyan, et al. Pop-
+ulation based training of neural networks. arXiv preprint
+arXiv:1711.09846, 2017.
+[25] Nitish Shirish Keskar and Richard Socher. Improving gener-
+alization performance by switching from adam to sgd. In In-
+ternational Conference on Learning Representations, 2017.
+[26] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton.
+Imagenet classiﬁcation with deep convolutional neural net-
+works. In Advances in Neural Information Processing Sys-
+tems, 2012.
+[27] Joseph Lemley, Shabab Bazrafkan, and Peter Corcoran.
+Smart augmentation learning an optimal data augmentation
+strategy. IEEE Access, 5:5858–5869, 2017.
+[28] Sungbin Lim, Ildoo Kim, Taesup Kim, Chiheon Kim, and
+Sungwoong Kim. Fast autoaugment. In Advances in Neural
+Information Processing Systems, 2019.
+[29] Tsung-Yi Lin, Piotr Doll ´ar, Ross Girshick, Kaiming He,
+Bharath Hariharan, and Serge Belongie. Feature pyramid
+networks for object detection.
+In the IEEE Conference on
+Computer Vision and Pattern Recognition, 2017.
+[30] Ilya Loshchilov and Frank Hutter. Sgdr: Stochastic gradient
+descent with warm restarts. In International Conference on
+Learning Representations, 2017.
+[31] Shashank Rajput, Zhili Feng, Zachary Charles, Po-Ling Loh,
+and Dimitris Papailiopoulos. Does data augmentation lead
+
+[46] Hongyi Zhang, Moustapha Cisse, Yann N Dauphin, and
+David Lopez-Paz. mixup: Beyond empirical risk minimiza-
+tion. In International Conference on Learning Representa-
+tions, 2017.
+
+to positive margin? In International Conference on Machine
+Learning, 2019.
+[32] Alexander J Ratner, Henry Ehrenberg, Zeshan Hussain,
+Jared Dunnmon, and Christopher R ´e. Learning to compose
+domain-speciﬁc transformations for data augmentation.
+In
+Advances in Neural Information Processing Systems, 2017.
+[33] Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun.
+Faster r-cnn: Towards real-time object detection with region
+proposal networks. In Advances in Neural Information Pro-
+cessing Systems, 2015.
+[34] Olga Russakovsky, Jia Deng, Hao Su, Jonathan Krause, San-
+jeev Satheesh, Sean Ma, Zhiheng Huang, Andrej Karpathy,
+Aditya Khosla, Michael Bernstein, et al.
+Imagenet large
+scale visual recognition challenge. International Journal of
+Computer Vision, 115(3):211–252, 2015.
+[35] Ikuro Sato, Hiroki Nishimura, and Kensuke Yokoi. Apac:
+Augmented pattern classiﬁcation with neural networks.
+arXiv preprint arXiv:1505.03229, 2015.
+[36] Nitish Srivastava, Geoffrey Hinton, Alex Krizhevsky, Ilya
+Sutskever, and Ruslan Salakhutdinov. Dropout: a simple way
+to prevent neural networks from overﬁtting.
+the Journal of
+Machine Learning Research, 15(1):1929–1958, 2014.
+[37] Christian Szegedy, Wei Liu, Yangqing Jia, Pierre Sermanet,
+Scott Reed, Dragomir Anguelov, Dumitru Erhan, Vincent
+Vanhoucke, and Andrew Rabinovich. Going deeper with
+convolutions. In the IEEE Conference on Computer Vision
+and Pattern Recognition, June 2015.
+[38] Yuji Tokozume, Yoshitaka Ushiku, and Tatsuya Harada.
+Between-class learning for image classiﬁcation. In the IEEE
+Conference on Computer Vision and Pattern Recognition,
+2018.
+[39] Toan Tran, Trung Pham, Gustavo Carneiro, Lyle Palmer, and
+Ian Reid. A bayesian data augmentation approach for learn-
+ing deep models. In Advances in Neural Information Pro-
+cessing Systems, 2017.
+[40] Vladimir Vapnik. Statistical learning theory. Wiley New
+York, 1998.
+[41] Vikas Verma, Alex Lamb, Christopher Beckham, Amir Na-
+jaﬁ, Ioannis Mitliagkas, David Lopez-Paz, and Yoshua Ben-
+gio. Manifold mixup: Better representations by interpolat-
+ing hidden states. In International Conference on Machine
+Learning, 2019.
+[42] Yulin Wang, Xuran Pan, Shiji Song, Hong Zhang, Cheng
+Wu, and Gao Huang. Implicit semantic data augmentation
+for deep networks. In Advances in Neural Information Pro-
+cessing Systems, 2019.
+[43] Sangdoo Yun, Dongyoon Han, Seong Joon Oh, Sanghyuk
+Chun, Junsuk Choe, and Youngjoon Yoo. Cutmix: Regu-
+larization strategy to train strong classiﬁers with localizable
+features. In International Conference on Computer Vision,
+2019.
+[44] Sergey Zagoruyko and Nikos Komodakis. Wide residual net-
+works.
+In British Machine Vision Conference, September
+2016.
+[45] Chiyuan Zhang, Samy Bengio, Moritz Hardt, Benjamin
+Recht, and Oriol Vinyals. Understanding deep learning re-
+quires rethinking generalization.
+In International Confer-
+ence on Learning Representations, 2017.
+
+

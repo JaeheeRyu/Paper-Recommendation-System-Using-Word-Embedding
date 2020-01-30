@@ -1,0 +1,1593 @@
+Fine-Grained Argument Unit Recognition and Classiﬁcation
+
+Dietrich Trautmann† , Johannes Daxenberger‡ , Christian Stab‡ , Hinrich Sch ¨utze† , Iryna Gurevych‡
+
+†Center for Information and Language Processing (CIS), LMU Munich, Germany
+‡Ubiquitous Knowledge Processing Lab (UKP-TUDA), TU Darmstadt, Germany
+
+dietrich@trautmann.me; inquiries@cislmu.org
+
+http://www.ukp.tu-darmstadt.de
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+C
+
+.
+
+s
+
+c
+
+[
+
+4
+v
+8
+8
+6
+9
+0
+
+.
+
+4
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Prior work has commonly deﬁned argument retrieval from
+heterogeneous document collections as a sentence-level clas-
+siﬁcation task. Consequently, argument retrieval suffers both
+from low recall and from sentence segmentation errors mak-
+ing it difﬁcult for humans and machines to consume the ar-
+guments. In this work, we argue that the task should be per-
+formed on a more ﬁne-grained level of sequence labeling. For
+this, we deﬁne the task as Argument Unit Recognition and
+Classiﬁcation (AURC). We present a dataset of arguments
+from heterogeneous sources annotated as spans of tokens
+within a sentence, as well as with a corresponding stance. We
+show that and how such difﬁcult argument annotations can be
+effectively collected through crowdsourcing with high inter-
+annotator agreement. The new benchmark, AURC-8, contains
+up to 15% more arguments per topic as compared to annota-
+tions on the sentence level. We identify a number of methods
+targeted at AURC sequence labeling, achieving close to hu-
+man performance on known domains. Further analysis also
+reveals that, contrary to previous approaches, our methods are
+more robust against sentence segmentation errors. We pub-
+licly release our code and the AURC-8 dataset.1
+
+1
+
+Introduction
+
+Argumentation and reasoning are fundamental human skills.
+They play a major role in education, daily conversations,
+as well as in many professional contexts including journal-
+ism, politics and the law. Argumentative skills are trained,
+for example, in the context of (public) debates, which are
+an essential part of democratic societies. Argument min-
+ing (AM), i.e., the processing of argumentative structures
+in natural language using automatic methods (Peldszus and
+Stede 2013), has recently gained considerable attention in
+the AI community (Cabrio and Villata 2018; Lippi and Tor-
+roni 2016; Nguyen and Litman 2018). AM requires sophis-
+ticated reasoning about controversial subject matters well
+beyond mere syntactic or semantic understanding. In re-
+cent research on AM, two radically different paradigms have
+evolved: closed-domain discourse-level AM seeks to iden-
+tify the argumentative structure of a debate or an argumen-
+
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+1 https://github.com/trtm/AURC
+
+Figure 1: Annotation of argumentative spans and stance.
+Each of the two sentences contains two arguments.
+
+tative text (e.g., a student essay). In contrast, information-
+seeking AM aims to identify self-contained argumentative
+statements relevant to the given topic from any source. The
+goal of this kind of AM is to identify a broad and diverse set
+of arguments, ideally reﬂecting different viewpoints and as-
+pects of the topic of interest. Most approaches to automatic
+discourse-level AM (Wyner et al. 2010; Stab and Gurevych
+2014) rely on the claim-premise model, which refers to
+the basic units of an argument as a controversial proposi-
+tion (claim) and connected evidence (premise). The claim-
+premise model is the basis for the analysis of complex argu-
+mentative texts, which can be solved by AI-based automatic
+methods with success (Kuribayashi et al. 2019).
+The claim-premise model is, however, hardly applicable
+to text that does not contain an explicit argumentative struc-
+ture (i.e., the majority of textual data) and, thus, has not
+been applied with much success to heterogeneous document
+collections (Habernal and Gurevych 2017). Information-
+seeking AM, which allows to detect arguments in sources
+that are not inherently argumentative, has been suggested as
+a remedy to this problem. It solves the following task: given
+a controversial claim (“topic”), detect supporting or oppos-
+ing statements from (potentially) relevant sources. In this
+context, an argument is usually deﬁned as a short text – or
+span – providing evidence or reasoning about the topic, sup-
+porting or opposing it (Stab et al. 2018b). This can be seen
+as a ﬂat version of the claim-premise model, where the topic
+
+Topic: Gun ControlCONPROTopic: Death PenaltyCONCONIt does not deter crime and   it is extremely expensive to administer .Yes , guns can be used for protection  but laws are meant to protect us , too . 
+ 
+ 
+ 
+ 
+ 
+#
+
+T1
+T2
+T3
+T4
+T5
+T6
+T7
+T8
+
+topic
+
+#sentences
+
+#candidates
+
+#ﬁnal
+
+#arg-sent
+
+#arg-unit
+
+increase in %
+
+#non-arg
+
+abortion
+cloning
+marijuana legalization
+minimum wage
+nuclear energy
+death penalty
+gun control
+school uniforms
+
+39,083
+30,504
+45,644
+43,128
+43,576
+32,253
+38,443
+40,937
+
+3,282
+2,594
+6,351
+8,290
+5,056
+6,079
+4,576
+3,526
+
+1,000
+1,000
+1,000
+1,000
+1,000
+1,000
+1,000
+1,000
+
+424
+353
+630
+630
+623
+598
+529
+713
+
+458
+380
+689
+703
+684
+651
+587
+821
+
+total
+
+314,568
+
+39,754
+
+8,000
+
+4,500
+
+4,973
+
++8.02
++7.65
++9.37
++11.59
++9.79
++8.86
++10.96
++15.15
+
++10.51
+
+576
+647
+370
+370
+377
+402
+471
+287
+
+3,500
+
+Table 1: Sentences in the selection process and ﬁnal corpus size. #arg-sent: argumentative sentences. #arg-unit: argumentative
+units. increase in %: increase of #arg-unit compared to #arg-sent.
+
+is an implicit claim and the argument is a premise that sup-
+ports or attacks the claim. Previous studies on information-
+seeking AM working with heterogeneous document collec-
+tions have restricted arguments to be sentences. This as-
+sumption has been partly justiﬁed by the difﬁculty of “uni-
+tizing”, i.e., of segmenting a sentence into meaningful units
+for argumentation tasks (Stab et al. 2018b). A few studies
+also allowed free text fragments as arguments (Aharoni et
+al. 2014), however, their arguments are extracted from very
+restricted domains (Wikipedia articles) with clear relevance
+to the topic. Consequently, it remains unclear whether such
+argument spans can be extracted from large and heteroge-
+neous document collections with sufﬁcient accuracy.
+Information-seeking AM as deﬁned above has thus not
+been applied to both highly heterogeneous document col-
+lections and on the token level. By identifying subsentence
+token spans as arguments for given topics in a large web
+crawl, we show that this task is feasible. Furthermore, ad-
+dressing the unitizing problem, we show how the required
+training data can be created in a scalable manner and with
+high agreement using crowdsourcing. We call this task Ar-
+gument Unit Recognition and Classiﬁcation (AURC).2 La-
+beling arguments on the token level has several advantages.
+First and foremost, it prevents merging otherwise separate
+arguments into a single argument (e.g., for the topic death
+penalty in Figure 1), enabling us to retrieve a larger num-
+ber of arguments (up to 15% more in our data). Second, it
+can handle two-sided argumentation in a single sentence ad-
+equately (e.g., for the topic gun control in Figure 1). It is
+also more robust against errors in sentence segmentation. Fi-
+nally, downstream applications like fact checking that need
+to reason over a set of evidences require decomposing com-
+plex sentences into simpler argument units. Walton and Gor-
+don (2017) argue that any kind of argument mining in which
+
+2A reviewer pointed out that neither argument unit recognition
+nor argument unit classiﬁcation are novel subtasks and so the need
+for introducing a new abbreviation for their combination may be
+questioned. However, we are interested in the speciﬁc scenario of
+information-seeking AM for highly heterogeneous collections and
+for arguments segmented on the token level (i.e., ﬁne-grained seg-
+mentation). This (in our view) novel scenario justiﬁes a new abbre-
+viation and a new name.
+
+parts of a given text are re-used to form new arguments is
+closely related to argument invention (Levy et al. 2014).
+This view points towards further applications of our ap-
+proach in the ﬁeld of rhetoric.
+We make the following contributions in this paper. First,
+we propose a slot-ﬁlling approach to argument annotation
+and show that it effectively collects token-level annotations
+through crowdsourcing with high inter-annotator agreement.
+Based on this approach, we construct AURC-8 by applying
+a sampling strategy to a large web crawl. Second, we present
+a number of methods for solving the AURC task and eval-
+uate them on the AURC benchmark. Finally, we show that
+our token-level model does not depend on correct sentence
+boundary identiﬁcation.
+
+2 Related Work
+
+Previous work on AM in AI and Natural Language Process-
+ing divides into discourse-level AM (Palau and Moens 2009;
+Stab and Gurevych 2014) and information-seeking AM
+(Shnarch et al. 2018; Wachsmuth et al. 2017; Hua and
+Wang 2017; Stab et al. 2018b), as explained in Section 1.
+Our work is in line with the latter: we model arguments
+as self-contained pieces of information that can be veri-
+ﬁed as relevant arguments for a given topic with no or
+minimal surrounding context. As opposed to previous work
+on information-seeking AM that extracted token-level argu-
+ments from Wikipedia articles (Levy et al. 2014), we apply
+our annotation schema and experiments to a much broader
+and noisier collection of web documents.
+Ajjour et al. (2017) compare argumentative unit segmen-
+tation approaches on the token level across three corpora.
+They use a feature-based approach and various architectures
+for segmentation and ﬁnd that BiLSTMs work best on aver-
+age. In contrast to our work, they study argumentation from
+the discourse-level perspective, i.e., they do not consider
+topic-dependency and do not account for argument stance.
+Peldszus and Stede (2015) use elementary discourse units
+as starting point to classify argumentative discourse units
+(ADUs). As opposed to their work, our approach does not
+rely on discourse parsing to identify ADUs. Furthermore,
+Peldszus and Stede (2015) do not consider topic-dependency
+of arguments.
+
+Multiple previous studies have shown that annotating ar-
+guments from the discourse-level perspective is very chal-
+lenging for heterogeneous document collections. Habernal
+and Gurevych (2017) used Toulmin’s schema of argumenta-
+tion on several text genres including web data, resulting in
+rather low inter-annotator agreement scores (Krippendorff ’s
+αu = 0.48). Miller, Sukhareva, and Gurevych (2019) apply
+the claim-premise model to customer reviews with similarly
+low agreement (αu roughly between 0.4 and 0.5). Using the
+information-seeking perspective, Stab et al. (2018b) prove
+that arguments can be annotated with sufﬁcient agreement in
+heterogeneous sources on the sentence level (Fleiss κ=0.72).
+In our work, we propose a slot ﬁlling approach to transfer
+their ﬁndings to token-level arguments. Previously, Reisert
+et al. (2018) achieved good agreement determining complex
+reasoning structures with a set of highly specialized slots re-
+ferred to as argument templates. Compared to their work,
+our slot ﬁlling approach is simpler, but it is applicable to
+heterogeneous sources and topics in a crowdsourcing envi-
+ronment.
+
+3 Corpus Creation
+
+Collecting annotations on the token level is challenging.
+First, the unit of annotation needs to be clearly deﬁned. This
+is straightforward for tasks with short spans (sequences of
+words) such as named entities, but much harder for longer
+spans – as in the case of argument units. Second, labels from
+multiple annotators need to be merged into a single gold
+standard.3 This is also more difﬁcult for longer sequences
+because simple majority voting over individual words will
+likely create invalid (e.g., discontinuous or grammatically
+incorrect) spans. In the following, we propose solutions to
+these problems and describe the selection of sources, sam-
+pling and annotation for our novel argument unit dataset,
+AURC-8.
+
+3.1 Data Source
+
+We used the February 2016 Common Crawl archive,4
+which was indexed with Elasticsearch5 following Stab et al.
+(2018a). Since we want to know, whether knowledge trans-
+fer to unknown topics is possible with few annotated topics,
+we limited the selection to Stab et al. (2018b)’s eight topics
+(cf. Table 1). This also increases comparability with related
+work. The topics are general enough to have good coverage
+in Common Crawl. They are also controversial and hence a
+good choice for argument mining with an expected diverse
+set of supporting and opposing arguments.
+
+3One could also learn from “soft” labels, i.e., a distribution cre-
+ated from the votes of multiple annotators. However, this does not
+solve the problem that some annotators deliver low quality work
+and their votes should be outscored by a (hopefully) higher-quality
+majority of annotators.
+4 http://commoncrawl.org/2016/02/february- 2016- crawl-
+archive- now- available/
+5 https://www.elastic.co/products/elasticsearch
+
+3.2 Retrieval Pipeline
+
+For document retrieval, we queried the indexed data for Stab
+et al. (2018b)’s topics and collected the ﬁrst 500 results
+per topic ordered by their document score (doc score) from
+Elasticsearch; a higher doc score indicates higher relevance
+for the topic. For each document, we retrieved the corre-
+sponding WARC ﬁle at the Common Crawl Index.6 From
+there, we downloaded and parsed the original HTML doc-
+ument for the next steps of our pipeline; this ensures repro-
+ducibility. Following this, we used justext7 to remove HTML
+boilerplate. We used spacy8 to segment the resulting doc-
+ument into sentences and sentences into tokens. We only
+consider sentences with the number of tokens in the range
+
+[3, 45].
+
+3.3 Sentence Sampling
+
+We pre-classiﬁed the selected sentences with a sentence-
+level argument mining model following Stab et al. (2018a)
+and available via the ArgumenText Classify API.9 The
+API returns for each sentence (i) an argument conﬁdence
+score arg score in [0.0, 1.0) (we discard sentences with
+arg score< 0.5), (ii) the stance on the sentence level (PRO
+or CON) and (iii) the stance conﬁdence score stance score.
+This information was used together with the doc score to
+rank sentences for a selection in the following crowd anno-
+tation process. See Table 1 for a detailed overview of the
+number of extracted sentences, as well as the number of
+candidates for the following ranking approach. We convert
+scores for documents, arguments and stance into ranks di ,
+ai and si . We then sum the three ranks to get an aggregated
+score for each sentence: aggi = di + ai + si . Sentences
+are divided by topic and pre-classiﬁed stance and ranked ac-
+cording to aggi , for each combination separately. We then go
+down the ranked list selecting each sentence with probabil-
+ity 0.5 until the target size of n = 500 per stance and topic is
+reached; otherwise we do additional passes through the list.
+We adopted this probabilistic selection to ensure diversity –
+otherwise a long document with high relevance score at the
+top of the list might dominate the dataset with its sentences.
+Table 1 gives the ﬁnal dataset creation statistics.
+
+3.4 Crowd Annotations
+
+Our goal is to develop a scalable approach to annotate ar-
+gument units on the token level. Given that arguments need
+to be annotated with regard to a speciﬁc topic, training data
+for different topics needs to be created. As has been shown
+by previous work on information-seeking AM (Shnarch et
+al. 2018; Stab et al. 2018b), crowdsourcing (on the sentence
+level) can be used to obtain reliable annotations for argu-
+ment mining datasets. However, as outlined above, token-
+level annotation signiﬁcantly increases the difﬁculty of the
+annotation task. We distinguish between PRO (supporting)
+and CON (opposing) arguments and we use NON for non-
+argumentative text spans. Thus, we have a sequence label-
+
+6 http://index.commoncrawl.org/CC-MAIN- 2016- 07
+7 http://corpus.tools/wiki/Justext
+8 https://spacy.io/
+9 https://api.argumentsearch.com
+
+ing task with three classes: PRO, CON and NON. Our main
+question was: can we achieve sufﬁciently high agreement
+among untrained crowd workers for this task?
+We use the αu agreement measure (Krippendorff et al.
+2016) in this work. It is designed for annotation tasks that
+involve unitizing textual continua – i.e., segmenting continu-
+ous text into meaningful sub-units – and measuring chance-
+corrected agreement in those tasks. It is also a good ﬁt for
+argument spans within a sentence: typically these spans are
+long and the context is a single sentence that may contain
+any type of argument and any number of arguments. Krip-
+pendorff et al. (2016) deﬁne a family of α-reliability coef-
+ﬁcients that improve upon several weaknesses of previous
+α measures. From these, we chose the αunom coefﬁcient,
+which also takes into account agreement on “blanks” (non-
+arguments in our case) – since agreement on non-argument
+spans (including sentences without any arguments) is impor-
+tant as well and should not be ignored by the measure.
+To determine agreement, we initially carried out an in-
+house expert study with three graduate employees (who
+were trained on the task beforehand) and randomly sam-
+pled 160 sentences (10 per topic and stance) from the overall
+data. In the ﬁrst round, we did not impose any restrictions
+on the span of words to be selected, other than that the se-
+lected spans should be the shortest self-contained spans that
+form an argument. This resulted in unsatisfactory agreement
+(αunom = 0.51, average over topics), one reason being in-
+consistency in selecting argument spans (median length of
+arguments ranged from nine to 16 words among the three
+experts).
+In a second round, we therefore decided to restrict the
+spans that could be selected by applying a slot ﬁlling ap-
+proach enforcing valid argument spans that match a tem-
+plate. We use the template: “<TOPIC> should be sup-
+ported/opposed, because <argument span>”. The guide-
+lines specify that the resulting sentence must be grammati-
+cally correct.10 Although this new setup increased the length
+of spans and reduced the total number of arguments selected,
+it increased consistency of spans substantially (min and max
+median lengths were now 15 and 17). Furthermore, the
+agreement between the three experts rose to αunom = 0.61
+(average over topics). Compared to other studies on token-
+level argument mining (Eckle-Kohler, Kluge, and Gurevych
+2015; Li et al. 2017; Stab and Gurevych 2014), this score is
+in an acceptable range and we deem it sufﬁcient to proceed
+with crowdsourcing. The averaged macro-F1 over all pairs
+of expert annotations is 0.76 (referred to as human perfor-
+mance in Table 2).
+In our crowdsourcing setup, workers could select one
+
+10Strict adherence to grammatical correctness would require that
+all spans are clauses. A reviewer asked if there are examples of non-
+clauses in our data. Although these cases are rare in our gold stan-
+dard, they do occur. Examples include noun phrases like “risky ani-
+mal experiments” (against the topic “cloning”) and clauses that are
+missing the subject, which is usually to be equated with the topic,
+e.g., “have no real impact on improving student achievement” (for
+the topic “school uniforms”). These argument units are easily com-
+prehended by humans even though they are not complete clauses
+in the strict grammatical sense.
+
+or multiple spans, where each span’s permissible length is
+between one token and the entire sentence. Workers had to
+select at least one argument span and its stance (support-
+ing/opposing); alternatively, if they could not ﬁnd an argu-
+ment span, they had to solve a simple math problem. We
+employed two quality control measures: a qualiﬁcation test
+and periodic attention checks.11 On an initial batch of 160
+sentences, we collected votes from nine workers. To deter-
+mine the optimal number of workers for the ﬁnal study, we
+did majority voting on the token level (ties broken as non-
+arguments) for both the expert study and workers from the
+initial crowd study. We artiﬁcially reduced the number of
+workers (1-9) and calculated percentage overlap averaged
+across all worker combinations (for worker numbers ≤ 9).
+Whereas the overlap was highest with 80.2% at nine votes,
+it only dropped to 79.5% for ﬁve votes (and decreased more
+signiﬁcantly for fewer votes). We deemed ﬁve votes to be
+an acceptable tradeoff between quality and cost. The agree-
+ment between experts and crowd in the ﬁve-worker setup is
+αunom = 0.71, which is substantial (Landis and Koch 1977).
+The ﬁnal gold standard labels on the 8000 sampled sen-
+tences were determined using a variant of Bayesian Classi-
+ﬁer Combination (Kim and Ghahramani 2012), referred to
+as IBCC in Simpson and Gurevych (2019)’s modular frame-
+work for Bayesian aggregation of sequence labels. This
+method has been shown to yield results superior to majority
+voting or MACE (Hovy et al. 2013). After manual inspec-
+tion of the resulting gold standard, we merged all consec-
+utive segments of the same stance, to form a gold standard
+with coherent segments separated by at least one other token
+label (most of the time NON).
+
+3.5 Dataset Splits
+
+We create two different dataset splits. (i) An in-domain split.
+This lets us evaluate how models perform on known vocab-
+ulary and data distributions. (ii) A cross-domain split. This
+lets us evaluate how well a model generalizes for unseen
+topics and distributions different from the training set.12 In
+the cross-domain setup, we deﬁned topics T1-T5 to be in
+the train set, topic T6 in the dev set and topics T7 and T8 in
+the test set. For the in-domain setup, we excluded topics T7
+and T8 (cross-domain test set), and used the ﬁrst 70% of the
+topics T1-T6 for train, the next 10% for dev and the remain-
+ing 20% for test. The samples from the in-domain test set
+were also excluded in the cross-domain train and dev sets.
+As a result, there are 4000 samples in train, 800 in dev and
+2000 in test for the cross-domain split; and 4200 samples in
+train, 600 in dev and 1200 in test for the in-domain split. Our
+deﬁnition of the two splits guarantees that train/dev sets (in-
+domain or cross-domain) do not overlap with test sets. The
+assignment of sentences to the two splits is released as part
+of AURC-8.
+
+11Workers had to be located in the US, CA, AU, NZ or UK, with
+an acceptance rate of 95% or higher. Payment was $0.42 per HIT,
+corresponding to US federal minimum wage ($7.25/hour).
+12We use cross-domain rather than cross-topic (Stab et al.
+2018b) here, as the former is the more common term.
+
+3.6 Dataset Statistics
+
+The resulting dataset, AURC-8, consists of 8000 annotated
+sentences; 3500 (43.8%) of which are non-argumentative.
+The 4500 argumentative sentences are divided into 1951
+(43.4%) single PRO argument sentences, 1799 (40.0%) sin-
+gle CON argument sentences and 750 (16.7%) sentences
+that are many possible combinations of PRO and CON ar-
+guments with up to ﬁve single argument units in a sentence.
+The total number of argumentative segments is 4973. Thus,
+due to the token-level annotation the number of arguments
+is higher by 10.5% compared to what it would be with a
+sentence-level approach (4500). If we propagate the label
+of a sentence to all its tokens, then 100% of tokens of an
+argumentative sentence are argumentative. This ratio drops
+to 69.9% in our token-level setup, reducing the amount of
+non-argumentative tokens otherwise incorrectly labeled as
+argumentative in a sentence.
+
+4 Experimental Setup
+
+We train and evaluate in two different setups: token-level and
+sentence-level. In the token-level setup, models are trained
+and evaluated on the gold standard as is. For the sentence-
+level setup, we use a sentence-level gold standard that is
+modiﬁed by converting token-level gold standard or predic-
+tions to a prediction for the sentence as follows. If only NON
+occurs, the sentence is labeled NON. If NON and only PRO
+(resp. only CON) occurs, PRO (resp. CON) is chosen. If
+both PRO and CON occur, the more frequent label of the
+two is assigned. In the few exceptional cases where PRO and
+CON are equally frequent, one of them is chosen by chance.
+
+4.1 Evaluation Measures
+
+We compute three different evaluation measures of AURC:
+
+token F1 , segment F1 and sentence F1 .
+
+Token F1 is deﬁned as the average of the three class F1 ’s
+for PRO, CON and NON, each computed for all tokens in
+the evaluation set. This is the core evaluation measure of
+our work since our goal is argument retrieval at a more ﬁne-
+grained level than prior work.13
+To compute segment F1 for a sentence, we look at all
+pairs <gold segment g , predicted segment p> and compute:
+
+|g
+
+r =
+
+model
+
+i
+
+n
+
+-
+
+o
+d
+
+m
+
+a
+
+i
+
+n
+
+4
+5
+6
+7
+8
+
+majority baseline
+FLAIR
+BERTBASE
+
+BERTLARGE
+
+BERTLARGE +CRF
+
+c
+
+r
+
+o
+
+-
+s
+s
+
+o
+d
+
+m
+
+a
+
+i
+
+n 9
+10
+11
+12
+13
+
+majority baseline
+FLAIR
+BERTBASE
+
+BERTLARGE
+
+BERTLARGE +CRF
+
+14
+
+human performance
+
+token F1
+
+token-level
+setup
+
+sentence-level
+setup
+
+dev
+
+test
+
+dev
+
+test
+
+.258
+.642
+.702
+.732
+
+.254
+.613
+.654
+.683
+
+.258
+.442
+.591
+
+.254
+.473
+.581
+
+.671
+
+.627
+
+.743
+
+.696
+
+.637
+
+.622
+
+.245
+.419
+.554
+.604
+
+.240
+.433
+.563
+.596
+
+.245
+.388
+.431
+
+.240
+.401
+.474
+
+.550
+
+.544
+
+.615
+
+.620
+
+.505
+
+.519
+
+.763
+
+segment F1
+
+token-level
+setup
+
+sentence-level
+setup
+
+dev
+
+test
+
+dev
+
+test
+
+.478
+.661
+.666
+.749
+
+.463
+.623
+.628
+.709
+
+.478
+.473
+
+.463
+.492
+
+.615
+
+.601
+
+.599
+.552
+
+.567
+.547
+
+.750
+
+.724
+
+.394
+.457
+.504
+.653
+
+.379
+.458
+.508
+.626
+
+.394
+.402
+.445
+
+.379
+.401
+
+.473
+.473
+
+.487
+
+.681
+
+.649
+
+.456
+
+.464
+
+.709
+
+sentence F1
+
+token-level
+setup
+
+sentence-level
+setup
+
+dev
+
+test
+
+dev
+
+test
+
+.216
+.651
+.717
+.738
+
+.211
+.620
+.673
+.709
+
+.216
+.495
+.680
+
+.211
+.523
+.665
+.715
+
+.759
+
+.744
+
+.711
+
+.731
+
+.725
+
+.188
+.386
+.550
+.606
+
+.183
+.402
+.556
+.598
+
+.188
+.428
+.473
+
+.183
+.418
+.510
+
+.628
+
+.602
+
+.627
+
+.610
+
+.569
+
+.573
+
+.799
+
+Table 2: Token F1 , segment F1 and sentence F1 on AURC-8 dev and test. Bold: best performance per column and split (in-
+domain, cross-domain).
+
+and classiﬁcation (3 classes) can be found in Section A and
+Section B of the appendix.
+
+5.1 Model Comparison
+
+The BERT models always perform better than the majority
+baseline and FLAIR (6–8 vs. 4–5 and 11–13 vs. 9–10). For
+sentence-level setup and segment F1 , the majority baseline
+is close or even better than FLAIR (lines 4 vs. 5 and 9 vs.
+10). The reason for the high performance of the majority
+baseline for segment F1 (lines 4 & 9) is that about 40% of
+segments are NON segments – so a method that labels ev-
+erything as NON will get a high score for segment identiﬁ-
+cation. BERTBASE mostly performs worse than BERTLARGE
+(lines 6 vs. 7–8 and 11 vs. 12–13), but still at an acceptable
+level. Hence, BERTBASE , which requires only one GPU for
+training, is a good option if computational resources are lim-
+ited.
+
+5.2 Token- vs. Sentence-Level Setup
+
+BERTLARGE+CRF is consistently the best model
+for
+token-level setup (bolded numbers in Table 2), whereas
+BERTLARGE is the best model for sentence-level setup (with
+one exception: for segment F1 in-domain, BERTBASE is bet-
+ter: line 6). Thus, for the token-level setup, the CRF layer
+(lines 8 & 13) always performs better than imposing no se-
+quence constraints (lines 7 & 12) – whereas the sequence
+constraint is not beneﬁcial for the sentence-level setup.
+The difference between the two setups is noticeable for
+token and segment F1 , but smaller for sentence F1 . As one
+would expect, the token-level setup is not a good match for
+sentence-level evaluation (for both in- and cross-domain ex-
+periments).
+
+5.3
+
+In-Domain vs. Cross-Domain
+
+The best in-domain BERT numbers are pretty high, with seg-
+ment F1 (line 8) even above human performance (line 14),
+while for token and sentence F1 the gap to human perfor-
+mance is between 7 and 9 percentage points. Cross-domain
+
+is clearly more challenging since models are evaluated on
+unseen topics. Here, F1 scores drop to between 0.61 and
+0.65 for the token-level models. Training on only 5 topics
+(see Section 3.5) gives insufﬁcient information for the trans-
+fer to unseen topics. These numbers are, however, in line
+with the current state-of-the-art for sentence-level AM; see
+Reimers et al. (2019) who report an F1 score of 0.63 for a
+similar architecture but slightly different experimental setup
+with 7 training topics (cf. Stab et al. (2018b)). Given that the
+segment F1 score (line 13) is only 6 percentage points be-
+low human agreement, we expect that in cases where exact
+argument segment boundaries are not of high importance,
+cross-domain transfer will still work ﬁne.
+
+6 Analysis
+
+We now discuss the main errors our models make (Sec-
+tion 6.1) and investigate robustness against incorrectly rec-
+ognized sentence boundaries (Section 6.2).
+
+6.1 Recognition and Classiﬁcation Errors
+
+The main types of errors we observed were: (i) the span of
+an argumentative segment is not correctly recognized and
+(ii) the stance is not correctly classiﬁed.
+Span. The ﬁrst major type of error related to spans is that
+the beginning and/or end of a segment is incorrectly recog-
+nized. We analyzed the predictions by the best token-level
+model (line 8 & 13 in Table 2) on dev. The average segment
+length (in tokens) is 17.5 for gold and 16.4 for predicted
+(in-domain) and 17.3 for gold and 15.1 for predicted (cross-
+domain); thus, predicted segments are on average shorter
+than gold segments. However, this will often be benign in
+an application since annotators tended to include boundary
+words that are not strictly necessary.
+The second major type of error related to spans is that
+a segment is broken into several segments or several seg-
+ments are merged into one segment. Our models predict
+7.6% more segments in-domain and 13.1% more segments
+cross-domain than there are in the gold standard. Shorter
+
+Figure 2: Gold standard segments and segments predicted by BERTLARGE and BERTLARGE+CRF for three example sentences.
+Green: PRO. Red: CON.
+
+spans in the predictions (which result in more spans) are
+mostly due to segment splits on function words like “and”,
+“that” and “yet”. Figure 2 gives examples of span errors for
+the model without CRF (lines 2, 5 & 8). The model with
+CRF (lines 3, 6 & 8) correctly recognizes beginning and end
+of the span more often, while the one without CRF tends
+to split segments (line 5) and sometimes even creates one-
+word or two-word segments (line 8). So the addition of a
+CRF layer improves segmentation – no overly short seg-
+ments, fewer segments incorrectly broken up – and therefore
+results in the best overall performance in our experiments.
+
+Stance. The classiﬁcation of stance is as important for
+argument retrieval as span detection. The model with CRF
+sometimes assigns the same stance for all segments within
+a sequence – see the examples shown in Figure 2 (lines 3
+& 9). This may be due to only a few mixed segments (both
+PRO and CON stance) appearing in the training set (43 for
+in-domain and 48 for cross-domain). We plan to incorporate
+additional stance focused information – such as sentiment –
+in future work to improve stance classiﬁcation. Another pos-
+sible improvement could be achieved with multi-task train-
+ing. There are additional sentence-level datasets for stance
+detection (Mohammad et al. 2016) available. In a multi-task
+setup, we can exploit these to improve stance detection for
+our task.
+
+More detailed analysis of the subtask of recognition
+and classiﬁcation (see Table 4 in Section B of the ap-
+pendix) showed that when combining PRO and CON la-
+bels into one ARG label for the best token-level system
+(BERTLARGE+CRF) yields a smaller drop in performance
+between in- and cross-domain. Consequently, our best
+token-level model manages cross-domain transfer very well
+for argument unit recognition, whereas argument (stance)
+classiﬁcation remains challenging in a cross-domain setup.
+
+token-level
+setup
+
+sentence-level
+setup
+
+dev
+
+.671
+.634
+.514
+
+.573
+.554
+
+.433
+
+test
+
+.642
+.592
+
+.504
+
+.562
+.538
+
+.449
+
+dev
+
+.507
+.254
+.510
+
+.442
+.175
+
+.448
+
+test
+
+.510
+.235
+
+.509
+
+.452
+.154
+
+.473
+
+token F1
+segment F1
+sentence F1
+
+token F1
+segment F1
+sentence F1
+
+i
+
+n 3
+4
+5
+
+m
+
+a
+
+o
+d
+
+i
+
+n 6
+7
+8
+
+m
+
+a
+
+o
+d
+
+-
+
+n
+
+i
+
+-
+s
+s
+
+o
+
+r
+
+c
+
+Table 3: Token-level vs. sentence-level setup for input se-
+quences that cross sentence boundaries (i.e., no sentence
+segmentation). Bold: best performance per line and dev/test
+
+6.2 Sentence Boundaries
+
+One of the main beneﬁts of a token-level argument mining
+approach is that it is robust against errors in sentence bound-
+ary detection. We now analyze how our token-level models
+perform when they are not given any sentence boundary in-
+formation. We perform this experiment with our best models
+(BERTLARGE+CRF for token-level setup and BERTLARGE
+for sentence-level setup).
+We create a new dataset by concatenating, for each topic,
+all sentences of that topic. The resulting document is then
+processed by moving the model over it using a sliding win-
+dow of size 45 and a stepsize of 1. In this regime, most input
+sequences do not correspond to sentences, but instead con-
+tain pieces of several sentences. Table 3 shows results.
+We see that the token-level setup performs much better on
+input without sentence boundaries than the sentence-level
+setup – both for token F1 and for segment F1 , both in-
+domain and cross-domain (lines 3-4, 6-7). While the perfor-
+mance is clearly lower than in Table 2, it declines gracefully
+for the token-level setup whereas the drop in performance
+for the sentence-level setup is large, especially for segment
+
+ While they may create a positive sense of unity , they can also imply the sacrifice of individuality to a group mentality . Women who want abortions will get them , even if they have to risk their lives to get them . Women who want abortions will get them , even if they have to risk their lives to get them . It has been argued that uniforms force conformity , yet many uniform - wearing students like the fact that everyone looks the same . It has been argued that uniforms force conformity , yet many uniform - wearing students like the fact that everyone looks the same .school uniformsschool uniformssentencetopicBERTLARGE+CRFBERTLARGEgold standard123modelschool uniforms It has been argued that uniforms force conformity , yet many uniform - wearing students like the fact that everyone looks the same .abortionabortionBERTLARGE+CRFBERTLARGEgold standard456abortion Women who want abortions will get them , even if they have to risk their lives to get them . While they may create a positive sense of unity , they can also imply the sacrifice of individuality to a group mentality .school uniformsschool uniformsBERTLARGE+CRFBERTLARGEgold standard789school uniforms While they may create a positive sense of unity , they can also imply the sacrifice of individuality to a group mentality .F1 ; e.g., on the test set: .154 (line 7, Table 3) vs. .473 (line
+12, Table 2). This clearly indicates the robustness of our ap-
+proach against errors in sentence boundary detection.
+
+7 Conclusion
+
+We deﬁne the task of ﬁne-grained argument unit recogni-
+tion and classiﬁcation (AURC), and release the benchmark
+AURC-8 for this task. Our work is the ﬁrst to show that
+information-seeking AM can be applied on very heteroge-
+neous data (a web crawl in our case) on the level of to-
+kens. We demonstrated that AURC-8 has good quality in
+terms of annotator agreement: the required annotations can
+be crowdsourced using speciﬁc data selection and ﬁltering
+methods combined with a slot ﬁlling approach. We test and
+adapt several sequence tagging methods for AURC, achiev-
+ing very good performance on known domains. As in previ-
+ous work on sentence-level argument retrieval, the methods
+suffer a drop in performance on unknown domains. Perfor-
+mance on unknown domains is, however, quite good when
+segment boundaries do not need to be determined exactly.
+We have also shown that our approach, as opposed to
+sentence-level argument retrieval, does not depend on cor-
+rect sentence boundaries. By making the analysis more ﬁne-
+grained, we increase the recall of arguments and make their
+representation more accurate for the user as well as for
+downstream tasks. If required by downstream applications,
+the template deﬁned in Section 3.4 can be used to recon-
+struct complete arguments for most of AURC-8. For the ex-
+ample in Figure 2 line 7, we would get the following to state-
+ments: “School uniforms should be supported because they
+may create a sense of positive unity” and “School uniforms
+should be opposed because they can also imply the sacriﬁce
+of individuality to a group mentally.”
+This work makes possible a range of potential follow-
+up investigations. Since our approach does not depend on
+correct sentence boundaries, it is well-suited for noisy data
+from social media or (continuous) speech data, e.g., political
+debates. Furthermore, the beneﬁt of our ﬁne-grained argu-
+ment annotations should be explored in downstream appli-
+cations like claim validation and fact checking, which rely
+on decomposed evidence. Finally, our retrieval and anno-
+tation pipeline can be used to annotate argument units for
+additional topics, thus enabling improved domain transfer.
+
+Acknowledgments
+
+We
+gratefully
+acknowledge
+support
+by Deutsche
+Forschungsgemeinschaft
+(DFG)
+(SPP-1999 Robust Ar-
+gumentation Machines
+(RATIO), SCHU2246/13),
+as
+well as by the German Federal Ministry of Education
+and Research (BMBF) under the promotional reference
+03VP02540 (ArgumenText).
+
+A Hyperparameters
+
+This section lists the hyperparameters used for the experi-
+mental systems described in the main part of the paper.
+For FLAIR in the token-level model, we used a learning
+rate of 1e-1 with gradual decreasing, hiddensize=256 and for
+
+domain
+
+in-domain
+cross-domain
+in-domain
+cross-domain
+
+in-domain
+cross-domain
+in-domain
+cross-domain
+
+set
+
+dev
+dev
+test
+test
+
+dev
+dev
+test
+test
+
+precision
+
+recall
+
+.742
+.632
+.717
+.637
+
+.812
+.805
+.793
+.782
+
+.745
+.638
+.681
+.609
+
+.814
+.792
+.776
+.767
+
+F1
+
+.743
+.615
+.696
+.620
+
+.813
+.797
+.782
+.770
+
+s
+e
+s
+s
+a
+
+) 2
+3
+4
+5
+
+c
+3
+
+l
+
+(
+
+s
+e
+s
+s
+a
+
+) 6
+7
+8
+9
+
+c
+2
+
+l
+
+(
+
+.
+
+c
+
+ﬁ
+
+i
+
+s
+s
+a
+
+l
+
+c
+
+.
+
+n
+g
+o
+c
+e
+
+r
+
+Table 4: Token-level precision, recall and macro F1 results
+for argument classiﬁcation (PRO, CON, NON) and recogni-
+tion (ARG, NON) for the prediction of the best token-level
+model.
+
+the sentence-level model the same setting for the learning
+rate, but with hiddensize=512.
+For BERTLARGE and BERTLARGE+CRF, we used the large
+cased pretrained model with whole word masking and in the
+token-level setup a learning rate of 1e-5 for in- and cross-
+domain. For the CRF we used the [CLS] token as the START
+and [SEP] as the END token, so we considered only the se-
+quence input (without the topic) for this setup. For the eval-
+uation we considered only the predicted tag sequence be-
+tween the START and END token.
+We kept the learning rate at 4e-5 for the sentence-level
+BERTLARGE model and at 1e-5 for the BERTLARGE+CRF
+and used the AdamW optimizer. The max. length of the tok-
+enized BERT input was set to 64 tokens and we always had
+a dropout rate of 0.1.
+All experiments were run three times with different seeds,
+a trainings batch size of 32 and for a max. of 100 epochs,
+with earlier stopping if the performance/loss did not im-
+prove/decreased signiﬁcantly (after ten epochs).
+
+B Additional Information
+
+Table 4 provides detailed information about token-level pre-
+cision, recall and macro F1 scores and the separate evalu-
+ation on three classes (PRO vs. CON. vs. NON) and two
+classes (ARG vs. NON), where PRO and CON labels were
+converted into a single ARG label.
+
+References
+
+[Aharoni et al. 2014] Aharoni, E.; Polnarov, A.; Lavee, T.;
+Hershcovich, D.; Levy, R.; Rinott, R.; Gutfreund, D.; and
+Slonim, N. 2014. A benchmark dataset for automatic detec-
+tion of claims and evidence in the context of controversial
+topics. In Argumentation Mining Workshop, 64–68.
+[Ajjour et al. 2017] Ajjour, Y.; Chen, W.-F.; Kiesel, J.;
+Wachsmuth, H.; and Stein, B. 2017. Unit segmentation of
+argumentative texts. In Argument Mining Workshop, 118–
+128.
+[Akbik, Blythe, and Vollgraf 2018] Akbik, A.; Blythe, D.;
+and Vollgraf, R. 2018. Contextual string embeddings for
+sequence labeling. In COLING’18, 1638–1649.
+
+[Cabrio and Villata 2018] Cabrio, E., and Villata, S. 2018.
+Five years of argument mining: a data-driven analysis.
+In
+IJCAI’18, 5427–5433.
+[Devlin et al. 2019] Devlin, J.; Chang, M.-W.; Lee, K.; and
+Toutanova, K. 2019. BERT: Pre-training of deep bidi-
+rectional
+transformers for language understanding.
+In
+NAACL’19, 4171–4186.
+[Eckle-Kohler, Kluge, and Gurevych 2015] Eckle-Kohler,
+J.; Kluge, R.; and Gurevych, I.
+2015. On the role of
+discourse markers for discriminating claims and premises
+in argumentative discourse. In EMNLP’15, 2236–2242.
+[Habernal and Gurevych 2017] Habernal, I., and Gurevych,
+I. 2017. Argumentation mining in user-generated web dis-
+course. Computational Linguistics 43(1):125–179.
+[Hochreiter and Schmidhuber 1997] Hochreiter,
+S.,
+and
+Schmidhuber, J. 1997. Long short-term memory. Neural
+computation 9(8):1735–1780.
+[Hovy et al. 2013] Hovy, D.; Berg-Kirkpatrick, T.; Vaswani,
+A.; and Hovy, E. 2013. Learning whom to trust with mace.
+In NAACL’13, 1120–1130.
+[Hua and Wang 2017] Hua, X., and Wang, L. 2017. Un-
+derstanding and detecting supporting arguments of diverse
+types. In ACL’17, 203–208.
+[Kim and Ghahramani 2012] Kim, H.-C., and Ghahramani,
+Z. 2012. Bayesian classiﬁer combination. In AISTATS’12,
+619–627.
+[Krippendorff et al. 2016] Krippendorff, K.; Mathet, Y.;
+Bouvry, S.; and Widl ¨ocher, A. 2016. On the reliability of
+unitizing textual continua: Further developments. Quality &
+Quantity 50(6):2347–2364.
+[Kuribayashi et al. 2019] Kuribayashi, T.; Ouchi, H.; Inoue,
+N.; Reisert, P.; Miyoshi, T.; Suzuki, J.; and Inui, K. 2019.
+An empirical study of span representations in argumentation
+structure parsing. In ACL’19, 4691–4698.
+[Lafferty, McCallum, and Pereira 2001] Lafferty, J. D.; Mc-
+Callum, A.; and Pereira, F. C. N. 2001. Conditional random
+ﬁelds: Probabilistic models for segmenting and labeling se-
+quence data. In ICML’01, 282–289.
+[Lample et al. 2016] Lample, G.; Ballesteros, M.; Subrama-
+nian, S.; Kawakami, K.; and Dyer, C. 2016. Neural architec-
+tures for named entity recognition. In NAACL’16, 260–270.
+[Landis and Koch 1977] Landis, J. R., and Koch, G. G. 1977.
+The measurement of observer agreement for categorical
+data. Biometrics 33(1):159–174.
+[Levy et al. 2014] Levy, R.; Bilu, Y.; Hershcovich, D.; Aha-
+roni, E.; and Slonim, N. 2014. Context dependent claim
+detection. In COLING’14, 1489–1500.
+[Li et al. 2017] Li, M.; Geng, S.; Gao, Y.; Peng, S.; Liu, H.;
+and Wang, H. 2017. Crowdsourcing argumentation struc-
+tures in Chinese hotel reviews. In IEEE Int. Conference on
+Systems, Man, and Cybernetics, 87–92.
+[Lippi and Torroni 2016] Lippi, M., and Torroni, P. 2016.
+Argument mining from speech: Detecting claims in politi-
+cal debates. In AAAI’16, 2979–2985.
+
+[Miller, Sukhareva, and Gurevych 2019] Miller,
+T.;
+Sukhareva, M.; and Gurevych, I.
+2019.
+A stream-
+lined method for sourcing discourse-level argumentation
+annotations from the crowd. In NAACL’19, 1790–1796.
+[Mohammad et al. 2016] Mohammad, S.; Kiritchenko, S.;
+Sobhani, P.; Zhu, X.; and Cherry, C. 2016. SemEval-2016
+task 6: Detecting stance in tweets. In SemEval’16, 31–41.
+[Nguyen and Litman 2018] Nguyen, H. V., and Litman, D. J.
+2018. Argument mining for improving the automated scor-
+ing of persuasive essays. In AAAI’18, 5892–5899.
+[Palau and Moens 2009] Palau, R. M., and Moens, M.-F.
+2009. Argumentation mining: The detection, classiﬁcation
+and structure of arguments in text. In ICAIL’09, 98–107.
+[Peldszus and Stede 2013] Peldszus, A., and Stede, M. 2013.
+From argument diagrams to argumentation mining in texts:
+A survey. Int. J. Cogn. Inform. Nat. Intell. 7(1):1–31.
+[Peldszus and Stede 2015] Peldszus, A., and Stede, M. 2015.
+Joint prediction in MST-style discourse parsing for argu-
+mentation mining.
+In Proceedings of the 2015 Confer-
+ence on Empirical Methods in Natural Language Process-
+ing, 938–948. Lisbon, Portugal: Association for Computa-
+tional Linguistics.
+[Pennington, Socher, and Manning 2014] Pennington,
+J.;
+Socher, R.; and Manning, C. 2014. Glove: Global vectors
+for word representation. In EMNLP’14, 1532–1543.
+[Reimers and Gurevych 2017] Reimers, N., and Gurevych, I.
+2017. Reporting score distributions makes a difference: Per-
+formance study of lstm-networks for sequence tagging. In
+EMNLP’17, 338–348.
+[Reimers et al. 2019] Reimers, N.; Schiller, B.; Beck, T.;
+Daxenberger, J.; Stab, C.; and Gurevych, I. 2019. Classiﬁ-
+cation and clustering of arguments with contextualized word
+embeddings. In ACL’19, 567–578.
+[Reisert et al. 2018] Reisert, P.; Inoue, N.; Kuribayashi, T.;
+and Inui, K. 2018. Feasible annotation scheme for captur-
+ing policy argument reasoning using argument templates. In
+Argument Mining Workshop, 79–89.
+[Shnarch et al. 2018] Shnarch, E.; Alzate, C.; Dankin, L.;
+Gleize, M.; Hou, Y.; Choshen, L.; Aharonov, R.; and Slonim,
+N.
+2018. Will it blend? blending weak and strong la-
+beled data in a neural network for argumentation mining.
+In ACL’18, 599–605.
+[Simpson and Gurevych 2019] Simpson,
+E.
+D.,
+and
+Gurevych, I. 2019. A Bayesian approach for sequence
+tagging with crowds. In EMNLP-IJCNLP’19, 1093–1104.
+[Stab and Gurevych 2014] Stab, C., and Gurevych, I. 2014.
+Annotating argument components and relations in persua-
+sive essays. In COLING’14, 1501–1510.
+[Stab et al. 2018a] Stab, C.; Daxenberger, J.; Stahlhut, C.;
+Miller, T.; Schiller, B.; Tauchmann, C.; Eger, S.; and
+Gurevych, I. 2018a. Argumentext: Searching for arguments
+in heterogeneous sources. In NAACL’18, 21–25.
+[Stab et al. 2018b] Stab, C.; Miller, T.; Schiller, B.; Rai, P.;
+and Gurevych, I. 2018b. Cross-topic argument mining from
+heterogeneous sources. In EMNLP’18, 3664–3674.
+
+[Wachsmuth et al. 2017] Wachsmuth, H.; Potthast, M.;
+Al Khatib, K.; Ajjour, Y.; Puschmann, J.; Qu, J.; Dorsch, J.;
+Morari, V.; Bevendorff, J.; and Stein, B. 2017. Building an
+argument search engine for the web. In Argument Mining
+Workshop, 49–59.
+[Walton and Gordon 2017] Walton, D., and Gordon, T. F.
+2017. Argument Invention with the Carneades Argumen-
+tation System. SCRIPTed 14(2):168–207.
+[Wyner et al. 2010] Wyner, A.; Mochales-Palau, R.; Moens,
+M.-F.; and Milward, D. 2010. Approaches to text mining ar-
+guments from legal cases. In Semantic Processing of Legal
+Texts: Where the Language of Law Meets the Law of Lan-
+guage. Springer Berlin Heidelberg. 60–79.
+
+

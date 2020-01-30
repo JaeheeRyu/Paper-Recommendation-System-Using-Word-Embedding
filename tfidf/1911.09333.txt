@@ -1,0 +1,2063 @@
+Generating Diverse Translation by Manipulating Multi-Head Attention
+
+Zewei Sun, Shujian Huang, Hao-Ran Wei, Xin-yu Dai, Jiajun Chen
+
+State Key Laboratory for Novel Software Technology
+Nanjing University, Nanjing 210023, China
+sunzw@smail.nju.edu.cn, whr94621@foxmail.com
+{huangsj, daixinyu, chenjj}@nju.edu.cn
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+3
+3
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Transformer model (Vaswani et al. 2017) has been widely
+used in machine translation tasks and obtained state-of-the-
+art results. In this paper, we report an interesting phenomenon
+in its encoder-decoder multi-head attention: different atten-
+tion heads of the ﬁnal decoder layer align to different word
+translation candidates. We empirically verify this discovery
+and propose a method to generate diverse translations by ma-
+nipulating heads. Furthermore, we make use of these diverse
+translations with the back-translation technique for better
+data augmentation. Experiment results show that our method
+generates diverse translations without a severe drop in trans-
+lation quality. Experiments also show that back-translation
+with these diverse translations could bring a signiﬁcant im-
+provement in performance on translation tasks. An auxiliary
+experiment of conversation response generation task proves
+the effect of diversity as well.
+
+Introduction
+
+In recent years, neural machine translation (NMT) has
+shown its ability to produce precise and ﬂuent translations
+(Sutskever, Vinyals, and Le 2014; Bahdanau, Cho, and Ben-
+gio 2015; Luong, Pham, and Manning 2015). More and
+more novel network structures has been proposed (Barone
+et al. 2017; Gehring et al. 2017; Vaswani et al. 2017),
+among which Transformer (Vaswani et al. 2017) achieves
+the best results. The main differences between Transformer
+and other translation models are: i) self-attention architec-
+ture, ii) multi-head attention mechanism. We focus on the
+second one in this paper.
+Intuitively,
+the
+attention mechanism in traditional
+attention-based sequence-to-sequence models plays the role
+of choosing the next source word to be translated, which
+could be seen as an alignment between source and target
+words (Bahdanau, Cho, and Bengio 2015; Luong, Pham, and
+Manning 2015). However, how multi-head attention works
+seems unclear.
+In this paper, we report an interesting phenomenon in
+Transformer: in the ﬁnal layer of its decoder, each individual
+encoder-decoder attention head dispersedly aligns to a spe-
+ciﬁc source word which is highly likely to be translated next.
+
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+In other words, multi-head attention actually learns multiple
+alignment choices. Further, by means of picking different at-
+tention heads, we can precisely control the following word
+generation. We verify this characteristic by a series of statis-
+tic study afterwards.
+Straightway, we consider taking advantage of this in-
+trinsic characteristic to generate diverse translations due to
+the multiple generation candidates. Natural language can
+be diversely translated through different syntax structures
+or word orders. However, it has been well recognized that
+NMT system severely lacks translation diversity, distin-
+guished from human beings (He, Haffari, and Norouzi 2018;
+Ott et al. 2018; Edunov et al. 2018). We try to tackle this is-
+sue with a new method based on our observation.
+There have been a few works attempting to generate
+more diverse translation, which can be roughly divided
+into two categories. The ﬁrst category tries to encourage
+diversity during beam search by adding some regulariza-
+tion items (Li, Monroe, and Jurafsky 2016; Vijayakumar
+et al. 2018). However, these methods actually fail to pro-
+duce satisﬁed diversity in our re-implementation experi-
+ments. The other category tends to augment diversity by in-
+troducing latent variables (He, Haffari, and Norouzi 2018;
+Shen et al. 2019). However, they heavily increase training
+barrier and lack interpretability.
+Different from them, we make use of the diverse fac-
+tors we observe inside the model structure, which is more
+lightweight and interpretable. Since multi-head attention has
+the potential to identify different translation candidates, we
+propose a method to manipulate it to generate diverse trans-
+lations. Our method works simply but more effectively than
+previous works, bringing in no extra parameter or regular-
+ization item. Furthermore, we propose to combine diverse
+translations with the back-translation technique for better
+data augmentation.
+Experiment results show that the proposed method could
+generate diverse translations without a severe drop in
+translation performance. Besides, improvements could be
+achieved by employing our more diverse back-translation
+results for machine translation. An auxiliary experiment of
+conversation response generation proves the effect of diver-
+sity as well.
+
+ 
+ 
+ 
+ 
+ 
+ 
+Rank 1
+Rank 3
+Rank 5
+
+Head-Average
+
+Rank 6
+Rank 10
+Rank 100
+Rank 1000
+Random
+
+NLL
+0.59
+4.12
+5.19
+
+5.27
+
+5.53
+6.40
+9.47
+11.54
+13.57
+
+Head 0
+Head 1
+Head 2
+Head 3
+Head 4
+Head 5
+Head 6
+Head 7
+Head-Average
+
+NLL
+5.05
+5.40
+4.69
+5.04
+5.33
+5.72
+5.68
+5.32
+5.27
+
+Table 1: Negative log-likelihood of attention heads and
+words ranked Rth on average.
+
+We do the statistic study to verify this observation on
+NIST MT03 dataset (see Datasets in Experiment). At each
+timestep, we pick H referred source words (may overlap)
+that H heads correspond to. “Referred source word” means
+the source word with max attention for each head. Then we
+translate these referred source words into target language
+with baseline model and name these translations “referred
+target words”. We count the number of times these “referred
+target words” appear at different rankings of the softmax
+probability and plot them in Figure 2. We can see that the
+vast majority of heads align to the most possible words.
+Also, we collect the negative log-likelihood (NLL) of
+these referred target words to see whether they really have
+high generation probability. To make a comparison, we list
+the average NLL of words ranked Rth as well. The results in
+Table 1 verify our assumption. The chosen words are ranked
+around 5th on average, which implies they are indeed quite
+possible to be selected at each decoding step.
+
+Each Head Determines a Generation Word
+
+Furthermore, we can control the next word generation by
+choosing the corresponding source word by choosing differ-
+ent heads. As presented in Table 2, the model has translated
+“he said :” and waits for the following context. At this step,
+different heads refer to several source words. From Figure 3,
+we can see that head 4,5,6 refer to 以来 (since), 下降 (de-
+cline), 出口 (exports), respectively. We control the model
+to generate the speciﬁc word by selecting the corresponding
+
+Figure 2: “Referred target words” ranking counts of top 100.
+The vast majority of heads align to the most possible words.
+
+Figure 1: Multi-Head Attention consists of several attention
+heads running in parallel.
+
+Background
+
+Transformer (Vaswani et al. 2017) architecture adopts the
+encoder-decoder structure, utilizing self-attention instead
+of recurrent or convolutional networks. The encoder itera-
+tively processes its hidden representation through 6 layers of
+self-attention and feed-forward network, coupled with layer
+normalization and residual connection. Afterwards, the de-
+coder takes a similar circuit with injected by an encoder-
+decoder attention layer between self-attention and feed-
+forward components. An important difference from previous
+models is that Transformer turns all the attention mechanism
+into a multi-head version.
+Instead of performing a single attention function with d-
+dimensional keys, values and queries, multi-head attention
+projects them into H different sub-components. After cal-
+culating attention for every sub-component, each yielding a
+d/H -dimensional output context, these context vectors are
+concatenated and projected, resulting in the ﬁnal context, as
+depicted in Figure 1. Speciﬁcally:
+MultiHead(Q, K, V ) = Concat(head1 , ..., headh )W o
+headi = Attention(QW Q
+
+(1)
+
+(2)
+
+i
+
+i , KW K
+, V W V
+i )
+QK T√
+dk
+
+)V
+
+Attention(Q, K, V ) = softmax(
+
+(3)
+
+To complete the decoding part, the model uses learned
+linear transformation and softmax function to convert the de-
+coder output to next-token probabilities. The embedding and
+ﬁnal transformation parameters are shared mutually.
+
+Analysis of Multi-Head Attention
+
+Each Head Indicates an Alignment
+
+Previous works show that multi-head attention plays a key
+role in the signiﬁcant improvement of translation perfor-
+mance (Vaswani et al. 2017; Chen et al. 2018). However, not
+much observation was made on its inside pattern. We visu-
+alize the multi-head attention to see whether different heads
+play different roles. After observing plenty of examples, we
+ﬁnd that at every decoding step, all the source words that are
+identiﬁed by heads are highly likely to be translated next. In
+other words, each head aligns to a source word candidate.
+
+Figure 3: Different heads have different attention, referring to different words. For example, head 4,5,6 refer to 以来 (since),
+下降 (decline), 出口 (exports), respectively.
+
+Source
+
+Reference
+
+Translated
+
+以来
+
+(since)
+
+下降
+
+(decline)
+
+出口
+
+(exports)
+
+他 说 , 去年 九月 以以以来来来 , 出出出口口口 下下下降降降 导致
+印度 经济 恶化 。
+
+he said : the drop in exports has caused in-
+dia ’s economy deterioration since septem-
+ber last year .
+he said :
+he said : since september last year , the de-
+cline in exports has led to a deterioration in
+india ’s economy .
+he said : the decline in exports has led to
+a deterioration in india ’s economy since
+september last year .
+he said : exports have declined since
+september last year , causing india ’s econ-
+omy to deteriorate .
+
+Table 2: The model has translated “he said :” and waits for
+the following context. Different heads (refered to different
+candidates) determine different following generation.
+
+head and copying its attention weights to the other H − 1
+heads. In this way, we indeed obtain different translation re-
+sults with expected translation candidates (see three transla-
+tion outputs in Table 2).
+Intuitively, we can utilize these characteristics to gener-
+ate diverse translations by picking different candidates to
+change the word choices or the sentence structure. More im-
+portantly, the diversity is from an interpretable mechanism
+rather than an abstract latent variable like previous works.
+
+Diversity-Encouraged Generation
+
+Since we have conﬁrmed multiple head alignments can be
+utilized, it is natural for us to sample different heads at every
+timestep, so that diverse word candidates can be generated.
+However, we found that it will badly harm the translation
+quality if sampling everywhere. So we propose a sample pol-
+icy to balance quality and diversity.
+As stated in Algorithm 1, at every decoding step t, we de-
+note atth
+it as the attention of headh from target side hidden
+state st to source side word srci . The most possible candi-
+
+Algorithm 1 Sample Policy
+
+ni = 0
+
+end for
+
+i ∈ [0, T ), h ∈ [0, H )
+
+calculate atth
+for h in range(H ) do
+
+it ,
+
+Input: The source sentence length T , a hyper parameters K , the
+head number H , a counting array [n0 , ..., ni , ..., nT −1 ]
+Output: Adjusted attention
+1: for t in decoding timesteps do
+2:
+for i in range(T ) do
+3:
+4:
+5:
+6:
+7:
+8:
+9:
+10:
+11:
+12:
+13:
+14:
+15:
+
+candidateh
+t = arg maxi atth
++ = 1
+
+end for
+if max(n) ≤ K then
+
+head = sample[0, H )
+
+atth
+
+it = atthead
+
+it
+
+ncandidateh
+
+t
+
+for all h do
+
+it
+
+end for
+end if
+16: end for
+
+date for headh next step is :
+
+candidateh
+t = arg max
+
+i
+
+atth
+
+it
+
+(4)
+
+We denote an array of [n0 , ..., ni , ..., nT −1 ] as the number of
+times that wordi is chosen from equation 4, where T is the
+length of source sentence. Obviously:
+T −1(cid:88)
+
+ni = H
+
+(5)
+
+i=0
+
+where H is the number of heads. Diverse translations are
+generated when multiple candidates are offered. In other
+words, not all heads focus on the same source word. There-
+fore, we deﬁne a confusing condition when:
+
+max(ni ) ≤ K
+
+(6)
+where K is a hyper-parameter. Confusing condition means
+“referred words” are disperse and multiple candidates can
+be accepted. Under confusing condition, we sample one of
+the heads as attention and force other heads to be the same.
+
+Otherwise, the decoding step remains unchanged. If K = 0,
+the model is the same as the original version. If K = H ,
+the model samples at every step. For the sake of balance of
+quality and diversity, we may choose different K in differ-
+ent conditions. We do the whole decoding for M times and
+pick the most possible output in the beam every time. In this
+paper, we let M = 5.
+Our another contribution is adopting the method with
+back-translation technique as data augmentation. Back-
+translation has been proved helpful for neural machine trans-
+lation (Sennrich, Haddow, and Birch 2016a; Poncelas et
+al. 2018). However, the lack of diversity restricts its effect
+(Edunov et al. 2018). We provide a new scheme for back-
+translation with diverse corpus generated by our method and
+gain improvement.
+
+Experiment
+
+Our translation experiments include two parts: diverse trans-
+lation and diverse back-translation. In addition, a conver-
+sation response generation experiment is also performed as
+auxiliary evidence.
+
+Setup
+
+Datasets We choose ﬁve datasets as our experiment corpus.
+• NIST Chinese-to-English (NIST Zh-En). The training
+data consists of 1.34 million sentence pairs extracted
+from LDC corpus. We use MT03 as the development set,
+MT04, MT05, MT06 as the test sets.
+• WMT14 English-to-German (WMT En-De). The training
+data consists of 4.5 million sentence pairs from WMT14
+news translation task. We use newstest2013 as the devel-
+opment set and newstest2014 as the test set.
+• WMT16 English-to-Romanian (WMT En-Ro). The train-
+ing data consists of 0.6 million sentence pairs from
+WMT16 news translation task. We use newstest2015 as
+the development set and newstest2016 as the test set.
+• Monolingual English corpus (for back-translation) from
+IWSLT17 Chinese-to-English (IWSLT Zh-En). The train-
+ing data consists of 0.2 million sentences from IWSlT17
+spoken language translation task. We used dev2010 and
+tst2010 as the development set and tst2011 as the test set.
+• Short Text Conversation (STC) (Shang, Lu, and Li 2015).
+The corpus contains about 4.4 million Chinese post-
+response sentence pairs crawled from Weibo, built for sin-
+gle turn conversation tasks. We remove sentence pairs that
+are exactly the same between two sides. For the test set,
+we extract 3000 post sentences that have 10 responses
+in the corpus, forming 10 references. The develop set is
+made up similarly.
+For NIST Zh-En, we use BPE (Sennrich, Haddow, and
+Birch 2016b) with 30K merge operations on both sides. For
+En-De and En-Ro, we also apply BPE to segment sentences
+and limit the vocabulary size to 32K. We ﬁlter out sentence
+pairs whose source or target side contains more than 100
+words for Zh-En and En-Ro sets. For STC corpus, we also
+apply BPE and keep a vocabulary size to 36K. All the out-of-
+vocabulary words are mapped to a distinct token <UNK>.
+
+Experiment Settings Without extra statement, we follow
+the Transformer base v1 settings1 , with 6 layers in encoder
+and 2 layers in decoder2 , 512 hidden units, 8 heads in multi-
+head attention and 2048 hidden units in feed-forward layers.
+Parameters are optimized using Adam optimizer (Kingma
+and Ba 2015), with β1 = 0.9, β2 = 0.98, and  = 10−9 . The
+learning rate is scheduled according to the method proposed
+in Vaswani et al. (2017), with warmup steps = 8000. La-
+bel smoothing (Szegedy et al. 2016) of value = 0.1 is
+also adopted. For K , we do not observe diversity enhance-
+ment when K is too small like K = 1, 2. And conditions
+of K = 6, 7 are very similar to K = 8. Hence we use
+K = 3, 4, 5, 8 as comparisons.
+
+Diverse Translation
+
+Comparing Objects We compare our models with origi-
+nal beam search (as Baseline) and sampling from the prob-
+ability distribution (as Multinomial Sampling). Besides, we
+compare our methods with a few previous works:
+• Li, Monroe, and Jurafsky (2016) propose a decoding trick
+to penalize hypotheses that are siblings (expansions of
+the same parent node) in the beam search to increase the
+translation diversity.
+• Vijayakumar et al. (2018) add a regularization item in
+beam search to penalize the same word generation.
+• Shen et al. (2019) and He, Haffari, and Norouzi (2018)
+use multiple decoders as mixture of experts to increase di-
+versity by manipulating latent variables. Considering their
+similarity, we choose Shen et al. (2019) since they report
+better results. We re-implement the model with Trans-
+former architecture and choose the hMup (online-shared)
+version since the authors recommend it.
+
+Metrics We evaluate our method from both diversity and
+quality. For diversity, we adopt average pair-wise BLEU of
+outputs (denoted as pwb) to measure the difference among
+translations like previous work. For quality, we use BLEU
+with the references (denoted as rfb). Lower pwb and higher
+rfb mean better results. In this paper, the reference BLEU
+of Baseline is the highest score in the beam while the other
+groups take the average reference BLEU of M outputs. And
+to synthetically evaluate the performance, we propose an
+overall index: Diversity Enhancement per Quality (denoted
+as DEQ). Speciﬁcally:
+
+pwb∗ − pwb
+rfb∗ − rfb
+where pwb and pwb* refer to pair-wise BLEU of the eval-
+uated system and baseline respectively, rfb and rfb* refer to
+
+DEQ =
+
+(7)
+
+1 https://github.com/tensorﬂow/tensor2tensor/blob/v1.3.0/
+tensor2tensor/models/transformer.py
+2We check different decoder layer numbers settings and ﬁnd
+less-decoder-layers Transformer shows comparable performance
+with original six-layers-decoder Transformer while it is much eas-
+ier to manipulate and faster to decode. The diversity enhancement
+is also more signiﬁcant. We present detailed research in Appendix,
+which is highly recommended to refer to.
+
+Model
+Baseline
+Multinomial Sampling
+(Li, Monroe, and Jurafsky 2016)
+(Vijayakumar et al. 2018)
+(Shen et al. 2019)
+Sample K = 3
+Sample K = 4
+Sample K = 5
+Sample K = 8
+
+MT03 (dev)
+rfb↑
+pwb↓
+45.64
+84.63
+21.75
+11.29
+44.63
+80.92
+40.38
+59.55
+40.59
+62.24
+
+43.73
+
+40.88
+38.60
+36.68
+
+66.48
+
+51.26
+43.64
+38.29
+
+MT04
+rfb↑
+pwb↓
+47.25
+84.62
+22.19
+11.42
+45.81
+81.33
+41.99
+60.11
+41.55
+62.68
+
+45.38
+
+42.50
+40.21
+38.03
+
+67.82
+
+53.63
+45.69
+40.02
+
+MT05
+rfb↑
+pwb↓
+43.45
+84.78
+20.54
+11.08
+42.86
+81.28
+39.46
+59.56
+38.51
+61.37
+
+42.43
+
+39.18
+37.05
+34.65
+
+65.80
+
+51.07
+43.14
+37.30
+
+MT06
+rfb↑
+pwb↓
+42.26
+82.46
+19.12
+9.67
+40.87
+78.11
+37.28
+54.54
+35.57
+58.04
+
+40.18
+
+37.73
+35.45
+32.93
+
+64.93
+
+50.28
+42.38
+36.15
+
+rfb↑
+44.32
+20.62
+43.18
+39.58
+38.54
+
+42.66
+
+39.80
+37.57
+35.20
+
+Average
+pwb↓ DEQ↑
+83.95
+-
+10.72
+3.09
+80.24
+3.25
+58.07
+5.46
+60.70
+4.02
+
+66.18
+
+51.66
+43.74
+37.82
+
+10.70
+
+7.14
+5.96
+5.06
+
+Table 3: Pair-wise BLEU and Reference BLEU in Zh2En experiments.
+
+Model
+Baseline
+Multinomial Sampling
+(Li, Monroe, and Jurafsky 2016)
+(Vijayakumar et al. 2018)
+(Shen et al. 2019)
+Sample K = 3
+Sample K = 4
+Sample K = 5
+Sample K = 8
+
+rfb↑
+26.31
+11.99
+25.27
+23.27
+23.22
+25.62
+
+24.26
+
+22.62
+19.76
+
+pwb↓ DEQ↑
+80.41
+-
+12.84
+4.72
+78.57
+1.77
+66.13
+4.70
+68.03
+4.01
+78.96
+2.10
+
+62.04
+
+50.14
+38.36
+
+8.96
+
+8.20
+6.42
+
+Table 4: Pair-wise BLEU and Reference BLEU in En2De
+experiments.
+
+Model
+Baseline
+Multinomial Sampling
+(Li, Monroe, and Jurafsky 2016)
+(Vijayakumar et al. 2018)
+(Shen et al. 2019)
+Sample K = 3
+Sample K = 4
+Sample K = 5
+Sample K = 8
+
+rfb↑
+31.76
+18.85
+31.02
+28.91
+31.07
+31.33
+
+30.06
+
+27.89
+26.43
+
+pwb↓ DEQ↑
+81.29
+-
+20.82
+4.68
+78.42
+3.88
+69.67
+4.08
+85.71
+-6.04
+82.41
+-2.60
+
+71.12
+
+59.42
+50.56
+
+5.98
+
+5.65
+5.77
+
+Table 5: Pair-wise BLEU and Reference BLEU in En2Ro
+experiments.
+
+reference BLEU of the evaluated system and baseline re-
+spectively. It measures how much diversity can be produced
+per quality drop.
+
+Results From Table 3, in Zh2En experiment, we can see
+that traditional beam search translations severely lack di-
+versity while multinomial sampling extremely harms trans-
+lation quality. Li, Monroe, and Jurafsky (2016) bring very
+limited enhancement in diversity, failing to achieve the goal.
+Vijayakumar et al. (2018) and Shen et al. (2019) show the
+ability to produce diversity, but our method (K = 4) attains
+more signiﬁcant diversity as well as better quality comparing
+with them. And K = 3 achieve the highest DEQ, gaining
+the most satisfactory result. Also, unlike Shen et al. (2019),
+our work needs no extra training or extra parameters. Fur-
+thermore, the diversity can be well interpreted and does not
+rely on an abstract latent variable. See Table 6 for a case
+(more cases are in Appendix). We can reach the similar con-
+
+Figure 4: Pair-wise BLEU with reference BLEU in Zh2En
+Experiments (MT04). The bottom right corner means the
+best result. All previous work including noisy sets lie on the
+top left of the curve of K .
+
+clusion in En2De and En2Ro experiments from Table 4, 5.
+Besides, to exclude the possibility that randomly interfer-
+ing causes the effect, we compare with the sets with noise.
+We add noise to the translations of baseline model to gen-
+erate different outputs. Speciﬁcally, for each sentence, we
+replace one of its words with ‘<UNK>’ with probability p
+and randomly swap two words with probability p as well.
+And we make multiple experiment sets by controlling p. See
+Figure 4, at the same level of pair-wise BLEU, our method
+maintains much higher reference BLEU, which means our
+method improves diversity through seeking diverse transla-
+tions rather than just generating randomly.
+For K (see Figure 4 again), as expected, as K grows
+(sample more), the diversity increases (pair-wise BLEU de-
+creases) while the quality decreases (reference BLEU de-
+creases). And previous works all lie on the top left of the
+curve of K . What’s more, we can choose different K to di-
+versely balance the diversity and the quality depending on
+our needs. We make the trade-off more continuous.
+Some may not be satisﬁed with the sacriﬁce of the ref-
+erence BLEU. But considering the calculation of BLEU is
+based on n-gram rather than semantic similarity, we regard
+it as a normal phenomenon. After all, if we want to obtain
+sentences with different grammar structure or word order,
+the overlap of n-gram will inevitably decrease to some extent
+
+Input 两 个 主角 — — 朝鲜 和 美国 都 没有 表现 出 让步 , 双方 的 基本 立场 也 都 没有 松动 。
+
+Beam
+
+K=4
+
+1. the two leading characters – the dprk and the united states – did not make any concessions , and the basic positions of both sides were not relaxed .
+2. the two leading characters – the dprk and the united states – did not make any concessions , and the basic positions of both sides were not loosened .
+3. the two leading characters – the dprk and the united states – did not make any concessions , and both sides did not relax their basic positions .
+4. the two leading characters – the dprk and the united states – did not make any concessions . both sides did not relax their basic positions .
+5. the two leading characters – the dprk and the united states – did not make any concessions , and both sides ’ basic positions were not relaxed .
+1. the two leading characters – the dprk and the united states – did not make any concessions . both sides ’ basic positions were not relaxed .
+2. neither the dprk nor the united states has made any concessions . both sides have not relaxed their basic positions .
+3. the two leading roles – the dprk and the united states – have made no concessions , and neither have they relaxed their basic positions .
+4. neither the dprk nor the united states – the two leading characters – did make any concessions , and the basic positions of both sides were not relaxed .
+5. neither the democratic people ’s republic of korea and the united states have made any concessions , and the basic positions of both sides have not been
+relaxed .
+
+Table 6: One case. Our method shows obviously more diversity compared with beam search. For more cases, see Appendix.
+
+even the meaning remains the same. Meanwhile, we empir-
+ically prove our method maintains a relatively high quality
+comparing to noisy sets as well as previous works.
+We also investigate the effect of sentence length. Theoret-
+ically, longer sentences shall have more diversity due to their
+broader searching space. However, beam search with MAP
+prefers to abandon different but slightly less possible candi-
+dates, making hypotheses lack diversity and are all close to
+speciﬁc translations. Conversely, our method increases di-
+versity as the sentences getting longer (see ﬁgure 5), which
+conforms to the statistical law.
+
+Diverse Back-Translation
+
+Back-translation has been proved helpful for neural machine
+translation (Sennrich, Haddow, and Birch 2016a; Poncelas
+et al. 2018). However, the lack of diversity restricts its ef-
+fect (Edunov et al. 2018). We try to utilize our methods
+to enhance the translation performance by improving back-
+translation. According to Edunov et al. (2018), unrestricted
+sampling from the model distribution yields the best perfor-
+mance. Therefore, we compare with 1) baseline without uti-
+lizing back-translation, denoted as Baseline, 2) beam search
+as back-translation, denoted as Beam-5, 3) unrestricted sam-
+pling as back-translation, denoted as Sampling.
+We do experiments under conditions with and without ad-
+ditional monolingual data.
+
+Self Back-Translation Firstly, We focus on the condition
+where original training data is repeatedly used by back-
+translation. When translating language pair f to e, for each
+target sentence e, we get M translations with a reverse trans-
+lation model. We combine those translations with e as syn-
+thetic sentence pairs and add them to the training data. As
+previously stated, we let M = 5. Experiments are conducted
+on Zh-En NIST dataset.
+See Table 7 and 8, all of our experiment sets report better
+results, among which, the best set of K = 3 in Zh2En exper-
+iments yields 1.82 improvement and the best set of K = 4
+in En2Zh experiments yields 0.82 improvement.
+
+Utilizing Additional Monolingual Data Secondly, we
+
+evaluate our method with additional monolingual data. We
+select one side of parallel data from IWSLT17 as monolin-
+gual data. We use the same method to generate synthetic
+
+Figure 5: Our method increases diversity (pair-wise BLEU
+decreases) as the sentences getting longer.
+
+sentence pairs. Then we train our model on the mixture of
+original NIST dataset and the synthetic dataset.
+See Table 9, experiment results show that our algorithm
+brings the most signiﬁcant improvement for translation per-
+formance as our work adds generation diversity and main-
+tains the quality simultaneously.
+
+Model
+Baseline
+Beam-5
+Sampling
+
+K = 3
+K = 4
+K = 5
+K = 8
+
+MT03 MT04 MT05 MT06 Average
+45.64
+47.25
+43.45
+42.26
+44.32
+46.31
+47.26
+44.87
+43.43
+45.19
+47.03
+47.96
+45.72
+44.06
+45.91
+47.24
+48.24
+47.93
+
+46.14
+
+45.70
+
+44.48
+
+47.39
+
+47.31
+47.15
+
+48.31
+
+48.15
+
+45.38
+45.34
+45.69
+
+43.98
+43.95
+43.95
+
+45.76
+45.87
+45.93
+
+Table 7: Zh2En translation experiments with back-
+translation of original training data.
+
+Conversation Response Generation
+
+Responses generated by neural conversational models tend
+to lack informativeness and diversity (Li et al. 2016; Shao
+et al. 2017; Baheti et al. 2018; Zhang et al. 2018). There-
+fore, we try to ease this issue by utilizing our method on
+Conversation Response Generation tasks. Still, we perform
+decoding for M times and pick the N th output in the beam
+for the N th group (N ∈ [1, M ]).
+
+Model
+Baseline
+Beam-5
+Sampling
+
+K = 3
+K = 4
+K = 5
+K = 8
+
+MT03 MT04 MT05 MT06 Average
+22.75
+22.33
+20.35
+21.35
+21.34
+23.73
+21.69
+20.61
+22.33
+21.54
+23.69
+22.78
+20.85
+22.34
+21.99
+22.23
+20.65
+21.80
+
+24.21
+
+22.52
+
+22.30
+22.50
+22.23
+
+22.16
+
+21.67
+21.54
+
+24.01
+23.76
+23.93
+
+23.15
+
+21.93
+21.66
+
+21.04
+
+20.57
+20.72
+
+Table 8: En2Zh translation experiments with back-
+translation of original training data.
+
+Model
+Baseline
+Beam-5
+Sampling
+
+K = 3
+K = 4
+K = 5
+K = 8
+
+Zh2En
+9.18
+13.06
+13.38
+
+14.03
+
+13.76
+13.66
+13.76
+
+Table 9: Zh2En translation experiments with back-
+translation with additional monolingual data.
+
+Metrics Since the responses of human conversation can
+be pretty subjective, which is hard to evaluate automatically.
+Hence, except for reference BLEU, we also measure the re-
+sponse quality by human evaluation through three indexes:
+relevance, ﬂuency and informativeness. Relevance reveals
+how much the responses match the expectation of the ques-
+tion. Fluency means to what extent the translation is well-
+formed grammatically. Both of them are scored from 1 to
+5. Informativeness measures the degree of meaningfulness.
+We classify responses into two groups, informative and un-
+informative. Uninformative means the safe answer like “I
+don’t know” or simply copying from the original post. We
+then calculate the proportion of the informative groups. For
+diversity, pair-wise BLEU maintains used.
+
+Results
+
+In Table 10, we compare our method with basic
+Seq2Seq model and Li et al. (2016), which use Maximum
+Mutual Information (MMI) as the objective function (MMI-
+antiLM version). On one hand, our method achieves signiﬁ-
+cant improvement in generation diversity. On the other hand,
+the quality including relevance, ﬂuency and informativeness
+all rise to some degree. After looking into cases, we sup-
+pose it is because original Seq2Seq model tends to generate
+safe outputs like “I don’t know” or simply copying from the
+source side. In contrast, our method brings in randomness,
+reaching broader generation space.
+
+Related Work
+
+Lack of diversity has been a disturbing problem for neu-
+ral machine translation. In recent years, a few works put
+forward some related methods. Li, Monroe, and Jurafsky
+(2016) proposes a decoding trick to penalize hypotheses that
+are siblings (expansions of the same parent node) in the
+beam search to increase the translation diversity. Vijayaku-
+mar et al. (2018) adds a regularization item in beam search to
+
+BLEU ↑ Rel ↑
+13.06
+2.45
+13.39
+2.58
+
+13.48
+
+12.73
+
+2.63
+
+2.53
+
+Flu ↑
+4.72
+4.45
+
+4.76
+
+4.67
+
+Inf ↑
+0.604
+0.639
+
+0.678
+
+0.652
+
+Div ↓
+52.94
+45.42
+
+39.82
+
+27.73
+
+Baseline
+MMI
+
+K = 3
+K = 8
+
+Table 10: Conversation Response Generation experiment re-
+sults on STC dataset.
+
+penalize the same word generation. He, Haffari, and Norouzi
+(2018) and Shen et al. (2019) use multiple decoders as differ-
+ent components, trying to control the generation by different
+latent variables. Basically, there are two categories: either to
+add diverse regularization in beam search or to utilize latent
+variables. Our method achieves better results than both two
+categories. And speciﬁcally, compared with the latter class,
+our work needs no extra training or extra parameters. Be-
+sides, it is hard to tell what the latent variables exactly rep-
+resent and why they differ while our method shows a clear
+explanation that heads align to word candidates.
+Apart from machine translation, there are also other works
+concerning generation diversity, including Visual Question
+Generation (Jain, Zhang, and Schwing 2017), Conversa-
+tional Response Generation (Li et al. 2016; Shao et al. 2017;
+Baheti et al. 2018; Zhang et al. 2018), Paraphrase (Gupta
+et al. 2018; Xu et al. 2018b), Summarization (Nema et
+al. 2017) and Text Generation (Guu et al. 2018; Xu et al.
+2018a).
+As for multi-head attention, Strubell et al. (2018) employ
+different heads to capture different linguistic features. Tu et
+al. (2018) introduce disagreement regularization to encour-
+age diversity among attention heads. Li et al. (2019) pro-
+pose to aggregate information captured by different heads.
+Yang et al. (2019) model the interactions among attention
+heads. Raganato and Tiedemann (2018) do an analysis of
+encoder representation and ﬁnd there exists dependency re-
+lations, syntactic and semantic connections across layers.
+
+Conclusion
+
+In this paper, we discover an internal characteristic of Trans-
+former encoder-decoder multi-head attention that each head
+aligns to a source word which is a possible candidate to be
+translated. We take advantage of this phenomenon to gen-
+erate diverse translations by manipulating heads in particu-
+lar conditions. Experiments show that our algorithm outper-
+forms previous work and obtain the most satisfactory result
+of quality and diversity. Besides, the multiple trade-off set-
+ting can be adopted diversely depending on different needs.
+Finally, applications on back-translation as data augmen-
+tation and conversation response signiﬁcantly improve the
+performance, proving our method effective.
+
+Acknowledgement
+
+Shujian Huang is the corresponding author. This work is
+supported by the National Key R&D Program of China
+(No. U1836221, 61772261), the Jiangsu Provincial Re-
+search Foundation for Basic Research (No. BK20170074).
+
+References
+
+[2015] Bahdanau, D.; Cho, K.; and Bengio, Y. 2015. Neural
+machine translation by jointly learning to align and translate.
+In ICLR.
+[2018] Baheti, A.; Ritter, A.; Li, J.; and Dolan, W. B. 2018.
+Generating more interesting responses in neural conversa-
+tion models with distributional constraints. In EMNLP.
+[2017] Barone, A. V. M.; Helcl, J.; Sennrich, R.; Haddow, B.;
+and Birch, A. 2017. Deep architectures for neural machine
+translation. In WMT.
+[2018] Chen, M. X.; Firat, O.; Bapna, A.; Johnson, M.;
+Macherey, W.; Foster, G.; Jones, L.; Parmar, N.; Schuster,
+M.; Chen, Z.; Wu, Y.; and Hughes, M. 2018. The best of
+both worlds: Combining recent advances in neural machine
+translation. In ACL.
+[2018] Edunov, S.; Ott, M.; Auli, M.; and Grangier, D. 2018.
+Understanding back-translation at scale. In EMNLP.
+[2017] Gehring, J.; Auli, M.; Grangier, D.; Yarats, D.; and
+Dauphin, Y. 2017. Convolutional sequence to sequence
+learning. In ICML.
+[2018] Gupta, A.; Agarwal, A.; Singh, P.; and Rai, P. 2018.
+A deep generative framework for paraphrase generation. In
+AAAI.
+[2018] Guu, K.; Hashimoto, T. B.; Oren, Y.; and Liang, P. S.
+2018. Generating sentences by editing prototypes. Trans-
+actions of the Association for Computational Linguistics
+6:437–450.
+[2018] He, X.; Haffari, G.; and Norouzi, M. 2018. Sequence
+to sequence mixture model for diverse machine translation.
+In CoNLL.
+[2017] Jain, U.; Zhang, Z.; and Schwing, A. G. 2017. Cre-
+ativity: Generating diverse questions using variational au-
+toencoders. 2017 IEEE Conference on Computer Vision and
+Pattern Recognition (CVPR) 5415–5424.
+[2015] Kingma, D. P., and Ba, J. 2015. Adam: A method for
+stochastic optimization. In ICLR.
+[2016] Li, J.; Galley, M.; Brockett, C.; Gao, J.; and Dolan,
+W. B. 2016. A diversity-promoting objective function for
+neural conversation models. In HLT-NAACL.
+[2019] Li, J.; Yang, B.; Dou, Z.-Y.; Wang, X.; Lyu, M. R.;
+and Tu, Z. 2019.
+Information aggregation for multi-head
+attention with routing-by-agreement. In NAACL.
+[2016] Li, J.; Monroe, W.; and Jurafsky, D. 2016. A simple,
+fast diverse decoding algorithm for neural generation. CoRR
+abs/1611.08562.
+[2015] Luong, T.; Pham, H. Q.; and Manning, C. D. 2015.
+Effective approaches to attention-based neural machine
+translation. In EMNLP.
+[2017] Nema, P.; Khapra, M. M.; Laha, A.; and Ravindran,
+B. 2017. Diversity driven attention model for query-based
+abstractive summarization. In ACL.
+[2018] Ott, M.; Auli, M.; Grangier, D.; and Ranzato, M.
+2018. Analyzing uncertainty in neural machine translation.
+In ICML.
+
+[2018] Poncelas, A.; Shterionov, D.; Way, A.; de Buy Wen-
+niger, G. M.; and Passban, P. 2018. Investigating backtrans-
+lation in neural machine translation. CoRR abs/1804.06189.
+[2018] Raganato, A., and Tiedemann, J. 2018. An analy-
+sis of encoder representations in transformer-based machine
+translation. In BlackboxNLP@EMNLP.
+[2016a] Sennrich, R.; Haddow, B.; and Birch, A. 2016a. Im-
+proving neural machine translation models with monolin-
+gual data. In ACL.
+[2016b] Sennrich, R.; Haddow, B.; and Birch, A. 2016b.
+Neural machine translation of rare words with subword
+units. In ACL.
+[2015] Shang, L.; Lu, Z.; and Li, H. 2015. Neural responding
+machine for short-text conversation. In ACL.
+[2017] Shao, Y.; Gouws, S.; Britz, D.; Goldie, A.; Strope, B.;
+and Kurzweil, R. 2017. Generating high-quality and infor-
+mative conversation responses with sequence-to-sequence
+models. In EMNLP.
+[2019] Shen, T.; Ott, M.; Auli, M.; and Ranzato, M. 2019.
+Mixture models for diverse machine translation: Tricks of
+the trade. In ICML.
+[2018] Strubell, E.; Verga, P.; Andor, D.; Weiss, D. I.; and
+McCallum, A. 2018. Linguistically-informed self-attention
+for semantic role labeling. In EMNLP.
+[2014] Sutskever, I.; Vinyals, O.; and Le, Q. V. 2014. Se-
+quence to sequence learning with neural networks. In NIPS.
+[2016] Szegedy, C.; Vanhoucke, V.; Ioffe, S.; Shlens, J.; and
+Wojna, Z. 2016. Rethinking the inception architecture for
+computer vision. 2016 IEEE Conference on Computer Vi-
+sion and Pattern Recognition (CVPR) 2818–2826.
+[2018] Tu, Z.; Yang, B.; Lyu, M. R.; and Zhang, T. 2018.
+Multi-head attention with disagreement regularization.
+In
+EMNLP.
+[2017] Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.;
+Jones, L.; Gomez, A. N.; Kaiser, L.; and Polosukhin, I. 2017.
+Attention is all you need. In NIPS.
+[2018] Vijayakumar, A. K.; Cogswell, M.; Selvaraju, R. R.;
+Sun, Q.; Lee, S.; Crandall, D. J.; and Batra, D. 2018. Diverse
+beam search for improved description of complex scenes. In
+AAAI.
+[2018a] Xu, J.; Ren, X.; Lin, J.; and Sun, X.
+2018a.
+Diversity-promoting gan: A cross-entropy based genera-
+tive adversarial network for diversiﬁed text generation. In
+EMNLP.
+[2018b] Xu, Q.; Zhang, J.; Qu, L.; Xie, L.; and Nock, R.
+2018b. D-page: Diverse paraphrase generation. CoRR
+abs/1808.04364.
+[2019] Yang, B.; Wang, L.; Wong, D.; Chao, L. S.; and Tu,
+Z. 2019. Convolutional self-attention networks. In NAACL.
+[2018] Zhang, Y.; Galley, M.; Gao, J.; Gan, Z.; Li, X.; Brock-
+ett, C.; and Dolan, W. B. 2018. Generating informative and
+diverse conversational responses via adversarial information
+maximization. In NeurIPS.
+
+Less-decoder-layers Transformer works ﬁne as
+well
+
+We check the different experimental groups of different
+decoder layer numbers to see whether the alignments ex-
+ist widely. It turns out that less-decoder-layers Transformer
+(six-layers encoder unchanged) has this property as well.
+And owing to its shallower structure, we ﬁnd the phe-
+nomenon more common and obvious. Simultaneously, it is
+much easier to control the word candidates by picking dif-
+ferent heads from the experiment. For diversity, see Table 13
+and Figure 6.
+As for the performance, to our surprise, less-decoder-
+layers Transformer performs comparably with six-decoder-
+layers Transformer (see Table 11 12). What’s more, less de-
+coder layers bring higher speed (see Table 11).
+Thus, for the sake of diversity signiﬁcance and decoding
+speed, we choose the two-layers-decoder Transformer struc-
+ture as our default setting unless stated otherwise.
+
+More cases
+
+We select some typical cases of diverse translation from
+Zh2En experiments (see Table 14).
+
+Figure 6: Pair-wise BLEU with Reference BLEU in Zh2En
+experiments of different decoder layer numbers and different
+K sets.
+
+n d MT03 MT04 MT05 MT06 Average
+6
+45.83
+46.66
+43.36
+42.17
+44.06
+1
+44.55
+45.73
+41.86
+40.53
+42.71
+2
+3
+4
+5
+8
+12
+
+44.19
+44.14
+43.50
+43.66
+
+46.77
+46.04
+46.11
+45.49
+
+45.64
+45.85
+
+45.29
+45.27
+44.81
+45.34
+
+43.45
+43.74
+
+43.71
+43.33
+42.24
+43.09
+
+42.26
+42.77
+
+42.09
+43.06
+42.15
+42.41
+
+47.25
+46.99
+
+44.32
+44.50
+
+Speed
+1 X
+2.79 X
+2.34 X
+1.77 X
+1.58 X
+1.26 X
+0.69 X
+0.67 X
+
+Table 11: BLEU and speed comparisons between different
+decoder layer numbers in Zh2En Experiments
+
+n decoders En2De En2Ro
+two
+26.31
+31.76
+six
+26.70
+31.86
+
+Table 12: BLEU comparisons between different decoder
+layer numbers in En2De and En2Ro Experiments
+
+n d
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+8
+
+12
+
+Sample K
+
+Baseline
+K = 3
+K = 4
+K = 5
+K = 8
+Baseline
+K = 3
+K = 4
+K = 5
+K = 8
+Baseline
+K = 3
+K = 4
+K = 5
+K = 8
+Baseline
+K = 3
+K = 4
+K = 5
+K = 8
+Baseline
+K = 3
+K = 4
+K = 5
+K = 8
+Baseline
+K = 3
+K = 4
+K = 5
+K = 8
+Baseline
+K = 3
+K = 4
+K = 5
+K = 8
+Baseline
+K = 3
+K = 4
+K = 5
+K = 8
+
+MT03 (dev)
+rfb↑
+pwb↓
+44.55
+83.38
+39.15
+54.91
+33.86
+40.96
+30.89
+33.31
+26.94
+26.63
+45.64
+84.63
+43.73
+66.48
+40.88
+51.26
+38.60
+43.64
+36.68
+38.29
+45.85
+84.28
+44.39
+72.03
+42.91
+59.93
+41.90
+53.15
+40.92
+48.34
+45.29
+84.35
+44.25
+72.44
+43.35
+62.50
+42.44
+57.72
+41.43
+52.84
+45.27
+84.39
+44.41
+74.45
+43.61
+65.59
+42.86
+60.87
+42.21
+57.16
+45.83
+84.24
+44.76
+74.36
+43.87
+66.50
+43.65
+62.53
+42.98
+59.58
+44.81
+84.55
+43.80
+73.45
+43.53
+67.72
+43.59
+65.29
+42.84
+63.57
+45.34
+84.51
+44.84
+75.90
+44.77
+72.38
+44.57
+70.53
+44.73
+70.43
+
+MT04
+rfb↑
+pwb↓
+45.73
+83.68
+40.18
+56.29
+35.39
+43.09
+32.37
+35.42
+28.99
+28.97
+47.25
+84.62
+45.38
+67.82
+42.50
+53.63
+40.21
+45.69
+38.03
+40.02
+46.99
+84.72
+46.02
+72.81
+44.59
+61.15
+43.64
+54.92
+42.23
+50.03
+46.77
+84.62
+46.05
+74.57
+44.95
+64.43
+44.33
+59.36
+43.31
+55.15
+46.04
+84.74
+45.58
+75.84
+44.77
+67.01
+44.34
+62.54
+43.88
+59.14
+46.66
+84.43
+45.99
+75.42
+45.50
+68.26
+45.13
+64.89
+44.61
+62.22
+46.11
+84.77
+45.67
+75.91
+45.43
+70.30
+45.09
+68.05
+45.18
+66.64
+45.49
+84.34
+45.33
+77.66
+45.21
+73.85
+45.19
+72.51
+45.18
+72.40
+
+MT05
+rfb↑
+pwb↓
+41.86
+84.28
+37.02
+53.58
+32.11
+40.07
+29.26
+33.01
+25.57
+26.99
+43.45
+84.78
+42.43
+65.80
+39.18
+51.07
+37.05
+43.14
+34.65
+37.30
+43.74
+85.12
+42.96
+70.74
+41.50
+58.77
+40.36
+52.71
+38.93
+47.44
+43.71
+84.70
+42.53
+72.42
+41.71
+62.64
+40.93
+57.40
+39.92
+53.29
+43.33
+84.92
+42.66
+73.61
+42.04
+64.83
+41.16
+60.28
+40.55
+56.61
+43.36
+84.71
+42.85
+73.65
+42.08
+65.89
+41.73
+62.32
+41.31
+59.61
+42.24
+85.11
+41.81
+73.38
+41.35
+67.54
+41.25
+64.65
+41.21
+63.21
+43.09
+84.86
+42.47
+76.00
+42.33
+72.37
+42.24
+70.72
+42.30
+69.95
+
+MT06
+rfb↑
+pwb↓
+40.53
+81.32
+35.47
+53.44
+30.38
+39.58
+27.66
+32.43
+24.41
+26.62
+42.26
+82.46
+40.18
+64.93
+37.73
+50.28
+35.45
+42.38
+32.93
+36.15
+42.77
+82.24
+41.45
+70.06
+40.07
+58.34
+39.07
+51.87
+38.00
+46.77
+42.09
+82.25
+41.75
+71.64
+40.81
+61.43
+40.24
+55.91
+39.32
+52.05
+43.06
+82.47
+42.32
+72.71
+41.73
+64.03
+41.12
+59.46
+40.42
+55.49
+42.17
+82.16
+41.61
+72.65
+41.25
+65.51
+40.83
+61.61
+40.69
+59.05
+42.15
+82.70
+41.58
+73.10
+41.39
+67.31
+41.10
+64.12
+40.85
+62.92
+42.41
+82.15
+42.32
+74.97
+42.02
+71.21
+42.06
+69.71
+41.91
+68.85
+
+Average
+rfb↑
+pwb↓
+42.71
+83.09
+37.56
+54.44
+32.63
+40.91
+29.76
+33.62
+26.32
+27.53
+44.32
+83.95
+42.66
+66.18
+39.80
+51.66
+37.57
+43.74
+35.20
+37.82
+44.5
+84.03
+43.48
+71.20
+42.05
+59.42
+41.02
+53.17
+39.72
+48.08
+44.19
+83.86
+43.44
+72.88
+42.49
+62.83
+41.83
+57.56
+40.85
+53.50
+44.14
+84.04
+43.52
+74.05
+42.85
+65.29
+42.21
+60.76
+41.62
+57.08
+44.06
+83.77
+43.48
+73.91
+42.94
+66.55
+42.56
+62.94
+42.20
+60.29
+43.5
+84.19
+43.02
+74.13
+42.72
+68.38
+42.48
+65.61
+42.41
+64.26
+43.66
+83.78
+43.37
+76.21
+43.19
+72.48
+43.16
+70.98
+43.13
+70.40
+
+Table 13: Pair-wise BLEU and Reference BLEU in Zh2En experiments of different decoder layer numbers and different K
+sets.
+
+Input
+Reference
+
+K=4
+
+Input
+
+Reference
+
+K=4
+
+Input
+
+Reference
+
+K=4
+
+Input
+Reference
+
+K=4
+
+只有 走 以 最 有效 利用 资源 和 保护 环境 为 基础 的 循环 经济 之 路 , 可 持续 发展 才 能 得到 实现 。
+
+the only route to sustainable development is a recycle economy , which is based on the foundation of environ-
+mental protection and makes the most efﬁcient use of resources .
+1. sustainable development is realized . only by taking the road of a cycle economy based on the availability of
+resources and environmental protection .
+2. only by taking the cycle of the economy based on the most effective use of resources and environmental
+protection can we achieve sustainable development .
+3. it is only through following the path of a cycle economy based on the most effective use of resources and
+environmental protection that sustainable development can be realized .
+4. sustainable development can only be realized if we take the most effective means of utilizing resources and
+protecting the environment .
+5. sustainable development can only be realized by taking the road of a cycle economy which is the most
+effective use of resources and environmental protection .
+
+由于 外界 猜测 印度 和 巴基斯坦 两 国 领导人 有 可能 在 会议 期间 就 双边 关系 问题 举行 会谈 , 这
+次 南盟 首脑 会议 格外 引人注目 。
+
+as outsiders are guessing the leaders of india and pakistan might be holding a meeting on their bilateral relation
+, the south asia summit becomes especially conspicuous .
+1. as the outside world conjecture that leaders of india and pakistan may hold talks on bilateral relations , this
+summit will attract people ’s attention .
+2. as people have been speculating that india and pakistan may hold talks on issues of bilateral relations during
+the meeting , the current summit of heads of state has attracted the attention of the outside world .
+3. as speculations by outsiders that leaders of india and pakistan may hold talks on bilateral relations during the
+meeting , this summit meeting of the heads of state has attracted much attention .
+4. as outsiders guessed that leaders of india and pakistan could possibly hold talks on bilateral relations , the
+summit meeting was particularly eye-catching .
+5. as outsiders guessed that india and pakistan might hold talks on bilateral relations , this summit was particu-
+larly eye-catching .
+
+2003年 , 空客 公司 的 飞机 交付 量 占 全球 的 份额 跃 升 至 52 % , 2001年 和 2002年 其 全球 份额 分别
+
+为 38 % 和 44 % 。
+in 2003 , airbus company ’s delivery increased to 52 % of the global market . its market share for 2001 and 2002
+were 38 % and 44 % respectively .
+1. air passenger trafﬁc accounted for 52 percent of the global share in 2003 and 38 percent in 2001 and 44
+percent in 2002 respectively .
+2. the share of aircraft delivered by air passenger companies has risen to 52 percent , while the global share in
+2001 and 2002 was 38 percent and 44 percent .
+3. the share of air passenger companies in the world jumped to 52 percent , and in 2001 and 2002 , 38 percent
+and 44 percent respectively .
+4. air passenger companies accounted for 52 percent of the world ’s share , and 38 percent and 44 percent of the
+world ’s world share in 2001 and 2002 .
+5. in 2003 , the air passenger companies accounted for 52 percent of the world ’s aircraft delivery and their
+global share was 38 percent in 2001 and 44 percent in 2002 .
+
+不过 他 认为 , 经过 美军 长期 训练 后 , 伊拉克 部队 的 训练 会 获得 成果 。
+
+but he believes that after being trained for a long time by the us army , iraqi forces will achieve good training
+results .
+1. he said , however , that after a us military training , the training of iraqi troops will be fruitful .
+2. he , however , believes that after us training for the us military over a long period of time , iraq ’s training
+will be successful .
+3. however , he believed that the iraqi troops ’ training will be successful after a long period of training us troops
+.
+4. he said , however , that iraq ’s troops ’ training has been successful after the us military has trained for a long
+time .
+5. he , however , believes that iraq ’s troops ’ training will yield results after training for the us military over a
+long period of time .
+
+Table 14: More Cases
+
+

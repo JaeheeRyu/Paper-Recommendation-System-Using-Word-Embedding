@@ -1,0 +1,4350 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+T
+
+G
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+2
+8
+8
+4
+0
+
+.
+
+1
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Model and Reinforcement Learning for Markov Games with Risk
+Preferences
+
+Wenjie Huang,1,2 Pham Viet Hai,3 William B. Haskell 4
+
+1Shenzhen Research Institute of Big Data (SRIBD)
+2 Institute for Data and Decision Analysis, The Chinese University of Hong Kong, Shenzhen
+3Department of Computer Science, School of Computing, National University of Singapore (NUS)
+4Supply Chain and Operations Management Area, Krannert School of Management, Purdue University
+wenjiehuang@cuhk.edu.cn, dcspvh@nus.edu.sg, whaskell@purdue.edu
+
+November 22, 2019
+
+Abstract
+
+We motivate and propose a new model for non-cooperative Markov game which considers the in-
+teractions of risk-aware players. This model characterizes the time-consistent dynamic risk from both
+stochastic state transitions (inherent to the game) and randomized mixed strategies (due to all other
+players). An appropriate risk-aware equilibrium concept is proposed and the existence of such equilibria
+is demonstrated in stationary strategies by an application of Kakutanis ﬁxed point theorem. We further
+propose a simulation-based Q-learning type algorithm for risk-aware equilibrium computation. This algo-
+rithm works with a special form of minimax risk measures which can naturally be written as saddle-point
+stochastic optimization problems, and covers many widely investigated risk measures. Finally, the almost
+sure convergence of this simulation-based algorithm to an equilibrium is demonstrated under some mild
+conditions. Our numerical experiments on a two player queuing game validate the properties of our model
+and algorithm, and demonstrate their worth and applicability in real life competitive decision-making.
+
+Keywords : Markov games; time-consistent risk preferences; ﬁxed point theorem; Q-learning
+
+1
+
+Introduction
+
+Markov games (a.k.a stochastic games) generalize Markov decision processes (MDPs) to the multi-player
+setting. In the classical case, each player seeks to minimize his expected costs. In a corresponding equilibrium,
+no player can decrease his expected costs by changing his strategy. We often want to compute equilibria to
+predict the outcome of the game and understand the behavior of the players.
+In this paper, we directly account for the risk preferences of the players in a Markov game. Informally,
+risk aversion is at least weakly preferring a gamble with smaller variance when payoﬀs are the same. Risk-
+averse players give more attention to low probability but high cost events compared to risk-neutral players.
+Models for the risk preferences of a single agent are well established [2, 45] for the static problems and [44, 48]
+for the dynamic case. We extend these ideas to general sum Markov games and extend the framework of
+Markov risk measures [44, 48] to the multi-agent setting. Our model speciﬁcally addresses the risk from
+the stochastic state transitions as well as the risk from the randomized strategies of the other players.
+The traditional multilinear formulation approach [1, 30] for computing equilibria in robust games fails in
+our settings, because our model has an intrinsic bilinear term due to the product of probabilities (the state
+transitions and mixed strategies) which leads to computational intractability. Thus, it is necessary to develop
+an alternative algorithm to compute equilibria.
+
+Risk Preferences Expected utility theory [14, 51, 52] is a highly developed framework for modeling risk
+preferences. Yet, some experiments [35] show that real human behavior may violate the independence axiom
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+of expected utility theory. Risk measures (as developed in [2, 45]) do not require the independence axiom
+and have favorable properties for optimization.
+In the dynamic setting, [44, 48] develop the class of Markov (a.k.a. dynamic/nested/iterated) risk mea-
+sures and establish their connection to time-consistency. This class of risk measures is notable for its recursive
+formulation, which leads to dynamic programming equations. Practical computational schemes for solving
+large-scale risk-aware MDPs have been proposed, for instance, Q-learning type algorithms [25, 26, 27] and
+simulation-based ﬁtted value iteration [55].
+
+Risk-sensitive/Robust Games Risk-sensitive games have already been considered in [3, 5, 19, 28, 32].
+Risk-sensitivity refers to the speciﬁc certainty equivalent (1/θ) ln (E [exp (θ X )]) where θ > 0 is the risk
+sensitivity parameter. [3, 19] focus on zero-sum risk-sensitive games under continuous time setting.
+Robust games study ambiguity about costs and/or state transition probabilities of the game. [1] develop
+the robust equilibrium concept where each player optimizes against the worst-case expected cost over the
+range of model ambiguity. This paradigm is extended to Markov games in [30], and the existence of robust
+Markov perfect equilibria is demonstrated. [1, 30] formulate robust Markov perfect equilibria as multilinear
+systems.
+Games with risk preferences are not artiﬁcial; rather, they emerge organically from many real prob-
+lems. Traﬃc equilibrium problems with risk-averse agents are analyzed in [6] with non-cooperative game
+theory. The preferences of risk-aware adversaries are modeled in Stackelberg security games in [43], and a
+computational scheme for robust defender strategies is presented.
+
+Contributions of This Work We make three main contributions in this paper:
+
+1. We develop a model for risk-aware Markov games where agents have time-consistent risk preferences.
+This model speciﬁcally addresses both sources of risk in a Markov game: (i) the risk from the stochastic
+state transitions and (ii) the risk from the randomized strategies of the other players.
+
+2. We propose a notion of ‘risk-aware’ Markov perfect equilibria for this game. We show that there exist
+risk-aware equilibria in stationary strategies.
+
+3. We create a practical simulation-based Q-learning type algorithm for computing risk-aware Markov
+perfect equilibria, and we show that it converges to an equilibrium almost surely. This algorithm is
+model-free and so does not require any knowledge of the true model, and thus can search for equilibria
+purely by observations.
+
+2 Risk-aware Markov Games
+
+(cid:1)
+
+In this section, we develop risk-aware Markov games. Our game consists of the following ingredients: ﬁnite set
+of players I ; ﬁnite set of states S ; ﬁnite set of actions Ai for each player i ∈ I ; strategy proﬁles A := ×i∈I Ai ;
+state-action pairs K := S × A; transition kernel P (·|s, a) ∈ P (S ) (here P (S ) denotes the distribution over
+S ) for all (s, a) ∈ K, and cost functions ci : S × A → R for all players i ∈ I .
+corresponding strategy proﬁle is at = (cid:0)ai
+Each round t ≥ 0 of the game has four steps: (i) ﬁrst, all players observe the current state st ∈ S ;
+(ii) second, each player i ∈ I chooses ai
+t ∈ Ai (all moves are simultaneous and independent, and the
+i∈I ); (iii) third, each player i ∈ I realizes cost ci (st , at ); and (iv)
+lastly, the state transitions to st+1 according to P (· | st , at ).
+We next characterize the players’ strategies. In this work, we focus on ‘stationary strategies’. Stationary
+strategies prescribe a player the same probabilities over his actions each time the player visits a certain state,
+no matter what route he follows to reach that state. Stationary strategies are more prevalent than normal
+strategies (which rely on the entire history), due to their mathematical tractability [53, 17, 30]. Furthermore,
+the memoryless property of stationary strategies conforms to real human behavior [53].
+s ∈ P (cid:0)Ai (cid:1) is the mixed strategy over actions
+We introduce some additional notations to characterize stationary strategies x. Let P (Ai ) denote the
+(cid:0)ai (cid:1) denotes the probability of choosing ai at state s. We deﬁne the strategy xi := (xi
+distribution over Ai . For each player i ∈ I and state s ∈ S , xi
+×s∈S P (cid:0)Ai (cid:1) of player i, the multi-strategy x := (cid:0)xi (cid:1)
+s )s∈S ∈ X i :=
+where xi
+i∈I ∈ X := ×i∈I X i of all players, the complementary
+
+s
+
+t
+
+2
+
+(cid:1)
+
+s
+
+strategy x−i := (xj )j (cid:54)=i ∈ X −i := ×j (cid:54)=iX j , and the multi-strategy xs = (cid:0)xi
+i∈I ∈ Xs := ×i∈I P (cid:0)Ai (cid:1) for all
+players in state s ∈ S . We sometimes write a multi-strategy as x = (ui , x−i ) to emphasize player i’s strategy
+ui .
+There are two sources of stochasticity in the cost sequence: the stochastic state transitions characterized
+by the transition kernel P (·|s, a), and the randomized mixed strategies of players characterized by x−i . In
+this work, we consider the risk from both sources of stochasticity. We begin by constructing the framework
+for evaluating the risk of sequences of random variables. A dynamic risk measure is a sequence of conditional
+risk measures each mapping a future stream of random costs into a risk assessment at the current stage,
+following the deﬁnition of risk maps from [48], and satisfying the stationary and time-consistency property
+of [44, Deﬁnition 3] and [47, Deﬁnition 1]. We assume each conditional risk measure satisﬁes three axioms:
+normalization, convexity, and positive homogeneity , which were originally introduced for static risk measures
+in the pioneering paper [2]. Here “convexity” characterizes the risk-averse behavior of players. From [47,
+Deﬁnition 1], a risk-aware optimal policy is time-consistent if, the risk of the sub-sequence of random outcome
+from any future stage is optimized by the resolved policy. In the Appendix, we give explicit deﬁnitions of
+the above three axioms of risk measures, stationary and time-consistency risk preferences, and derivation of
+recursive evaluation of dynamic risk.
+From [44, Theorem 4] and [47, Proposition 4], time-consistency allows for a recursive (iterative) evaluation
+of risk. The inﬁnite-horizon discounted risk for player i under multi-strategy x will be:
++ γ ρi (cid:0)ci (s2 , a2 ) + · · ·(cid:1))),
+(xi , x−i ) :=ρi (ci (s0 , a0 ) + γ ρi (ci (s1 , a1 )
+where ρi is a one-step conditional risk measure that maps random cost from the next stage to current stage,
+with respect to the joint distribution of randomized mixed strategies and transition kernel. In Eq. (16), each
+ci (st , at ), t ≥ 1 is governed by the joint distribution of randomized mixed strategies and transition kernel
+(ai
+t )P (st |st−1 , at−1 ),
+which is deﬁned for ﬁxed (st−1 , at−1 ) and for all st and ai
+t . The initial cost ci (s0 , a0 ) is only governed by
+the random mixed strategies distribution ×i∈I xi
+(ai
+0 ).
+The corresponding best response function for player i is:
+(xi , x−i ).
+
+t=0 γ t ci (st , at )(cid:3), where Ex
+min
+(2)
+Suppose we replace all ρi with expectation E in Eq. (16) which leads to Ex
+Denote the ingredients of game (cid:8)J i
+s (xi , x−i )(cid:9)
+denotes expectation with respect to multi-strategies x, then Problem (2) will become risk-neutral. Thus our
+formulation recovers the risk-neutral game as a special case.
+s∈S , i∈I as {I , S , A, P , c, ρ}.
+In line with the classical
+deﬁnition of Markov perfect equilibrium in [17], we now deﬁne risk-aware Markov perfect equilibrium.
+Deﬁnition 1. (Risk-aware Markov perfect equilibrium) A multi-strategy x ∈ X is a risk-aware Markov
+perfect equilibrium for {I , S , A, P , c, ρ} if
+J i
+s (xi , x−i ) ≤ J i
+s (ui , x−i ), ∀s ∈ S , ui ∈ X i , i ∈ I .
+(3)
+In Deﬁnition 1, each player i ∈ I implements a (risk-aware) stationary best response given the stationary
+complementary strategy x−i . It also states that x is an equilibrium if and only if no player can reduce his
+discounted risk by unilaterally changing his strategy.
+and v i := (cid:0)v i (s)(cid:1)
+Existence of Stationary Equilibria We prove the existence of stationary equilibira in this section. Let
+v i denote player i’s value function, which is an estimate of the discounted risk starting from the next state S (cid:48) .
+For each player i, the value of the stationary strategy x ∈ X in state s ∈ S is deﬁned to be v i (s) := J i
+s (x),
+s∈S is the entire value function for player i. The space of value functions for all players is
+V := ×i∈I R|S | , equipped with the supremum norm (cid:107)v(cid:107)∞ := maxs∈S , i∈I |v i (s) |. Eq. (16) states that each
+player must evaluate the stage-wise risk of random variables on A × S , formulated as
+ci (s, A) + γ v i (S (cid:48) ) ,
+
+(cid:2)(cid:80)∞
+
+×i∈I xi
+
+xi∈X i
+
+st
+
+s0
+
+s
+
+s
+
+(1)
+
+(4)
+
+J i
+
+s0
+
+J i
+
+s0
+
+3
+
+s
+
+s
+
+s
+
+(cid:1)
+
+s
+
+s
+
+s
+
+where A is the random strategy proﬁle chosen from A according to xs , and S (cid:48) is the random next state
+visited (which ﬁrst depends on x through the random choice of strategy proﬁle a, and then depends on the
+transition kernel P (· | s, a) after a ∈ A is realized).
+to state k ∈ S is (cid:0)×i∈I xi
+(cid:0)ai (cid:1)(cid:1) P (k | s, a). The probability distribution of the strategy proﬁle a ∈ A and
+Recall that in state s ∈ S , the probability that a = (ai )i∈I ∈ A is chosen and then the system transitions
+next state visited k ∈ S is given by the matrix
+(cid:0)ui
+:= (cid:2)ui
+(cid:0)ai (cid:1) (cid:0)×j (cid:54)=ixj
+(cid:0)aj (cid:1)(cid:1) P (k | s, a)(cid:3)
+Ps
+s , x−i
+where we explicitly denote the dependence on the multi-strategy xs = (cid:0)ui
+(a, k)∈A×S ,
+(cid:1) in state s. For simplicity,
+(5)
+(cid:0)ui
+(cid:1) when it is not necessary to indicate the dependence on (u, x).
+(cid:0)v i (cid:1) := (cid:0)ci (s, A) + γ v i (S (cid:48) )(cid:1) be the random cost-to-go for player i at state s. Based on the Fenchel-
+s , x−i
+we often write Ps instead of Ps
+s , x−i
+Let C i
+Moreau representation of risk [18, 45, 20], the convex risk of random cost-to-go denoted by ψ i
+s (ui
+s , x−i
+s , v i )
+can be computed as the worst-case expected cost-to-go
+s , v i ) :=ρi (cid:0)ci (s , A) + γ v i (S (cid:48) )(cid:1)
+(cid:8)(cid:104)µ, C i
+s (µ)(cid:9) ,
+ψ i
+s (ui
+s , x−i
+where (cid:8)Mi
+s (Ps )(cid:9)
+= sup
+(cid:8)bi
+s∈S , i∈I ⊂ P (A × S ) is the risk envelope of ρi that depends on the distribution Ps , and
+s∈S , i∈I : P (A × S ) → R are convex functions satisfying inf µ∈P (A×S ) bi
+s (µ) = 0 for all i ∈ I and s ∈ S .
+(cid:0)ui
+(cid:1)} and bi
+To connect to risk-neutral games, we can just choose all Mi
+We next introduce further assumptions on ρi , (cid:8)Mi
+s (Ps )(cid:9)
+s (Ps ) to be singletons {Ps
+s∈S , i∈I , and (cid:8)bi
+s , x−i
+s (µ) = 0
+for all µ ∈ Mi
+s (Ps ), i ∈ I , and s ∈ S .
+s∈S , i∈I , that will lead to the
+existence of stationary equilibria.
+(ii) (cid:8)Mi
+s (Ps )(cid:9)
+Assumption 1. (i) Al l ρi are law invariant, ρi (X ) = ρi (Y ) for al l X =D Y , where =D denotes equality in
+distribution.
+s∈S , i∈I ⊂ P (A × S ) is a col lection of set-valued mappings where Mi
+polyhedral convex for al l Ps . Explicitly, there exists M ≥ 1 linear constraints and [M ] := {1, 2, ..., M }. Then
+s (Ps ) are closed and
+s (Ps ) is deﬁned as:
+
+(cid:0)v i (cid:1)(cid:105) − bi
+
+µ∈Mi
+
+Mi
+
+(cid:9)
+
+(cid:9)
+
+s
+
+s (Ps )
+
+s
+
+s
+
+s
+
+s
+
+
+
+µ ∈ R|A||S | :
+
+s, m µ + fm (Ps ) ≥ hi
+s, m , m ∈ [M ],
+Ai
+eT µ = 1,
+µ ≥ 0,
+
+(6)
+
+s
+
+(cid:9)
+
+(iii) Al l (cid:8)bi
+where Ai
+s, m are matrices, fm are linear functions in Ps and hi
+s, m are constants.
+s∈S , i∈I are convex and Lipschitz continuous.
+Formulation (6) explains how Mi
+s and x−i
+s (Ps ) depends on Ps . In addition, if fm depends linearly on Ps , then
+fm also depends linearly on ui
+s by deﬁnition of Ps in Eq.
+(5).
+In computational terms, this
+assumption is close to [30] which assumes polyhedral uncertainty sets for the transition probabilities in its
+robust Markov game model. This assumption also corresponds to the one in [16] about representation of
+agent risk preferences.
+
+Example 1. Conditional value-at-risk (CVaR) is a widely investigated coherent risk measure that computes
+the conditional expectation of random losses exceeding a threshold with probability α.
+CVaR can be constructed from system (6) when we choose M = 1, Ai
+s,m = −e, fm (Ps ) = Ps /(1 − αi ),
+and hi
+s,m = 0 with m = 1.
+The best response function v∗ corresponding to a risk-aware Markov perfect equilibrium, for all s ∈ S , i ∈
+
+4
+
+I , satisﬁes
+
+s∈P (Ai )
+ui
+
+s∈P (Ai )
+ui
+
+ui∈X i
+
+s
+
+v i∗ (s) = min
+
+s (ui , x−i )
+J i
+s , x−i
+= min
+ψ i
+s (ui
+s , v i∗ ),
+(7)
+s ∈ arg min
+(cid:0)v i (cid:1) on A×S , the players control the distribution on P (A × S )
+s (ui , x−i ),
+xi
+J i
+(8)
+and v i∗ may not be unique. In the mapping C i
+through their mixed strategies. Eqs. (7) - (8) together simply restate Eq. (3). However, Eqs. (7) - (8) give
+a computational recipe that can be encoded into an operator on multi-strategies. We deﬁne this operator Φ
+on X :
+s , v i∗ ), ∀s ∈ S , i ∈ I (cid:111)
+˜q ∈ X : ˜q i
+s ∈ arg min
+ψ i
+s (ui
+s , x−i
+s , v i∗ ),
+s , x−i
+ψ i
+s (ui
+.
+This operator returns the set of strategies for every player that are best responses to all other players’
+strategies.
+The following Theorem 1 brieﬂy describes the existence of stationary strategies with detailed proof in
+the Appendix.
+Theorem 1. Suppose Assumption 1 holds, then the game {I , S , A, P , c, ρ} has an equilibrium in stationary
+strategies.
+
+v i∗ (s) = min
+
+s∈P (Ai )
+ui
+
+s∈P (Ai )
+ui
+
+Φ(x) :=
+
+(cid:110)
+
+(9)
+
+Proof. (Proof sketch) Our proof of existence of risk-aware Markov perfect equilibrium draws from [17, 30].
+The main idea is to show that Φ is a nonempty, closed, and convex subset of X , and that Φ is upper
+semicontinuous. Then, we apply Kakutani’s ﬁxed point theorem to show that this correspondence Φ has a
+ﬁxed point which coincides with a risk-aware Markov perfect equilibrium.
+
+3 A Q-Learning Algorithm
+
+for the cost functions (cid:8)ci(cid:9)
+We propose a simulation-based and asynchronous algorithm for computing equilibria of the risk-aware game
+{I , S , A, P , c, ρ}, called Risk-aware Nash Q-learning (RaNashQL). This algorithm does not require a model
+i∈I or the transition kernel P , nor does not it require prior knowledge on S . The
+algorithm has an outer-inner loop structure, where the risk estimation is performed in the inner loop and
+the equilibrium estimation is performed in the outer loop.
+In each iteration of RaQL, a collection of Q-values for each player for all strategy proﬁles, is generated.
+The one-shot game formed by the collection of Q-values is called a stage game. We will later formulate stage
+game explicitly. The outer-inner loop structure follows [25, 27, 26] where multiple “stochastic approximation
+instances” for both risk estimation and Q-value updates are “pasted” together. We show that the Nash
+equilibria mapping for stage games is non-expansive, and both the risk estimation error and equilibrium
+estimation error are bounded by the gap between the estimated Q-value and the Q-value under the equilib-
+For this section, we assume that our risk measures (cid:8)ρi(cid:9) have a special form as stochastic saddle-point
+rium. These two conditions allow us to prove the convergence of the algorithm using the theory of stochastic
+approximation, as shown in [15].
+problems to facilitate computation. Deﬁne a probability space (Ω, F , P ) and the space of essentially bounded
+random variables L = L∞ (Ω, F , P ).
+Assumption 2. (Stochastic sadd le-point problem) For al l i ∈ I ,
+(cid:2)Gi (X, y , z )(cid:3) , ∀X ∈ L,
+ρi (X ) = min
+max
+(10)
+where: (i) Y i ⊂ Rd1 and Z i ⊂ Rd2 are compact and convex with diameters DY and DZ , respectively. (ii) Gi
+is Lipschitz continuous on L × Y i × Z i with constant KG > 1. (iii) G is convex in y ∈ Y i and concave in
+z ∈ Z i . (iv) The subgradients of G on y and z are Borel measurable and uniformly bounded for al l X ∈ L.
+
+z∈Z i
+
+y∈Y i
+
+EP
+
+5
+
+In [26, Theorem 3.2], conditions on Gi are given to ensure that the corresponding minimax structure
+(10) is a convex risk measure. Some examples of the functions Gi are shown in the Appendix such that the
+corresponding risk-aware Markov perfect equilibria exist. For instance, CVaR can be written as:
+
+(cid:26)
+
+(cid:27)
+
+CVaRαi (X ) := min
+
+η∈R
+
+η +
+
+where αi ∈ [0, 1) is the risk tolerance for player i.
+
+1
+1 − αi
+
+E [max {X − η , 0}]
+
+,
+
+(11)
+
+y∈Y i
+
+z∈Z i
+
+EP (· | s, a)
+
+Risk-aware Nash Q-learning Algorithm RaNashQL is updated based on future equilibrium costs
+(which depend on all players). In contrast, single-agent Q-learning updates are only based on the player’s
+own costs. Thus, to predict equilibrium losses, every player must maintain and update a model for all other
+player’s costs and their risk assessments, which follows the settings in [23].
+For all (s, a) ∈ S × A, i ∈ I ,
+Gi (cid:0)ci (s , A) + γ v i∗ (S ), y , z(cid:1) (cid:9),
+Qi∗ (s, a) := min
+max
+denotes the Q-values corresponding to a stationary equilibrium and its best response function v∗ . In the
+case of multiple equilibria, diﬀerent Nash strategy proﬁles may have diﬀerent equilibrium Q-values, so the
+pair (v i∗ , Qi∗ ) may not be unique.
+In a multi-agent Q-learning algorithm, the agents play a sequence of stage games where the payoﬀs are
+the current Q-values. In each state s ∈ S , the corresponding stage game is the collection (Qi (s))i∈I , where
+Qi (s) := {Qi (s, a) : a ∈ A} is the array of Q-values for player i for all strategy proﬁles. Let xs be a Nash
+equilibrium of the stage game (Qi (s))i∈I , then the corresponding Nash Q-value for all i ∈ I is denoted:
+(cid:0)aj (cid:1)(cid:1) Qi (s, a) ,
+which gives each player’s corresponding expected cost in state s ∈ S (with respect to the Q-values) under
+xs .
+
+(cid:0)×j∈I xj
+
+N ashi (Qj (s))j∈I :=
+
+(cid:88)
+
+a∈A
+
+(cid:8)
+
+s
+
+(12)
+
+RaNashQL builds upon the algorithm in [23] for the risk-aware case. Figure 1 illustrates how players
+interact with others and update their equilibrium estimation through RaQL. Each player chooses an action
+
+Figure 1: Illustration of RaQL
+
+based on a Nash equilibrium of their current Q-values, observed cost, other players’ actions, and then the
+new state in each iteration. The Q-values follow a stochastic approximation-type update as in standard
+Q-learning.
+The steps of RaNashQL are summarized in Algorithm 1, which contains N and T number of iterations
+for outer and inner loops, respectively.
+In Step 4, we use the stochastic approximation for saddle-point
+
+6
+
+Algorithm 1 Risk-aware Nash Q-learning
+(Step 0) Initialize: Let n = 1, and t = 1, get the initial state s1 . Let the learning agent be indexed by i.
+For all s ∈ S and ai ∈ Ai , i ∈ I , let Qi
+n,t (s, a) = 0.
+For n = 1, ..., N do
+(Step 1) Choose ai
+n based on the exploration policy π . Observe the actions and costs for all players, then
+observe a new state;
+For t = 1, ..., T do
+(Step 2) Compute the Nash Q-value; Compute the risk-aware cost-to-go for all players;
+n,t , i ∈ I using stochastic approximation;
+(Step 3) Update each Qi
+(Step 4) Stochastic approximation of risk measure by SASP;
+end for
+end for
+N ,T , i ∈ I .
+Return Approximated Q-value Qi
+
+Game 1 Left
+Up
+0, 1
+Down
+7, 10
+
+Right
+10, 7
+11, 8
+
+Game 2 Left
+Up
+5, 5
+Down
+4, 10
+
+Right
+10, 4
+8, 8
+
+Game 3 Left
+Up
+0, 1
+Down
+7, 10
+
+Right
+10, 9
+8, 8
+
+Table 1: Examples of I (cid:48) -mixed point
+
+problems (SASP) algorithm, [40, Algorithm 2.1]. Classical stochastic approximation may result in extremely
+SASP algorithm with a properly chosen parameter preserves a “reasonable” (close to O(n−1/2 )) convergence
+slow convergence for degenerate ob jectives (i.e. when the ob jective has a singular Hessian). However, the
+rate, even when the ob jective is non-smooth and/or degenerate. Thus, SASP is a robust choice for solving
+problem (10). The extended formulations from Steps (0)-(4) in Algorithm 1 are given in the Appendix.
+Almost Sure Convergence Let {Qn,T }i∈I be the Q-value estimations at iteration n and T (the end of
+each inner loop after the risk estimation has been done) from Algorithm 1. We would like to demonstrate
+the almost sure convergence of Qi
+n,T to the risk-aware equilibrium Q-values Qi∗ for all players. [23] introduce
+two conditions on the Nash equilibria of all the stage games that lead to almost sure convergence, a global
+optimal point when every player receives his lowest cost at this point, and a sadd le point when each agent
+would receive a lower cost when at least one of the other players deviates. We found a special type of Nash
+equilibria that we call an I (cid:48) -mixed point, which builds on [23], and plays a ma jor role in our convergence
+analysis.
+A multi-strategy x ∈ X is a I (cid:48) -mixed point of (cid:0)C i (cid:1)
+Deﬁnition 2. Let (C i )i∈I denote the expected cost of al l players as a function of the multi-strategy x ∈ X .
+index of players I (cid:48) ⊆ I such that: C i (x) ≤ C i (x(cid:48) ) , ∀x(cid:48) ∈ X , i ∈ I (cid:48) , and C i (cid:0)xi , x−i (cid:1) ≤ C i (cid:0)xi , u−i (cid:1) , ∀u−i ∈
+i∈I if: (i) it is a Nash equilibrium and (ii) there exists an
+Our deﬁnition of ‘I (cid:48) -mixed point’ combines both notions of global optimal point and saddle point. From
+Deﬁnition 2, a subset of players I (cid:48) ⊆ I minimizes their expected costs at x. The rest of the players I \I (cid:48)
+each would receive a lower expected cost when at least one of the other players deviates. An example of an
+I (cid:48) -mixed point in a one shot game follows.
+
+X −i , i ∈ I \I (cid:48) .
+
+Example 2. Player 1 has choices Up and Down, and Player 2 has choices Left and Right. Player 1’s loss
+is the ﬁrst entry in each cel l, and Player 2’s are the second. The ﬁrst game has a unique Nash equilibrium
+(Up, Left), which is a global optimal point. The second game also has a unique Nash equilibrium (Down,
+Right), which is a sadd le-point. The third game has two Nash equilibrium: a global optimum (Up, Left),
+and a mixed point (Down, Right). In equilibrium (Down, Right), Player 1 receives a lower cost if Player 2
+deviates, while Player 2 receives a higher cost if Player 1 deviates.
+
+We now introduce the following additional assumptions for our analysis of RaNashQL.
+
+7
+
+n,T (s))i∈I for al l n and s ∈ S in Algorithm
+Assumption 3. One of the fol lowing holds for al l stage games (Qi
+1.
+n,T (s))i∈I for al l n and s ∈ S has a global optimal point.
+(i) Every (Qi
+(ii) Every (Qi
+n,T (s))i∈I for al l n and s ∈ S has a sadd le point.
+(iii) For any two stage games Q, ˜Q ∈ (Qi
+n,T (s))i∈I for al l n and s ∈ S , we suppose Q1 has a I1 -mixed
+point x and Q2 has a I2 -mixed point ˜x. Then: For i ∈ I1 ∪ (I \I2 ), then Qi (x) ≥ ˜Qi ( ˜x); For i ∈ I2 ∪ (I \I1 ),
+then Qi (x) ≤ ˜Qi ( ˜x).
+
+Compared with [23, Assumption 3], Assumption 3(iii) enables wider application of RaNashQL. In par-
+ticular, even the indices I1 and I2 of all the stage games may diﬀer across iterations. Next we list further
+standard assumptions on exploration in RaNashQL and its asynchronous updates.
+Assumption 4. (i) The exploration policy π is ε−greedy, meaning with probability ε ∈ (0, 1), action ai is
+chosen uniformly from Ai , and with probability 1 − ε, action ai is drawn from Ai according to xi
+s which is
+the equilibrium of the stage game {Qi (s)}i∈I ; (ii) a single state-action pair is updated when it is observed in
+each iteration.
+
+n,T
+
+n≥1
+
+(cid:9)
+
+By the Extended Borel-Cantelli Lemma [11], the algorithm satisfying Assumption 4(i) will visit every
+(cid:8)Qi
+state-action pair inﬁnitely often with probability one.
+Theorem 2. Suppose Assumptions 3 and 4 hold. For any T ≥ 1, Algorithm 1 generates sequences
+n, T → Qi∗ almost surely as n → ∞ for al l i ∈ I .
+such that Qi
+Proof. (Proof sketch) (i) Show that all I (cid:48) -mixed points of a stage game have equal value, and the property
+also holds for global optimal points and saddle points. Consequently, from [23], the mapping from Q-values
+to Nash equilibrium (of the stage games) is non-expansive.
+(ii) Show that the Hausdorﬀ distance between the subdiﬀerentials of the estimated risk on Y i and Z i
+(corresponding to Eq. (10)), is bounded by a function of (cid:107)Qi
+n−1,T − Qi∗ (cid:107)2 .
+(iii) Show that the duality gaps of all the saddle point estimation problems are bounded by a function of
+(cid:107)Qi
+n−1,T − Qi∗ (cid:107)2 .
+(iv) If the conditions in (i)-(iii) hold, then Qi
+n, T from RaNashQL are a well-behaved stochastic approxi-
+mation sequence [15, Deﬁnition 7] that converges to Qi∗ with probability one.
+The full proof Theorem 2 is presented in the Appendix.
+(cid:16)(cid:0)S A ln(S A/δ)/2 (cid:1)1/β
+S A/))1/(1−β )(cid:17)
+[26, Theorem 4.7] shows that the single-agent version of RaNashQL has complexity
+Ω
++ (ln(
+,
+(13)
+with probability 1 − δ , where S and A denote the cardinality of state and actions spaces and β ∈ (0, 1] is the
+learning rate. In the multi-agent case, our conjecture is to replace A with |A| in the term (13) to get a rough
+estimate of the time complexity of RaNashQL. However, the explicit complexity bound is diﬃcult to derive
+and remains for future research. In RaNashQL, there are multiple Q-values being updated in each iteration
+for each state, and their relationships are complex (they are linked by the solutions of a stage game, since
+each stage game may yield multiple Nash equilibria).
+In the Appendix, we also discuss (i) methods for computing Nash equilibria of stage games involving two
+or more players; (ii) a rule for choosing a unique Nash equilibrium of stage games from multiple choices; (iii)
+the storage space requirement of RaNashQL.
+
+√
+
+4 A Queuing Control Application
+
+We apply our techniques to the single server exponential queuing system from [30]. In this packet switched
+network, it is service provider’s (denoted as “SP” latter in the tables) beneﬁt to increase the amount of
+packets processed in the system. However, such an increase may result in an increase in packets’ waiting
+times in the buﬀer (called latency), and routers (denoted as “R” latter in the tables) are used to reduce
+
+8
+
+Player Method Mean
+Neutral −22.22
+SP
+−77.78
+CVaR
+Neutral
+37.48
+CVaR
+83.68
+
+R
+
+Variance
+1.4736e − 06
+407.84
+7.32
+491.20
+
+5%-CVaR 10%-CVaR
+−22.22
+−22.22
+−69.34
+−68.26
+37.94
+38.18
+86.03
+87.54
+
+Method Mean
+
+5%-CVaR 10%-CVaR
+
+Neutral
+CVaR
+
+15.26
+5.9
+
+15.72
+16.69
+
+15.96
+19.28
+
+Table 2: Simulation (Constructing CVaR with α1 = α2 = 0.1)
+
+packets’ waiting times. Thus, the game arises because the service provider and router choose their service
+rates to achieve competing ob jectives.
+The state space S represents the maximum number (30 in these experiments) of packets allowed in the
+system. We assume that the time until the admission of a new packet and the next service completion
+are both exponentially distributed. Therefore, the number of packets in the system can be modeled as a
+birth and death process with ﬁxed state transition probabilities. In the Appendix, we provide the explicit
+formulation of cost functions, state transition probabilities, as well as other parameter settings. We suppose
+that each player has the same two available actions (service rates) in every state. CVaR is the risk measure
+for both players in all the experiments. The players risk preferences are obtained by setting αi for i = 1, 2,
+and we allow α1 (cid:54)= α2 .
+
+Experiment I (RaNashQL vs. Nash Q-learning) We compare RaNashQL with Nash Q-learning in
+[23] in terms of their convergence rates. Given any precision  > 0, we record the iteration count n until
+the convergence criterion (cid:107)Qi
+n, T − Qi∗ (cid:107)2 ≤  is satisﬁed. Figure 2 (top) reveals that RaNashQL is more
+computationally expensive than Nash Q-learning. Table 2 shows the discounted cost under equilibrium by
+simulation (1000 samples). The ﬁrst table reveals that incorporating risk will help the service provider reduce
+its mean cost, while increase the mean cost of the router. The second table shows that incorporating risk
+will help to reduce the overall cost to the entire system with only a slightly higher variance.
+The ﬁrst part of Table 3 shows that the mean cost of service provider (−44.31) is lower than that under
+the risk-neutral Markov perfect equilibrium (−22.22), and the mean cost of router (59.64) is lower than
+that under the risk-aware Markov perfect equilibrium (37.48). This result shows that incorporating risk
+preference can help decision makers reach a new equilibrium that further reduces his mean cost compared to
+cases where both players are either risk-neutral or risk-aware. Similar phenomena can also be shown in the
+second part of Table 3. In the ﬁnal part of Table 3, we construct a new two-player one-shot game where the
+risk preferences (risk-neutral and risk-aware) are the actions and the expected value from simulation will be
+outcome of the game. We ﬁnd that a equilibrium is attained for this game when the router is risk-neutral and
+the service provider is risk-aware. This one-shot game demonstrates that the router should be risk-neutral
+when service provider is risk-aware, in order to reduce his expected cost.
+In the Appendix, we further explain the reason for the increase in variance in risk-aware games in Table
+2 which is counter-intuitive.
+
+Experiment II (RaNashQL vs. Multilinear System)
+In this experiment, we consider a special case
+where the risk only comes from state transitions (this setting is basically a risk-aware interpretation of [30]).
+In this case, we can compute the risk-aware Markov equilibrium “exactly” using a multilinear system and
+interior point algorithm as detailed in the Appendix. We evaluate performance in terms of the relative error
+
+(cid:114)(cid:80)
+
+(cid:16)
+
+s∈S
+
+(cid:17)2
+
+, n ≤ N ,
+
+(cid:112)(cid:80)
+
+n, T (s))j∈I − v i∗ (s)
+N ashi (Qj
+s∈S v i∗ (s)2
+
+9
+
+Player Method Mean
+−44.31
+59.64
+
+CVaR
+Neutral
+
+SP
+R
+
+Player Method Mean
+−54.76
+70.56
+
+CVaR
+Neutral
+
+SP
+R
+
+Variance
+
+266.06
+316.71
+
+5%-CVaR 10%-CVaR
+−43.38
+−42.70
+61.18
+62.77
+
+Variance
+
+26.05
+31.03
+
+5%-CVaR 10%-CVaR
+−54.71
+−54.67
+71.56
+71.81
+
+Service Provider
+
+Risk-neutral
+Risk-aware
+
+Router
+(−22.22, 37.48)
+Risk-neutral
+(−54.76, 70.56)
+Risk-aware
+(−44.44, 59.64)
+(−77.78, 83.68)
+
+Table 3: Simulation ( Constructing CVaR with α1 = 0.95, α2 = 0.1 for the ﬁrst table, and α1 = 0.1, α2 = 0.95 for
+the second)
+
+where v i∗ is the value function corresponding to the equilibrium solved by multilinear system. The Appendix
+conﬁrms that the service provider’s strategy produced by RaNashQL converges almost surely to the one
+produced by multilinear system. From the Appendix, interior point algorithm ﬁnds a local optimum with
+10471.975 seconds, and RaNashQL has relative error lower than 25% with 5122.657 seconds. Thus, our
+approach possesses superior computational performance compared to an interior point algorithm for solving
+multilinear systems.
+
+Experiment III (Computational Complexity Conjecture)
+In this experiment, we explore the con-
+jecture on the computational complexity of RaNashQL. Given a ﬁxed , we could compute the complexity
+conjecture through formulation (13). Figure 2 (bottom) shows that the relative errors of service provider
+and router under computed complexity conjecture are bounded by . Thus we derive a potential heuristic
+for the computational complexity of solving a general sum game given the size of the game. In other words,
+each practitioner can estimate the upper bound of total complexity in computing the − equilibrium through
+this conjecture.
+
+5 Conclusion
+
+In this paper, we propose a model and simulation-based algorithm for non-cooperative Markov games with
+time-consistent risk-aware players. This work has made the following contributions: (i) The model charac-
+terizes the risk from both the stochastic state transitions and the randomized strategies of the other players.
+(ii) We deﬁne risk-aware Markov perfect equilibrium and prove its existence in stationary strategies. (iii)
+We show that our algorithm converges to risk-aware Markov perfect equilibrium almost surely. (iv) From a
+queuing control numerical example, we ﬁnd that risk-aware Markov games will reach new equilibria other
+than risk-neutral ones (this is the equilibrium shifting phenomenon). Moreover, the variance is increased for
+risk-aware Markov games, which is contrary to the variance reduction property of risk-aware optimization
+for single agents. The sum of expected cost over all players is reduced in risk-aware Markov game, compared
+to risk-neutral ones. In future research, we seek to improve the scalability of our framework for large-scale
+Markov games.
+
+Acknowledgements
+
+This work is supported by SRIBD International Postdoctoral Fellowship and the NUS Young Investigator
+Award “Practical Considerations for Large-Scale Competitive Decision Making”.
+
+10
+
+Figure 2: Computational Complexity
+
+References
+
+[1] Michele Aghassi and Dimitris Bertsimas. Robust game theory. Mathematical Programming, 107(1-
+2):231–273, 2006.
+
+[2] Philippe Artzner, Freddy Delbaen, Jean-Marc Eber, and David Heath. Coherent measures of risk. Math.
+Finance, 9(3):203–228, 1999.
+
+[3] Arnab Basu and Mrinal K Ghosh. Nonzero-sum risk-sensitive stochastic games on a countable state
+space. Mathematics of Operations Research, 43(2):516–532, 2017.
+
+[4] Robert G. Batson. Combinatorial behavior of extreme points of perturbed polyhedra. 127:130–139,
+1987.
+
+[5] Nicole B¨auerle and Ulrich Rieder. Zero-sum risk-sensitive stochastic games. Stochastic Processes and
+their Applications, 127(2):622–642, 2017.
+
+[6] Michael GH Bell and Chris Cassir. Risk-averse user equilibrium traﬃc assignment: an application of
+game theory. Transportation Research Part B: Methodological, 36(8):671–681, 2002.
+
+[7] Dimitri P Bertsekas and John N Tsitsiklis. Neuro-dynamic programming. Athena Scientiﬁc Belmont,
+MA, 1996.
+
+[8] Dimitris Bertsimas and David B. Brown. Constructing uncertainty sets for robust linear optimization.
+Operations Research, 57(6):1483–1495, 2009.
+
+[9] Vivek S Borkar et al. Stochastic approximation. Cambridge Books, 2008.
+
+[10] Vivek S Borkar and Sean P Meyn. The ode method for convergence of stochastic approximation and
+reinforcement learning. SIAM Journal on Control and Optimization, 38(2):447–469, 2000.
+
+11
+
+[11] Leo Breiman. Probability, volume 7 of classics in applied mathematics. Society for Industrial and
+Applied Mathematics (SIAM), Philadelphia, PA, 1992.
+
+[12] Artur Czuma j, Michail Fasoulakis, and Marcin Jurdzi´nski. Multi-player approximate nash equilibria. In
+Proceedings of the 16th Conference on Autonomous Agents and MultiAgent Systems, pages 1511–1513.
+International Foundation for Autonomous Agents and Multiagent Systems, 2017.
+
+[13] Ruchira S. Datta. Using computer algebra to ﬁnd nash equilibria. In Proceedings of the 2003 Inter-
+national Symposium on Symbolic and Algebraic Computation, ISSAC ’03, pages 74–79, New York, NY,
+USA, 2003. ACM.
+[14] Dirk Engelmann and Jakub Steiner. The eﬀects of risk preferences in mixed-strategy equilibria of 2× 2
+games. Games and Economic Behavior, 60(2):381–388, 2007.
+
+[15] Eyal Even-Dar and Yishay Mansour. Learning rates for q-learning. The Journal of Machine Learning
+Research, 5:1–25, 2004.
+
+[16] Michael Ferris and Andy Philpott. Dynamic risked equilibrium, 2018.
+
+[17] Arlington M Fink. Equilibrium in a stochastic n-person game. Journal of science of the hiroshima
+university, series ai (mathematics), 28(1):89–93, 1964.
+
+[18] Hans F¨ollmer and Alexander Schied. Convex measures of risk and trading constraints. Finance and
+stochastics, 6(4):429–447, 2002.
+
+[19] Mrinal K Ghosh, K Suresh Kumar, and Chandan Pal. Zero-sum risk-sensitive stochastic games for
+continuous time markov chains. Stochastic Analysis and Applications, 34(5):835–851, 2016.
+
+[20] Vincent Guigues, Volker Kr¨atschmer, and Alexander Shapiro. Statistical inference and hypotheses
+testing of risk averse stochastic programs. arXiv preprint arXiv:1603.07384, 2016.
+
+[21] S´ebastien H´emon, Michel de Rougemont, and Miklos Santha. Approximate nash equilibria for multi-
+player games.
+In International Symposium on Algorithmic Game Theory, pages 267–278. Springer,
+2008.
+
+[22] P. Jean-Jacques Herings and Ronald J. A. P. Peeters. Stationary equilibria in stochastic games: struc-
+ture, selection, and computation. Journal of Economic Theory, 118:32–60, 2004.
+
+[23] Junling Hu and Michael P Wellman. Nash q-learning for general-sum stochastic games. Journal of
+machine learning research, 4(Nov):1039–1069, 2003.
+
+[24] Junling Hu and Michael P Wellman. Nash q-learning for general-sum stochastic games. Journal of
+machine learning research, 4(Nov):1039–1069, 2003.
+
+[25] W. Huang and W. B. Haskell. Risk-aware q-learning for Markov decision processes. In Proc. IEEE 56th
+Annual Conf. Decision and Control (CDC), pages 4928–4933, December 2017.
+
+[26] Wenjie Huang and William B Haskell. Stochastic approximation for risk-aware markov decision pro-
+cesses. arXiv preprint arXiv:1805.04238, 2018.
+
+[27] Daniel R Jiang and Warren B Powell. Risk-averse approximate dynamic programming with quantile-
+based risk measures. Mathematics of Operations Research, 43(2):554–579, 2017.
+
+[28] Victor Richmond R Jose and Jun Zhuang. Incorporating risk preferences in stochastic noncooperative
+games. IISE Transactions, 50(1):1–13, 2018.
+
+[29] Shizuo Kakutani et al. A generalization of brouwer’s ﬁxed point theorem. Duke mathematical journal,
+8(3):457–459, 1941.
+
+[30] Erim Kardes, Fernando Ordonez, and Randolph W. Hall. Discounted robust stochastic games and an
+application to queueing control. Operations Research, 59(2):365–382, 2011.
+
+12
+
+[31] Erim Karde¸s, Fernando Ord´o˜nez, and Randolph W Hall. Discounted robust stochastic games and an
+application to queueing control. Operations research, 59(2):365–382, 2011.
+
+[32] M. B. Klompstra. Nash equilibria in risk-sensitive dynamic games. IEEE Transactions on Automatic
+Control, 45(7):1397–1401, July 2000.
+
+[33] Harold J. Kushner and G.George Yin. Stochastic Approximation and Recursive Algorithms and Appli-
+cations. Springer, 2003.
+
+[34] Carlton E Lemke and Joseph T Howson, Jr. Equilibrium points of bimatrix games. Journal of the
+Society for Industrial and Applied Mathematics, 12(2):413–423, 1964.
+
+[35] Jonathan Levin. Choice under uncertainty. Lecture Notes, 2006.
+
+[36] Adam B Levy, Ren6 A Poliquin, and R Tyrrell Rockafellar. Stability of locally optimal solutions. SIAM
+Journal on Optimization, 10(2):580–604, 2000.
+
+[37] Michael L Littman, Nishkam Ravi, Arjun Talwar, and Martin Zinkevich. An eﬃcient optimal-
+equilibrium algorithm for two-player game trees. arXiv preprint arXiv:1206.6855, 2012.
+
+[38] Richard D McKelvey and Andrew McLennan. Computation of equilibria in ﬁnite games. Handbook of
+computational economics, 1:87–142, 1996.
+
+[39] Karthik Natara jan, Dessislava Pachamanova, and Melvyn Sim. Constructing risk measures from uncer-
+tainty sets. Oper. Res., 57:1129–1141, September 2009.
+
+[40] Arkadi Nemirovski and Reuven Rubinstein. An eﬃcient stochastic approximation algorithm for stochas-
+tic saddle point problems. Modeling Uncertainty, pages 156–184, 2005.
+
+[41] Jean-Paul Penot. On the convergence of subdiﬀerentials of convex functions. Nonlinear Analysis:
+Theory, Methods & Applications, 21(2):87–101, 1993.
+
+[42] Krzysztof Postek, Dick Den Hertog, and Bertrand Melenberg. Computationally tractable counterparts
+of distributionally robust constraints on risk measures. 2015.
+
+[43] Yundi Qian, William B Haskell, and Milind Tambe. Robust strategy against unknown risk-averse attack-
+ers in security games. In Proceedings of the 2015 International Conference on Autonomous Agents and
+Multiagent Systems, pages 1341–1349. International Foundation for Autonomous Agents and Multiagent
+Systems, 2015.
+
+[44] Andrzej Ruszczy´nski. Risk-averse dynamic programming for markov decision processes. Mathematical
+programming, 125(2):235–261, 2010.
+
+[45] Andrzej Ruszczynski and Alexander Shapiro. Optimization of convex risk functions. Mathematics of
+operations research, 31(3):433–452, 2006.
+
+[46] Andrzej Ruszczy´nski and Alexander Shapiro. Optimization of convex risk functions. Mathematics of
+operations research, 31(3):433–452, 2006.
+
+[47] Alexander Shapiro and Alois Pichler. Time and dynamic consistency of risk averse stochastic programs.
+optimization-online.org, 2016.
+
+[48] Yun Shen, Wilhelm Stannat, and Klaus Obermayer. Risk-sensitive markov control processes. SIAM
+Journal on Control and Optimization, 51(5):3652–3672, 2013.
+
+[49] Csaba Szepesv´ari and Michael L Littman. A uniﬁed analysis of value-function-based reinforcement-
+learning algorithms. Neural computation, 11(8):2017–2060, 1999.
+
+[50] Yasushi Terazono and Ayumu Matani. Continuity of optimal solution functions and their conditions on
+ob jective functions. SIAM Journal on Optimization, 25(4):2050–2060, 2015.
+
+13
+
+[51] PJ Thomas. Measuring risk-aversion: The challenge. Measurement, 79:285–301, 2016.
+
+[52] John von Neumann and Oskar Morgenstern. Theory of Games and Economic Behavior. Princeton
+University Press, 1944.
+
+[53] OJ Vrieze. Stochastic games and stationary strategies. In Stochastic Games and Applications, pages
+37–50. Springer, 2003.
+
+[54] David W Walkup and Roger J-B Wets. A lipschitzian characterization of convex polyhedra. Proceedings
+of the American Mathematical Society, pages 167–173, 1969.
+
+[55] Pengqian Yu, William B Haskell, and Huan Xu. Approximate value iteration for risk-aware markov
+decision processes. IEEE Transactions on Automatic Control, 2018.
+
+14
+
+A Appendix
+
+A.1 Dynamic Risk Measures
+
+In this section, we describe the risk measures in our risk-aware Markov games. In our model, each player
+i faces a sequence of costs Xt = ci (st , at ) for all t ≥ 0. There are two sources of stochasticity in this
+cost sequence: (i) stochastic state transitions characterized by the transition kernel P (· | s, a); and (ii) the
+randomized mixed strategies of other players characterized by x−i . The key question is: how should player
+i account for both sources of stochasticity and evaluate the risk of the tail subsequence Xt , Xt+1 , . . . from
+the perspective of time t?
+We begin by formalizing some details about the risk of ﬁnite cost sequences Xt, T := (Xt , Xt+1 , . . . , XT )
+before we consider the risk of the inﬁnite cost sequence X0 , X1 , . . . actually faced by the players. For a
+reference distribution P on (Ω, F ), and we deﬁne Lt := L∞ (Ω, F t , P ) and Lt, T := Lt × Lt+1 × · · · × LT for
+all 0 ≤ t ≤ T < ∞.
+Deﬁnition 3. (i) A mapping ρt, T : Lt, T → Lt , is cal led a conditional risk measure if: ρt, T (Zt, T ) ≤
+ρt, T (Xt, T ) for al l Zt, T , Xt, T ∈ Lt, T such that Zt, T ≤ Xt, T .
+(ii) A dynamic risk measure is a sequence of conditional risk measures {ρt, T }T
+Given a dynamic risk measure {ρt, T }T
+t=0 , we may deﬁne a larger family of risk measures ρt, τ for 0 ≤ t ≤
+τ ≤ T via the convention ρt, τ (Xt , . . . , Xτ ) = ρt, τ (Xt , . . . , Xτ , 0, . . . , 0).
+We now make our key assumptions about player risk preferences.
+Assumption 5. The dynamic risk measure {ρt, T }T
+t=0 satisﬁes the fol lowing conditions:
+(i) (Normalization) ρt, T (0, 0, ..., 0) = 0.
+(ii) (Conditional translation invariance) For any Xt, T ∈ Lt, T ,
+ρt, T (Xt , Xt+1 , ..., XT ) = Xt + ρt, T (0, Xt+1 , ..., XT ).
+(iii) (Convexity) For any Xt, T , Yt, T ∈ Lt, T and 0 ≤ λ ≤ 1, ρt, T (λ Xt, T + (1 − λ)Yt, T ) ≤ λ ρt, T (Xt, T ) +
+(1 − λ)ρt, T (Yt, T ).
+(iv) (Positive homogeneity) For any Xt, T ∈ Lt, T and α ≥ 0, ρt, T (α Xt, T ) = α ρt, T (Xt, T ).
+(v) (Time-consistency) For any Xt, T , Yt, T ∈ Lt, T and 0 ≤ τ ≤ θ ≤ T , the conditions Xk = Yk for
+k = τ , ..., θ − 1 and ρθ, T (Xθ , ...., XT ) ≤ ρθ, T (Yθ , ..., YT ) imply ρτ , T (Xτ , ...., XT ) ≤ ρτ , T (Yτ , ..., YT ).
+Many of these properties (monotonicity, convexity, positive homogeneity, and translation invariance)
+were originally introduced for static risk measures in the pioneering paper [2]. They have since been heavily
+justiﬁed in other works including [46, 8, 39].
+The next theorem gives a recursive formulation for dynamic risk measures satisfying Assumption 5. This
+result, we deﬁne a mapping ρt : Lt+1 → Lt , where t ≥ 0, to be a one-step (conditional) risk measure if
+representation is the foundation of [44] and subsequent works on time-consistent risk measures. For this
+ρt (Xt+1 ) = ρt, t+1 (0, Xt+1 ).
+
+t=0 .
+
+Theorem 3. [44, Theorem 1] Suppose Assumption 5 holds, then
+ρt, T (Xt , Xt+1 , ..., XT , . . .) = Xt + ρt (Xt+1 + ρt+1 (Xt+2 + · · · + ρT (XT ) + · · ·)),
+for al l 0 ≤ t ≤ T , where ρt , . . . , ρT are one-step conditional risk measures.
+Now we may consider the risk of an inﬁnite cost sequence. Based on [44], the discounted measure of risk
+t, T : Lt, T → R is deﬁned via
+ργ
+ργ
+t, T (Xt , Xt+1 , . . . , XT ) := ρt, T (γ tXt , γ t+1Xt+1 , . . . , γ T XT ).
+Deﬁne Lt, ∞ := Lt × Lt+1 × · · · for t ≥ 0 and ργ : L0, ∞ → R via
+T →∞ ργ
+ργ (X0 , X1 , . . .) := lim
+0, T (X0 , X1 , . . . , XT ).
+To provide our ﬁnal representation result, we introduce the additional assumption that player risk preferences
+are stationary (they only depend on the sequence of costs ahead, and are independent of the current time).
+
+(14)
+
+15
+
+Assumption 6. (Stationary risk preferences) For al l T ≥ 1 and s ≥ 0,
+
+ργ
+0, T (X0 , X1 , . . . , XT ) = ργ
+s, T +s (X0 , X1 , . . . , XT ).
+
+When Assumptions 5 and 6 are satisﬁed, the corresponding dynamic risk measure is given by the recursion:
+ργ (X0 , X1 , ..., XT , . . .) = X0 + ρ1 (γX1 + ρ2 (γ 2X2 + · · · + ρT (γ T XT ) + · · ·)),
+
+(15)
+
+where ρ1 , ρ2 , . . . are all one-step risk measures. Based on representation (15), we may deﬁne the risk-aware
+ob jective for player i to be:
+(xi , x−i ) = ρi (ci (s0 , a0 ) + γ ρi (ci (s1 , a1 ) + γ ρi (ci (s2 , a2 ) + · · ·))).
+
+(16)
+
+J i
+
+s0
+
+where ρi is a one-step conditional risk measure that maps random cost from the next stage to current stage,
+with respect to the joint distribution of randomized mixed strategies and transition kernels. In formulation
+(16), each ci (st , at ), t ≥ 1 is governed by the joint distribution of randomized mixed strategies and transition
+kernel
+(ai
+t )P (st |st−1 , at−1 ),
+which is deﬁned for ﬁxed (st−1 , at−1 ) and for all st and ai
+t . The distribution of ci is only governed by
+(ai
+0 ).
+
+×i∈I xi
+
+×i∈I xi
+
+st
+
+s0
+
+A.2 Proof of Theorem 1
+
+Fundamental Inequalities
+
+We make heavy use of the following fundamental inequalities and algebraic identity.
+Fact 1. Let X be a nonempty set and f1 , f2 : X → R be functions on X .
+(i) | minx∈X f1 (x) − minx∈X f2 (x) | ≤ maxx∈X |f1 (x) − f2 (x) |.
+(ii) | maxx∈X f1 (x) − maxx∈X f2 (x) | ≤ maxx∈X |f1 (x) − f2 (x) |.
+Proof. For part (i), we compute
+
+x∈X (f1 (x) − f2 (x) + f2 (x))
+x∈X f1 (x) = min
+min
+≤ min
+x∈X (f2 (x) + |f1 (x) − f2 (x) |)
+≤ min
+x∈X |f1 (x) − f2 (x) |
+x∈X f2 (x) + max
+
+which gives
+
+x∈X f1 (x) − min
+x∈X f2 (x) ≤ max
+x∈X |f1 (x) − f2 (x) |.
+min
+By a symmetric argument, we have
+x∈X f2 (x) − min
+x∈X f1 (x) ≤ max
+x∈X |f1 (x) − f2 (x) |,
+min
+from which the desired conclusion follows. The proof for part (ii) is similar.
+Deﬁne dH (A, B) to be the Hausdorﬀ distance between nonempty subsets A and B of Rd with respect to
+the Euclidean norm (cid:107) · (cid:107)2 , explicitly,
+
+(cid:26)
+
+dH (A, B) := max
+
+sup
+
+a∈A
+
+inf
+
+b∈B
+
+(cid:107)a − b(cid:107)2 , sup
+
+b∈B
+
+inf
+
+a∈A
+
+(cid:107)a − b(cid:107)2
+
+(cid:27)
+
+.
+
+Fact 2. Let (X , (cid:107) · (cid:107)) be a normed space, f : X → R be an Lf -Lipschitz function, and X1 , X2 ⊂ X . Then
+| min
+f (x) − min
+f (x) | ≤ Lf dH (X1 , X2 ).
+
+x∈X1
+
+x∈X2
+
+16
+
+Proof. Let x∗
+1 ∈ X1 be an optimal solution of minx∈X1 f (x). There is an x2 ∈ X2 by deﬁnition of dH such
+that (cid:107)x∗
+1 − x2 (cid:107) ≤ dH (X1 , X2 ), and so
+f (x) ≤ f (x2 ) ≤ f (x∗
+1 ) + Lf dH (X1 , X2 ) = min
+
+f (x1 ) + Lf dH (X1 , X2 ),
+
+min
+
+x∈X2
+
+x∈X1
+
+where the second inequality follows by Lf -Lipschitz continuity of f . The other direction follows by symmetric
+reasoning.
+Fact 3. Deﬁne
+min{, 1}
+then (cid:12)(cid:12)Πi∈I xi
+s (ai )(cid:12)(cid:12) ≤  holds for any x, y ∈ X .
+δ0 () :=
+s (ai ) − Πi∈I y i
+s (ai )(cid:12)(cid:12)
+Proof. We make use of the following algebraic identity
+s (ai ) − Πi∈I y i
+(xi
+s (ai ) − y i
+s (ai )
+
+(cid:12)(cid:12)Πi∈I xi
+
+(2|I | − 1)|A| ,
+
+ (cid:89)
+
+
+
+y i
+s (ai )
+
+{Ω⊂I , Ω(cid:54)=∅}
+
+=
+
+(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)
+(cid:88)
+≤ (cid:88)
+≤ (cid:88)
+≤ (cid:88)
+
+{Ω⊂I , Ω(cid:54)=∅}
+
+{Ω⊂I , Ω(cid:54)=∅}
+
+{Ω⊂I , Ω(cid:54)=∅}
+
+(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)
+
+ (cid:89)
+(cid:89)
+
+i ∈ Ω
+
+i ∈ Ω
+
+|Ω|
+
+(δ0 ())
+
+δ0 ()
+
+
+
+(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)
+
+i /∈ Ω
+
+(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)
+
+s (ai ) − y i
+(xi
+s (ai )
+
+=.
+
+Existence of Stationary Equilibria
+
+This section develops the machinery for our proof of Theorem 1, which is based on Kakutani’s ﬁxed point
+theorem.
+Theorem 4. [29] (Kakutani’s ﬁxed point theorem) If X is a closed, bounded, and convex set in Euclidean
+space, and Φ is an upper semicontinuous correspondence mapping from X into the family of closed, convex
+subsets of X , then there exists an element x ∈ X such that x ∈ Φ(x).
+For a multi-strategy x ∈ X , we deﬁne the operator Tx : V → V via
+{ρi (cid:0)ci (s , A) + γ v i (S (cid:48) )(cid:1) : (A, S (cid:48) ) ∼ Ps (ui
+[Tx (v)]i
+s )}, ∀i ∈ I , s ∈ S .
+s := min
+s , x−i
+s , v i ) := ρi (cid:0)ci (s , A) + γ v i (S (cid:48) )(cid:1) , (A, S (cid:48) ) ∼ Ps (ui
+For simpliﬁcation, we deﬁne, for any v ∈ V , i ∈ I and s ∈ S ,
+s , x−i
+s , x−i
+ψ i
+s (ui
+s ).
+Our proof of Theorem 1 has three main steps:
+1. (Step 1) Show that Tx is a contraction.
+s , x−i
+2. (Step 2) Show that the cost-to-go function ψ i
+s (ui
+s , v i ) is continuous.
+3. (Step 3) Verify that the assumptions of Kakutani’s ﬁxed point theorem are met for Φ.
+
+s∈P (Ai )
+ui
+
+17
+
+Step 1: Show that Tx is a contraction
+We establish that the operator Tx is a contraction, and subsequently that given any stationary strategy x,
+there is a corresponding unique value function v i for all players.
+Proposition 1. For each x ∈ X , Tx is a contraction with constant γ ∈ (0, 1).
+Proof. Let v , w ∈ V . For i ∈ I and s ∈ S , let g i
+(cid:0)ui
+s , v i (cid:1) =
+s attain the minimum in the deﬁnition of [Tx (v)]i
+(cid:8)(cid:104)µ, C i
+s (µ)(cid:9) .
+s ,
+[Tx (v)]i
+s , x−i
+s (v i )(cid:105) − αi
+s = min
+sup
+s attain the minimum in [Tx (w)]i
+(cid:8)(cid:104)µ, C i
+s (µ)(cid:9) .
+Similarly, let z i
+s ,
+[Tx (w)]i
+s (wi )(cid:105) − αi
+s =
+sup
+
+s∈P (Ai )
+ui
+
+s (Ps (gi
+s , x
+
+µ∈Mi
+
+s ))
+
+ψ i
+
+−i
+
+s
+
+µ∈Mi
+
+s (Ps (z i
+s , x
+
+−i
+
+s ))
+
+(cid:8)(cid:104)µ, C i
+s (µ)(cid:9)
+(cid:8)(cid:104)µ, C i
+s (wi )(cid:105) − αi
+s (µ)(cid:9)
+s (wi )(cid:105) − αi
+
+It follows that
+
+=
+
+≤
+
+s
+
+µ∈Mi
+
+(cid:8)(cid:104)µ, C i
+s (µ)(cid:9) −
+[Tx (v)]i
+s − [Tx (w)]i
+sup
+(cid:8)(cid:104)µ, C i
+s (v i )(cid:105) − αi
+s (µ)(cid:9) −
+s (v i )(cid:105) − αi
+µ (a, s(cid:48) ) |v i (s(cid:48) ) − wi (s(cid:48) ) |
+
+(cid:88)
+
+s (Ps (gi
+s , x
+
+s (Ps (z i
+s , x
+
+µ∈Mi
+
+µ∈Mi
+
+µ∈Mi
+
+sup
+
+sup
+
+s ))
+
+s ))
+
+−i
+
+−i
+
+sup
+
+sup
+
+≤ γ
+
+s (Ps (z i
+s , x
+
+−i
+
+s ))
+
+s (Ps (z i
+s , x
+
+−i
+
+s ))
+
+s (Ps (z i
+s , x
+
+µ∈Mi
+≤ γ (cid:107)v − w(cid:107)∞ ,
+
+−i
+
+s ))
+
+(a, s(cid:48) )∈K
+
+s . The argument to upper bound [Tx (w)]i
+s−[Tx (v)]i
+where the ﬁrst inequality holds by choice of g i
+s is symmetric.
+
+Since (V , (cid:107) · (cid:107)∞ ) is a complete metric space and Tx is a contraction mapping on V by Proposition 1, Tx
+has a unique ﬁxed point by the Banach ﬁxed point theorem.
+Proposition 2. For any stationary strategy x ∈ X , there exists a unique value function v ∈ V such that
+
+∀s ∈ S , i ∈ I ,
+
+s∈P (Ai )
+ui
+
+v i (s) = min
+
+ρi (ci (s, A) + γ v i (S (cid:48) )) = min
+s , x−i
+ψ i
+s (ui
+s , v i ).
+(cid:0)xi
+s , v i (cid:1) in all its arguments for all i ∈ I and s ∈ S . Firstly, we
+Step 2: Show that ψ i
+s is continuous
+We want to establish continuity of ψ i
+s , x−i
+know that the function (µ, v i ) → (cid:104)µ, C i
+s (v i )(cid:105) − αi
+s (µ) is Lipschitz continuous based on Assumption 1. We
+use L to denote the Lipschitz constant. Our argument is based on the following chain of inequalities:
+
+s∈P (Ai )
+ui
+
+s
+
+µ∈Mi
+
+≤ |ψ i
+≤ |
++ |
+
+|ψ i
+s (xi
+s , x−i
+s , v i ) − ψ i
+s (y i
+s , y−i
+s , wi )|
+s , x−i
+s , v i ) − ψ i
+(cid:8)(cid:104)µ, C i
+s , x−i
+s , wi )| + |ψ i
+s (µ)(cid:9) −
+s , x−i
+s , wi ) − ψ i
+(cid:8)(cid:104)µ, C i
+s , y−i
+s , wi )|
+s (µ)(cid:9) |
+s (xi
+s (xi
+s (xi
+s (y i
+sup
+(cid:8)(cid:104)µ, C i
+s (v i )(cid:105) − αi
+s (µ)(cid:9) −
+sup
+(cid:8)(cid:104)µ, C i
+s (wi )(cid:105) − αi
+s (µ)(cid:9) |
+≤ γ (cid:107)v i − wi (cid:107)∞ + L dH (cid:0)Mi
+sup
+s (wi )(cid:105) − αi
+s (Ps (ys ))(cid:1) ,
+sup
+s (wi )(cid:105) − αi
+where we use Fact 2 to obtain the last inequality. Let Ex (cid:0)Mi
+s (Ps (xs )), Mi
+s (Ps (xs ))(cid:1) denote the set of extreme points of
+(the bounded polyhedron) Mi
+s (Ps (xs )), then we also have
+
+s (Ps (xs ))
+
+s (Ps (xs ))
+
+s (Ps (xs ))
+
+s (Ps (ys ))
+
+µ∈Mi
+
+µ∈Mi
+
+µ∈Mi
+
+18
+
+≤γ (cid:107)v i − wi (cid:107)∞ + L dH (cid:0)Mi
+s (Ps (ys ))(cid:1) ,
+|ψ i
+s (xi
+s , x−i
+s , v i ) − ψ i
+s (y i
+s , y−i
+s , wi )|
+s (Ps (xs )), Mi
+≤γ (cid:107)v i − wi (cid:107)∞ + L dH (Ex(Mi
+s (Ps (xs ))), Ex(Mi
+s (Ps (ys )))),
+
+(17)
+
+i∈I , a∈A |xi
+
+where the last inequality is from [54, Theorem 1].
+We deﬁne the following metrics for stationary strategies and value functions:
+s (a) − y i
+s (a) |, ∀s ∈ S ,
+dXs (xs , ys ) := max
+s∈S |v i (s) − wi (s) |,
+dV i (v i , wi ) := max
+(cid:0)(xs , v i ), (ys , wi )(cid:1) := dXs (xs , ys ) + dV i (v i , wi ).
+a metric on Xs × V i is then given by dXs×V i
+In the next lemma, we show that the extreme points of Mi
+s (Ps (xs )) and Mi
+s (Ps (ys )) are “close” when
+the stationary strategies xs and ys are “close”.
+Lemma 1. [4, Theorem 3.1] Choose  > 0 and B > 0. For xs , ys ∈ Xs , suppose
+dXs (xs , ys ) ≤ δ1 () :=
+min{1, }
+s (Ps (xs ))(cid:1) , Ex (cid:0)Mi
+s (Ps (ys ))(cid:1)(cid:1) ≤ .
+[Ps (xs )] (a, k) − [Ps (ys )] (a, k) = (cid:0)Πi∈I xi
+s (ai )(cid:1) P (k | s, a).
+Proof. By deﬁnition, we have
+s (ai ) − Πi∈I y i
+dXs (xs , ys ) ≤ δ0 () :=
+
+B (cid:112)|S | |A|(2|I | − 1)|A| ,
+
+dH (cid:0)Ex (cid:0)Mi
+
+min{, 1}
+
+Now, suppose
+
+then
+
+(2|I | − 1)|A| .
+
+Using the Fact 3, we have
+(cid:107)Ps (xs ) − Ps (ys )(cid:107)2
+
+≤ (cid:112)|S | |A| (cid:12)(cid:12)Πi∈I xi
+≤ (cid:112)|S | |A| (cid:12)(cid:12)Πi∈I xi
+= (cid:112)|S | |A| .
+
+s (ai )(cid:12)(cid:12) max
+s (ai ) − Πi∈I y i
+s (ai )(cid:12)(cid:12)
+a∈A, k∈S P (k | s, a)
+s (ai ) − Πi∈I y i
+s (Ps (xs ))(cid:1) , Ex (cid:0)Mi
+s (Ps (ys ))(cid:1)(cid:1) ≤ B (cid:107)Ps − P (cid:48)
+By [4, Theorem 3.1], it follows that there exists a constant B > 0 such that
+and the desired conclusion follows.
+
+dH (cid:0)Ex (cid:0)Mi
+
+s(cid:107)2 ≤ (cid:112)|S | |A| B ,
+
+As a consequence, we have the following lemma.
+Lemma 2. There exist constants B , C > 0 such that, for any  > 0, if
+(cid:0)(xs , v i ), (ys , wi )(cid:1) ≤ δ2 () := max
+min{1, }
+
+(cid:40)
+
+dXs×V i
+
+2L B (cid:112)|S | |A|(2|I | − 1)|A| ,
+
+(cid:41)
+
+,
+
+
+2γ
+
+then
+
+|ψ i
+s , x−i
+s , v i ) − ψ i
+s , y−i
+s , wi )| ≤ .
+s (xi
+s (y i
+
+19
+
+Proof. By inequality (17), we have
+≤ γ (cid:107)v i − wi(cid:107)∞ + L dH (cid:0)Mi
+|ψ i
+s , x−i
+s , v i ) − ψ i
+s , y−i
+s , wi )|
+s (Ps (ys ))(cid:1)
+s (xi
+s (y i
+s (Ps (xs )), Mi
++ L dH (cid:0)Ex (cid:0)Mi
+s (Ps (xs ))(cid:1) , Ex (cid:0)Mi
+s (Ps (ys ))(cid:1)(cid:1)
+≤.
+
+≤ γ (cid:107)v i − wi (cid:107)∞
+
+As a consequence of these lemmas, we have the following proposition.
+Proposition 3. For al l i ∈ I and s ∈ S , the function ψ i
+s , x−i
+s (ui
+s , v i ) is continuous in al l of its variables.
+
+Step 3: Apply Kakutani’s ﬁxed point theorem
+
+In the following two technical results, we establish upper semicontinuity of Φ.
+Deﬁnition 4. A correspondence Φ : X → 2X is upper semicontinuous if yn ∈ Φ(xn ), limn→∞ xn = x, and
+limn→∞ yn = y implies y ∈ Φ(x).
+The proof of Lemma 3 below follows directly from [17] and our earlier Lemma 2. The proof of Lemma 4
+follows directly from Lemma 3 and [17]. Lemma 3 is then used to prove Lemma 4, and Lemma 4 is used to
+establish upper semicontinuity.
+We deﬁne the operator Di
+s as follows:
+s (x−i
+s , v i ) := min
+
+s , x−i
+ψ i
+s (ui
+s , v i ),
+
+Di
+
+s∈P (Ai )
+ui
+
+it returns the optimal risk-to-go for any i ∈ I and s ∈ S as a function of the complementary strategy x−i
+and the value function v i .
+Lemma 3. The operator Di
+s (x−i
+s , v i ) is continuous in x−i
+s . Furthermore, the col lection of functions
+s (·, v i ) : (cid:107)v i(cid:107)∞ < ∞},
+
+{Di
+
+s
+
+is equicontinuous.
+
+Proof. Let
+
+Then
+
+and
+
+Di
+Di
+
+s (x−i
+s , v i ) = min
+s (y−i
+s , v i ) = min
+
+s∈P (Ai )
+ui
+
+s , x−i
+s , x−i
+ψ i
+s (ui
+s , v i ) = ψ i
+s (wi
+s , v i ),
+s , y−i
+s , y−i
+ψ i
+s (ui
+s , v i ) = ψ i
+s (z i
+s , v i ).
+
+s∈P (Ai )
+ui
+
+Di
+
+s (y−i
+s , v i ) − Di
+s (x−i
+s , v i ) ≤ ψ i
+s , y−i
+s , v i ) − ψ i
+s , x−i
+s (wi
+s (z i
+s , v i ),
+
+Di
+
+s (x−i
+s , v i ) − Di
+s (y−i
+s , v i ) ≤ ψ i
+s , x−i
+s , v i ) − ψ i
+s , y−i
+s (z i
+s (z i
+s , v i ).
+If v i is bounded, then the right-hand side of the above inequalities can be made arbitrarily small through
+control of x−i
+s and y−i
+s via Proposition 3.
+
+20
+
+s∈P (Ai )
+ui
+
+Let us deﬁne a mapping from stationary strategies to value functions via
+τ i (x−i ) := {v i = (v i (s))s∈S : , v i (s) = min
+ψ i
+s (ui
+s , x−i
+s , v i ), s ∈ S }, ∀i ∈ I .
+players satisfying limn→∞ (x−i )n = x−i , and let the corresponding value functions for player i be τ i ((cid:0)x−i (cid:1)
+Each τ i (x−i ) returns the value function for player i corresponding to a best response to the complementary
+strategy x−i . Denote the sth element of τ i (x−i ) by τ i
+s (x−i ), let (x−i )n be a sequence of mixed strategies of all
+n ).
+The proof of the next Lemma 4 follows directly from Proposition 3 as shown in [17].
+Lemma 4. If (x−i )n → x−i and τ i
+s ((x−i )n ) → v i (s) as n → ∞, then τ i
+s (x−i ) = v i (s).
+The proof of our main result Theorem 1 is encapsulated in the following three lemmas.
+Lemma 5. For al l x ∈ X , the set Φ (x) is nonempty and is a subset of X .
+Proof. By Proposition 3, ψ i
+s (ui
+s , x−i
+s , v i ) is continuous in all of its arguments. By the Weierstrass theorem,
+the minimum of this function on the compact set P (Ai ) exists and is attained. Thus, the equality:
+ψ i
+s (ui
+s , x−i
+s , v i ),
+can be established and therefore Φ(x) (cid:54)= ∅. By deﬁnition, Φ(x) ⊆ X for all x ∈ X .
+The following intermediate result plays a key role in proving that Φ(x) is convex for all x ∈ X .
+Lemma 6. Suppose that (g i )i∈I , (z i )i∈I ∈ Φ(x), then given x−i ∈ X −i we have
+(cid:2)Ps ((1 − λ) z i + λ g i
+(cid:2)Ps (z i
+(cid:2)Ps (g i
+s )(cid:3) ,
+s , x−i
+s , x−i
+s , x−i
+
+s )(cid:3) ⊆ Mi
+
+s )(cid:3) ∪ Mi
+
+v i (s) = min
+
+s∈P (Ai )
+ui
+
+Mi
+
+s
+
+s
+
+s
+
+s
+
+s
+
+for any λ ∈ [0, 1].
+Proof. From Assumption 1(ii), we know that Mi
+(cid:2)Ps ((1 − λ) z i + λ g i
+s )(cid:3) satisﬁes for m = 1, ..., M ,
+s (Ps ) is a polyhedron characterized by formulation (6).
+Suppose that fm , m = 1, ...., M are linear in us , x−i
+λ ∈ [0, 1] and µ ∈ Mi
+s , x−i
+, and transition kernel Ps . It follows that for any
+Ai
+s, m µ + fm ((1 − λ) z i + λ g i
+s , x−i
+s , Ps ) ≥ hi
+Since fm , for m = 1, ...., M are linear (and thus quasiconvex) functions, for any λ ∈ [0, 1] and µ ∈
+s (Ps ((1 − λ) z i + λ g i
+s , x−i
+s, m µ + max (cid:8)fm (z i
+s , Ps )(cid:9)
+s )) for m = 1, ..., M , the inequalities
+Ai
+s , x−i
+s , Ps ), fm (g i
+s , x−i
+≥ Ai
+s, m µ + fm ((1 − λ) z i + λ g i
+(cid:2)Ps ((1 − λ) z i + λ g i
+s , Ps ) ≥ hi
+s )(cid:3), at least one of µ ∈ Mi
+s , x−i
+(cid:2)Ps (g i
+s )(cid:3) must hold.
+also hold. Thus, for any λ ∈ [0, 1] and µ ∈ Mi
+s , x−i
+or µ ∈ Mi
+s , x−i
+We now establish the convexity of Φ(x).
+
+(cid:2)Ps (z i
+s )(cid:3)
+s , x−i
+
+Mi
+
+s, m .
+
+s, m ,
+
+s
+
+s
+
+s
+
+Lemma 7. The set Φ(x) is convex.
+Proof. Suppose that (g i )i∈I , (z i )i∈I ∈ Φ(x). For all ui
+s ∈ P (Ai ) we have
+s , v i ) ≤ ψ i
+v i (s) = ψ i
+s (g i
+s , x−i
+s , v i ) = ψ i
+s (z i
+s , x−i
+s (ui
+s , x−i
+s , v i ).
+
+The above inequality holds based on the deﬁnition of operator Φ(x) via formulation (9), which returns the
+best responses to all other players’ strategies. Hence, for any λ ∈ [0, 1] we have
+s , x−i
+s , v i ) + (1 − λ)ψ i
+s , x−i
+s , v i ) ≤ ψ i
+s , x−i
+v i (s) = λ ψ i
+s (z i
+s (g i
+s (ui
+s , v i ).
+
+21
+
+Then, we have
+
+−i
+
+s ))
+
+−i
+
+s ))
+
+µ∈Mi
+
+−i
+
+s ))
+
+µ∈Mi
+
+s (Ps (z i
+s , x
+
+s (Ps (gi
+s , x
+
+(cid:8)(cid:104)µ, C i
+s (µ)(cid:9)
+λ ψ i
+s (g i
+s , x−i
+s , v i ) + (1 − λ)ψ i
+s (z i
+s , x−i
+s , v i )
+s (v i )(cid:105) − αi
+(cid:8)(cid:104)µ, C i
+s (µ)(cid:9) ,
+= λ
+max
++ (1 − λ)
+max
+s (v i )(cid:105) − αi
+(cid:8)(cid:104)µ, C i
+s (µ)(cid:9)
+based on the Fenchel-Moreau representation. Furthermore, we have
+s (v i )(cid:105) − αi
+(cid:8)(cid:104)µ, C i
+s (µ)(cid:9)
+(cid:8)(cid:104)µ, C i
+s (v i )(cid:105) − αi
+s (µ)(cid:9) ,
+max
+s (v i )(cid:105) − αi
+s , x−i
+s , x−i
+(cid:8)(cid:104)µ, C i
+s (µ)(cid:9)
+since ψ i
+s (g i
+s , v i ) = ψ i
+s (z i
+s , v i ) holds in our setting. Thus,
+s (v i )(cid:105) − αi
+(cid:8)(cid:104)µ, C i
+s (µ)(cid:9)
+(cid:8)(cid:104)µ, C i
+s (v i )(cid:105) − αi
+s (µ)(cid:9) ,
+max
+s (v i )(cid:105) − αi
+
+λ
+max
++ (1 − λ)
+
+λ
+max
++ (1 − λ)
+
+s ))∪Mi
+s (Ps (gi
+s , x
+
+s (Ps (gi
+s , x
+
+s (Ps (gi
+s , x
+
+s (Ps (z i
+s , x
+
+s (Ps (z i
+s , x
+
+s (Ps (z i
+s , x
+
+µ∈Mi
+
+µ∈Mi
+
+µ∈Mi
+
+max
+
+−i
+
+µ∈Mi
+
+max
+
+=
+
+µ∈Mi
+
+−i
+
+s ))
+
+−i
+
+s ))
+
+−i
+
+s ))
+
+−i
+
+s ))
+
+≥
+
+µ∈Mi
+
+s (Ps ((1−λ) z i+λ gi
+s , x
+
+−i
+
+s ))
+
+by Lemma 6. Consequently,
+
+s , x−i
+s , v i ) ≥ v i (s)
+ψ i
+s (ui
+= λ ψ i
+s (z i
+s , x−i
+s , v i ) + (1 − λ)ψ i
+s (g i
+s , x−i
+s , v i )
+≥ ψ i
+s (λz i
+s + (1 − λ)g i
+s , x−i
+s , v i ) ≥ v i (s),
+and hence λ(z i )i∈I + (1 − λ)(g i )i∈I ∈ Φ(x).
+The next lemma completes our proof.
+Lemma 8. Φ is an upper semicontinuous correspondence on X .
+Proof. Suppose xn → x, yn → y , and yn ∈ Φ(xn ). Taking a subsequence, we can suppose τ i
+s ((x−i )n ) → v i (s).
+s , v i ) − v i (s)(cid:12)(cid:12)
+Using the triangle inequality, for any s ∈ S and i ∈ I we have
+s ((x−i )n ))(cid:12)(cid:12) + (cid:12)(cid:12)ψ i
+s ((x−i )n )) − v i (s)(cid:12)(cid:12)
+s , x−i
+= (cid:12)(cid:12)ψ i
+s (y i
+s ((x−i )n ))(cid:12)(cid:12) + (cid:12)(cid:12)τ i
+s ((x−i )n ) − v i (s)(cid:12)(cid:12) → 0,
+s (y i
+s , x−i
+s , v i ) − ψ i
+s (y i
+s , x−i
+s , τ i
+s (y i
+s , x−i
+s , τ i
+s (y i
+s , x−i
+s , v i ) − ψ i
+s (y i
+s , x−i
+s , τ i
+as n → ∞. The above equality holds by deﬁnition of a best response and therefore, v i (s) = ψ i
+s , x−i
+s ((x−i )n ) = v i (s). Thus, we have established
+s (y i
+s , v i ).
+By Lemma 4, we also have τ i
+v i (s) =ψ i
+s (y i
+s , x−i
+s , v i )
+s ((x−i )n ) = min
+s , x−i
+=τ i
+ψ i
+s (ui
+s , v i ),
+and so y ∈ Φ(x), completing the proof that Φ is an upper semicontinuous correspondence. The fact that
+Φ(x) is a closed set for any x ∈ X follows from the deﬁnition of upper semicontinuity.
+
+≤ (cid:12)(cid:12)ψ i
+
+(cid:12)(cid:12)ψ i
+
+s∈P (Ai )
+ui
+
+22
+
+A.3 Examples of Saddle-Point Risk Measures
+
+For our Q-learning algorithm, we speciﬁcally focus on risk measures that can be estimated by solving a
+stochastic saddle-point problem such as as Problem (11). The following result, based on [26, Theorem 3.2],
+gives special conditions on Gi for the corresponding risk function ρi in Problem (11).
+Theorem 5. Suppose there is a col lection of functions {hz }z∈Z i such that: (i) hz is P -square summable
+for every y ∈ Y i , z ∈ Z i ; (ii) y → hz (X − y) is convex; (iii) z → hz (X − y) is concave; and (iv)
+: L × Y i × Z i → R is given by Gi (X, y , z ) = y + hz (X − y), then the sadd le-point risk measure
+Gi
+(Problem (11)) is a convex risk measure.
+We now give some examples of functions {hz }z∈Z i satisfying the conditions of Theorem 5 such that a
+corresponding risk-aware Markov perfect equilibrium exists.
+
+Example 3. The distance between any probability distribution and a reference distribution may be measured
+by a φ-divergence function, several examples of φ-divergence functions are shown in Table 4. We can,
+in principle, approximate convex φ-divergence functions with piecewise linear convex functions of the form
+ˆφ(µ) = maxj∈J {(cid:104)dj , µ(cid:105) + gj }. Using this form of ˆφ, we may deﬁne a corresponding set of probability
+distributions:
+
+Mi
+
+s (Ps ) = {µ : µ = Ps ◦ ξs , Bs µ = e, µ ≥ 0, Bs Ps ◦ (dj ◦ ξs + gj ) ≤ αi · e, ∀j ∈ J },
+(18)
+for constants αi ∈ (0, 1) for al l i ∈ I . Based on [42, Lemma 1], the risk measure corresponding to (18) has
+ˆφ∗ (cid:18) X − η
+the form
+b
+
+η + b αi + b EPs
+
+(cid:19)(cid:21)(cid:27)
+
+ρ(X ) = inf
+
+b≥0, η∈R
+
+(cid:26)
+
+(cid:20)
+
+(19)
+
+,
+
+where ˆφ∗ is the convex conjugate of ˆφ.
+(i) Let φz denote a family of φ-divergence functions parameterized by z ∈ Z i that is concave in Z i , and
+let ˆφz and φ∗
+z denote the corresponding piecewise linear approximation and its convex conjugate, respectively.
+Then, we may deﬁne
+
+Mz := {µ : µ = Ps ◦ ξs , Bs µ = e, µ ≥ 0,
+Bs Ps ◦ ˆφz (ξs ) ≤ αi · e},
+and the risk measure corresponding to ∪z∈Z iMz is
+
+ρ(X ) = inf
+b≥0, η∈R max
+
+z∈Z i
+
+η + b αi + b EPs
+
+φ∗
+
+z
+
+b
+
+(cid:40)
+
+(cid:20)
+
+(cid:18) X − η
+
+(cid:19)(cid:21) (cid:41)
+
+.
+
+(20)
+
+Suppose we choose hz (from Theorem 5) to be
+hz (X − η)
+b
+b
+for any η ∈ R and b > 0. Assume X has bounded support [ηmin , ηmax ], then formulation (20) becomes
+{η + EPs [hz (X − η)]} ,
+
+= φ∗
+
+ρ(X ) =
+
+max
+
+min
+
+,
+
+z
+
+η∈[ηmin , ηmax ]
+
+z∈Z i
+
+(cid:18) X − η
+
+(cid:19)
+
+which conforms to the sadd le-point structure in Problem (11).
+(ii) To recover CVaR, we let αi ∈ (0, 1) for al l i ∈ I and choose the φ-divergence function
+0 ≤ x ≤ e
+0
+∞ otherwise,
+
+(cid:40)
+
+φ(x) =
+
+1−αi ,
+
+23
+
+Name
+Kullback-Leibler
+Burg entropy
+χ2 distance
+
+Modiﬁed χ2 distance
+
+Hellinger distance
+
+χ- divergence
+
+Variation distance
+Cressie-Read
+
+t ≥ 0
+φ(t)
+t log t − t + 1
+− log t + t − 1
+t (t − 1)2
+(t − 1)2
+t − 1)2
+
+√
+
+(
+
+1
+
+|t − 1|θ
+|t − 1|
+
+1−θ+θt−tθ
+θ(1−θ)
+
+,
+
+t (cid:54)= 0, 1
+
+φ∗ (s)
+exp(s) − 1
+− log(1 − s),
+s < 1
+2 − 2
+1 − s,
+s < 1
+s < −2
+
+(cid:40)−1
+
+√
+
+s ≥ −2
+
+s
+
+s < 1
+
+(cid:16) |s|
+
+(cid:17)θ/(θ−1)
+
+s + s2/4
+1−s ,
+s + (θ + 1)
+max {−1, s} ,
+s ≤ 1
+θ (1 − s(1 − θ))θ/(1−θ) − 1
+θ ,
+
+1
+
+θ
+
+s < 1
+
+1−θ
+
+Table 4: Examples of φ-divergence functions and their convex conjugate functions
+
+and we take
+
+(cid:110)
+
+Mi
+
+s (Ps ) =
+
+µ : µ = Ps ◦ ξs , Bs µ = e, µ ≥ 0, 0 ≤ µ ≤ Ps
+1 − αi
+If we take the convex conjugate of this φ-divergence function and substitute it into Eqs. (19), we obtain
+{η + (1 − αi )−1EPs [max {X − η , 0}]},
+ρ(X ) =
+min
+corresponding to hz (X − η) = −(1 − αi )−1 max {X − η , 0} for al l z ∈ Z i .
+
+η∈[ηmin , ηmax ]
+
+.
+
+(cid:111)
+
+A.4 RaNashQL Implementation Details
+
+min
+
+(y (cid:48) , z (cid:48) )∈Y×Z
+
+We give further details on each step of Algorithm 1 as follows. We will shortly require the deﬁnition
+(cid:107)(y , z ) − (y (cid:48) , z (cid:48) )(cid:107)2 ,
+
+ΠY×Z [(y , z )] := arg
+i.e., the Euclidean pro jection onto Y × Z .
+• Step 0: Initialization:
+– Step 0b: Initialize (cid:0)y i
+0,t (s, a)(cid:1) for all t ≤ T , (s, a) ∈ K, and i ∈ I .
+– Step 0a: Initialize all Q-values Qi
+1,1 (s, a) for all (s, a) ∈ K and i ∈ I ;
+(cid:0)y i
+0,t (s, a), z i
+n,1 (s, a)(cid:1) = (cid:0)y i
+n−1,T (s, a)(cid:1) ,
+• Step 1: For all (s, a) ∈ K and i ∈ I , set
+n,1 (s, a), z i
+n−1,T (s, a), z i
+and Qi
+n,1 (s, a) = Qi
+n−1,T (s, a). All agents observe the current state sn
+t :
+n )i∈I , costs (cid:8)ci (sn
+t , an )(cid:9)
+– Step 1a: Generate an action ai
+n from policy π (which gives some positive probability to all
+actions);
+t+1 ) = N ashi (cid:16)
+– Step 1b: Observe actions an = (ai
+i∈I , and next state sn
+t+1 ∼ P (· | sn
+t , an ).
+• Step 2: Compute Nash Q-values v i
+n−1 (sn
+Qj
+j∈I for all i ∈ I .Compute
+t , an ) = Gi (ci (sn
+t , an ) + γ v i
+n−1 (sn
+t , an ), z i
+t , an )),
+(cid:0)y i
+t , an )(cid:1) =
+(cid:0)y i
+t , an )(cid:1) ,
+1
+t − τ∗ (t) + 1
+for all i ∈ I . This step observes a new state and computes the estimated Q-value ˆq i
+
+t+1 ), y i
+n,t (sn
+
+n−1,T (sn
+t+1 )
+
+t , an ), z i
+
+t , an ), z i
+
+t(cid:88)
+
+n.τ (sn
+
+n,τ (sn
+
+n,t (sn
+
+n,t (sn
+
+n,t (sn
+
+n,t (sn
+
+τ =τ∗ (t)
+
+(cid:17)
+
+(21)
+
+and
+
+ˆq i
+
+n,t ;
+
+24
+
+n,t+1 (sn
+
+• Step 3: For all (s, a) ∈ K, and i ∈ I , compute
+n,t (s, a) = (cid:0)1 − θn
+β (s, a)(cid:1) Qi
+Qi
+n−1,T (s, a) + θn
+β (s, a) ˆq i
+This update is the same as in standard Q-learning w.r.t. the outer loop.
+• Step 4: Update
+(cid:0)y i
+t , an )(cid:1)
+t , an )(cid:1)
+− λt,αψ (cid:0)ci (sn
+t , an ), z i
+t , an ), z i
+=ΠY i×Z i
+t , an ) + γ v i
+n−1 (sn
+ψ i (cid:0)v i
+n−1 (sn
+γ v i
+n−1 (sn
+−HZ Gi
+z (ci (sn
+t , an )+
+γ v i
+n−1 (sn
+t , an ), z i
+
+t , an ), z i
+t , an )(cid:1)
+t , an ))
+
+t , an ), z i
+HY Gi
+y (ci (sn
+t , an )+
+t , an ), z i
+
+(cid:8)(cid:0)y i
+
+
+n,t+1 (sn
+n,t (sn
+
+for all i ∈ I , and
+
+t+1 ), y i
+n,t (sn
+
+t+1 ), y i
+n,t (sn
+
+t+1 ), y i
+n,t (sn
+
+t+1 ), y i
+n,t (sn
+
+t , an ))
+
+n,t (sn
+
+n,t (sn
+
+n,t (sn
+
+n,t (sn
+
+=
+
+n,t (sn
+
+t , an ).
+
+t , an )(cid:1)(cid:9) ,
+
+n,t (sn
+
+ .
+
+(22)
+
+(23)
+
+(24)
+
+This is the risk estimation step, it updates the current iterate of the risk corresponding to each selected
+state-action pair.
+
+A.5 Assumptions for RaNashQL
+
+G n
+
+T ⊆ G n+1
+0
+
+stochastic approximation literature. We ﬁrst deﬁne a probability space (Ω, G , P ) where
+We now list the necessary deﬁnitions and assumptions for our algorithm, most of which are standard in the
+G = σ {(sn
+t , an ), n ≤ N , t ≤ T } ,
+t = (cid:8)σ (cid:8)(si
+τ ), i < n, τ ≤ T (cid:9) ∪ {(sn
+τ ), τ ≤ t}(cid:9) ,
+is the σ -algebra for the history state-action pairs up to iteration T and N , and the ﬁltration is
+τ , ai
+τ , an
+for t ≤ T and n ≤ N , with G 0
+t = {∅, Ω} for all t ≤ T . This ﬁltration is nested, G n
+and G n
+and al l (s, a) ∈ K, P (cid:0)(sn
+. The following assumption reﬂects our exploration requirement.
+(cid:1) ≥ ε and P (cid:0)(sn
+Assumption 7. (ε-greedy policy) There is an ε > 0 such that the policy π satisﬁes, for any n ≤ N , t ≤ T ,
+t , an ) = (s, a) | G n
+1 , an ) = (s, a) | G n−1
+In particular, let xs ∈ Xs be a Nash equilibrium of the stage game (Qi (s))i∈I . Then, with probability
+ε ∈ (0, 1), the action ai is chosen randomly from Ai , and with probability 1 − ε, the action ai is drawn from
+Ai according to xi
+s . Assumption 7 guarantees, by the Extended Borel-Cantelli Lemma in [11], that we will
+visit every state-action pair inﬁnitely often with probability one.
+The next assumption contains our requirements on the step-sizes for the Q-value update.
+β (s, a) = ∞ and (cid:80)∞
+Assumption 8. For al l (s, a) ∈ K and for al l n ≤ N , t ≤ T , the step-sizes for the Q-value update satisfy:
+β (s, a)2 < ∞ for al l t ≤ T and (s, a) ∈ K a.s. Let #(s, a, n) denote one
+plus the number of times, until the beginning of iteration n, that the state-action pair (s, a) has been visited,
+and let N s,a denote the set of outer iterations where action a was performed in state s. The step-sizes
+θn
+β (s, a) satisfy θn
+β (s, a) =
+β (s, a) = 0 otherwise.
+
+[#(s,a,n)]β if n ∈ N s,a and θn
+1
+
+t ⊆ G n
+(cid:1) ≥ ε.
+
+t+1 for 1 ≤ t ≤ T − 1
+
+(cid:80)∞
+
+n=1 θn
+
+n=1 θn
+
+t−1
+
+T
+
+Assumption 8 reﬂects the asynchronous nature of the Q-learning algorithm as stated in [15], only a single
+state-action pair is updated when it is observed in each iteration, which can be implemented when there is
+no initial knowledge on the state space.
+
+25
+
+A.6 Proof of Theorem 2
+
+In this section, we develop the proof of almost sure convergence of RaNashQL (Theorem 2). This proof uses
+techniques from the stochastic approximation literature [33, 10, 9, 25, 26], and is based on the following
+steps:
+
+1. Show that the stage game Nash equilibrium operator is non-expansive.
+
+2. Bound the saddle-point estimation error in terms of the error between estimated Q-value to the optimal
+Q-value.
+
+3. Apply the classical stochastic approximation convergence theorem.
+
+Preliminaries
+
+(s, a) ∈ K, we deﬁne (y i
+We ﬁrst present preliminary deﬁnitions and properties that will be used in the proof of Theorem 2. For any
+(cid:2)Gi (cid:0)ci (s, a) + γ v i
+n−1 (s(cid:48) ), y(s, a), z (s, a)(cid:1)(cid:3) ,
+n,∗ (s, a), z i
+n,∗ (s, a)) to be a saddle point of
+(y(s, a), z (s, a)) → EPs (a, s(cid:48) )
+n−1 (s(cid:48) ) = N ashi (cid:0)Qj∗ (s(cid:48) )(cid:1)
+for each (s, a) ∈ K, where
+v i
+Similarly, we deﬁne (y i∗ (s, a), z i∗ (s, a)) to be a saddle point of
+(cid:2)Gi (cid:0)ci (s, a) + γ v i∗ (s(cid:48) ), y(s, a), z (s, a)(cid:1)(cid:3) ,
+(y(s, a), z (s, a))
+v i∗ (s(cid:48) ) = N ashi (cid:0)Qj∗ (s(cid:48) )(cid:1)
+
+for each (s, a) ∈ K, where
+
+→EPs (a, s(cid:48) )
+
+j∈J .
+
+j∈J .
+
+Let
+
+and
+
+S i
+
+n,t := {(∂Gi
+y (ci + γ v i
+n−1 , y i
+
+n,t , z i
+
+n,t ), ∂Gi
+z (ci + γ v i
+n−1 , y i
+
+n,t , z i
+
+n,t ))},
+
+S i
+
+n,t := {(∂Gi
+n,t ))},
+y (ci + γ v∗ , y i
+be the subdiﬀerentials of Gi with respect to v i
+n−1 and v i∗ , given (y i
+n,t ). The following Lemma 9 bounds
+dH (S i
+n,t ) in terms of (cid:107) · (cid:107)2 . This result follows from the convergence of subdiﬀerentials of convex
+functions, the Lipschitz continuity of Gi , and non-expansiveness of the Nash equilibrium mapping for stage
+games.
+
+n,t ), ∂Gi
+z (ci + γ v∗ , y i
+
+n,t , S i
+
+n,t , z i
+
+n,t , z i
+
+n,t , z i
+
+(cid:113)(cid:107)Qi
+
+Lemma 9. [41, Theorem 4.1] Under the Lipschitz continuity of function Gi , there exist constants K (1)
+0, such that
+
+ψ , K (2)
+
+ψ >
+
+dH (S i
+
+n,t , S i
+n,t ) ≤ K (1)
+
+n−1,T − Qi∗ (cid:107)2 + K (2)
+ψ
+
+ψ (cid:107)Qi
+n−1,T − Qi∗ (cid:107)2 .
+We conclude this preliminary subsection by showing that all mixed points of a stage game have equal
+value.
+Lemma 10. Let x and y be I (cid:48)−mixed points of (C i )i∈I , then C i (x) = C i (y) for al l i ∈ I .
+Proof. Suppose x is a I1 -mixed point and y is a I2 -mixed point. For i ∈ I1 ∪ (I /I2 ), we have C i (x) ≤ C i (y)
+and
+C i (x) ≥ C i (y i
+s , x−i
+s ) ≥ C i (y).
+The only consistent solution is C i (x) = C i (y). Similarly, for i ∈ I2 ∪ (I /I1 ), we have the similar argument.
+For i ∈ I1
+
+(25)
+
+Step 1: Show that the stage game Nash equilibrium operator is non-expansive
+
+(cid:105)
+(cid:105)
+
+The following Lemma 11 shows that the Nash equilibrium mapping is non-expansive. We use the following
+norm
+(cid:107)Qi (s) − ˜Qi (s)(cid:107)∞ := max
+a∈A |Qi (s, a) − ˜Qi (s, a)|
+for Q-values in all state s ∈ S .
+| (cid:2)Qi (s)(cid:3) (x) − (cid:104) ˜Qi (s)
+Lemma 11. For Q and ˜Q, let x and ˜x be Nash equilibria for Q and ˜Q, respectively. Then, for al l s ∈ S ,
+Proof. Let v i (s) = (cid:2)Qi (s)(cid:3) (x) and ˜v i (s) =
+(cid:104) ˜Qi (s)
+( ˜x)| ≤ (cid:107)Qi (s) − ˜Qi (s)(cid:107)∞ .
+Case 1: Both x and ˜x are global optimal points. If (cid:2)Qi (s)(cid:3) (x) ≥ (cid:104) ˜Qi (s)
+( ˜x). By Assumption 3, there are three possible cases to
+consider:
+= (cid:2)Qi (s)(cid:3) (x) − (cid:104) ˜Qi (s)
+v i (s) − ˜v i (s)
+≤ (cid:2)Qi (s)(cid:3) ( ˜x) − (cid:104) ˜Qi (s)
+˜xi (ai )
+Qi (s, a) − ˜Qi (s, a)
+=
+
+( ˜x), we have
+
+(cid:105)
+(cid:105)
+
+(cid:17)
+
+(cid:105)
+
+( ˜x)
+
+( ˜x)
+
+(cid:32)(cid:89)
+(cid:32)(cid:89)
+
+i∈I
+
+(cid:33) (cid:16)
+(cid:33)
+
+(cid:88)
+≤ (cid:88)
+
+a∈A
+
+i∈I
+
+(cid:105)
+
+a∈A
+
+˜xi (ai )
+
+(cid:107)Qi (s) − ˜Qi (s)(cid:107)∞
+If (cid:2)Qi (s)(cid:3) (x) ≤ (cid:104) ˜Qi (s)
+= (cid:107)Qi (s) − ˜Qi (s)(cid:107)∞ .
+Case 2: Both x and ˜x are saddle points. If (cid:2)Qi (s)(cid:3) (x) ≥ (cid:104) ˜Qi (s)
+( ˜x), the proof follows similarly.
+= (cid:2)Qi (s)(cid:3) (x) − (cid:104) ˜Qi (s)
+v i (s) − ˜v i (s)
+≤ (cid:2)Qi (s)(cid:3) (x) − (cid:104) ˜Qi (s)
+( ˜x)
+≤ (cid:2)Qi (s)(cid:3) (xi , ˜x−i ) − (cid:104) ˜Qi (s)
+(xi , ˜x−i )
+(xi , ˜x−i )
+≤ (cid:107)Qi (s) − ˜Qi (s)(cid:107)∞ ,
+
+(cid:105)
+(cid:105)
+
+(cid:105)
+
+(cid:105)
+
+( ˜x), we have
+
+(26)
+
+(27)
+
+(cid:105)
+
+where the ﬁrst inequality (26) is by deﬁnition of Nash equilibrium, and inequality (27) is from Assumption
+(cid:2)Qi (s)(cid:3) (x) ≥ (cid:104) ˜Qi (s)
+3 (ii)
+Case 3: Both x and ˜x are I1 - and I2 -mixed points, respectively. Then, for i ∈ I1 ∪ (I /I2 ), and
+(cid:107)Qi (s) − ˜Qi (s)(cid:107)∞ . Alternatively, for i ∈ I2 ∪ (I /I1 ) and (cid:2)Qi (s)(cid:3) (x) ≤ (cid:104) ˜Qi (s)
+( ˜x), and by the arguments from Cases 1 and 2, we know that v i (s) − ˜v i (s) ≤
+( ˜x), we have ˜v i (s) − v i (s) ≤
+(cid:107)Qi (s) − ˜Qi (s)(cid:107)∞ .
+
+(cid:105)
+
+Step 2: Bound the saddle-point estimation error in terms of the Q-value error
+In this step we will bound (cid:107)(y i
+n,t ) − (y i
+n,∗ )(cid:107)2
+2 by a function of (cid:107)Qi
+n,∗ , z i
+2 and then we will
+bound (cid:107)(y i∗ , z i∗ ) − (y i
+n,∗ )(cid:107)2 by a function of (cid:107)Qi
+n−1,T − Qi∗ (cid:107)2 . Our intent is to establish a relationship
+n,∗ , z i
+between the risk estimation error (which depends on the saddle points of the risk measure) and the error
+between estimated Q-value and the optimal one.
+
+n−1,T − Qi∗ (cid:107)2
+
+n,t , z i
+
+27
+
+Lemma 12. [26, Lemma 5.3] Suppose Assumptions 7 and 8 hold, then there exists a constant 0 < κ <
+1/C K (1)
+ψ such that
+
+(cid:107)(y i
+
+n, t , z i
+
+n, t ) − (y i
+n,∗ )(cid:107)2
+n,∗ , z i
+
+2 ≤
+
+C (τ∗ (t))−α
+κ(1 − C (τ∗ (t))−αK (1)
+ψ κ)
+
+(cid:107)Qi
+
+n−1,T − Qi∗ (cid:107)2
+
+2 ,
+
+(28)
+
+for al l t ≤ T and n ≤ N .
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)2
+
+2
+
+1
+
+n, t , z i
+
+≤ dH (S i
+
+n,∗ )(cid:1)(cid:62)
+
+2
+
+n,∗ )(cid:1)(cid:62)
+
+n, t , z i
+n, t ),
+
+(29)
+
+n, t , z i
+
+(y i
+n,∗ , z i
+n,∗ )
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) (cid:89)
+
+Y i×Z i
+
+=
+
+Y i×Z i
+
+n, t )(cid:107)2
+n, t , z i
+2
+
+n, t , z i
+n, t , z i
+n, t , z i
+
+n, t , z i
+n,t , S i
+n,t ) ≤ K (1)
+
+n, t )(cid:107)2
+n, t , z i
+n−1,T − Qi∗ (cid:107)2 + K (2)
+ψ
+
+(cid:113)(cid:107)Qi
+
+n, t+1 ) − (y i
+n, t+1 , z i
+n, t ) − λt,αψ(v i
+n, t , z i
+
+Proof. As a consequence of Eq. (23) in Step 4 of Algorithm 1, we have
+(cid:107)(y i
+(cid:0)(y i
+n,∗ , z i
+n,∗ )(cid:107)2
+n, t )(cid:1) − (cid:89)
+n−1 , y i
+n, t ) − (y i
+n,∗ ) − λt,αψ i (ci + γ v i
+n,∗ , z i
+n−1 , y i
+n, t ) − (y i
+n,∗ )(cid:107)2
+2 + (H 2Y + H 2Z )L2C 2 t−2α
+n,∗ , z i
+n, t ) − (y i
+C t−αψ i (ci + γ v i
+n,∗ , z i
+n−1 , y i
+
+≤ (cid:107)(y i
+− 2 (cid:0)(y i
+≤ (cid:107)(y i
+where the ﬁrst inequality holds by non-expansiveness of the pro jection operator and the second inequality
+holds since the subgradients of Gi are bounded based on Assumption 2. Based on Lemma 9, we have
+(cid:107)ψ i (ci + γ v i
+n, t ) − ψ i (ci + γ v i∗ , y i
+n−1 , y i
+ψ (cid:107)Qi
+Sum the terms (cid:0)(y i
+n, t ) − (y i
+C t−α · ψ i (ci + γ v i
+n,∗ , z i
+n−1 , y i
+n, t ) from τ∗ (t) to t, then divide by
+t−τ∗ (t)+1 to obtain:
+(cid:0)(y i
+C τ −α (cid:0)ψ i (ci + γ v i
+1
+n,τ ) − (y i
+≤ (cid:0)(y i
+t − τ∗ (t) + 1
+C (τ∗ (t))−α (cid:0)ψ i (ci + γ v i
+n,∗ , z i
+n−1 , y i
+n, t ) − (y i
+n, t ) − ψ i (ci + γ v i∗ , y i
+n,∗ , z i
+n−1 , y i
+≤ (cid:107)(y i
+n, t ) − (y i
+n,∗ , z i
+n,∗ )(cid:107)2C (τ∗ (t))−α(cid:107)ψ i (ci + γ v i
+n−1 , y i
+n, t ) − ψ i (ci + γ v i∗ , y i
+≤ C (τ∗ (t))−α(cid:107)(y i
+n, t ) − (y i
+n,∗ , z i
+n,∗ )(cid:107)2
+ψ (cid:107)Qi
+where the ﬁrst inequality is by convexity of Gi in y and concavity of Gi in z . Using the standard inequality
+2ab ≤ a2κ + b2 /κ for all κ > 0, we see that
+− 2 (cid:0)(y i
+C (τ∗ (t))−α (cid:0)ψ i (ci + γ v i
+n, t ) − (y i
+n,∗ , z i
+n−1 , y i
+≥ − C (τ∗ (t))−αK (1)
+ψ (cid:107)(y i
+n, t ) − (y i
+n,∗ )(cid:107)2
+n,∗ , z i
+2 κ
+− C (τ∗ (t))−α (cid:107)Qi
+2/κ
+− C (τ∗ (t))−αK (2)
+ψ (cid:107)(y i
+n, t ) − (y i
+n,∗ , z i
+n,∗ )(cid:107)2
+
+n, t )(cid:1)
+n, t , z i
+n, t , z i
+n, t )(cid:107)2
+n−1,T − Qi∗ (cid:107)2
+
+n, t , z i
+n, t , z i
+n−1,T − Qi∗ (cid:107)2 + K (2)
+ψ
+
+n, t , z i
+n−1,T − Qi∗ (cid:107)2
+n, t , z i
+
+n, t )(cid:1)
+n, t , z i
+
+n, t , z i
+
+n, t ) − ψ i (ci + γ v i∗ , y i
+
+n, t )(cid:1)
+n, t , z i
+
+n,τ , z i
+
+n,∗ )(cid:1)(cid:62)
+
+n−1,T − Qi∗ (cid:107)2 .
+
+n, t , z i
+
+t(cid:88)
+
+τ =τ∗ (t)
+
+(cid:113)(cid:107)Qi
+
+n−1,T − Qi∗ (cid:107)2 .
+
+n,∗ )(cid:1)(cid:62)
+
+(cid:16)
+
+K (1)
+
+(cid:113)(cid:107)Qi
+
+(cid:17)
+
+,
+
+n, t , z i
+n, t , z i
+
+n, t , z i
+
+n,∗ )(cid:1)(cid:62)
+
+n, t , z i
+
+By summing the right hand side of inequality (29) from τ∗ (t) to t, dividing by
+
+1
+
+t−τ∗ (t)+1 , and combining with
+
+28
+
+(30)
+
+t(cid:88)
+
+n,τ , z i
+
+((cid:107)(y i
+
+inequality (30) we obtain
+t − τ∗ (t) + 1
+− 2 (cid:0)(y i
+1
+n,τ ) − (y i
+n,∗ , z i
+n,∗ )(cid:107)2
+2 + (H 2Y + H 2Z )L2C 2 τ −2α )
+2 − 2 (cid:0)(y i
+n, t ) − (y i
+C (τ∗ (t))−α × ψ i (ci + γ v i
+n,∗ , z i
+n−1 , y i
+≥ (cid:107)(y i
+n, t ) − (y i
+n,∗ )(cid:107)2
+C (τ∗ (t))−α × ψ i (ci + γ v i
+n,∗ , z i
+n,∗ , z i
+n−1 , y i
+≥ (1 − C (τ∗ (t))−αK (1)
+ψ κ)(cid:107)(y i
+n, t ) − (y i
+n,∗ )(cid:107)2
+2 − C (τ∗ (t))−α (cid:107)Qi
+n,∗ , z i
+2/κ
+− C (τ∗ (t))−αK (2)
+ψ (cid:107)(y i
+n, t ) − (y i
+n,∗ )(cid:107)2
+n−1,T − Qi∗ (cid:107)2 .
+n,∗ , z i
+
+τ =τ∗ (t)
+n, t , z i
+n, t , z i
+
+n, t , z i,n,t ) − (y i
+
+n,∗ )(cid:1)(cid:62)
+
+n,∗ )(cid:1)(cid:62)
+
+(cid:113)(cid:107)Qi
+
+n−1,T − Qi∗ (cid:107)2
+
+n, t , z i
+n, t )
+
+n, t , z i
+
+n, t , z i
+
+n, t , z i
+n, t )
+
+(31)
+
+We further claim that we can choose κ satisfying 0 < κ < 1/C K (1)
+ψ such that
+(1 − C (τ∗ (t))−αK (1)
+ψ κ)(cid:107)(y i
+n, t ) − (y i
+n,∗ , z i
+n,∗ )(cid:107)2
+2 − C (τ∗ (t))−α (cid:107)Qi
+since the right hand side of inequality (32) will go to inﬁnity when κ approaches zero, while the left hand
+side is bounded by a constant. Then we achieve the desired result.
+
+n−1,T − Qi∗ (cid:107)2
+
+2/κ ≤ 0,
+
+n, t , z i
+
+(32)
+
+The following lemma bounds the diﬀerence between (y i∗ , z i∗ ) and (y i
+n,∗ , z i
+n,∗ ).
+
+(33)
+
+(cid:13)(cid:13)Es(cid:48)∼P (·|s,a)
+
+such that for al l n ≤ N we have
+Lemma 13. [26, Lemma 5.5] Under the Lipschitz continuity of Gi and Lemma 11, there exists KS > 0
+(cid:107)(y i∗ , z i∗ ) − (y i
+n,∗ , z i
+n,∗ )(cid:107)2 ≤ KS KG (cid:107)Qi
+n−1,T − Qi∗ (cid:107)2 .
+Proof. It can be shown that
+(cid:107)(y i∗ , z i∗ ) − (y i
+(cid:2)Gi (cid:0)ci + γ v i
+n,∗ )(cid:107)2
+n−1 (s(cid:48) ), y i∗ (s, a), z i∗ (s, a)(cid:1)(cid:3)
+≤ KS
+n,∗ , z i
+(cid:2)Gi (cid:0)ci + γ v i
+n,∗ (s, a)(cid:1)(cid:3)(cid:13)(cid:13)2
+(cid:2)Gi (cid:0)ci + γ v i
+n−1 (s(cid:48) ), y i
+n,∗ (s, a), z i
+n−1 (s(cid:48) ), y(s, a), z (s, a)(cid:1)(cid:3)
+(cid:2)Gi (cid:0)ci + γ v i∗ (s(cid:48) ), y(s, a), z (s, a)(cid:1)(cid:3)(cid:13)(cid:13)(cid:13)(cid:13)2
+(cid:2)Gi (cid:0)ci + γ v i
+n−1 (s(cid:48) ), y(s, a), z (s, a)(cid:1)(cid:3)
+(cid:2)Gi (cid:0)ci + γ v i∗ (s(cid:48) ), y(s, a), z (s, a)(cid:1)(cid:3)(cid:13)(cid:13)2
+≤ KS KG (cid:107)v i
+n,t−1 (s) − v i∗ (s)(cid:107)2 ≤ KS KG (cid:107)Qi
+n−1,T − Qi∗ (cid:107)2 ,
+
+(cid:13)(cid:13)Es(cid:48)∼P (·|s,a)
+
+− min
+≤ KS max
+
+y∈Y i , z∈Z i
+− Es(cid:48)∼P (·|s,a)
+
+(cid:13)(cid:13)(cid:13)(cid:13) min
+
+− Es(cid:48)∼P (·|s,a)
+
+≤ KS max
+
+Es(cid:48)∼P (·|s,a)
+
+Es(cid:48)∼P (·|s,a)
+
+z∈Z i
+
+y∈Y i
+
+y∈Y i
+
+where the ﬁrst inequality follows from [50, Theorem 3.1] and [36, Proposition 3.1] (results on the stability of
+optimal solutions of stochastic optimization problems), the second and fourth inequalities are due to Lemma
+11, and the third inequality is by Lipschitz continuity of Gi .
+
+Step 3: Apply the classical stochastic approximation convergence theorem
+
+This step completes the proof of Theorem 2 by applying the stochastic approximation convergence theorem
+(as in [9]). We ﬁrst introduce a functional operator H i : V × Y × Z → V for each player i ∈ I , deﬁned for
+(cid:2)H i (v , y , z )(cid:3) (s, a) := Gi (cid:0)ci (s, a) + γ v(s(cid:48) ), y(s, a), z (s, a)(cid:1) ,
+all (s, a) ∈ K,
+
+(34)
+
+where s(cid:48) ∼ P (· | s, a).
+
+29
+
+(cid:2)H i (v i∗ , y i∗ , z i∗ )(cid:3) (s, a).
+Eq. (13) can then be written as, ∀(s, a) ∈ K,
+Qi∗ (s, a) = Es(cid:48)∼P (·|s,a)
+n,t (s, a) := (cid:2)H i (v i
+n,∗ )(cid:3) (s, a) − (cid:2)H i (v i
+n,t )(cid:3) (s, a),
+Next, for all (s, a) ∈ K, we deﬁne two stochastic processes:
+n,t (s, a) := (cid:2)H i (v i∗ , y i∗ , z i∗ )(cid:3) (s, a) − (cid:2)H i (v i
+n,∗ )(cid:3) (s, a),
+i
+n−1 , y i
+n,∗ , z i
+n−1 , y i
+ξ i
+n−1 , y i
+n,∗ , z i
+for t ≤ T and n ≤ N . The process i
+n,t represents the risk estimation error (e.g. the duality gap in the
+corresponding stochastic saddle-point problem) and the process ξ i
+n,t represents the Q-value approximation
+error of Qi
+n,T with respect to Qi∗ . In this new notation, we may write Step 3 in Algorithm 1 as
+n,t (s, a) − Qi
+Qi
+n−1,T (s, a)
+= − θn
+k [Qi
+n−1,T (s, a) − Qi∗ (s, a) + ξ i
+n,t (s, a) + i
+n,t (s, a) + Qi∗ (s, a) − H i (v i∗ , y i∗ , z i∗ )(s, a)],
+E (cid:2)Qi∗ (s, a) − (cid:2)H i (v i∗ , y i∗ , z i∗ )(cid:3) (s, a) | G n−1
+(cid:3) = 0.
+for all (s, a) ∈ K, t ≤ T , and n ≤ N . Based on Eq. (35), we see that for all (s, a) ∈ K,
+
+n,t , z i
+
+(35)
+
+(36)
+
+(37)
+
+(38)
+
+t+1
+
+By Lemma 12, we know that
+
+(cid:107)i
+
+n,t(cid:107)2
+
+2 ≤
+
+γ 2C K 2
+κ(1 − C K (1)
+ψ κ)
+
+G
+
+(cid:107)Qi
+
+n−1,T − Qi∗ (cid:107)2
+
+2 ,
+
+(39)
+
+(40)
+
+n,t(cid:107)2
+
+n−1,T − Qi∗ (cid:107)2
+
+by setting t = 1 in inequality (28). In particular, inequality (39) shows that the conditional expectation
+w.r.t. G n−1
+t+1 of the risk estimation error is bounded by (cid:107)Qi
+2 . In addition, by Lipschitz continuity
+of Gi , we have
+(cid:107)ξ i
+
+2 ≤ γ 2 K 2
+G |v i
+n−1,T (s) − v i∗ (s)| + γ 2 K 2
+G |(y i∗ (s, a), z i∗ (s, a)) − (y i
+n,∗ (s, a))|
+n,∗ (s, a), z i
+≤ γ 2 K 2
+G [(cid:107)Qi
+n−1,T − Qi∗ (cid:107)2 + (cid:107)(y i∗ , z i∗ ) − (y i
+n,∗ , z i
+n,∗ )(cid:107)2 ]
+≤ γ 2 K 2
+G (1 + KGKS )(cid:107)Qi
+n−1,T − Qi∗ (cid:107)2 .
+An iterative stochastic algorithm is of the form:
+Xt+1 (s) = (1 − αt (s)) Xt (s) + αt (s) ((BtXt )(s) + wt (s)) , ∀s ∈ S ,
+where wt is bounded zero-mean noise, αt is the step size, and each Bt belongs to a family B of pseudo-
+contraction mappings (see [7] for details).
+1. The step sizes {αt (s)} satisfy: (i) (cid:80)∞
+t=0 αt (s) = ∞, (ii) (cid:80)∞
+Deﬁnition 5. [15, Deﬁnition 7] An iterative stochastic algorithm is wel l-behaved if:
+t (s) < ∞, and (iii) αt (s) ∈ (0, 1) for
+al l s ∈ S .
+2. There exists B < ∞ such that |wt (s)| ≤ B for al l s ∈ S and t ≥ 0.
+3. For each Bt , there exists γ ∈ [0, 1) and X ∗ such that (cid:107)BtX − X ∗ (cid:107) ≤ γ (cid:107)X − X ∗ (cid:107) for al l X .
+(cid:2)Qi (cid:3) := H i (v i , y i
+We deﬁne additional operators Ui
+n,t : R|S | |A| → R|S | |A| on the Q-values for i ∈ I ,
+where v i is the value function in a Nash equilibrium of the stage game (cid:0)Qi (s)(cid:1)
+Ui
+n,t ) − H i (v i∗ , y i∗ , z i∗ ),
+(cid:2)Qi
+n−1,T − Qi∗ (cid:3) + Qi∗ − H i (v i∗ , y i∗ , z i∗ )).
+i∈I . We can then formulate
+the process (38) as
+n,t − Qi∗ = (1 − θn
+n−1,T − Qi∗ ) + θn
+Qi
+k )(Qi
+k (Ui
+(cid:2)Qi
+(cid:2)Qi∗ (cid:3) (cid:107)2 = (cid:107)H i (v i
+(cid:107)Ui
+n, t ) − H i (v i∗ , y i
+n−1 , y i
+where H i is deﬁned in (34). By leveraging the non-expansiveness of the stage game equilibrium mapping in
+Lemma 11 and Lipschitz continuity of G, it follows that the operators Ui
+n,t is a pseudo-contraction.
+
+(cid:3) − Ui
+
+n, t )(cid:107)2 ,
+n, t , z i
+
+Noting that
+
+n, t , z i
+
+t=0 α2
+
+n,t , z i
+
+n,t
+
+n−1,T
+
+n,t
+
+(41)
+
+(42)
+
+n,t
+
+n,t
+
+30
+
+(cid:2)Qi
+(cid:2)Qi∗ (cid:3) (cid:107)2 ≤ γKG (cid:107)Qi
+n−1, T , we have (cid:107)Ui
+n−1,T − Qi∗ (cid:107)2 .
+Theorem 6. For al l Qi
+In addition, from Assumption 8, we know that the update rule (42) satisﬁes Condition 1 of Deﬁnition 5.
+(cid:2)Qi
+(cid:3) in terms of the estimation error. Such results
+Furthermore, based on Eq. (35), we know that update rule (42) satisﬁes Condition 2 of Deﬁnition 5. For the
+following Lemma 14, we bound the l2 -norm of Ui
+conform to Condition 3 in [15, Deﬁnition 7] or Condition 3 in Deﬁnition 5.
+
+(cid:3) − Ui
+
+n−1,T
+
+n−1,T
+
+n,t
+
+n,t
+
+n,t
+
+κ(1 − C K (1)
+ψ κ)
+C + (1 + KGKS )κ(1 − C K (1)
+ψ κ)
+
+, 1
+
+ .
+
+Lemma 14. Let
+
+1
+KG
+There exists γ (cid:48) ∈ [0, 1) such that
+
+γ <
+
+min
+
+(cid:118)(cid:117)(cid:117)(cid:116)
+
+
+(cid:118)(cid:117)(cid:117)(cid:116)
+
+γ (cid:48) = γ
+
+and
+
+Proof. We have
+
++ K 2
+G (1 + KGKS ),
+
+G
+
+n−1,T
+
+(cid:3) (cid:107)2 ≤ γ (cid:48) (cid:107)Qi
+
+C K 2
+κ(1 − C K (1)
+ψ κ)
+(cid:2)Qi
+n−1,T − Qi∗ (cid:107)2 .
+n, t ) − H i (v i∗ , y i∗ , z i∗ )(cid:13)(cid:13)2
+
+2
+
+2
+
+(cid:33)
+
++ K 2
+G (1 + KGKS )
+
+(cid:107)Qi
+
+n−1,T − Qi∗ (cid:107)2
+
+2 ,
+
+n,t
+
+n,t
+
+(cid:3) (cid:107)2
+
+(cid:107)Ui
+(cid:2)Qi
+= (cid:13)(cid:13)H i (v i , y i
+(cid:107)Ui
+= (cid:107)i
+2 + (cid:107)ξ i
+C K 2
+κ(1 − C K (1)
+ψ κ)
+
+n−1,T
+n, t , z i
+n,t(cid:107)2
+n,t + ξ i
+2
+n,t(cid:107)2
+n,t(cid:107)2
+2
+
+≤ (cid:107)i
+
+≤ γ 2
+
+(cid:32)
+
+G
+
+where the ﬁrst equality holds by deﬁnition of Ui
+n,t in Eq. (41), the second equality holds by Eq. (36) and
+Eq. (37), and the last inequality follows from inequalities (39) and (40). Given the relationship between γ
+and γ (cid:48) , we get the desired result.
+E (cid:2)Qi∗ − H i (v i∗ , y i∗ , z i∗ )|G n−1
+(cid:3) = 0.
+Given the update rule (38), Theorem 6, Lemma 14, and unbiasedness of
+We may now apply the stochastic approximation convergence theorem [49, Corollary 5] or [15, Theorem 8].
+n,T (s, a) → Qi∗ (s, a) almost surely as n → ∞, for all i ∈ I and (s, a) ∈ K.
+We conclude that Qi
+
+t+1
+
+A.7 Practical Implementation of RaNashQL
+
+There are several methods for computing Nash equilibria of stage games. The Lemke-Howson algorithm for
+two player (bimatrix) games is proposed in [34]. This algorithm is eﬃcient in practice, yet, in the worst case
+the number of pivot operations may be exponential in the number of the game’s pure strategies. Recently,
+[37] gives an algorithm for two player games that achieves polynomial-time complexity. Polynomial-time
+approximation methods, such as [12, 21, 38], have been proposed for general sum games with more than two
+players.
+Implementation of RaNashQL is complicated by the fact that there might be multiple Nash equilibria
+for a stage game. In RaNashQL, we choose a unique Nash equilibrium either based on its expected loss, or
+based on the order it is ranked in a list of solutions. Such an order is determined by the action sequence,
+which has little to do with the equilibrium conditions. For a two-player game, we calculate Nash equilibria
+using the Lemke-Howson method (see [34]), which can generate equilibrium in a certain order.
+We brieﬂy discuss the storage requirement of RaNashQL. RaNashQL needs to maintain |I | Q-values and
+|I | × |S | risk estimates (in terms of computing solutions of the corresponding saddle-point problems). In
+
+31
+
+(cid:0)y i (s, a), z i (s, a)(cid:1) for all i ∈ I through SASP. The total number of entries in each array Qi is |S | × |A|.
+each iteration, RaNashQL updates all Qi (s, a) for all (s, a) ∈ S × A and i ∈ I . Additionally, it updates
+Since RaNashQL has to maintain the Q-values for every player, the total space requirement is |I | × |S | × |A|.
+The storage requirement for the risk estimation is similar. Therefore, the storage requirement of RaNashQL
+in terms of space is linear in the number of states, polynomial in the number of actions, and exponential in
+the number of players.
+The algorithm’s running time is dominated by computation of Nash equilibrium for the Q-function
+updates. In general, the complexity of equilibrium computation in matrix games is unknown. As mentioned
+in the previous section, some commonly used algorithms for two player games have exponential worst-case
+bounds, and approximation methods are typically used for n-player games (see [38]).
+
+A.8 Experiment Settings
+
+We apply our techniques to the single server exponential queuing system from [30]. In this packet switched
+network, packets (blocks of data) are routed between servers over links shared with other traﬃc. The service
+rate of each server can be set to diﬀerent levels and is controlled by a service provider (Player 1). Packets
+are routed by a programmable physical device, called a router (Player 2). A router dynamically controls
+the ﬂow of arriving packets into a ﬁnite buﬀer at each server. The rates chosen by the service provider and
+router depend on the number of packets in the system. In fact, it is to the beneﬁt of a service provider to
+increase the amount of packets processed in the system. However, such an increase may result in an increase
+in packets’ waiting times in the buﬀer (called latency), and routers are used to reduce packets’ waiting times.
+Thus, the game theoretic nature of the problem arises because the service provider and router the have such
+competing ob jectives.
+The state space is S = {0, 1, ..., S }, where S < ∞ is the maximum number of packets allowed in the
+system. Only one packet can be in service at each time, while the remaining packets wait for service in the
+buﬀer. The router admits one packet into the system at each time. Every time a state is visited, the service
+provider and the router simultaneously choose a service rate µ > 0 and an admission rate λ > 0. Suppose
+there are s packets in the system and the players choose the action tuple (µ, λ), then the router incurs a
+holding cost h(s) and a cost θ(µ, λ) associated with having packets served at rate µ when it admits packets
+at rate λ. If there are no packets in the system, θ(µ, λ) can be interpreted as the setup cost of the server.
+These payoﬀs are modeled as being paid to the service provider, since the players’ ob jectives are in conﬂict.
+The service provider, in turn, pays the router β (µ, λ) which represents the reward to the router for choosing
+the rate λ. It can also be interpreted as the setup cost of the router. The cost functions for strategy proﬁle
+a = (µ, λ) are then:
+c1 (s, a) := β (a) − θ(a),
+
+and
+
+c2 (s, a) := h(s) + θ(a) − β (a).
+We assume that the time until the admission of a new packet and the next service completion are both
+exponentially distributed with means 1/λ and 1/µ, respectively. We can therefore model the number of
+packets in the system as a birth and death process with state transition probabilities:
+µ/(λ + µ), 1 < s < S, k = s − 1,
+0 < s < S − 1, k = s + 1,
+λ/(λ + µ),
+1,
+s = 0, k = 1,
+s = S, k = S − 1.
+1,
+
+P (k | s, a) :=
+
+
+
+We choose the following parameters for our example:
+• S = 30.
+• Each player has the same two available actions in every state:
+
+– router: ﬁrst action (denoted λ) is to admit one packet into the system every 10s; second action
+(denoted λ) is to admit one packet every 25s.
+
+32
+
+– service provider: ﬁrst action (denoted µ) is to serve one packet every 11s; second action (denoted
+µ) is to serve a packet every 20s.
+• Holding costs are exponential h(s) = a bαs for s ≥ 1 with a = 1.2 and b = e, and α = 0.2 and
+h (0) = 0. We set costs: θ(µ, λ) = θ(µ, λ) = 110, θ(µ, λ) = θ(µ, λ) = 90, β (µ, λ) = 60, β (µ, λ) = 30,
+β (µ, λ) = 20, and β (µ, λ) = 70.
+
+In this setting, the router pays the service provider more when the service rate is higher. Also, the router
+receives higher reward when both players choose higher rates or lower rates. The router receives lower reward
+when the admission and service rates do not match.
+We conduct three experiments, where all risk-aware players’ use CVaR. The CVaR for player i is
+
+(cid:26)
+
+(cid:27)
+
+,
+
+CVaRαi (X ) := min
+
+η∈R
+
+η +
+
+1
+1 − αi
+
+E [max {X − η , 0}]
+
+where αi ∈ [0, 1) is the risk tolerance for player i.
+When implementing RaNashQL, we use the Lemke-Howson method to compute the Nash equilibria of
+stage games, and we update the Q-values based on the ﬁrst Nash equilibrium generated from the method.
+We run our experiments in Matlab R2015a on a computer with an Intel Core i7 2.30GHz processor, 8GM
+RAM, running the 64-bit Windows 8 operating system.
+
+A.9 Multilinear Systems
+
+(cid:111)
+
+Mi
+
+In this section, we only focus on stochasticity from state transitions and derive a multilinear system for-
+mulation for risk-aware Markov perfect equilibria. This is to facilitate comparison with the robust Markov
+perfect equilibria in[30]. All ρi are taken to be CVaR. Corresponding to CVaR, we deﬁne
+s (Ps ) ≡ (cid:110)
+µ : − e(cid:62)µ +
+1 − αi ≥ 0,
+Ps
+e(cid:62)µ = 1, µ ≥ 0
+.
+(43)
+The set (43) conforms to Assumption 1(ii). Suppose Assumption 1 holds, then x∗ ∈ X is a risk-aware Markov
+perfect equilibrium if and only if (x, v) ∈ X × V is a solution of:
+s ∈ argminui
+(cid:104)µ, C i
+s (v i )(cid:105),
+xi
+s∈P (Ai ) max
+for all s ∈ S , i ∈ I . Since we only consider the risk from the stochastic state transitions, Problem (44) is
+equivalent to the system, for all s ∈ S , i ∈ I ,
+s (aj )(cid:1)(cid:3) (cid:34)
+(cid:2)ui
+s (ai ) (cid:0)Πj (cid:54)=ixj
+Formulation (45) can be further rewritten as
+
+s ∈ argminui
+xi
+s∈P (Ai ) max
+
+P (k | s, a)v i (k)
+
+ci (s, a) + γ
+
+(cid:88)
+
+(cid:88)
+
+µ∈Mi
+
+s (Ps )
+
+a∈A
+
+µ∈Mi
+
+s (Ps )
+
+.
+
+(45)
+
+(cid:35)
+
+k∈S
+
+(44)
+
+s∈P (Ai )
+
+s ∈argminui
+xi
+s ≥ max
+q i
+
+µ∈Mi
+
+s (Ps )
+
+(cid:34)
+
+ci (s, a) + γ
+
+q i
+s :
+(cid:2)ui
+s (ai ) (cid:0)Πj (cid:54)=ixj
+s (aj )(cid:1)(cid:3)
+P (k | s, a)v i (k)
+
+(cid:35) (cid:41)
+
+.
+
+(cid:40)
+(cid:88)
+(cid:88)
+
+a∈A
+
+k∈S
+
+(46)
+
+We introduce the following notation for our multilinear system formulation:
+
+33
+
+s (x−i
+s , C i ) ∈ R|Ai ||I |−1×|Ai | denote the matrix whose rows are given by the vector
+1. Let E i
+
+(cid:89)
+
+j (cid:54)=i
+
+s (aj )ci (s, (a−i , ai ))
+xj
+
+ai∈Ai
+
+.
+
+(47)
+
+
+
+
+2. Deﬁne the vector z i
+
+s ∈ R|S | |A| as
+
+(cid:89)
+
+j (cid:54)=i
+
+z i
+s :=
+
+s (ai ) (cid:0)Πj (cid:54)=ixj
+s (aj )(cid:1) v i (k)
+ui
+
+s (x−i
+s , v i ) ∈ R|S | |A|×|Ai | be the matrix such that
+3. Let Y i
+Y i
+s (x−i
+s , v i )ui
+s = z i
+s .
+s := [ti (k | s, a)]a∈A, k∈S be probability distributions that satisfy
+(cid:2)ti (k | s, a)(cid:3) = 1, ∀s ∈ S , a ∈ A.
+4. Let ti
+
+(cid:88)
+
+5. Finally, let
+
+T i (x) :=
+
+k∈S
+
+(cid:88)
+
+a∈A
+
+(cid:89)
+
+i ∈ I
+
+s (ai )ti (k | s, a)
+xi
+
+
+
+s, k∈S
+
+,
+
+aj ∈Aj , ai∈Ai , k∈S
+
+.
+
+(48)
+
+(49)
+
+(cid:8)v i(cid:9)
+
+s (x)](cid:62) .
+and denote the sth row of T i (x) by [ti
+The next theorem uses the strategy of [31] to give a multilinear system formulation for the equilibrium
+conditions (44) (which correspond to a risk-aware Markov perfect equilibrium).
+
+h
+
+v i
+
+h Y i
+
+s ∈ R|A| , ti
+
+Theorem 7. A stationary strategy x is a CVaR risk-aware Markov perfect equilibrium point with value
+i∈I if and only if for al l i ∈ I and s ∈ S , there exist mi
+s , ni
+s ∈ R|S | |A| such that for any
+a ∈ A, and for h ∈ A, (v i , xs , mi
+s + γ (cid:2)ti
+s (x)(cid:3)(cid:62)
+s , ni
+s , ti
+s ) satisﬁes
+(cid:2)E i
+s , C i )(cid:3)(cid:62)
+v i (s) = e(cid:62)E i
+s (x−i
+s , C i )xi
+v i (s) ≤ e(cid:62)
+s (x−i
+e
++ γ e(cid:62)
+s (x−i
+s , v i )ti
+s ,
+v i (s) ≥ [− Ps
+1 − αi ](cid:62)ni
++ e(cid:62)mi
+s + e(cid:62)E i
+s (x−i
+s , C i )ui
+s ,
+s (x−i
+s ≤ − e(cid:62)ni
+γY i
+s , v i )ui
+s ,
+−e(cid:62) ti
+s ≤ − Ps
+1 − αi ,
+e(cid:62) ti
+s = 1,
+e(cid:62)xi
+s = 1,
+xi
+s ≥ 0,
+ni
+s ≤ 0,
+where eh is the hth unit column vector of dimension |A|, e(cid:62) is a row vector of al l ones of appropriate
+dimension, E i
+s (x−i
+s , C i ) is obtained from formulation (47) and Y i
+s (x−i
+s , v i ) is the matrix given by Eq. (49).
+
+s
+
+34
+
+(cid:8)γ (cid:10)µ, v i (cid:11)(cid:9) + e(cid:62)E i
+Proof. (Proof sketch) (Step 1) First we reformulate the inner maximization (primal problem) in Problem
+(45) as
+max
+s (x−i
+s , C i )ui
+s ,
+γ (cid:10)µ, v i (cid:11) : − e(cid:62)µ +
+then take the dual of the ﬁrst maximization term
+
+(cid:26)
+
+(cid:27)
+
+max
+
+µ≥0
+
+.
+
+1 − αi ≥ 0, e(cid:62)µ = 1, µ ≥ 0
+Ps
+
+µ≥0
+
+(cid:40)
+
+(cid:19)
+
+(cid:1)(cid:62) (cid:18) Ps
+
+− (cid:0)ni
+
+s
+
+− mi
+1 − αi
+s + (cid:0)ni
+s :
+γY i
+s (x−i
+s , v i )ui
+
+(cid:1)(cid:62)
+
+s
+
+s e ≤ 0
+e + mi
+
+(cid:41)
+
+,
+
+(cid:41)
+
+The dual problem is
+
+which can be rewritten as
+
+min
+
+s≥0, mi
+ni
+
+s
+
+(cid:40) (cid:0)ni
+
+s
+
+(cid:1)(cid:62) (cid:18) Ps
+
+(cid:19)
+
+s
+
+s
+
+.
+
+min
+
+(cid:1)(cid:62)
+
+s≤0, mi
+ni
+
+e − mi
+s e ≤ 0
+
+1 − αi
++ mi
+s :
+s − (cid:0)ni
+γY i
+s (x−i
+s , v i )ui
+The primal problem has a non-empty bounded feasible region (by assumption) so it attains its optimal value.
+Strong duality then holds, and so the dual problem also attains its optimal value and the optimal values are
+equal.
+(Step 2) We combine the two minimization ob jectives to rewrite Problem (44), use formulation (46), and
+then derive a single linear programming problem as
+q i
+s ≥ (cid:0)ni
+s.t. q i
+1 − αi
+(cid:0)ni
++ γY i
+s (x−i
+s , v i )ui
+s ,
+e − mi
+s e ≥ γY i
+s (x−i
+s , v i )ui
+s ,
+eT ui
+s = 1,
+s ≥ 0, ni
+s ≤ 0.
+ui
+(Step 3) For the ﬁnal step, we take the dual of Problem (50)-(54). And the resulting dual problem is
+
+(cid:1)(cid:62) (cid:18) Ps
+
+(cid:1)(cid:62)
+
+ui
+s ,qi
+s ,mi
+s ,ni
+
+(cid:19)
+
++ mi
+
+(50)
+
+(51)
+
+(52)
+
+(53)
+
+(54)
+
+min
+
+s
+
+s
+
+s
+
+s
+
+s
+
+max
+
+vi (s), ti
+
+s
+
+v i (s)
+
+s.t. e(cid:62) ti
+s ≥ Ps
+1 − αi ,
+e(cid:62) ti
+(cid:2)E i
+s , C i )(cid:3)(cid:62)
+s = 1,
+v i (s) ≤ e(cid:62)
+s (x−i
+s (x−i
+s , v i )ti
+s ,
+The desired multilinear system follows by strong duality since the primal feasible region is non-empty and
+bounded.
+
+1 + γ e(cid:62)
+
+h = 1, ..., A.
+
+h Y i
+
+h
+
+Remark 1. Nonlinear optimization methods have been used to solve multilinear systems that arise from
+equilibrium computation of one-shot games with up to four players and four actions per player in less than
+ﬁve minutes (see [1, 13]). Homotopy methods have been used to solve multilinear systems that arise from
+
+35
+
+complete information stochastic games for two players, two actions per player, and ﬁve states in less than
+one minute, see [22]. We adopt the methodology proposed in [1, Section 5.2.2]. We ﬁrst cast the multilinear
+constraints into an appropriate penalty function, and then solve the resulting unconstrained minimization
+problem with an interior point algorithm. This procedure wil l converge a local minimum, but not necessarily
+to a global minimum.
+
+A.10 Additional Experiments
+
+In the section, we provide supplementary materials for Experiment I and II.
+
+Experiment I: We compare RaNashQL for risk-aware Markov game with Nash Q-learning in [24] for
+risk-neutral Markov game, in terms of their convergence rates. Given any precision  > 0, we record the
+iteration count n until the convergence criterion (cid:107)Qi
+n, T − Qi∗ (cid:107)2 ≤  is satisﬁed. Here we choose T = 10 and
+we choose N = 1 × 105 for RaNashQL and N = 1 × 106 for Nash Q-learning, such that both methods have
+the same total number of iterations. When  is extremely small e.g.,  = 0.001, the total number of iterations
+for RaNashQL and Nash Q-learning for the two players are respectively: 983443 (Nash Q-learning, Service
+provider), 936761 (Nash Q-learning, Router), 999991 (RaNashQL, Service provider and Router), which are
+relatively equal. Moreover, Figure 1 shows that the total number of iterations for Nash Q-learning decrease
+dramatically as the increase of precision , which reveals that RaNashQL is more computationally expensive
+than Nash Q-learning in terms of achieving the same convergence criterion.
+
+Figure 3: Comparison between NashQL and RaNashQL
+
+Figure 2 presents the Markov perfect equilibrium for the risk-neutral and risk-aware cases. It shows the
+equilibrium shifting when considering the risk-awareness of players. It also shows that the both risk-neutral
+and risk-aware Markov perfect equilibrium are sensitive to the perturbations in the service rates, and risk-
+aware strategies for both players highly ﬂuctuate with the change of state (number of packet in the queuing
+system). We also study how the risk tolerance level αi (See Table 2) aﬀects the risk-aware Markov perfect
+equilibrium, which also shows the risk-aware Markov perfect equilibrium ﬂuctuates with the change of the
+risk tolerance level of CVaR.
+
+36
+
+Figure 4: Comparison of Risk-Neutral and Risk-aware Markov Perfect Equilibrium
+
+Scenario 1
+Scenario 2
+Scenario 3
+Scenario 4
+
+Service Provider (α1 ) Router (α2 )
+0.1
+0.1
+0.2
+0.2
+0.1
+0.2
+0.2
+0.1
+
+Table 5: Risk Tolerance Level αi
+
+Next, we evaluate the discounted cost under risk-neutral and risk-aware Markov perfect equilibrium in
+simulation (1000 complete runs of the algorithm to compute the entire risk-aware Markov perfect equilibria).
+The risk tolerance levels are selected as α1 = α2 = 0.1, for the risk-aware (CVaR) method in Table 3 here.
+Table 3 shows that considering risk awareness will signiﬁcantly increase the variance of the discounted cost,
+which is contrary to expectation. The possible reason is the higher ﬂuctuation of risk-aware strategies with
+the change of state (number of packet in the queuing system) than risk-neutral strategies.
+Experiment II: In this experiment, we consider a special case where the risk only comes from the
+stochasticity from state transitions (this setting is basically a risk-aware interpretation of [31] where the
+ambiguity is over the transition kernel). In this special case, we can compute risk-aware Markov equilibrium
+using a multilinear system as detailed in Section A.9. We evaluate performance in terms of the relative error
+
+(cid:114)(cid:80)
+
+(cid:16)
+
+s∈S
+
+(cid:17)2
+
+, n ≤ N .
+
+(cid:112)(cid:80)
+
+n, T (s))j∈I − v i∗ (s)
+N ashi (Qj
+s∈S v i∗ (s)2
+
+37
+
+Player
+
+Service Provider
+
+Router
+
+Method
+Mean
+−22.22
+Risk-aware (CVaR) −77.78
+Risk-neutral
+Risk-neutral
+37.48
+Risk-aware (CVaR)
+83.68
+
+Variance
+1.4736e − 06
+407.84
+7.32
+491.20
+
+5%-CVaR 10%-CVaR
+−22.22
+−22.22
+−69.34
+−68.26
+37.94
+38.18
+86.03
+87.54
+
+Table 6: Simulation for Risk-neutral Strategies and Risk-aware Strategies (α1 = α2 = 0.1)
+
+Figure 5: Almost Sure Convergence of RaNashQL
+
+In this experiment, we take the risk measure as 10%-CVaR. The multilinear system is solved by an interior
+point algorithm within 5×107 maximum function evaluation and 1×105 maximum iterations, and it converges
+to a local optimal solution in 10471.975 seconds. For RaNashQL, we choose T = 10 and N = 2 × 106 , and
+the total implementation time for RaNashQL is 10245.314 seconds. The following Figure 3 validates the
+almost sure convergence of RaNashQL to the service provider’s strategy. For the router, the relative error is
+large (around 190%). One possible reason is that RaNashQL converges to diﬀerent equilibria compared to
+the one obtained by the multilinear system solver. We see that RaNashQL possesses superior computational
+performance than interior point algorithm for this task, since the relative error of service provider is within
+25% in 1 × 106 iterations, and the implementation time will be 5122.657 seconds.
+
+38
+
+

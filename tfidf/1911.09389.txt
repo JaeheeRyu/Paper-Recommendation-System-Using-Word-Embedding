@@ -1,0 +1,1016 @@
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+1
+
+Classiﬁcation-driven Single Image Dehazing
+
+Yanting Pei, Yaping Huang, Xingyuan Zhang
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+9
+8
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract—Most existing dehazing algorithms often use hand-
+crafted features or Convolutional Neural Networks (CNN)-based
+methods to generate clear images using pixel-level Mean Square
+Error (MSE) loss. The generated images generally have better
+visual appeal, but not always have better performance for high-
+level vision tasks, e.g.
+image classiﬁcation. In this paper, we
+investigate a new point of view in addressing this problem.
+Instead of focusing only on achieving good quantitative perfor-
+mance on pixel-based metrics such as Peak Signal to Noise Ratio
+(PSNR), we also ensure that the dehazed image itself does not
+degrade the performance of the high-level vision tasks such as
+image classiﬁcation. To this end, we present an uniﬁed CNN
+architecture that includes three parts: a dehazing sub-network
+(DNet), a classiﬁcation-driven Conditional Generative Adversar-
+ial Networks sub-network (CCGAN) and a classiﬁcation sub-
+network (CNet) related to image classiﬁcation, which has better
+performance both on visual appeal and image classiﬁcation. We
+conduct comprehensive experiments on two challenging bench-
+mark datasets for ﬁne-grained and object classiﬁcation: CUB-
+200-2011 and Caltech-256. Experimental results demonstrate that
+the proposed method outperforms many recent state-of-the-art
+single image dehazing methods in terms of image dehazing
+metrics and classiﬁcation accuracy.
+
+I . IN TRODUC T ION
+
+Haze is a traditional atmospheric phenomenon where dust,
+smoke and other dry particles obscure the clarity of the
+atmosphere. In this age of ubiquitous smartphone usage,
+images captured by smartphone cameras under difﬁcult hazy
+weather conditions undergo degradations that drastically affect
+the visual quality of images and make the images useless for
+sharing and usage. Meanwhile, the existence of haze dramat-
+ically degrades the visibility of outdoor images captured in
+the inclement weather and affects high-level computer vision
+tasks, such as image classifacation and other computer vision
+applications, such as autonomous driving, aerial photography
+and remote sensing.
+Koschmieder et al. [1] ﬁrst propose the atmospheric scat-
+tering model, which is further developed by Narasimhan and
+Nayar [2], [3]. The atmospheric scattering model can be
+formally written as
+
+I (x) = J (x) · t(x) + A · (1 − t(x)),
+
+(1)
+
+where x is the pixel coordinates, I (x) is the observed hazy
+image, J (x) is the original clear image and A is the global
+atmospheric light. t(x) is the medium transmission map and
+it is distance-dependent:
+
+t(x) = e−βd(x) ,
+
+(2)
+
+Y. Pei, Y. Huang and X. Zhang are with the Beijing Key Laboratory
+of Trafﬁc Data Analysis and Mining, Beijing Jiaotong University, Beijing,
+100044, China.
+
+where β is the atmospheric scattering coefﬁcient and d(x) is
+the scene depth. The goal of image dehazing is to recover
+clear image J (x) from hazy image I (x).
+Single image dehazing is an ill-posed problem and some
+methods try to use visual cues to capture deterministic and
+statistical properties of hazy images [4], [5], [6], [7], [8].
+Recent years, we have witnessed signiﬁcant advances in image
+dehazing mainly due to emerging CNN-based dehazing meth-
+ods [9], [10], [11], [12], [13], [14]. Some works [9], [10],
+[11] remove haze based on atmospheric scattering model and
+some works [12], [13], [14] train an end-to-end model to gain
+a clear image.
+However, those image dehazing methods above only show
+good visual appeal and are not necessarily useful for high-level
+vision tasks, such as image classiﬁcation [15], [16], [17], [18],
+[19], because they never consider information related to image
+classiﬁcation. We ﬁnd that this always leads to that the dehazed
+images have high performance based on dehazing evaluation
+metrics, such as PSNR and Structural Similarity Index (SSIM),
+but low performance based on the classiﬁcation accuracy, or
+vice. Our usual purpose of image dehazing is helpful for
+further usage such as image classiﬁcation, not
+just visual
+effects. Pei et al. [20] show that image dehazing achieves
+higher PSNR and SSIM values, but cannot improve the image
+classiﬁcation much. Therefore, it is an important problem to
+develop a dehazing method that not only has better dehazing
+effect based on dehazing evaluation metrics (e.g. PSNR and
+SSIM) and but also has higher classiﬁcation performance.
+A common approach in computer vision is to separate low-
+level vision tasks (e.g. image dehazing) from high-level vision
+tasks (e.g. image classiﬁcation) and solve them independently.
+In this paper, we propose an uniﬁed method considering both
+image dehazing and classiﬁcation tasks. We jointly minimize
+the image dehazing loss and the classiﬁcation loss. With the
+guidance of image classiﬁcation, the dehazing network is able
+to further improve visual quality and generate more visually
+appealing outputs and have better classiﬁcation accuracy,
+which demonstrates the importance of high-level information
+for image dehazing. We achieve this by enforcing the de-
+hazing sub-network to adaptively learn those features which
+can lead to improved visual appeal and image classiﬁcation
+performance.
+The main contributions of this paper are as follows:
+• We ﬁrst propose an end-to-end uniﬁed CNN architecture
+combining dehazing and classiﬁcation for image dehazing
+and the CNN architecture can be optimized jointly.
+• Instead of using general CGAN, we use a classiﬁcation-
+driven CGAN sub-network and a classiﬁcation sub-
+network for improve the dehazing and classiﬁcation per-
+formance of the dehazed images simultaneously.
+
+ 
+ 
+ 
+ 
+ 
+ 
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+2
+
+• We conduct extensive experiments on synthesized hazy
+images, which show that our method achieves best per-
+formance both on images dehazing metrics (PSNR and
+SSIM) and classiﬁcation accuracies of AlexNet, VGGNet
+and ResNet. Besides, we test our model on real hazy
+images and it has good visual appeal, which indicates
+that the effectiveness of our proposed model.
+
+I I . R E LATED WORK
+
+In this section, we will brieﬂy review the most related
+works: image dehazing, image classiﬁcation and generative
+adversarial network.
+
+A. Image Dehazing
+Single image dehazing is an extremely ill-posed and chal-
+lenging problem. Single image haze removal has made signif-
+icant progresses recently, due to the use of better assumptions
+and priors [4], [5], [8], [6], [7]. Speciﬁcally, Tan et al. [4]
+propose a local contrast maximizing method based on markov
+random ﬁeld for haze removal under the assumption that the
+local contrast of the haze-free image is much higher than that
+of hazy image. Although contrast maximizing approach is able
+to achieve impressive results, it tends to produce over-saturated
+images. Inspired by dark-object subtraction technique, He et
+al. [5] propose a dehazing method based on dark channel
+prior that is at least one color channel has some pixels with
+very low intensities in most of non-haze patches. Meng et
+al. [21] propose an effective regularization dehazing method to
+restore the haze-free image by exploring the inherent boundary
+constraint. Tang et al. [22] combine four types of haze relevant
+features with random forests to estimate the transmission. The
+four types of haze relevant features are dark channel, local
+max contrast, hue disparity and local max saturation. Fattal [8]
+proposes a dehazing method relying on a generic regularity
+in natural images in which pixels of small image patches
+exhibit one-dimensional distributions in RGB space, known as
+color-lines. Zhu et al. [6] present a single image haze removal
+algorithm using the color attenuation prior by creating a linear
+model for modeling the scene depth of the hazy image under
+this prior. Berman et al. [7] introduce a haze removal method
+based on a non-local prior, by assuming that colors of a haze-
+free image are well approximated by a few hundred of distinct
+colors in the form of tight clusters in RGB space. In a hazy
+image, these tight color clusters change due to haze and form
+lines in RGB space that pass through the airlight coordinate.
+CNNs have witnessed prevailing success in computer vision
+tasks and are recently introduced to haze removal [9], [10],
+[11], [12], [13], [14]. Ren et al. [9] propose a multi-scale deep
+neural network for haze removal, and the network consists of
+a coarse-scale sub-network for a holistic transmission map and
+a ﬁne-scale sub-network for local reﬁnement. Cai et al. [10]
+adopt CNN-based deep architecture, whose layers are specially
+designed to embody the established priors in image dehazing
+and it
+is constructed by three convolution layers, a max-
+pooling, a Maxout unit and a BReLU activation function.
+Li et al. [11] propose a light-weight CNN designation based
+on a re-formulated atmospheric scattering model. Instead of
+
+estimating the transmission matrix and the atmospheric light
+separately as most previous models did, Ren et al. [12]
+propose an end-to-end trainable neural network that consists
+of an encoder and a decoder. The encoder is exploited to
+capture the context of the derived input
+images that are
+White Balance, Contrast Enhancing, and Gamma Correction,
+while the decoder is employed to estimate the contribution of
+each input to the ﬁnal dehazed result. Zhang and Patel [13]
+directly embed the atmospheric scattering model
+into the
+network and propose a new edge-preserving densely connected
+encoder-decoder structure with multi-level pyramid pooling
+module for estimating the transmission map and this network
+is optimized using a newly introduced edge-preserving loss
+function. Zhang [14] proposes a dehazing method based on
+a conditional generative adversarial network, where the clear
+image is estimated by an end-to-end trainable neural network.
+
+B. Image Classiﬁcation
+In recent years, image classiﬁcation has made signiﬁcant
+progress, partly due to the creation of large-scale hand-labeled
+datasets such as ImageNet [23], and the development of
+deep convolutional neural networks [15]. Current state-of-
+the-art image classiﬁcation methods focus on training feed
+forward convolutional neural networks using “very deep”
+structure [16], [17], [18]. VGGNet [16], Inception [17] and
+residual learning [18] have been proposed to train very deep
+neural networks, resulting in excellent
+image-classiﬁcation
+performances on clear natural images. Liu et al. [24] propose
+a cross-convolutional-layer pooling method for image classi-
+ﬁcation. Wang et al. [25] combine CNN with recurrent neural
+networks (RNN) for improving the image classiﬁcation perfor-
+mance. Durand et al. [26] study three important visual recogni-
+tion tasks, image classiﬁcation, weakly supervised point-wise
+object localization and semantic segmentation in an integrative
+way. Wang et al. [27] develop a convolutional neural network
+using attention mechanism for image classiﬁcation. Hu et
+al. [19] propose an architectural unit based on the channel
+relationship, which adaptively recalibrates the channel-wise
+feature responses by explicitly modeling interdependencies
+between channels.
+
+C. Generative Adversarial Network
+Generative Adversarial Networks (GANs) have become
+more and more popular recently. Goodfellow et al. [28] ﬁrst
+propose GAN [28] to synthesize realistic images by learning
+the distribution of training images. Initially, the training of
+GANs is unstable, which often results in artifacts in the
+synthesized images. Incorporating conditional information in
+GAN results in more effective learning [29]. The conditioning
+variables augmenting information increases the stability of
+learning process and improves the representation capability of
+the generator. Different from original GAN [28], the CGAN
+algorithm learns to generate a clear image J from an input im-
+age I and random noise z by optimizing the objective function.
+The CGAN has been made great progress in image processing
+ﬁeld such as super-resolution [30], image inpainting [31] and
+style transfer [32]. Raymond et al. [33] propose a semantic
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+3
+
+image inpainting algorithm using a CGAN. In image super-
+resolution, Ledig et al. [30] modify the GAN formulation by
+introducing pixel-wise content loss and perceptual loss [32]
+to generate high quality images. Zhang et al. [34] use the
+pixel-wise content loss and perceptual loss in CGAN to solve
+image deraining problem. Based on CGAN, Zhang [14] also
+proposes an architecture for image dehazing.
+
+I I I . OUR M E THOD
+
+Instead of directly learning a mapping from an input hazy
+image to a dehazed image by using MSE loss, which can
+generate dehazed images that always have better performance
+in terms of PSNR and SSIM metrics, we aim to generate
+dehazed images that have better performance both on dehazing
+metrics and image classiﬁcation accuracy. To this end, we
+introduce the classiﬁcation-driven CGAN sub-network and the
+classiﬁcation sub-network. The proposed network is composed
+of three important parts: dehazing sub-network, classiﬁcation-
+driven CGAN sub-network and the classiﬁcation sub-network,
+which serves as distinct purposes. In this section, we ﬁrst
+introduce the architecture of the proposed network. Then we
+describe each part in detail as well as the loss function.
+
+A. Overview
+We propose an uniﬁed network that can be used not only
+to image dehazing but also to image classiﬁcation, which
+takes a hazy image as input and can output
+the dehazed
+image as well as the image category. The proposed network is
+composed of three parts: image dehazing sub-network (DNet),
+image classiﬁcation-driven CGAN sub-network (CCGAN) and
+image classiﬁcation sub-network (CNet). The overview of
+our method is shown in Fig. 1. For the DNet, we use the
+commonly used MSE loss to generate dehazed image that aims
+to have visual appeal. For CCGAN, we use the GAN loss to
+generate dehazed image that aims to have better classiﬁcation
+performance. For CNet, we use Cross Entropy loss to generate
+dehazed image that aims to further improve the classiﬁcation
+performance.
+
+B. Dehazing Sub-network
+The purpose of the dehazing sub-network is to generate a
+clear image from an input hazy image. Therefore, it should
+not only preserve the structure and detail information of an
+input image but also remove the haze as much as possible.
+Motivated by ResNet [14] and U-Net [25], we introduce skip
+connections of the symmetric layers to break through the
+bottleneck of information in decoding process. The details of
+the generator structures and parameter settings are shown in
+Table I. Each layer of the encoding process consists of the
+convolution, batch normalization and LeakyReLU. Each layer
+of the decoding process is composed of deconvolution, batch
+normalization and ReLU. The size of the input and output in
+the generator is set to be 256 × 256 × 3. The size of the input
+in the discriminator is set to be 256 × 256 × 6 and the size of
+its output is 256 × 256 × 1.
+
+C. Classiﬁcation-driven CGAN Sub-network
+In order to make the generated image have better classi-
+ﬁcation performance, we introduce the classiﬁcation-driven
+CGAN sub-network. For learning a good generator G so as to
+fool the learned discriminator D and make the discriminator D
+good enough to distinguish the real and the fake, the proposed
+method alternatively updates G and D. Given an input hazy
+image I and a random noise vector z , conditional GAN aims
+to learn a mapping function to generate dehazed image J ∗ by
+solving the following optimization problem:
+
+min
+
+G
+
+max
+
+D
+
+= EI∼pdata(I ) ,z∼p(z) [log(1 − D(I , G(I , z )))]
++EI∼pdata(I ,J ) [log(D(I , J ∗ ))]
+
+1) Generator: Instead of generating good dehazed image as
+common CGAN, the function of the generator in this paper is
+to generate good features of an image. As shown in Fig. 1, we
+feed the clear image and the dehazed image to the generator
+and gain the features of those two images, respectively. Then,
+we use discriminator to discriminate which features come from
+the clear image and which features come from the dehazed
+image. The network structure of generator uses VGGNet that
+removes the fully connected layers. Due to the size of the
+dehazed image is 256, The size of the features in the last
+layer is 8 × 8, instead of 7 × 7. Note that we can also use
+other network structure.
+2) Discriminator: The discriminator is used to distinguish
+whether the features come from a clear image (real) or a
+dehazed image (fake). Therefore, we develop a two fully con-
+nected layers network. For the ﬁnal layer of the discriminator,
+we apply a sigmoid function to the feature maps so that the
+probability score can be normalized into [0,1].
+
+D. Classiﬁcation Sub-network
+In order to further improve the classiﬁcation performance,
+we introduce a classiﬁcation sub-network. We jointly train de-
+hazing sub-networks, classiﬁcation-driven CGAN sub-network
+and classiﬁcation sub-networks to achieve better performance
+not only for PSNR and SSIM, but also for classiﬁcation
+performance. The predicted output image (dehazed image)
+from dehazing sub-network is fed as an input to the classi-
+ﬁcation sub-network. The classiﬁcation sub-network can help
+the dehazing sub-network to generate clearer dehazed image
+that has better classiﬁcation performance.
+
+E. Loss Function
+Let I (x) and J (x) denote the hazy images and the cor-
+responding clear images. A straightforward way to train the
+dehazing network is to directly utilize the MSE loss LM SE ,
+which is given by:
+
+where J ∗ (x) is the dehazed image and S is the size of I (x).
+However, we ﬁnd that the method using this function is not
+
+N(cid:88)
+
+x=1
+
+LM SE =
+
+1
+S
+
+(J (x) − J ∗ (x))2
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+4
+
+Fig. 1. The overview of our network architecture, which is composed of three parts: image dehazing sub-network with MSE loss, image classiﬁcation-driven
+CGAN sub-network with GAN loss and image classiﬁcation sub-network with Cross Entropy loss.
+
+TH E DE TA I L S O F TH E G EN ERATOR STRUC TUR E AND PARAM E TER .
+
+TABLE I
+
+Layer
+Conv Conv Conv Conv Conv Conv Conv Conv Dconv Dconv Dconv Dconv Dconv Dconv Dconv Dconv
+Kernel size 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4 4 × 4
+2 × 2 2 × 2 2 × 2 2 × 2 2 × 2 2 × 2 2 × 2 2 × 2 2 × 2 2 × 2 2 × 2 2 × 2 2 × 2 2 × 2 2 × 2 2 × 2
+Stride
+1 × 1 1 ×1 1 × 1 1 × 1 1 ×1 1 × 1 1 × 1 1 × 1 1 ×1
+1 × 1 1 × 1 1 × 1 1 × 1 1 × 1 1 × 1 1 × 1
+Padding
+Channel
+64
+128
+256
+512
+512
+512
+512
+512
+512
+512
+512
+512
+256
+128
+64
+3
+
+able to make the dehazed image have better performance both
+on PSNR, SSIM and classiﬁcation accuracy.
+In order to recover realistic images, we introduce the
+CCGAN, the loss of which is given by:
+
+LGAN =
+
+1
+S
+
+log(1 − D(I (x), J ∗ (x)))
+
+N(cid:88)
+
+x=1
+
+Besides, in order to improve the image classiﬁcation per-
+formance, we introduce the Cross Entropy loss LCE . Where
+a is the output of the last fully-connected layer of CNet that
+is fed to a C -way softmax function and C is the number of
+classes.
+
+LCE = − C(cid:88)
+exp(ai )
+r=1 exp(ar )
+
+(cid:80)C
+
+Pi =
+
+yi log(Pi )
+
+i=1
+
+Finally, we combine the MSE loss, the GAN loss and the
+Cross Entropy loss to regularize the proposed network, which
+is deﬁned as
+
+L = a ∗ LM SE + b ∗ LGAN + c ∗ LCE
+
+We learn all parameters of the network jointly in an end-
+to-end fashion.
+
+IV. EX PER IM EN T S
+
+In this section, we ﬁrst introduce datesets, experimental
+details and evaluation metrics brieﬂy. Then we quantitatively
+and qualitatively evaluate our method against several state-of-
+the-art algorithms on synthetic and real-world hazy images.
+
+A. Datasets
+
+In this section, we evaluate various image dehazing methods
+on the hazy images synthesized from CUB-200-2011 [35]
+dataset and on the hazy images synthesized from Caltech-
+256 [36] dataset, which have been widely used for evaluating
+image classiﬁcation algorithms. We synthesize hazy images
+following [10].
+CUB-200-2011 dataset contains 11,788 images from 200
+classes, which has 5994 training images and 5794 testing
+images. Among the training images, 20% images are used as
+a validation set. Caltech-256 dataset contains 30,607 images
+from 257 classes. In Caltech-256, we select 60 images from
+each class as training images, and the rest as test images.
+Among the training images, 20% per class are used as a
+validation set. We follow this to split the synthetic hazy image
+data: an image is in training set if it is synthesized from an
+image in the training set and in testing set otherwise.
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+5
+
+B. Experimental Details and Evaluation Metrics
+In training process, we empirically set a = 500, b = 1
+and c = 1. The learning rate is set to be 0.0002. We use the
+Adam optimization method [37] to train our network. While
+the proposed CNet can use ResNet-50, ResNet-101, VGGNet
+or other models, for convenience, we use ResNet-50 in this
+paper. We set the parameter β = 2 in Eq. 2.
+We will quantitatively evaluate our dehazing method on
+the synthetic datasets and compare it with several state-of-
+the-art single image dehazing methods not only using PSNR
+and SSIM which are widely used for evaluating the perfor-
+mance of image dehazing when the ground-truth haze-free
+image is available, but also using classiﬁcation accuracy of
+AlexNet [15], VGGNet-16 [17] and ResNet-50 [18]. The
+AlexNet, VGGNet-16 and ResNet-50 architectures are pre-
+trained on ImageNet dataset that consists of 1,000 classes with
+1.2 million training images. For fair and comprehensive com-
+parison, we have two strategies. First, we ﬁne-tune AlexNet,
+VGGNet-16 and ResNet-50 on original clear images in CUB-
+200-2011 and Caltech-256 datasets, respectively. Note that we
+change the number of channels in the last fully connected layer
+from 1,000 to N , where N is the number of classes in our
+datasets. We use the ﬁne-tuned model as a classiﬁer to test
+the dehazed images of our method and other state-of-the-art
+methods. Second, we use the CNet in our network structure
+as a classiﬁer to classify the dehazed images of our method
+and the state-of-the-art dehazing methods.
+
+C. Quantitative and Qualitative Comparison on Synthetic
+Hazy images
+We compare our proposed method with nine state-of-
+the-art dehazing methods: Dark Channel Prior (DCP) [5],
+Boundary Constrained Context Regularization (BCCR) [21],
+Color Attenuation Prior (CAP) [6], Non-local Image Dehazing
+(NLD) [7], DehazeNet [10], Multi-Scale Convolutional Neu-
+ral Networks (MSCNN) [9], All-in-One Dehazing Network
+(AOD) [11], Gated Fusion Network (GFN) [12] and Sin-
+gle Image Dehazing via Conditional Generative Adversarial
+Network (ID-CGAN) [14]. We compare the performance
+of different methods on the test images from the synthetic
+datasets quantitatively and qualitatively. As the ground truth
+is available for these test hazy images, we can calculate the
+quantitative measures such as PSNR and SSIM. Besides, in
+order to test whether the image classiﬁcation performance is
+improved or not for the dehazed images, we also calculate
+the classiﬁcation accuracies (%) of AlexNet, VGGNet-16 and
+ResNet-50. The quantitative results are shown in Table. II
+and Table. III. It can be clearly observed that the proposed
+method is able to achieve superior quantitative performance.
+Our proposed network structure is not only used for image
+dehazing, but also used for image classiﬁcation. We use our
+CNet as a classiﬁer to test the dehazed images of our dehazing
+method and other state-of-the-art dehaizng methods, the results
+are shown in the last column in Table. II and Table. III. We can
+see that our CNet can improve the classiﬁcation performance
+signiﬁcantly, especially for ﬁne-grained image classiﬁcation
+shown in the last column in Table. II. Experiments show
+
+that our method is very useful both for image dehazing and
+classiﬁcation.
+
+TH E DEHAZ ING AND CLA S S I FICAT ION R E SU LT S O F S TAT E -O F - TH E -ART
+AND OUR PRO PO SED M E THOD S ON CUB -200 -2011 DATA SE T.
+
+TABLE II
+
+PSNR SSIM AlexNet VGGNet ResNet CNet
+DCP
+16.3789 0.7727
+35.6
+55.5
+54.8
+61.2
+BCCR
+16.2971 0.7380
+35.9
+56.7
+56.9
+62.6
+CAP
+14.7763 0.7581
+29.9
+57.1
+55.5
+61.6
+NLD
+14.7999 0.6882
+32.7
+56.5
+55.9
+62.4
+DehazeNet 15.2055 0.7735
+29.8
+58.3
+57.9
+63.2
+MSCNN 15.4825 0.7573
+35.1
+57.5
+58.3
+64.2
+AOD
+13.9105 0.7570
+24.0
+55.1
+54.0
+59.3
+GFN
+15.0244 0.7764
+36.5
+57.5
+56.8
+63.8
+ID-CGAN 17.2472 0.7710
+36.9
+58.8
+59.3
+64.5
+Ours
+
+21.2995 0.8541
+
+41.0
+
+60.6
+
+59.7
+
+67.7
+
+TH E DEHAZ ING AND CLA S S I FICAT ION R E SU LT S O F S TAT E -O F - THE -ART
+AND OUR PRO PO SED M E THOD S ON CA LT ECH -256 DATA SE T.
+
+TABLE III
+
+PSNR SSIM AlexNet VGGNet ResNet CNet
+DCP
+17.5894 0.7810
+56.6
+73.8
+78.9
+80.7
+BCCR
+15.7325 0.7221
+55.4
+71.9
+77.4
+79.4
+CAP
+15.8546 0.7718
+53.9
+74.8
+80.5
+81.3
+NLD
+16.5254 0.7413
+56.1
+73.9
+79.3
+80.6
+DehazeNet 15.9763 0.7805
+54.8
+75.0
+81.0
+81.9
+MSCNN 16.0469 0.7640
+56.3
+74.6
+79.8
+80.9
+AOD
+14.6293 0.7596
+49.8
+73.4
+79.8
+80.5
+GFN
+16.9605 0.7951
+57.5
+74.5
+80.3
+81.5
+ID-CGAN 16.7434 0.7622
+58.0
+74.7
+78.8
+80.9
+Ours
+
+21.7074 0.8477
+
+59.3
+
+76.2
+
+81.1
+
+82.6
+
+To visually demonstrate the improvements obtained by the
+proposed method on the synthetic dataset, we sample some de-
+hazing results, as shown in Fig. 2. While DCP [5], BCCR [21],
+CAP [6] and NLD [7] are able to remove the haze, they remove
+haze excessively (e.g., the dehazed images in the ﬁrst row and
+in the third and sixth columns and the dehazed images in the
+ﬁfth row and in the third column) and make the image have
+color distortion (e.g., the dehazed image in the forth row and
+in the sixth column and the dehazed images in the sixth row
+and in the third to sixth columns). The CNN-based methods
+are able to either reduce the intensity of haze or remove the
+haze in parts, but they fail to completely remove the haze.
+GFN [12] removes haze excessively (e.g., the ﬁrst row and the
+tenth column) and ID-CGAN [14] dehazing method leads to
+color distortion (e.g., the third row and the eleventh column).
+In contrast to the other methods, our proposed method is able
+to successfully remove majority of the haze while guarantees
+no color distortion and the dehazed images using our method
+are closest to the ground truth images, as shown in the last
+column in Fig. 2.
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+6
+
+Fig. 2. Qualitative results of synthetic hazy images using several state-of-the-art dehazing methods and our proposed method.
+
+D. Ablation Study
+To better demonstrate the effectiveness of each part of
+our proposed method, we implement detailed ablation exper-
+iments by considering the combination of three factors: de-
+hazing sub-network, classiﬁcation-driven CGAN sub-network
+and the classiﬁcation sub-network. The results are shown in
+Table IV and Table V. DNet refers to use dehazing sub-
+network only, DNet+CCGAN refers to use dehazing sub-
+network and classﬁcation-driven CGAN, DNet+CNet refers to
+use dehazing sub-network and classiﬁcation sub-network, and
+DNet+CCGAN+CNet refers to use all parts.
+We can see that DNet+CCGAN+CNet achieves the best
+performance of image dehazing both in PSNR and SSIM and
+classiﬁcation accuracy. Compared with DNet, when we add the
+classiﬁcation sub-network (DNet+CNet) and the classiﬁcation-
+driven GAN (DNet+CCGAN) respectively, not only the dehaz-
+ing performance is improved, but also the classiﬁcation accura-
+cies are improved. These ablation study demonstrates that the
+classiﬁcation-driven CGAN sub-network and the classiﬁcation
+sub-network are effective for image dehazing.
+Fig. 3 shows some dehazed images with different parts.
+We can see that when only use the DNet,
+the dehazed
+
+Fig. 3. The effect of the proposed network with different parts.
+
+TH E DEHAZ ING AND CLA S S I FICAT ION R E SU LT S O F THE PRO PO SED
+N ETWORK W I TH D I FFER ENT PART S ON CUB -200 -2011 DATA SE T.
+
+TABLE IV
+
+PSNR
+SSIM AlexNet VGGNet ResNet CNet
+DNet
+20.2032 0.7740
+39.3
+56.6
+54.4
+63.2
+DNet+CCGAN
+21.1763 0.8531
+40.2
+59.1
+58.0
+66.3
+DNet+CNet
+21.0780 0.8459
+40.9
+58.0
+55.4
+64.7
+DNet+CCGAN+CNet 21.2995 0.8541
+
+67.7
+
+41.0
+
+60.6
+
+59.7
+
+TH E DEHAZ ING AND CLA S S I FICAT ION R E SU LT S O F THE PRO PO SED
+N ETWORK W I TH D I FFER ENT PART S ON CA LTECH -256 DATA SE T.
+
+TABLE V
+
+PSNR
+SSIM AlexNet VGGNet ResNet CNet
+DNet
+21.2674 0.8194
+59.3
+74.7
+80.2
+81.9
+DNet+CCGAN
+21.7035 0.8466
+59.2
+75.4
+81.1
+82.5
+DNet+CNet
+21.4832 0.8444
+75.5
+81.0
+82.6
+DNet+CCGAN+CNet 21.7074 0.8477
+
+82.6
+
+59.4
+
+76.2
+
+59.3
+
+81.1
+
+image remains some haze. When we add CCGAN and CNet
+respectively, the dehazed images are clearer. When we add
+CCGAN and CNet simultaneously, the generated images are
+clearest and they are closest to the corresponding clear images.
+
+E. Qualitative Comparison on Real Hazy Images
+Although the proposed network is trained on synthetic
+hazy images, we show that it can be generalized to handle
+real-world hazy images. Fig. 4 shows real hazy images and
+the corresponding dehazing results generated by state-of-the-
+art dehazing methods and our method. Although the non-
+CNN-based dehazing methods are able to remove haze, they
+excessively remove haze, such as the third row and the ﬁfth
+column. The CNN-based dehazing methods do not remove
+haze excessively, but they remain some haze in the images,
+
+(a) Clear image(b) Hazy image(c) DCP(d) BCCR(e) CAP(f) NLD(g) DehazeNet(h) MSCNN(i) AOD(k) ID-CGAN(j) GFN(l) OursClear imageHazy imageDNetDNet+CCGANDNet+CNetDNet+CCGAN+CNetJOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+7
+
+Fig. 4. Qualitative results of real hazy images using several state-of-the-art dehazing methods and our proposed method.
+
+such as the second row and the sixth, eighth columns. Different
+from these methods, the images generated by our method
+shown in the last column are much clearer than those of other
+methods.
+
+V. CONC LU S ION
+
+In this paper, we propose an uniﬁed CNN architecture with
+the goal to improve the performance both on image dehazing
+and image classiﬁcation in an end-to-end learning approach.
+In comparison to the existing approaches, we investigate the
+use of class information for synthesizing the dehazed image
+from a given input hazy image. We evaluate our framework
+on two benchmark datasets: CUB-200-2011 and Caltech-256.
+Detailed experiments and comparisons are performed both
+on synthetic and real-world hazy images to demonstrate that
+the proposed method signiﬁcantly outperforms many recent
+state-of-the-art methods. Additionally, the proposed method
+is compared against baseline conﬁgurations to illustrate the
+performance gains obtained by introducing the classiﬁcation
+sub-network into the framework.
+
+R E FERENC E S
+[1] H. Koschmieder, “Theorie der horizontalen sichtweite,” Beitrage zur
+Physik der freien Atmosphare, 1924.
+[2] S. G. Narasimhan and S. K. Nayar, “Contrast restoration of weather
+degraded images,” IEEE Transactions on Pattern Analysis and Machine
+Intelligence, 2003.
+[3] S. K. Nayar and S. G. Narasimhan, “Vision in bad weather,” in ICCV,
+1999.
+[4] R. T. Tan, “Visibility in bad weather from a single image,” in CVPR,
+2008.
+[5] K. He, J. Sun, and X. Tang, “Single image haze removal using dark
+channel prior,” IEEE Transactions on Pattern Analysis and Machine
+Intelligence, 2011.
+[6] Q. Zhu, J. Mai, and L. Shao, “A fast single image haze removal algorithm
+using color attenuation prior,” IEEE Transactions on Image Processing,
+2015.
+[7] D. Berman, S. Avidan et al., “Non-local image dehazing,” in CVPR,
+2016.
+[8] R. Fattal, “Dehazing using color-lines,” ACM Transactions on Graphics,
+2014.
+[9] W. Ren, S. Liu, H. Zhang, J. Pan, X. Cao, and M.-H. Yang, “Single
+image dehazing via multi-scale convolutional neural networks,” in
+ECCV. Springer, 2016.
+[10] B. Cai, X. Xu, K. Jia, C. Qing, and D. Tao, “Dehazenet: An end-to-end
+system for single image haze removal,” IEEE Transactions on Image
+Processing, 2016.
+[11] B. Li, X. Peng, Z. Wang, J. Xu, and D. Feng, “Aod-net: All-in-one
+dehazing network,” in ICCV, 2017.
+
+[12] W. Ren, L. Ma, J. Zhang, J. Pan, X. Cao, W. Liu, and M.-H. Yang,
+“Gated fusion network for single image dehazing,” in ICCV, 2018.
+[13] H. Zhang and V. M. Patel, “Densely connected pyramid dehazing
+network,” in CVPR, 2018.
+[14] V. V. M. Zhang, HeSindagi, “Image de-raining using a conditional
+generative adversarial network,” in CVPR, 2018.
+[15] A. Krizhevsky, I. Sutskever, and G. E. Hinton, “Imagenet classiﬁcation
+with deep convolutional neural networks,” in NIPS, 2012.
+[16] K. Simonyan and A. Zisserman, “Very deep convolutional networks for
+large-scale image recognition,” arXiv preprint arXiv:1409.1556, 2014.
+[17] C. Szegedy, W. Liu, Y. Jia, P. Sermanet, S. Reed, D. Anguelov, D. Erhan,
+V. Vanhoucke, A. Rabinovich et al., “Going deeper with convolutions,”
+in CVPR, 2015.
+[18] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image
+recognition,” in CVPR, 2016.
+[19] J. Hu, L. Shen, and G. Sun, “Squeeze-and-excitation networks,” arXiv
+preprint arXiv:1709.01507, 2017.
+[20] Y. Pei, Y. Huang, Q. Zou, Y. Lu, and S. Wang, “Does haze removal help
+cnn-based image classiﬁcation?” in ECCV. Springer, 2018.
+[21] G. Meng, Y. Wang, J. Duan, S. Xiang, and C. Pan, “Efﬁcient image
+dehazing with boundary constraint and contextual regularization,” in
+ICCV, 2013.
+[22] K. Tang, J. Yang, and J. Wang, “Investigating haze-relevant features in
+a learning framework for image dehazing,” in CVPR, 2014.
+[23] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei, “Imagenet:
+A large-scale hierarchical image database,” in CVPR, 2009.
+[24] L. Liu, C. Shen, and A. van den Hengel, “The treasure beneath
+convolutional layers: Cross-convolutional-layer pooling for image clas-
+siﬁcation,” in CVPR, 2015.
+[25] J. Wang, Y. Yang, J. Mao, Z. Huang, C. Huang, and W. Xu, “Cnn-rnn: A
+uniﬁed framework for multi-label image classiﬁcation,” in CVPR, 2016.
+[26] T. Durand, T. Mordan, N. Thome, and M. Cord, “Wildcat: Weakly
+supervised learning of deep convnets for image classiﬁcation, pointwise
+localization and segmentation,” in CVPR, 2017.
+[27] F. Wang, M. Jiang, C. Qian, S. Yang, C. Li, H. Zhang, X. Wang, and
+X. Tang, “Residual attention network for image classiﬁcation,” arXiv
+preprint arXiv:1704.06904, 2017.
+[28] I. J. Goodfellow, J. Pouget-Abadie, M. Mirza, X. Bing, D. Warde-Farley,
+S. Ozair, A. Courville, and Y. Bengio, “Generative adversarial nets,” in
+NIPS, 2014.
+[29] K. Sohn, X. Yan, and H. Lee, “Learning structured output representation
+using deep conditional generative models,” in NIPS, 2015.
+[30] C. Ledig, L. Theis, F. Huszar, J. Caballero, A. Aitken, A. Tejani, J. Totz,
+Z. Wang, and W. Shi, “Photo-realistic single image super-resolution
+using a generative adversarial network,” in CVPR, 2017.
+[31] X. Xu, D. Sun, J. Pan, Y. Zhang, H. Pﬁster, and M. H. Yang, “Learning
+to super-resolve blurry face and text images,” in ICCV, 2017.
+[32] J. Johnson, A. Alahi, and F. F. Li, “Perceptual losses for real-time style
+transfer and super-resolution,” in ECCV. Springer, 2016.
+[33] R. A. Yeh, C. Chen, T. Y. Lim, A. G. Schwing, M. Hasegawajohnson,
+and M. N. Do, “Semantic image inpainting with deep generative
+models,” in CVPR, 2016.
+[34] H. Zhang, V. Sindagi, and V. M. Patel, “Image de-raining using a condi-
+tional generative adversarial network,” arXiv preprint arXiv:1701.05957,
+2017.
+
+(a) Hazy image(b) DCP(c) BCCR(d) CAP (e) NLD(f) DehazeNet(g) MSCNN(h) AOD(j) ID-CGAN(i) GFN(k) OursJOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+8
+
+[35] C. Wah, S. Branson, P. Welinder, P. Perona, and S. Belongie, “The
+caltech-ucsd birds200-2011 dataset,” California Institute of Technology,
+2011.
+[36] G. Grifﬁn, A. Holub, and P. Perona, “Caltech-256 object category
+dataset,” California Institute of Technology, 2007.
+[37] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,”
+in ICLR, 2015.
+
+

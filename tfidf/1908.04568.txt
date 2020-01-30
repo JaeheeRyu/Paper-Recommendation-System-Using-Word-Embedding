@@ -1,0 +1,506 @@
+Incorporating Task-Speciﬁc Structural
+Knowledge into CNNs for Brain Midline Shift
+Detection
+
+Maxim Pisov1,2 , Mikhail Goncharov2,3 , Nadezhda Kurochkina1 , Sergey
+Morozov4 , Victor Gombolevskiy4 , Valeria Chernina4 , Anton Vladzymyrskyy4 ,
+Ksenia Zamyatina4 , Anna Chesnokova4 , Igor Pronin5 , Michael Shifrin5 , and
+Mikhail Belyaev1,2
+
+1 Skolkovo Institute of Science and Technology, Moscow, Russia
+2 Kharkevich Institute for Information Transmission Problems, Moscow, Russia
+3 Moscow Institute of Physics and Technology, Moscow, Russia
+4 Center for Diagnostics and Telemedicine, Moscow, Russia
+5 Burdenko Neurosurgery Institute, Moscow, Russia
+
+m.belyaev@skoltech.ru
+
+Abstract. Midline shift (MLS) is a well-established factor used for out-
+come prediction in traumatic brain injury, stroke and brain tumors. The
+importance of automatic estimation of MLS was recently highlighted by
+ACR Data Science Institute. In this paper we introduce a novel deep
+learning based approach for the problem of MLS detection, which ex-
+ploits task-speciﬁc structural knowledge. We evaluate our method on a
+large dataset containing heterogeneous images with signiﬁcant MLS and
+show that its mean error approaches the inter-expert variability. Finally,
+we show the robustness of our approach by validating it on an external
+dataset, acquired during routine clinical practice.
+
+Keywords: neural networks, midline shift, interpretability, conﬁdence
+
+1
+
+Introduction
+
+The brain midline can be viewed as a line on axial and coronal pro jections of
+diverse imaging modalities (Fig. 1, left). As the human brain is approximately
+symmetrical, the midline is straight in healthy sub jects. However, various patho-
+logical conditions, such as traumatic brain injuries (TBI), stroke and brain tu-
+mors, may break this symmetry and lead to midline shift (MLS) [8].
+A ma jor number of studies show that MLS has a prognostic value for outcome
+prediction of various brain pathologies: level of consciousness in patients with
+acute intracranial hematoma [16], median survival in patients with glioblastoma
+multiforme [3], the outcome in patients with TBI [5]. Overall, early identiﬁcation
+of patients with severe midline shift would assist patients management [14].
+However, deﬁnitions of signiﬁcant MLS vary across studies. While the 5 mil-
+limeters (mm) threshold is frequently used, other approaches are common. For
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+I
+
+.
+
+s
+s
+
+e
+e
+
+[
+
+2
+v
+8
+6
+5
+4
+0
+
+.
+
+8
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+ 
+ 
+ 
+ 
+ 
+ 
+2
+
+M. Pisov, M. Goncharov et al
+
+Fig. 1: Left: an axial slice from a MRI image with corresponding midline (red)
+and a hypothetical normal midline (blue, dashed). Center: the midline shift.
+Right: a dubious case with an ill-deﬁned midline (red, dashed).
+
+example, MLS larger than 9 mm was identiﬁed in [14]; the 5mm threshold was
+not justiﬁed within [5]. Such diversity is partly explained by the absence of a
+robust ob jective methodology of MLS estimation. A recent study [13] suggests
+that interrater variability of MLS estimation is rather high (intraclass correlation
+coeﬃcients 0.72-0.89).
+The importance of MLS estimation and the need for its automation was re-
+cently highlighted by The American College of Radiology Data Science Institute
+[10], and some promising results have already been achieved in this area (Sec-
+tion 3). In this paper we propose a novel deep learning based approach6 for the
+MLS detection task. We show that combining a standard segmentation approach
+with task-speciﬁc structural knowledge yields results which are more accurate,
+compared to straightforward CNNs for regression, and also interpretable, since
+the key part of the method is the midline localization. Moreover, we show that
+our method generalizes well on highly heterogeneous data and provide a natural
+way of estimating its conﬁdence.
+
+2 Problem
+
+We deﬁne the midline on an axial slice as a vertical curve that separates the brain
+hemispheres (Fig. 1, left). The midline shift for an axial slice is then deﬁned as
+the maximal distance between the midline (which might be deformed) and a
+hypothetical normal midline (Fig. 1, center). Finally, the midline shift for a
+whole brain is the maximal midline shift across all axial slices where the midline
+is present. The task is to determine, for a given brain image, the midline shift
+as well as the corresponding axial slice on which it is manifested.
+It is worth noting that in some complicated cases even professional radiolo-
+gists cannot conﬁdently determine the localization of the midline (Fig. 1, right).
+Taking into account such dubious cases, it is also desirable that the method for
+MLS detection has a means of estimating its own conﬁdence.
+
+6 Full code for training and inference is available at GitHub:
+
+https://github.com/neuro- ml/midline- shift- detection
+
+CNNs with task-speciﬁc knowledge for midline shift detection
+
+3
+
+3 Related work
+
+Most of the methods for automatic MLS estimation are computer vision (CV)
+based and rely on keypoints detection. The proposed approaches often have a
+lot of ”moving parts” which makes them hard to implement and ﬁne-tune. For
+example, in [9] the authors use a four-step pipeline (edge detection, morpho-
+logical ﬁltering, lines detection, rule-based ﬁltering) just to detect the cerebral
+falx. Another drawback of keypoints-based methods is that they require various
+important regions to be present on the image, e.g. many methods can be applied
+only to slices that contain ventricles [1] which makes them inapplicable to cases
+where the midline shift is manifested on lower or higher slices.
+There are also a few papers that propose deep learning methods. In [2] the
+authors trained an adapted a version of ResNet to classify whether there is
+a signiﬁcant midline shift on a given slice. Another interesting approach that
+combines deep learning with classical CV is described in [6]. Here the authors
+use a U-Net [15] architecture for brain extraction, cisterns and acute intracranial
+lesions segmentation, while MLS detection is based on keypoints.
+
+4 Method
+
+A straightforward deep learning approach is to directly predict the MLS via a
+convolutional neural network. Following the authors of [2], we tested a ResNet-
+based [4] network which predicted the MLS for each axial slice of given image.
+The ﬁnal prediction was obtained as the maximal MLS only among the slices
+that contained an annotated midline. However, even in such a simpliﬁed design
+(the model did not need to ﬁlter out the slices for which the MLS was undeﬁned),
+this method yields poor results as we show in Section 7.
+Our intuition behind this is that the midline shift is a very high-level concept:
+the network needs to learn to detect several keypoints located very far from each
+other (Fig. 1), as well as take into account their relative positions. The latter
+is a particularly diﬃcult task for convolutional neural networks due to their
+invariance to translation.
+
+Fig. 2: The binary masks of the regions where the midline is deﬁned (red). Note
+the rightmost image, for which the midline is undeﬁned everywhere.
+
+4
+
+M. Pisov, M. Goncharov et al
+
+On the contrary, the midline has visual features, like continuity and local
+symmetry, that are distinguishable on a smaller scale. This brings us to the
+idea to reduce the task of MLS prediction to the task of midline estimation: for
+a given slice we localize the midline while exploiting the structural knowledge
+about the target, then we derive the MLS from the predicted curve based on
+the deﬁnition given in Section 2. Normal midline is estimated as a straight line
+between prediction endpoints.
+The key structural facts are: 1) for each coordinate y there is at most one
+x-coordinate, which is refered as midliney , such that the pixel (midliney , y) is
+situated on the midline; 2) midliney exists only for y-coordinates within certain
+interval I on the Oy axis to which binary mask we refer as limits (Fig. 2).
+These facts imply that our method must be capable of solving the regres-
+sion problem of mildine estimation and the classiﬁcation problem of limits
+prediction. To solve these tasks, we propose a two-headed convolutional neu-
+ral network with shared input layers (Fig. 3). As loss function, we optimize a
+weighted combination of standard losses for regression and classiﬁcation:
+
+L = λ1 · 1
+
+|I |
+
+(midliney − midlinepred
+
+y
+
+)2 + λ2 · BCE(limits, limitspred ),
+
+(cid:88)
+
+y∈I
+
+where midlinepred
+cross-entropy.
+
+y
+
+and limitspred are the network’s predictions, BCE is binary
+
+4.1 Midline estimation
+
+In order to estimate the midline we adapt a segmentation approach. In a standard
+setting (with sigmoid activation and binary cross entropy loss) the output can
+be interpreted as ”independent” probability of a particular pixel to be situated
+on the midline. In this case the midline is obtained after applying argmax along
+the Ox axis.
+However, as we show in Section 7, signiﬁcantly better results can be achieved
+while imposing the following constraint on the output probability map
+
+(cid:88)
+
+outputmidline
+xy
+
+= 1,
+
+(1)
+
+x
+
+Fig. 3: Schematic representation of the proposed architecture.
+
+CNNs with task-speciﬁc knowledge for midline shift detection
+
+5
+
+which follows from the structural fact 1). Next, taking into account that for any
+given y -coordinate the head’s output represents a probability distribution, we
+propose to predict the midline as its expected value:
+x · outputmidline
+
+(cid:88)
+
+midlinepred
+y =
+
+xy
+
+.
+
+x
+
+The overall architecture for midline estimation is shown in Fig. 3 (top). For
+our experiments we chose a UNet-based [15] architecture as a de facto standard
+for medical image segmentation. We replaced plain convolutional layers by resid-
+ual blocks [4] which are considered to improve the performance, as suggested by
+[11]. Also, during feature maps concatenation we use linear interpolation to make
+the output’s shape equal to the input’s shape. Finally, we apply a softmax non-
+linearity to the network’s output along the Ox axis (instead of sigmoid), which
+ensures that the constraint from (1) is respected. Note that because the head’s
+output represents a probability distribution, at inference time we can calculate
+various statistics based on this distribution, e.g. percentiles, which are needed to
+estimate conﬁdence intervals. This is a very important aspect of our approach
+which gives us a natural means of estimating the model’s uncertainty.
+
+4.2 Limits prediction
+Since the proposed midline estimation approach yields midlinepred
+for all y -
+coordinates, we need to ﬁlter out the predicted values for the regions where the
+midline is not deﬁned (Fig. 2, hatched). The corresponding limits are obtained
+by thresholding the second head’s output (limitspred ) and taking the convex
+hull.
+The architecture of the second head is shown in Fig. 3 (bottom). It has the
+same input layers as the midline estimation network, which are followed by two
+residual blocks [4]. Next, a global max pooling is applied along the Ox axis in
+order to reduce the dimensionality of the 2D feature maps to 1D. Finally we
+apply two 1D convolutions followed by the sigmoid activation function.
+
+y
+
+5 Experimental setup
+
+At train time in all of our experiments we used Adam optimizer [7] with default
+parameters (β1 = 0.9, β2 = 0.999) and a learning rate of 10−3 , which showed the
+best results on the validation set. We used equal (λ1 = λ2 = 1) weights in the
+ﬁnal loss as we didn’t notice any loss imbalance at train time.
+resampling the axial slices to a 0.5 × 0.5 mm pixel spacing, background removal
+Also, we applied a simple preprocessing in order to reduce the data variability:
+by Otsu thresholding [12] and intensity normalization to zero mean and unit
+variance. Additionally, at train time we used random ﬂips along the Ox axis as
+a cheap data augmentation technique.
+The training was performed on batches of size 40 (which was simply deter-
+mined by the amount of available GPU memory), until the validation scores
+reached a plateau, which happened at approx. 32000 batches. For this reason we
+used 32000 iterations for all our experiments.
+
+6
+
+6 Data
+
+M. Pisov, M. Goncharov et al
+
+In our experiments we used data from two sources.
+The ﬁrst dataset (DS1) consists of 352 MRI series that come from a neu-
+rosurgery hospital and belong to patients with severe brain damage caused by
+tumors: 64% of the images have a signiﬁcant midline shift (≥ 5mm), the mean
+MLS is 7.8±5.0mm. The dataset was labeled by an experienced neuroradiologist
+(exp1) and three specialists with limited background in neuroradiology (exp2-4).
+Their inter- and intra-expert variability is shown in Tab. 2. We split this dataset
+using 5-fold cross-validation. For each fold, we additionally leave 8 images out
+the training set to form a validation set.
+The second dataset (DS2) comes from an out-patient clinic and represents
+a homogeneous sample of 203 MRI series acquired in routine clinical practice.
+images have a large MLS (≥ 5mm), the mean MLS is 2.9±1.5 mm. We use this
+For this dataset only the MLS is available but not the midline itself; only 8% of
+dataset only for ﬁnal models’ quality assessment in a prospective fashion.
+The series from both sources contain only axial slices but have various voxel
+spacings, ranging from 0.2 × 0.2 × 1mm to 1 × 1 × 5mm, and modalities: T1
+(25%), T2 (68%) and FLAIR (7%). The images were collected using scanners
+from GE/Siemens and Toshiba/Siemens for DS1 and DS2 respectively.
+
+7 Results
+
+7.1 Midline shift detection
+
+We compare the proposed method with a direct MLS regression via ResNet [4]
+on two tasks: 1) MLS prediction; 2) signiﬁcant MLS (≥ 5mm) detection. In order
+to evaluate the quality of both methods we use mean absolute error (MAE) and
+the area under the ROC-curve (ROC AUC) for task 1 and 2 respectively. The
+ROC-curve was obtained by thresholding the predicted MLS by diﬀerent values
+(from 0 to maximal MLS magnitude). The results are presented in Tab. 1.
+Table 1: Midline shift detection scores for various models (± std) calculated on
+5-fold cross-validation.
+
+MAE, mm
+ROC AUC
+DS1
+DS2
+DS1
+DS2
+ResNet-152 2.92 ± 3.15 1.84 ± 1.10 0.91 ± 0.03 0.80 ± 0.04
+1.54 ± 1.98 0.75 ± 0.04 0.95 ± 0.02 0.92 ± 0.02
+Proposed
+
+7.2 Midline estimation
+
+In order to assess the midline estimation performance we use root-mean-square
+error (RMSE) as well as maximal error (MAX):
+
+RMSE(midliney , midlinepred
+
+y
+
+) =
+
+(midliney − midlinepred
+
+y
+
+)2 ,
+
+y∈I
+
+(cid:114)
+
+|I |−1 (cid:88)
+
+CNNs with task-speciﬁc knowledge for midline shift detection
+
+7
+
+Table 2: Top: midline estimation metrics (± std) calculated on 5-fold cross-
+validation for DS1. Bottom: neuroradiologist (exp1) variability on DS1.
+
+MAX
+RMSE
+MAXs
+RMSEs
+Segmentation 7.45 ± 9.84 0.95 ± 0.61 2.12 ± 3.25 0.81 ± 0.64
+3.61 ± 2.62 0.79 ± 0.44 1.58 ± 1.39 0.69 ± 0.54
+Proposed
+3.16 ± 2.16 0.66 ± 0.19 1.47 ± 1.05 0.62 ± 0.50
+exp1 vs exp1
+exp1 vs exp2-4 3.44 ± 2.13 0.77 ± 0.35 1.47 ± 0.97 0.66 ± 0.19
+
+MAX(midliney , midlinepred
+
+y
+
+) = max
+
+y∈I
+
+|midliney − midlinepred
+
+y
+
+|.
+
+These metrics, averaged along axial slices (MAXs, RMSEs) as well as entire
+brain images (MAX, RMSE), are shown in Tab. 2.
+We compare our method with a na¨ıve segmentation approach mentioned in
+Section 4.1. Note that plain segmentation performs signiﬁcantly worse in terms
+of maximal error, which is a more important characteristic for MLS detection.
+
+8 Discussion
+
+Fig. 4: Ground-truth (red) and predicted (yellow, dashed) midlines with their
+95% conﬁdence intervals for 2 random samples (left) and 2 typical examples
+from the set of cases with the largest errors (right).
+
+Fig. 4 (right) shows several examples on which our method performs poorly.
+Our analysis of such examples suggests that the main source of errors are some
+really complicated cases that even professional radiologists have doubts with,
+e.g. images on which the tumor is located directly in the middle of the brain, or
+incorrect cases with an extracerebral tumor located in the medial longitudinal
+ﬁssure, e.g. falx meningioma. Note how in the areas of greatest error the model’s
+uncertainty is much higher.
+Our preliminary experiments with CT images show that the proposed method
+can be easily adapted to work with CT, however we require a larger dataset to
+support this claim, which might be the sub ject of our future work.
+
+Acknow ledgements. The development of the interpretable algorithm (done by
+M. Pisov and M. Goncharov) was supported by the Russian Science Foundation
+grant 17-11-0139.
+
+8
+
+M. Pisov, M. Goncharov et al
+
+References
+
+1. Chen, W., Belle, A., Cockrell, C., Ward, K.R., Na jarian, K.: Automated midline
+shift and intracranial pressure estimation based on brain ct images. Journal of
+visualized experiments: JoVE (74) (2013)
+2. Chilamkurthy, S., Ghosh, R., Tanamala, S., Biviji, M., Campeau, N.G., Venugopal,
+V.K., Maha jan, V., Rao, P., Warier, P.: Deep learning algorithms for detection of
+critical ﬁndings in head ct scans: a retrospective study. The Lancet 392(10162),
+2388–2396 (2018)
+3. Gamburg, E.S., Regine, W.F., Patchell, R.A., Strottmann, J.M., Mohiuddin, M.,
+Young, A.B.: The prognostic signiﬁcance of midline shift at presentation on sur-
+vival in patients with glioblastoma multiforme. International Journal of Radiation
+Oncology* Biology* Physics 48(5), 1359–1362 (2000)
+4. He, K., Zhang, X., Ren, S., Sun, J.: Deep residual learning for image recognition. In:
+Proceedings of the IEEE conference on computer vision and pattern recognition.
+pp. 770–778 (2016)
+5. Jacobs, B., Beems, T., van der Vliet, T.M., Diaz-Arrastia, R.R., Borm, G.F.,
+Vos, P.E.: Computed tomography and outcome in moderate and severe traumatic
+brain injury: hematoma volume and midline shift revisited. Journal of neurotrauma
+28(2), 203–215 (2011)
+6. Jain, S., Vande Vyvere, T., Terzopoulos, V., Maria Sima, D., Roura, E., Maas,
+A., Wilms, G., Verheyden, J.: Automatic quantiﬁcation of ct features in acute
+traumatic brain injury. Journal of Neurotrauma (2019)
+7. Kingma, D.P., Ba, J.: Adam: A method for stochastic optimization. arXiv preprint
+arXiv:1412.6980 (2014)
+8. Liao, C.C., Chen, Y.F., Xiao, F.: Brain midline shift measurement and its automa-
+tion: a review of techniques and algorithms. International journal of biomedical
+imaging 2018 (2018)
+9. Liu, R., Li, S., Su, B., Tan, C.L., Leong, T.Y., Pang, B.C., Lim, C.T., Lee, C.K.:
+Automatic detection and quantiﬁcation of brain midline shift using anatomical
+marker model. Computerized Medical Imaging and Graphics 38(1), 1–14 (2014)
+10. McGinty, G.B., Allen, B.: The acr data science institute and ai advisory group:
+harnessing the power of artiﬁcial intelligence to improve patient care. Journal of
+the American College of Radiology 15(3), 577–579 (2018)
+11. Milletari, F., Navab, N., Ahmadi, S.A.: V-net: Fully convolutional neural networks
+for volumetric medical image segmentation. In: 3D Vision (3DV), 2016 Fourth
+International Conference on. pp. 565–571. IEEE (2016)
+12. Otsu, N.: A threshold selection method from gray-level histograms. IEEE transac-
+tions on systems, man, and cybernetics 9(1), 62–66 (1979)
+13. Paletta, N., Maali, L., Zahran, A., Sethuraman, S., Figueroa, R., Nichols, F.T.,
+Bruno, A.: A simpliﬁed quantitative method to measure brain shifts in patients
+with middle cerebral artery stroke. Journal of Neuroimaging 28(1), 61–63 (2018)
+14. Pullicino, P.M., Alexandrov, A., Shelton, J., Alexandrova, N., Smurawska, L., Nor-
+ris, J.: Mass eﬀect and death from severe acute stroke. Neurology 49(4), 1090–1095
+(1997)
+15. Ronneberger, O., Fischer, P., Brox, T.: U-net: Convolutional networks for biomed-
+ical image segmentation. In: MICCAI. pp. 234–241. Springer (2015)
+16. Ross, D.A., Olsen, W.L., Ross, A.M., Andrews, B.T., Pitts, L.H.: Brain shift, level
+of consciousness, and restoration of consciousness in patients with acute intracra-
+nial hematoma. Journal of neurosurgery 71(4), 498–502 (1989)
+
+

@@ -1,0 +1,1321 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+9
+9
+2
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Furnishing Your Room by What You See: An End-to-End Furniture Set
+Retrieval Framework with Rich Annotated Benchmark Dataset
+
+Bingyuan Liu1 , Jiantao Zhang1 , Xiaoting Zhang2 , Wei Zhang2 , Chuanhui Yu1 , and Yuan Zhou1
+1Kujiale.com, Hangzhou, China 2Zhejiang University, Hangzhou, China
+1{badi, xiahua, haicheng, zhouyuan}@qunhemail.com
+2xtzhang@zju.edu.cn, zhangwei1995 zju@163.com
+
+Abstract
+
+Understanding interior scenes has attracted enormous
+interest in computer vision community. However, few works
+focus on the understanding of furniture within the scenes
+and a large-scale dataset is also lacked to advance the ﬁeld.
+In this paper, we ﬁrst ﬁll the gap by presenting DeepFurni-
+ture, a richly annotated large indoor scene dataset, includ-
+ing 24k indoor images, 170k furniture instances and 20k
+unique furniture identities. On the dataset, we introduce a
+new benchmark, named furniture set retrieval. Given an in-
+door photo as input, the task requires to detect all the furni-
+ture instances and search a matched set of furniture identi-
+ties. To address this challenging task, we propose a feature
+and context embedding based framework. It contains 3 ma-
+jor contributions: (1) An improved Mask-RCNN model with
+an additional mask-based classiﬁer is introduced for better
+utilizing the mask information to relieve the occlusion prob-
+lems in furniture detection context. (2) A multi-task style
+Siamese network is proposed to train the feature embed-
+ding model for retrieval, which is composed of a classiﬁ-
+cation subnet supervised by self-clustered pseudo attributes
+and a veriﬁcation subnet to estimate whether the input pair
+is matched.
+(3) In order to model the relationship of the
+furniture entities in an interior design, a context embedding
+model is employed to re-rank the retrieval results. Extensive
+experiments demonstrate the effectiveness of each module
+and the overall system.
+
+1. Introduction
+
+Indoor scene understanding has become a popular
+research topic in recent years due to its signiﬁcance
+and challenge in both academic research and industrial
+applications[32]. Most related works focus on the tasks
+of scene classiﬁcation[16], layout estimation[37] and scene
+parsing[33]. However, few works focus on furniture under-
+standing, which is also critical for the ultimate scene under-
+
+Figure 1. The proposed furniture set retrieval framework.
+
+standing and reconstruction. On the other side, this may be
+due to the lack of a well annotated large-scale dataset like
+ImageNet[7] to motivate the research. Previous furniture
+databases are either undersized[2] or designed for a spe-
+ciﬁc task like categorization or material prediction. Some
+scene understanding databases[32][17] are organized and
+labeled very well, but they mainly support scene under-
+standing tasks.
+For the purpose of furniture understanding, we present
+a large-scale DeepFurniture dataset. It includes about 24k
+indoor images, 170k furniture instances and 20k unique fur-
+niture identities. As shown in Figure 2, this dataset is richly
+annotated on three levels, i.e., image level, furniture in-
+stance level and furniture identity level. Thus a full spec-
+trum tasks can be benchmarked on it including categoriza-
+tion, detection, segmentation, and retrieval. Based on its
+richness and uniqueness, the dataset also introduces a new
+benchmark, named furniture set retrieval. Given an indoor
+photo as input, this task requires to detect all the furniture
+instances of interest and search a matched set of items from
+a large-scale furniture identity databse. The diversity of the
+dataset makes this task extremely challenging.
+To address the furniture set retrieval problem, we pro-
+pose an end-to-end framework based on feature and context
+embedding. As shown in Figure 1, it consists of three major
+modules, i.e., furniture detection, instance retrieval based
+on feature embedding and context re-ranking. First, an im-
+proved Mask-RCNN model is developed to detect the furni-
+ture of interest in an image, which better leverages the mask
+information by adding an classiﬁer in the mask branch to
+
+1
+
+ furniture detectionfeatureembeddingcontextre-rankingfurnitureidentitiesfurniture contextembedding lookupindoor imagefurniture setknn 
+ 
+ 
+ 
+ 
+ 
+Figure 2. The DeepFurniture dataset has hierarchical annotations, i.e., image level, instance level and identity level. (f) and (g) show the
+category and style distribution of identities in our dataset
+
+relieve the issues of occlusion in the furniture setting. Sec-
+ond, we propose a Siamese network for feature embedding
+by integrating a veriﬁcation subnet and a classiﬁcation sub-
+net. The model is trained in a multi-task fashion, where
+the veriﬁcation branch aims to learn an optimized feature
+for matching input pairs, and the other branch distinguish
+the input by self-clustered attributes. Here we utilize the
+clustering method to obtain a spectrum of attributes as the
+supervision in classiﬁcation as it can bring better regulariza-
+tion for feature learning. Once the feature embedding model
+is obtained, furniture retrieval is performed by exhaustive
+search over feature index of furniture identities. At last, we
+train a context embedding model to encode the collabora-
+tive relationship of furniture items in an indoor room and
+use it to re-rank the retrieval results. Extensive experiments
+on the DeepFuniture dataset demonstrate the effectiveness
+of the proposed method compared with baselines.
+
+2. Related Work
+
+Furniture datasets. To the best of our knowledge, the
+computer vision community lacks a large-scale dataset par-
+ticular built for furniture understanding.
+[18] propose a
+dataset of IKEA 3D models and aligned images, while [2]
+introduces a RGBD dataset for furniture model. However,
+these two datasets are both undersized.
+In [12], a furni-
+ture dataset is introduced for the purpose of furniture style
+analysis. During recent years, several well organized scene
+datasets are proposed, such as SUNCG[28], Broaden[4] and
+ADE20K[35]. Different from previous works, our dataset is
+designed especially for versatile tasks in furniture analysis.
+Object detection. Current object detection methods
+can be roughly divided into one-stage models and two-
+stage models. The former ones like YOLO[27], SSD[24]
+and RetinaNet[21] mainly focus on the efﬁciency, while
+the two-stage methods usually achieve better performance,
+
+Image retrieval and veriﬁcation.
+
+such as Faster R-CNN[29] and Mask R-CNN[10]. In this
+paper, we employ the two-stage framework.
+It ﬁrst pro-
+poses candidate object bounding boxes and then performs
+object classiﬁcation and location regression.
+In Mask R-
+CNN, a mask branch is introduced into the second stage to
+employ the segmentation information to co-train the model.
+The most related work with our method is Mask Score R-
+CNN[13], which adds another subnet in mask branch to
+learn the mask quality. Some other proposed improvements
+can also be integrated into the detection framework, such as
+FPN[20], deformable convolution[36], soft-nms[5], etc.
+Deep learning
+[15][11] based methods has dominated the research of im-
+age retrieval and person veriﬁcation, because they greatly
+improve the feature representation. It is reported that the
+classiﬁcation formulation is also effective for the retrieval
+task[9] [30], but more improvements are achieved by cast-
+ing the retrieval task as a deep metric learning problem.
+Some training objectives are proposed, such as pairwise
+veriﬁcation loss[1], contrastive loss[26] and triplet ranking
+loss[23]. Correspondingly the overall network architecture
+is a Siamese CNN network with either two or three branches
+for the pairwise or triplet loss. In contrast, our model is a
+Siamese two-branch network with an classiﬁcation loss and
+pairwise veriﬁcation loss respectively. This architecture is
+similar to the one used for person re-identiﬁcation[9]. Dif-
+ferent from the situation of person veriﬁcation, our dataset
+suffers more serious data imbalance and samples for each
+identity are rare to some extent. Thus we incorporate the
+veriﬁcation loss and classiﬁcation loss, which are both ef-
+fective and complementary. Another difference is that we
+employ self-clustered attributes as the supervision in classi-
+ﬁcation loss rather than the identity ID or labeled categories.
+This is inspired by the work of deep clustering[6] and we
+demonstrate that only one iteration of clustering is enough
+to achieve good performance in our task. Some re-ranking
+
+2
+
+Category: Sofa Style: Modern (b) depth (a) Indoor image (c) segmentation (d) bounding box (e) identities Id: 001 Category: Table Style: Nordic Id: 002 Category: Lamp Style: Industrial Id: 003 Category: Curtain Style: Modern Id: 004 Image Level Furniture Instance Level Furniture Identity Level 5666 2836 3624 1478 847 1291 437 2044 2534 1951 2034 6053 5762 11525 415 734 436 989 1294 289 4885 274 (f) category distribution (g) style distribution methods are considered to reﬁne the retrieval results like
+[34] [3], while in our method a context embedding model is
+employed to collaboratively improve the search results of a
+furniture set.
+
+3. DeepFurniture Dataset
+
+To advance the research on furniture understanding, we
+present a dataset named DeepFurniture. Figure 2 shows
+some samples and the annotation hierarchy. To the best
+of our knowledge, DeepFurniture is a large-scale furniture
+database with the richest annotations for a versatile furni-
+ture understanding benchmark.
+
+3.1. Data Collection and labeling
+
+All the data samples are contributed by millions of de-
+signers and artists on a product-level interior design plat-
+form. On this platform, users can create a computer-aided
+design (CAD) ﬂoor plan, drag and drop 3D models, such as
+furniture, bricks, wallpapers and so on, to design a room or
+a house. Via the high-quality and high-speed rendering ser-
+vice, they can then generate photo-realistic renderings for
+visualization. The platform has already accumulated mil-
+lions of 3D model and billions of interior designs and im-
+ages.
+To avoid copyright issues and obtain a high quality
+dataset, we carefully select 24k indoor images from user-
+generated rendering images. These images contain more
+than 170k furniture instances related to 20k furniture iden-
+tities. The labels of the dataset are naturally available due
+to the generation process, but noises exist to a large extent.
+Thus, we refer to human labors to check and clean all the
+annotations like category and style.
+The annotations of the dataset are organized into three
+levels: image, furniture instance and furniture identity, as
+depicted in Figure 2. On image level, each indoor image is
+attached to one scene category such as living room, dining
+room, bedroom and study room. A depth map is also pro-
+vided along with each image. On furniture instance level,
+the bounding boxes and per-pixel masks of the instances
+in each image are given. In the furniture identity set, each
+entity is an actual 3D model and we use one high-quality
+rendering preview image to represent it in our dataset. Each
+identity is referred to as a unique ID and comes with its
+category label and style tags. The categories cover 11 ma-
+jor furniture classes, such as cabinet, table, chair, sofa, etc.
+And the style tags are annotated by some professional de-
+signers, including 11 types, such as modern, country, Chi-
+nese, industrial and so on. A brief distribution statistics of
+the identities is indicated in Figure 2, and the size of the
+whole identity set is about 20k. The number of furniture
+categories is 11, and the number of furniture style tags is
+11 as well. On average, each identity has 6.9 instances in
+different images with various views and context.
+
+3.2. Benchmarks
+
+The rich annotations of DeepFurniture make it a great ﬁt
+for multiple furniture understanding tasks, i.e., scene cate-
+gorization, depth estimation, multi-style classiﬁcation, fur-
+niture detection, segmentation and retrieval. In this paper,
+we benchmark 3 major tasks as follows.
+
+Furniture detection and segmentation. Furniture de-
+
+tection task aims to detect furniture instances in a given
+image by predicting bounding boxes and category labels,
+while the task of segmentation assigns a category label
+to each pixel of an instance. We employ the standard
+evaluation metrics in COCO[22]. For the detection task,
+we employ the bounding box’s average precision APbox ,
+, where APbox is computed
+by averaging over IoU thresholds. Similarly, the metric
+of segmentation is average precision computed over masks,
+.
+
+denoted as APmask , AP I oU =0.50
+
+and AP I oU =0.75
+box
+
+, and AP I oU =0.75
+mask
+
+AP I oU =0.50
+box
+
+mask
+
+Furniture instance retrieval. Our dataset is quite suit-
+
+able to the task of furniture instance retrieval. Given a de-
+tected furniture instance in the interior scene as query, the
+target of this task is to search a matched item in the furni-
+ture identity database. Since we use an image of furniture
+instance to search the preview images of identity actually,
+the task can also be considered as a cross-domain retrieval
+problem. To benchmark this task we assume ground-truth
+bounding boxes are provided as we hope to emphasize the
+retrieval performance. Top-k retrieval accuracy is employed
+as the evaluation metric and mean accuracy is averaged over
+all categories.
+
+Furniture set retrieval.
+
+In realistic application, users
+are willing to obtain a furniture identity set from a photo
+for their design project. To formulate the problem, we de-
+ﬁne a task named furniture set retrieval. Given an interior
+image as input, it aims to ﬁnd out a matched set from the
+furniture identity database. To evaluate the accuracy of fur-
+niture set retrieval, we utilize a modiﬁed retrieval top-k ac-
+curacy, where a correct search means the ground truth set
+is included in the combinations across the top-k results for
+each furniture item.
+
+4. Proposed framework
+
+4.1. Improved Mask-RCNN for furniture detection
+
+The two-stage Mask R-CNN[10] model has demon-
+strated that the performance of detection can be enhanced
+by incorporating a mask branch. The ﬁrst stage proposes
+candidate object bounding boxes regardless of object cate-
+gories by the RPN network. Then the second stage performs
+speciﬁc object classiﬁcation, position regression and mask
+estimation on the proposals after ROI Align. Compared to
+general object detection[22], the examples in DeepFurni-
+ture suffer more occlusion and confusion issues. As shown
+in Figure 2, the bounding boxes suffer heavy interaction
+
+3
+
+images of furniture identities by ResNet101 pre-trained on
+ImageNet dataset. Note that we merely use the preview
+image to represent each furniture identity, as the instance
+patches are very various and noisy. Then we perform clus-
+tering algorithm on the obtained feature set. For simplic-
+ity, we use k-means in this paper, but other clustering ap-
+proaches can also be used, e.g. AP[8] and PIC[19]. To avoid
+identities of different categories clustered into one bucket,
+we employ a category supervised metric in k-means:
+
+(cid:40)(cid:107)fi − fj (cid:107)2
+
++∞
+
+Dist(fi , fj ) =
+
+yi = yj
+yi (cid:54)= yj
+
+(2)
+
+where fi , fj denote the two feature vectors and yi , yj de-
+note the corresponding category code. This metric guaran-
+tees that identities in different categories assigned to diverse
+attributes, while the items in one category are sufﬁciently
+distributed according to their visual appearances. After ob-
+taining the pseudo attributes, we ﬁne-tune the network by
+classiﬁcation loss. Recent works on unsupervised learning,
+like DeepClustering ([6]), present the effectiveness of an it-
+eration learning strategy between clustering and ﬁne-tuning.
+However, the iteration way is unable to improve the feature
+embedding in the context of this paper, which is detailed in
+the appendix.
+
+4.2.2 Pairwise veriﬁcation subnet
+
+The pairwise veriﬁcation subnet takes two feature vectors
+extracted from a paired furniture instance and identity as
+input. They are then fused with element-wise subtraction
+and a ReLu. After a FC layer, the output is a softmax layer
+with two nodes, representing whether or not the input pair is
+matched. Besides this subtraction and binary cross-entropy
+loss, margin based contrastive loss is also widely used and
+a more sophisticated triplet loss is popular in person re-
+identiﬁcation. However, we empirically ﬁnd that our simple
+method performs better in the furniture retrieval task.
+A major caveat of the learning of the veriﬁcation subnet
+is that the possible number of negative samples grows cu-
+bically with a large-scale training set. After several epochs,
+most of the negative samples are relatively easy and con-
+tribute little for the loss. In order to relieve this, we intro-
+duce online hard negative sample mining into the pipeline.
+For each epoch, we pick the most dissimilar furniture iden-
+tity for each furniture instance as the hardest negative sam-
+ples.
+The learning of the overall Siamese network is per-
+formed in a multi-task fashion. Once the training is ﬁnished,
+we cast the backbone network as the embedding model to
+extract furniture features. A ZCA whiten is also used to
+decorrelate the obtained feature. Then furniture instance
+retrieval is performed by exhaustive Euclidean search over
+feature index of all the furniture identities.
+
+4
+
+Figure 3. Architecture of the improved Mask R-CNN.
+
+problems and the segmentation may give more guidance to
+obtain better classiﬁcation score.
+model by adding an additional mask-based auxiliary
+classiﬁer. Figure 3 presents the main architecture of our
+model. It introduces a classiﬁer branch in the mask branch
+after two convolution layers since it is considered that this
+layer has encoded enough segmentation information. The
+network is also trained in a multi-task method and the loss
+function is deﬁned as follows:
+
+L = Lcls + Lreg + Lmask + Laux cls
+
+(1)
+
+where the ﬁrst three terms are same as Mask-RCNN and the
+last one is categorical cross-entropy term introduced by our
+method. Similar to detection branch, a background class
+is used in the mask-base classiﬁer, and negative samples
+are also fed into the mask branch. During inference, the
+outputs of the two classiﬁers are combined as the ﬁnal de-
+tection score. Two proved effective improvements are also
+incorporated in our implementation, that is, DCN[36] and
+soft-nms[5].
+
+4.2. Furniture feature embedding
+
+Feature embedding aims to ﬁnd a shared latent space
+where instances with the same identity close to each other.
+As shown in Figure 4, we employ a Siamese network by
+integrating two branches, i.e., pairwise veriﬁcation subnet
+and classiﬁcation subnet.
+
+4.2.1 Classiﬁcation subnet
+
+Some previous works apply item ID or category informa-
+tion as labels to train the feature embedding model[15][9].
+However, in our scenario the instances are extremely imbal-
+anced for different entities, while the category information
+can not give enough visual distinction Therefore, we refer
+to a spectrum of attributes generated by clustering.
+With the goal of learning the pseudo visual attributes
+of furniture, a category constrained k-means clustering
+method is introduced. First, we extract features of preview
+
+7x7x25614x14x25614x14x25628x28x25628x28xC14x14x25610241024x4RoIRoIclsregmaskclscombineMask	R-CNNclsmask-basedclassifier10241024Figure 4. The architecture of our Siamese network. A backbone is used to extract feature embedding. Then the veriﬁcation subnet and the
+classiﬁcation subnet are concatenated in a multi-task fashion.
+
+4.3. Furniture context embedding
+
+It is obvious that the furniture entities within one room
+are mutually related. For example, chairs and tables usu-
+ally simultaneously occur in one scene. In order to mine
+these information, we train a neural embedding model with
+StarSpace[31], which is a strong library for efﬁcient em-
+bedding learning. In our case, one training example is an
+unordered set of furniture identities in a indoor scene de-
+sign recorded in the real product. We use more than 60M
+design data that covering 600K furniture identities to train
+an effective model, then we select the interested items of
+DeepFurniture dataset as the context embedding model in
+our pipeline.
+
+Algorithm 1 The iterative context re-ranking algorithm
+
+Input:
+
+Output:
+
+end for
+8: end for
+
+n }
+
+1 , I (cid:48)
+2 , ..., I (cid:48)
+
+retrieval results I , retrieval distance DF , context lookup C , instance
+number N , top-k K
+ﬁnal results I (cid:48) = {I (cid:48)
+1: for j = 1 : K do
+2:
+Sort I:j by feature distance DF:j
+Add anchor I1j into I (cid:48) and remove it from I
+3:
+4:
+5:
+6:
+7:
+
+for i = 2 : N ( Loop over instances) do
+
+compute Eq. 3 for each item in Ii:
+
+add argmink Dik into I (cid:48)
+
+In the end-to-end framework, we utilize the context em-
+bedding model to re-rank the retrieval results by measur-
+ing how good it is to arrange furniture identities together in
+one room. After furniture instance detection and retrieval,
+a identity candidate set is obtained for each instance. The
+overall retrieval results can denoted as a matrix I , where
+each row corresponds to the top-k items searched for one
+
+5
+
+instance : Ii = (ii1 , ii2 , ..., iik ), and the related feature
+distance matrix is denoted as DF . In the re-ranking algo-
+rithm, it is complicated and time-consuming to get a global
+optimum, instead we adopt a simple and effective iterative
+method. We denote the result matrix after re-ranking as I (cid:48) .
+To get the i-th ranked ﬁnal set, i.e.
+the i-th column in I (cid:48)
+, we ﬁrst sort and choose the identity with the smallest vi-
+sual feature distance from the i-th column of I as an anchor.
+Then we loop over the other instances and add the identity
+with the smallest incremental distance:
+
+Dij = αDFij + (1 − α)minkDist(C (Iij ), C (I (cid:48)
+ik )) (3)
+
+where C presents the context embedding lookup and the
+second term is the minimized distance of context feature
+between the target item and the ones already added into the
+ﬁnal set By iteratively performing the above operation, we
+can ﬁnally get the re-ranked results. The overall algorithm
+of the context re-ranking is summarized in Algorithm 1.
+
+5. Experiments and Results
+
+We demonstrate the effectiveness of our method by eval-
+uating the performance on DeepFurniture dataset in mul-
+tiple tasks including furniture detection, furniture instance
+retrieval and furniture set retrieval. In this section, we ﬁrst
+detail the experiment settings in Section 5.1. Then we com-
+pare the improved Mask-RCNN with some object detection
+baselines in Section 5.2. Section 5.3 shows the effective-
+ness of the attribute clustering, and the accuracy of instance
+retrieval is given in Section 5.4. We ﬁnally report the per-
+formance of furniture set retrieval in Section 5.4.
+
+5.1. Experiment settings
+
+The DeepFurniture dataset contains three types of exam-
+ples, i.e., indoor images, furniture instances, furniture iden-
+
+furniture instancesfurniture identitiesf2f1f1-f2ClusteringPesudo AttributesVerification subnetClassification subnetBackbonesamediffTable 1. Results of furniture detection and segmentation
+
+APbox AP I oU =0.50
+box
+
+APmask AP I oU =0.50
+mask
+
+–
+74.5
+77.6
+79.2
+
+81.3
+
+AP I oU =0.75
+mask
+
+–
+53.3
+56.0
+57.4
+
+60.7
+
+backbone
+method
+ResNet50
+Faster R-CNN
+ResNet50
+Mask R-CNN
+ResNet50 DCNv2
+Mask R-CNN
+ResNet50 DCNv2 Mask Score R-CNN
+ResNet50 DCNv2
+ResNet101
+ResNet101
+ResNet101 DCNv2
+ResNet101 DCNv2
+
+Faster R-CNN
+Mask R-CNN
+Mask R-CNN
+
+our
+
+our
+
+64.7
+65.0
+68.2
+68.6
+
+72.8
+
+86.6
+87.2
+88.2
+88.4
+
+89.7
+
+AP I oU =0.75
+box
+
+75.3
+74.6
+78.6
+79.4
+
+82.3
+
+–
+51.5
+54.0
+55.5
+
+58.3
+
+66.0
+66.1
+70.6
+
+73.0
+
+87.0
+86.9
+89.2
+
+90.1
+
+76.0
+76.8
+79.7
+
+81.2
+
+–
+54.3
+56.6
+
+56.6
+
+–
+77.0
+
+79.9
+
+78.3
+
+–
+56.1
+58.4
+
+58.9
+
+tities. For detection task, we samples 80%, about 19k in-
+door images, for training and the rest, nearly 5k images,
+for testing. For the retrieval related tasks, it is more compli-
+cated to prepare the data. First, 80% identities are randomly
+selected into train set and the rest is cast as the testing set.
+Then we extract furniture instances related to the training
+identities to train the Siamese network, and we generate 8k
+furniture instances as query set to evaluate the performance
+of furniture instance retrieval. To evaluate the effectiveness
+of furniture context embedding and furniture set retrieval
+tasks, we randomly sample 3k indoor images that only con-
+tain furniture items in test set and meanwhile guarantee that
+these images have no overlap with the training images for
+detection.
+We evaluate the improved Mask-RCNN models with
+the backbone of ResNetFPN50 and ResNetFPN101. Addi-
+tional deformable convolution layers[36] are incorporated
+for better generalization ability. Other settings remain the
+same as [10]. In the feature embedding network described
+in Section 4.2, we employ the backbone of ResNet101. The
+number of attributes is ﬁxed as 150 in clustering, an we em-
+pirically set the relative ratio between the veriﬁcation loss
+and classiﬁcation loss to 10 : 1. In the inference pipeline,
+we utilize the ﬁne-tuned network to extract feature embed-
+ding and perform ZCA whiten and l2 normalization after-
+ward. In the re-ranking phase, the size of the context em-
+bedding model is set as 100.
+All the experiments are conducted on 2 GTX 1080Ti
+GPUs and all the deep learning models are implemented
+by PyTorch.
+In particular, the improved Mask R-CNN
+is implemented based on the framework of maskrcnn-
+benchmark[25]. We develop the retrieval pipeline with the
+library of faiss[14].
+
+5.2. Results of furniture detection and segmentation
+
+Table 1 displays the results of the proposed improved
+Mask R-CNN compared with baselines and related works.
+It is shown that our detection result outperforms all the
+related methods in both ResNet-50 and ResNet-101 set-
+tings, and the segmentation performance is also improved
+for most cases. In the inference of our model, the ﬁnal de-
+
+Figure 5. The detection performance comparisons by varying the
+classiﬁcation combining weight α. The baseline refers to the per-
+formance of Mask R-CNN
+
+tection score is obtained by combining the output scores of
+the two classiﬁers in the detection branch and mask branch.
+We also analyze the inﬂuence of the combining weight α in
+Figure 5, where α = 1 means only detection branch is used
+and α = 0 presents using the output of mask-based classi-
+ﬁer as the ﬁnal score. Compared with baseline, our perfor-
+mance is still improved without using the mask branch in
+inference, because the introduced subnet can help regular-
+ize the model. The best AP is achieved when α = 0.2.
+
+5.3. Effectiveness of clustered attribute
+
+Table 2. Ablation on the proposed Siamese model
+
+classiﬁcation
+–
+category
+attribute
+–
+attribute
+attribute
+
+veriﬁcation MACC@1 MACC@5
+–
+25.2
+37.2
+–
+21.4
+34.3
+–
+39.2
+57.1
+w/o ohnm
+36.2
+54.3
+w/o ohnm
+46.4
+65.3
+ohnm
+
+52.1
+
+71.0
+
+Figure 6 shows some of the self-clustered pseudo at-
+tributes. As category information is used as a supervision
+
+6
+
+0.00.20.40.60.81.06065707580859095APAP50AP75baselineFigure 7. Some examples of the furniture instance retrieval.
+
+ﬁne-tuned by the pseudo attributes.
+It is shown that the
+performance of each class is of high difference. The per-
+formance of some classes like door and curtain, are rela-
+tively weak, because many furniture identities in these cat-
+egories have very similar appearance. Other mistakes may
+be caused by the diversity and occlusion of the furniture in-
+stances. Some examples of the instance retrieval results are
+shown in Figure 7, where the ground truth is indicated by
+red box.
+
+5.5. Results of furniture set retrieval
+
+We ﬁnally evaluate the end-to-end framework in Table
+4 by the accuracy of furniture instance retrieval and fur-
+niture set retrieval. Here, we use a test set containing 3k
+images and nearly 20k furniture instances and report both
+accuracy of instance retrieval as above experiments and set
+retrieval The top-1 and top-5 instance accuracy of our sys-
+tem is 45.4% and 57.4% respectively, while the top-5 and
+top-10 set accuracy is 8.60% and 11.3% respectively. It is
+noted that the accuracy of furniture set retrieval is relatively
+low because of the extremely challenging in the task. Small
+mistakes of the detection and instance retrieval can be am-
+pliﬁed to a big error in the ﬁnal result.
+In this table, we
+also show that the context embedding based re-ranking is
+effective to improve the performance in spite of its simplic-
+ity It improves the feature set accuracy by 36.3% relatively
+. This demonstrates the potential relationship between fur-
+niture items is successfully learned by our context model.
+
+6. Conclusion
+
+In this paper, we present a large-scale dataset with rich
+annotations for furniture understanding and explore it for a
+new task, i.e., furniture set retrieval. An end-to-end frame-
+work is proposed to solve this problem. It contains three
+major modules: (1)improved Mask R-CNN for furniture
+detection (2) feature embedding network trained by inte-
+
+Figure 6. Showcases of the self-clustered pseudo attributes
+
+in the metric, the examples in one category are distributed
+into different attributes. It is displayed that the items in one
+category are very diverse, but the examples in one attributes
+only present a speciﬁc visual appearance. This can perform
+as a better regularization for image retrieval task.
+We further analyze the quality of the attributes by eval-
+uating the retrieval performance of the model ﬁne-tuned by
+different supervision, as shown in Table 2. The baseline
+represents the ResNet101 pre-trained on ImageNet. The
+model ﬁne-tuned by the self-clustered attributes performs
+better than baseline and that ﬁne-tuned by categories. Note
+that the model ﬁne-tuned by categories performs even worse
+than pre-trained model, because it give less visual distinc-
+tion guidance for instance retrieval task.
+
+5.4. Results of feature instance retrieval
+
+We ﬁrst assess each component in the Siamese network
+by ablation study, as depicted in Table 2. The baseline rep-
+resents the results of pre-trained ResNet101. ”ohnm” de-
+notes the model trained with online hard negative mining
+for veriﬁcation loss, while ”w/o ohnm” denotes the model
+without adopting the trick. This simple scheme improves
+the result by 5.7%. It is displayed that only utilizing the ver-
+iﬁcation loss decreases the result by more than 10%. This
+demonstrates that the attributes guided classiﬁcation subnet
+provide an effective regularization for the network training.
+The best accuracy is achieved by mixing all, indicating the
+well complementary of the two branches.
+Table 3 details the retrieval performance corresponding
+to each category in our dataset. ”Siamese” denotes the over-
+all Siamese network, and ”Attribute” presents the model
+
+7
+
+CategoriesAttributes……QueryResults of furniture instance retrievalClass
+
+cabinet/shelf
+table
+chair/stool
+lamp
+door
+bed
+sofa
+plant
+decoration
+curtain
+appliance
+mean
+
+ACC@1
+baseline Attribute
+18.5
+35.5
+8.9
+21.2
+18.3
+27.5
+30.2
+40.4
+16.4
+20.5
+16.4
+34.3
+20.7
+29.4
+28.8
+39.1
+75.5
+83.4
+3.9
+16.9
+40.0
+43.4
+25.2
+35.6
+
+Table 3. Furniture instance retrieval results
+
+Siamese
+
+54.6
+33.5
+46.0
+61.0
+33.0
+59.2
+46.3
+69.8
+90.8
+29.8
+48.6
+52.1
+
+ACC@5
+baseline Attribute
+29.6
+54.0
+16.4
+35.2
+28.1
+44.6
+48.6
+63.9
+26.8
+36.9
+32.4
+55.1
+30.6
+47.7
+43.6
+66.2
+43.6
+66.2
+9.0
+29.5
+57.7
+61.1
+37.2
+53.5
+
+Siamese
+
+74.0
+57.1
+67.3
+85.2
+51.2
+78.2
+67.4
+88.0
+88.0
+48.0
+77.7
+71.0
+
+ACC@10
+baseline Attribute
+34.3
+61.1
+19.3
+40.2
+33.1
+52.6
+54.4
+72.8
+30.7
+44.4
+39.7
+62.7
+35.0
+53.1
+50.6
+74.0
+50.6
+74.0
+16.6
+37.1
+62.3
+68.0
+42.3
+60.1
+
+Siamese
+
+79.2
+54.4
+74.3
+89.3
+57.7
+83.2
+74.2
+91.6
+91.6
+54.5
+82.3
+76.2
+
+Table 4. Results of furniture set retrieval
+
+detection
+gt
+gt
+our
+our
+
+gt
+gt
+our
+our
+
+context
+–
+
+(cid:88)
+
+–
+
+(cid:88)
+
+–
+
+(cid:88)
+
+–
+
+(cid:88)
+
+ACC@1
+47.6%
+50.2%
+43.3%
+45.4%
+SET ACC@5
+6.78%
+9.53%
+6.31%
+8.60%
+
+ACC@5
+61.9%
+63.3%
+56.1%
+57.4%
+SET ACC@10
+9.64%
+13.0%
+8.35%
+11.3%
+
+grating veriﬁcation and classiﬁcation loss (3) furniture con-
+text embedding for re-ranking. Extensive results show the
+effectiveness of the three modules and the overall frame-
+work. This system has already been utilized in several real
+products and we will release our dataset after paper accep-
+tance. Future works may contain the optimization of the
+re-ranking strategy and joint learning of the three modules.
+
+References
+
+[1] Ejaz Ahmed, Michael Jones, and Tim K Marks. An improved
+deep learning architecture for person re-identiﬁcation.
+In
+CVPR, pages 3908–3916, 2015.
+[2] Ishrat Badami, Manu Tom, Markus Mathias, and Bastian
+Leibe. 3d semantic segmentation of modular furniture us-
+ing rjmcmc. In WACV, pages 64–72. IEEE, 2017.
+[3] Song Bai and Xiang Bai. Sparse contextual activation for ef-
+ﬁcient visual re-ranking. IEEE Transactions on Image Pro-
+cessing, 25(3):1056–1069, 2016.
+[4] David Bau, Bolei Zhou, Aditya Khosla, Aude Oliva, and
+Antonio Torralba. Network dissection: Quantifying inter-
+pretability of deep visual representations.
+In CVPR, pages
+6541–6549, 2017.
+
+8
+
+[5] Navaneeth Bodla, Bharat Singh, Rama Chellappa, and
+Larry S Davis. Soft-nms–improving object detection with
+one line of code. In ICCV, pages 5561–5569, 2017.
+[6] Mathilde Caron, Piotr Bojanowski, Armand Joulin, and
+Matthijs Douze. Deep clustering for unsupervised learning
+of visual features. In ECCV, pages 132–149, 2018.
+[7] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li,
+and Li Fei-Fei. Imagenet: A large-scale hierarchical image
+database. In CVPR, pages 248–255, 2009.
+[8] Brendan J Frey and Delbert Dueck. Clustering by passing
+messages between data points. science, 315(5814):972–976,
+2007.
+[9] Mengyue Geng, Yaowei Wang, Tao Xiang, and Yonghong
+Tian. Deep transfer learning for person re-identiﬁcation.
+arXiv preprint arXiv:1611.05244, 2016.
+[10] Kaiming He, Georgia Gkioxari, Piotr Doll ´ar, and Ross Gir-
+shick. Mask r-cnn. In ICCV, pages 2961–2969, 2017.
+[11] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.
+Deep residual learning for image recognition.
+In CVPR,
+pages 770–778, 2016.
+[12] Zhenhen Hu, Yonggang Wen, Luoqi Liu, Jianguo Jiang,
+Richang Hong, Meng Wang, and Shuicheng Yan. Visual
+classiﬁcation of furniture styles. ACM Transactions on In-
+telligent Systems and Technology (TIST), 8(5):67, 2017.
+[13] Zhaojin Huang, Lichao Huang, Yongchao Gong, Chang
+Huang, and Xinggang Wang. Mask scoring r-cnn. In CVPR,
+pages 6409–6418, 2019.
+[14] Jeff Johnson, Matthijs Douze, and Herv ´e J ´egou. Billion-
+scale similarity search with gpus. IEEE Transactions on Big
+Data, 2019.
+[15] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton.
+Imagenet classiﬁcation with deep convolutional neural net-
+works. In NIPS, pages 1097–1105, 2012.
+[16] Svetlana Lazebnik, Cordelia Schmid, and Jean Ponce. Be-
+yond bags of features: Spatial pyramid matching for recog-
+nizing natural scene categories. In CVPR, pages 2169–2178,
+2006.
+[17] Wenbin Li, Sajad Saeedi, John McCormac, Ronald Clark,
+Dimos Tzoumanikas, Qing Ye, Yuzhong Huang, Rui Tang,
+
+[33] Hengshuang Zhao, Jianping Shi, Xiaojuan Qi, Xiaogang
+Wang, and Jiaya Jia. Pyramid scene parsing network.
+In
+CVPR, 2017.
+[34] Zhun Zhong, Liang Zheng, Donglin Cao, and Shaozi Li. Re-
+ranking person re-identiﬁcation with k-reciprocal encoding.
+In CVPR, pages 1318–1327, 2017.
+[35] Bolei Zhou, Hang Zhao, Xavier Puig, Sanja Fidler, Adela
+Barriuso, and Antonio Torralba.
+Scene parsing through
+ade20k dataset. In CVPR, pages 633–641, 2017.
+[36] Xizhou Zhu, Han Hu, Stephen Lin, and Jifeng Dai. De-
+formable convnets v2: More deformable, better results. In
+CVPR, pages 9308–9316, 2019.
+[37] Chuhang Zou, Alex Colburn, Qi Shan, and Derek Hoiem.
+Layoutnet: Reconstructing the 3d room layout from a single
+rgb image. In CVPR, pages 2051–2059, 2018.
+
+and Stefan Leutenegger.
+Interiornet: Mega-scale multi-
+sensor photo-realistic indoor scenes dataset. arXiv preprint
+arXiv:1809.00716, 2018.
+[18] Joseph J Lim, Hamed Pirsiavash, and Antonio Torralba.
+Parsing ikea objects: Fine pose estimation. In ICCV, pages
+2992–2999, 2013.
+[19] Frank Lin and William W. Cohen. Power iteration clustering.
+In ICML, pages 655–662, 2010.
+[20] Tsung-Yi Lin, Piotr Doll ´ar, Ross Girshick, Kaiming He,
+Bharath Hariharan, and Serge Belongie. Feature pyramid
+networks for object detection. In CVPR, pages 2117–2125,
+2017.
+[21] Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, and
+Piotr Doll ´ar. Focal loss for dense object detection. In ICCV,
+pages 2980–2988, 2017.
+[22] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays,
+Pietro Perona, Deva Ramanan, Piotr Doll ´ar, and C Lawrence
+Zitnick. Microsoft coco: Common objects in context.
+In
+ECCV, pages 740–755, 2014.
+[23] Hao Liu, Jiashi Feng, Meibin Qi, Jianguo Jiang, and
+Shuicheng Yan. End-to-end comparative attention networks
+for person re-identiﬁcation.
+IEEE Transactions on Image
+Processing, pages 3492–3506, 2017.
+[24] Wei Liu, Dragomir Anguelov, Dumitru Erhan, Christian
+Szegedy, Scott Reed, Cheng-Yang Fu, and Alexander C
+Berg. Ssd: Single shot multibox detector. In ECCV, pages
+21–37, 2016.
+[25] Francisco Massa and Ross Girshick. maskrcnn-benchmark:
+Fast, modular reference implementation of Instance Seg-
+mentation and Object Detection algorithms in PyTorch.
+
+https://github.com/facebookresearch/
+maskrcnn-benchmark, 2018.
+
+[26] Filip Radenovi ´c, Giorgos Tolias, and Ondˇrej Chum. Fine-
+tuning cnn image retrieval with no human annotation. IEEE
+transactions on pattern analysis and machine intelligence,
+41(7):1655–1668, 2018.
+[27] Joseph Redmon, Santosh Divvala, Ross Girshick, and Ali
+Farhadi. You only look once: Uniﬁed, real-time object de-
+tection. In CVPR, pages 779–788, 2016.
+[28] Shuran Song, Fisher Yu, Andy Zeng, Angel X Chang, Mano-
+lis Savva, and Thomas Funkhouser. Semantic scene comple-
+tion from a single depth image. In CVPR, pages 1746–1754,
+2017.
+[29] R.Girshick S.Ren, K.He and J.Sun. Faster rcnn: Towards
+real-time object detection with region proposal networks. In
+NIPS, pages 91–99, 2015.
+[30] Yaniv Taigman, Ming Yang, Marc’Aurelio Ranzato, and Lior
+Wolf. Deepface: Closing the gap to human-level perfor-
+mance in face veriﬁcation.
+In CVPR, pages 1701–1708,
+2014.
+[31] L. Wu, A. Fisch, S. Chopra, K. Adams, A. Bordes, and J.
+Weston. Starspace: Embed all the things! arXiv preprint
+arXiv:1709.03856, 2017.
+[32] Tete Xiao, Yingcheng Liu, Bolei Zhou, Yuning Jiang, and
+Jian Sun. Uniﬁed perceptual parsing for scene understand-
+ing. In ECCV, pages 418–434, 2018.
+
+9
+
+C. Display of self-clustered pesudo attributes
+
+In Figure 9, we show more cases of our pesudo attributes.
+It is seen that these attributes are effective to assign the en-
+tities in each furniture category into different attributes base
+on their visual appearances. This information is demon-
+strated to be effective to guide a network for the retrieval
+task.
+
+D. Showcases of our retrieval results
+
+In Figure 10, more results of the furniture instance re-
+trieval are displayed. It is shown that our model is robust
+to variance and occlusion of the query image to a large ex-
+tent. The performances of the door and curtain are relatively
+weak, because the entities in these categories are quite sim-
+ilar and only differ in some details. Other mistakes may be
+caused by view and occlusion.
+In Figure 11, we show some results of our end-to-
+end system. Most major furniture items are successfully
+searched. The set accuracy is mainly decreased by some
+extremely challenging categories like curtain and door, as
+the difference exists in very detail among the cases of these
+classes. Even it is hard to obtain the exact furniture set, the
+search results are visually similar and acceptable for users.
+
+A. Analysis of deep clustering for attributes
+learning
+
+Inspired by DeepClustering[6], we evaluate the method
+of iteratively updating the self-clustered attributes in the
+learning of the network. That is, in each epoch, we ﬁrst
+perform category supervised k-means to update the pesudo
+attributes and then ﬁne-tune the network based on the latest
+attribute labels. The performance on retrieval task is sum-
+marized in Table 5. It is shown than this scheme reduces
+the accuracy and the best performance is achieved by ﬁxing
+the attributes at the beginning. The reason may lie in that
+our model is ﬁne-tuned on the pre-trained ResNet101 model
+and suffers over-ﬁtting problem, while [6] trains the model
+from scratch. Therefore, we ﬁx the pesudo attributes in this
+paper.
+
+Table 5. Results of deep clustering scheme
+
+epoch
+pretrained
+
+macc@1 macc@5 macc@10
+27.52
+39.80
+44.7
+
+1
+
+39.2
+
+57.1
+
+0.6373
+
+2
+3
+
+34.4
+29.0
+
+52.7
+48.2
+
+60.0
+56.3
+
+B. Analysis of two structures in veriﬁcation
+subnet
+
+In our experiments, we compare two structures in the
+veriﬁcation subnet shown in Figure 8. The structure (a) is
+the one used in this paper, where the input pair is fused with
+element-wise subtraction and a ReLu operator. Different
+from that, the second one employs element-wise Euclidean
+distance operator which is the same as the metric used in
+retrieval pipeline.
+In the same setting, the structure used
+in our model perform slightly better (macc@1 : 46.4% vs.
+44.6%). This may be due to the sparsity introduced by the
+ReLu operator to relieve the over-ﬁtting.
+
+Figure 8. We examine two structures in the veriﬁcation subnet. (a)
+The input pair is fused with element-wise subtraction and a ReLu
+operator. (b) The input pair is fused with element-wise Euclidean
+distance operator.
+
+10
+
+Verification subnetsamediffVerification subnetsamediff(a)(b)ReLuFigure 9. Showcases of the self-clustered pesudo attributes. After clustering, the furniture identities in one category are divided into
+different attributes according to their visual appearance.
+
+Figure 10. Some example results of the furniture instance retrieval, where the ground truth is indicated by red box.
+
+11
+
+CategoriesAttributesCategoriesAttributes…………QueryResults of furniture instance retrievalQueryResults of furniture instance retrievalFigure 11. Some example results of our end-to-end system, where the ground truth is indicated by red box.
+
+12
+
+instance1instance2instance3instance4…Top1Top2Top3Input imagesDetection resultsResults of  furniture set retrievalinstance1instance2instance3…Top1Top2Top3instance4…Top1Top2Top3instance1instance3instance4instance2instance1…Top1Top2Top3instance3instance4instance2

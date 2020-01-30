@@ -1,0 +1,1481 @@
+Knowledge Graph Transfer Network for Few-Shot Recognition
+
+Riquan Chen,1 Tianshui Chen,1,2 Xiaolu Hui,1 Hefeng Wu,1 ∗ Guanbin Li,1 Liang Lin1,2
+
+1Sun Yat-sen University, 2DarkMatter AI Research
+sysucrq@gmail.com, tianshuichen@gmail.com, huixlu@mail2.sys.edu.cn, wuhefeng@gmail.com
+liguanbin@mail.sysu.edu.cn, linlng@mail.sysu.edu.cn
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+9
+7
+5
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Few-shot learning aims to learn novel categories from very
+few samples given some base categories with sufﬁcient train-
+ing samples. The main challenge of this task is the novel cat-
+egories are prone to dominated by color, texture, shape of
+the object or background context (namely speciﬁcity), which
+are distinct for the given few training samples but not com-
+mon for the corresponding categories (see Figure 1). Fortu-
+nately, we ﬁnd that transferring information of the correlated
+based categories can help learn the novel concepts and thus
+avoid the novel concept being dominated by the speciﬁcity.
+Besides, incorporating semantic correlations among different
+categories can effectively regularize this information transfer.
+In this work, we represent the semantic correlations in the
+form of structured knowledge graph and integrate this graph
+into deep neural networks to promote few-shot learning by a
+novel Knowledge Graph Transfer Network (KGTN). Specif-
+ically, by initializing each node with the classiﬁer weight
+of the corresponding category, a propagation mechanism is
+learned to adaptively propagate node message through the
+graph to explore node interaction and transfer classiﬁer in-
+formation of the base categories to those of the novel ones.
+Extensive experiments on the ImageNet dataset show signif-
+icant performance improvement compared with current lead-
+ing competitors. Furthermore, we construct an ImageNet-6K
+dataset that covers larger scale categories, i.e, 6,000 cate-
+gories, and experiments on this dataset further demonstrate
+the effectiveness of our proposed model.
+
+Introduction
+
+Recently, deep convolutional neural networks (ConvNet)
+(Krizhevsky, Sutskever, and Hinton 2012; He et al. 2016)
+have obtained remarkable success in various visual recogni-
+tion tasks. To fully train a deep ConvNet recognition system,
+it is requested that each category has thousands of training
+samples. If the system needs to recognize some novel cate-
+gories, we need to collect large amounts of training samples
+for these categories to avoid being overﬁtting. In contrast,
+
+∗Riquan Chen and Tianshui Chen contribute equally and share
+ﬁrst-authorship. Corresponding author is Hefeng Wu. This work is
+partly supported by National Natural Science Foundation of China
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+(No. U1611461 and 61876045) and SenseTime Research Fund.
+Intelligence (www.aaai.org). All rights reserved.
+
+Figure 1: Visualization results of SGM and our proposed
+models. The ﬁrst column shows the only training samples
+of different categories. The next three columns show the ex-
+amples that are correctly classiﬁed by both two models. The
+last three columns show the samples that are misclassiﬁed
+by the SGM model but correctly classiﬁed by our model. It
+can be observed that the SGM model can well classify sam-
+ples with high similarity to the training image but fails in
+the samples with a large difference in appearance. In con-
+trast, our proposed model shows superior performance on
+more appearance patterns.
+
+human can effortlessly learn to recognize novel categories
+with few samples by exploiting prior knowledge accumu-
+lated from daily life. Mimicking this ability to learn novel
+categories from very few samples (also known as few-shot
+learning) is a crucial yet practical task in the computer vision
+community.
+Formally, we consider a general and practical scenario for
+few-shot learning, in which there exist a set of base cate-
+gories with sufﬁcient training samples and a set of novel
+categories with very limited samples (e.g., no more than ten
+samples in this work). Unlike previous works that merely
+focus on the novel categories, we aim to develop a recog-
+
+Training examplesSGM OursSGM Ours 
+ 
+ 
+ 
+ 
+ 
+the explicit guidance of category correlations. Notably, the
+graph contains both novel and base categories and the mes-
+sage propagation mechanism is shared across all node pairs
+in the graph, and thus such a mechanism can be trained us-
+ing sufﬁcient samples of the base categories and well gener-
+alizes to the novel categories.
+The contributions are summarized into three folds: 1) We
+propose to integrate category correlations as prior knowl-
+edge to regularize and guide transferring information of
+classiﬁer weights. 2) We introduce a graph update mecha-
+nism that propagates the node message through the graph
+to iteratively update the classiﬁer weights. 3) We conduct
+experiments on the widely used ImageNet based few-shot
+dataset and demonstrate the superior performance of our
+proposed framework over existing state-of-the-art methods.
+To evaluate the performance on larger scale categories, we
+construct an ImageNet-6K dataset that covers 6,000 cate-
+gories. Experiments conducted on this benchmark shows
+that our model still outperforms current leading methods.
+
+Related Works
+
+Few-shot learning. Previous works (Finn, Abbeel, and
+Levine 2017; Li et al. 2017; Vinyals et al. 2016; Garcia
+and Bruna 2017; Snell, Swersky, and Zemel 2017) follow a
+simple N -way K -shot setting, where there are N categories
+with K training samples for each category, and N is no more
+than 20. These works often adopt learning-to-learn paradigm
+that distills knowledge learned from training categories to
+help learn novel concepts. For example, (Vinyals et al. 2016;
+Snell, Swersky, and Zemel 2017; Sung et al. 2018; Kim
+et al. 2019) learn an embedding and metric function from
+the base categories to well recognize samples in the novel
+categories. Most of these works evaluate their algorithms
+on some small-scale datasets, e.g., miniImageNet with 64
+base categories, 16 validation categories, 20 novel cate-
+gories. Recently, some works (Hariharan and Girshick 2017;
+Chen et al. 2019c; Hui, Chen, and Chen 2019) switch to
+a more general and practical setting, where the algorithms
+aim to recognize hundreds of novel concepts with very lim-
+ited samples given a set of based categories with sufﬁcient
+training samples. To address this few-shot learning scenario,
+(Hariharan and Girshick 2017) learn a transformation func-
+tion to hallucinate additional samples for novel categories.
+(Chen et al. 2019c) further consider to enlarge the size of
+dataset and learn a deformation network to deform images
+by fusing a pair of images. (Qiao et al. 2018b) explore the
+relation of training feature and classiﬁer weight and adapt a
+neural network to obtain classiﬁer weights directly from the
+training features. To evaluate these algorithms, researchers
+construct a larger-scale dataset that covers 1,000 categories
+(Hariharan and Girshick 2017). As this is a more practical
+scenario, we focus on this setting in our work.
+
+Knowledge Embedded Visual Reasoning. Recently, lots of
+
+works attempt to incorporate prior knowledge with deep rep-
+resentation learning for various visual reasoning tasks, rang-
+ing from visual recognition/detection (Wang, Ye, and Gupta
+2018; Chen et al. 2018c; Lee et al. 2018; Chen et al. 2019a;
+Chen et al. 2018b; Jiang et al. 2018) to visual relationship
+
+Figure 2: The t-SNE result of the normalized training sam-
+ples and classiﬁer weight. Scatter plot from the left to the
+right shows 1-shot and 5-shot setting, respectively.
+
+nition system that learns to recognize the novel categories
+based on few training samples and simultaneously maintain
+the performance on the base categories.
+It is well-known that each image contains features that
+are particular and discriminant for this image but not com-
+mon for its category (e.g., texture, color, shape of the object
+or background context). Here, we denote these features as
+speciﬁcity. In few-shot learning scenarios, each novel cate-
+gory has very limited samples that can hardly describe its
+commonality, so its learned classiﬁer is prone to dominated
+by the speciﬁcity and thus may deviate severely from real-
+ity. Take the Kerry blue terrier in the last row of Figure 1
+for example, which is in the 1-shot setting on ImageNet-FS
+dataset, the state-of-the-art model SGM (Hariharan and Gir-
+shick 2017) can well classify the instances with a speciﬁc
+side-standing pose but fail in instances with other poses. To
+delve deep into this phenomenon, we further visualize the
+extracted features of training samples and the corresponding
+classiﬁer weights learned by SGM (Hariharan and Girshick
+2017) in Figure 2. As shown, the learned classiﬁer is highly
+correlated with the extracted features. If the training samples
+of a category mainly contain speciﬁcity, the learned classiﬁer
+may squint towards describing this speciﬁcity and inevitably
+miss the common feature for this category.
+Fortunately, strong semantic correlations are witnessed
+among categories with similar visual concepts, which orig-
+inates from human recognitive system. Transferring the in-
+formation of the correlated base categories can provide ad-
+ditional information to guide learning the novel concept and
+thus avoid the novel concept being dominated by the speci-
+ﬁcity. Moreover, these category correlations can effectively
+regularize this information transfer. In this work, we develop
+a Knowledge Graph Transfer Network (KGTN) that inte-
+grates category correlations into a deep neural network to
+guide exploiting information of base categories to help to
+learn the novel concept. To this end, we represent the seman-
+tic correlations with a knowledge graph, where each node
+refers to the classiﬁer weight of a category and each edge
+represents the semantic correlation between the two corre-
+sponding categories. Then, we introduce a graph propaga-
+tion mechanism to transfer node message through the graph.
+In this way, it allows each category to derive information of
+the correlated categories to better learn the classiﬁer under
+
+Training samples Classifier weightTraining samples Classifier weightreasoning (Chen et al. 2019b; Wang et al. 2018b) and navi-
+gation/planning (Yang et al. 2019; Chen et al. 2018a). As a
+pioneering work, (Marino, Salakhutdinov, and Gupta 2017)
+build a knowledge graph to correlate object categories and
+learn graph representation to enhance image representation
+learning. (Chen et al. 2019a) incorporate a similar knowl-
+edge graph to guide feature decoupling and interaction to
+further facilitate multi-label image recognition. (Wang, Ye,
+and Gupta 2018) apply graph convolutional network (Kipf
+and Welling 2016) to explore semantic interaction and di-
+rect map semantic vectors to classiﬁer parameters. To fur-
+ther explore high-level tasks, (Chen et al. 2019b) consider
+the correlations between speciﬁc object pairs and their cor-
+responding relationships to regularize scene graph genera-
+tion and thus alleviate the effect of the uneven distribution
+issue. (Chen et al. 2018a) build And-Or Graphs (Zhu, Mum-
+ford, and others 2007) to describe tasks, which helps regular-
+ize atomic action sequence generation to reduce the depen-
+dency on annotated samples. In few-shot learning scenario,
+the latest work (Li et al. 2019) construct category hierarchy
+by semantic cluster and regularize prediction at each hierar-
+chy via a hierarchical output net. Different from these works,
+we formulate classiﬁer weight as a prototype representation
+of the corresponding category, and introduce a graph prop-
+agation mechanism to transfer prototype representation of
+base categories to guide learning novel concepts under the
+explicit guidance of prior semantic correlation.
+
+Methodology
+
+We ﬁrst revisit the few-shot problem formulation in the con-
+ventional deep ConvNet paradigm with some formalized in-
+terpretation on why such paradigm easily fails in the few-
+shot scenarios, and then present our model in detail.
+
+Problem Formulation Revisited
+
+A few-shot recognition system should be able to recog-
+nize novel categories with limited few samples. Recent deep
+ConvNet models have achieved remarkable success in im-
+age recognition, but they are also notorious for requiring a
+large number of training samples for each category and are
+not ﬁt for the few-shot scenarios. In this work, we amend
+the conventional paradigm to adapt deep ConvNet models to
+such scenarios.
+A typical deep ConvNet-based image recognition model
+consists of the feature extractor and classiﬁers, which are
+jointly learned for optimal performance. Given an image
+sample x, the recognition model predicts its label ˆy as ˆy =
+
+arg maxk p(y = k |x), and
+p(y = k |x) =
+
+(cid:80)K
+
+exp(fk (x))
+i=1 exp(fi (x))
+
+(1)
+
+is the softmax function. Here K is the number of categories,
+and x is the d-dimensional representation feature of x out-
+put by the feature extractor φ(·), i.e., x = φ(x). The lin-
+ear classiﬁer fk (x) = w(cid:62)
+k x + bk computes the conﬁdence
+of the sample x belonging to category k , and is imple-
+mented with a fully-connected layer. wk denotes the clas-
+siﬁer weight and bk is the bias term. It can be easily inferred
+
+that arg maxk p(y = k |x) is equivalent to arg maxk fk (x).
+
+We reformulate fk (x) as follows:
+
+fk (x) = w(cid:62)
+k x + bk
+= − 1
+(cid:107)wk − x(cid:107)2
+2 +
+2
+
+(cid:107)wk (cid:107)2
+2 +
+
+1
+2
+
+1
+2
+
+(cid:107)x(cid:107)2
+
+2 + bk
+
+(2)
+
+By introducing the constraints bk = 0 and (cid:107)wi (cid:107)2 = (cid:107)wj (cid:107)2 ,
+∀i, j , the classiﬁer fk (x) can be viewed as a similarity mea-
+sure between x and wk , and we have
+
+ˆy = arg max
+
+k
+
+fk (x) = arg min
+
+k
+
+(cid:107)wk − x(cid:107)2
+
+2
+
+(3)
+
+Therefore, the weight wk can be viewed as the prototype
+representation of category k , and the sample x is predicted
+as category k if its feature x has the maximum similarity (or
+minimum distance) with prototype wk . In this perspective,
+we can implement fk (x) with different similarity metrics.
+Relaxing the above constraints to general deep ConvNet
+models, the prototype representation perspective of classiﬁer
+weight is reasonable to some extent. Thus, when these mod-
+els are applied in the few-shot scenarios, the learned proto-
+type will be guided to reﬂect the speciﬁcity of the few train-
+ing samples (as visualized in Figure 2) and cannot capture
+the commonality of the corresponding category.
+To tackle this problem, we amend the conventional deep
+ConvNet paradigm by incorporating category correlations
+to transfer prototype presentations among similar categories
+and thus substantially enhance the prototypes of novel cate-
+gories. Speciﬁcally, the category correlations are modeled as
+a knowledge graph and integrated into the deep ConvNet to
+build our Knowledge Graph Transfer Network model, which
+will be detailed below.
+
+Knowledge Graph Transfer Network
+
+The overall framework of our Knowledge Graph Transfer
+Network (KGTN) is illustrated in Figure 3, which consists of
+three modules: Feature Extraction, Knowledge Graph Trans-
+fer, and Prediction. The key design is the knowledge graph
+transfer module where we incorporate a graph neural net-
+work to explore the knowledge transfer of the prototypes
+(classiﬁer weights) by the guidance of semantic correlations
+on top of the ConvNet.
+
+Knowledge Graph Transfer Module. We model the classi-
+
+ﬁer weight into a graph, in which nodes refer to the classiﬁer
+weigh and edges represent their semantic correlations. Then,
+we incorporate a Gated Graph Neural Network (GGNN) to
+update and propagate the message between nodes.
+Given a dateset that covers K = Kbase + Knovel cat-
+egories (Kbase and Knovel denote the number of base and
+novel categories), we use a graph G = {V, A} to encode
+the correlations among all categories, in which nodes refer to
+the categories and edges represent their correlations. Specif-
+ically, V is represented as {v1 , v2 , . . . , vKbase , . . . , vK }
+where node vk corresponds to category k , and A is an ad-
+jacency matrix, in which aij denotes the correlation weight
+between categories i and j .
+At each iteration t, node vk has a hidden state ht
+k , and the
+hidden state h0
+k at iteration t = 0 is set as the initial classiﬁer
+weight winit
+, formulated as
+
+k
+
+h0
+
+k = winit
+k
+
+,
+
+(4)
+
+Figure 3: Illustration of the proposed Knowledge Graph Transfer Network (KGTN) model. It incorporates prior knowledge
+of category correlations to help explore the interactions among classiﬁer weights of all categories to better learn the classiﬁer
+weights of the novel categories.
+
+K(cid:88)
+
+K(cid:88)
+
+k
+
+in which winit
+is learnable parameters and randomly ini-
+tialized before training. At each iteration t, each node k ag-
+gregates message from its correlated node such that the pa-
+rameter vectors of these nodes can help reﬁne its parameter
+vector, formulated as
+
+akk(cid:48) ht−1
+k(cid:48)
+
+ak(cid:48) k ht−1
+k(cid:48)
+
+,
+
+].
+
+k(cid:48)=1
+
+k(cid:48)=1
+
+at
+k = [
+
+(5)
+In this way, a high correlation between nodes k and k (cid:48) en-
+courage message propagation from k (cid:48) to k , and it suppresses
+the propagation otherwise. Then, the framework takes this
+aggregated feature vector and the hidden state of the pre-
+vious iteration as input to update the corresponding hidden
+state by a gating mechanism
+
+k
+
+k + Uz ht−1
+zt
+k = tanh (cid:0)Wat
+k =σ(Wz at
+)
+(cid:102)ht
+rt
+k =σ(Wr at
+k + Ur ht−1
+)
+k (cid:12) (cid:102)ht
+k + U(rt
+k (cid:12) ht−1
+k =(1 − zt
+k ) (cid:12) ht−1
+ht
+k + zt
+
+k
+
+k
+
+k
+
+)(cid:1)
+
+(6)
+
+where σ(·) and tanh(·) are the logistic sigmoid and hyper-
+bolic tangent functions, and (cid:12) is the element-wise multipli-
+cation operation. In this way, the model tends to adopt the
+more correlated message to update parameters of the current
+can obtain the ﬁnal hidden states, i.e., {hT
+node. The propagation is repeated by T iterations, and we
+K }.
+Finally, we utilize a simple output network to predict the
+classiﬁer weight
+w∗
+
+1 , hT
+2 , . . . , hT
+
+k = o(hT
+k , h0
+k ).
+
+Prediction with different similarity metrics. As stated in
+
+the problem formulation, the classiﬁer fk (x) can be imple-
+mented as similarity metric. Here, we consider three similar-
+ity metrics for evaluation: inner product, cosine similarity,
+and Pearson correlation coefﬁcient.
+
+(7)
+
+Inner product:
+
+Cosine similarity:
+
+fk (x) = x · w∗
+
+k
+
+fk (x) =
+
+x · w∗
+
+k
+
+(cid:107)x(cid:107)2 · (cid:107)w∗
+
+k (cid:107)2
+
+(8)
+
+(9)
+
+Pearson correlation coefﬁcient:
+
+(x − ¯x) · (w∗
+k − ¯w∗
+k )
+k − ¯w∗
+
+(10)
+
+k (cid:107)2
+
+fk (x) =
+
+(cid:107)x − ¯x(cid:107)2 · (cid:107)w∗
+where ¯x is a d-dimensional vector with all elements being
+the same value computed by averaging all elements in x, as
+is likewise for ¯w∗
+k .
+The above-deﬁned similarity metric will be put into the
+softmax function as denoted by Equation (1) to obtain the
+ﬁnal prediction. For cosine similarity and Pearson correla-
+tion metrics, the values output by the softmax may be ex-
+tremely small, since (cid:107)fk (x)(cid:107)2 ≤ 1 in such situations. So,
+similar to (Gidaris and Komodakis 2018; Qi, Brown, and
+Lowe 2018), we multiply a learnable scale parameter s, i.e.,
+putting s · fk (x) into the softmax for these two metrics.
+
+Optimization
+
+pi = {p1
+i , p2
+i , . . . , pkbase
+
+Similar to (Hariharan and Girshick 2017), we adopt a two-
+stage training procedure to train the proposed model.
+Stage 1: At the ﬁrst stage, we train the feature extractor
+φ(·) based on the base set Dbase . Given an image sample
+xi with label yi , we ﬁrst compute its probability distribution
+} with pk
+deﬁne the cross-entropy loss as our objective function. To
+make the learned features easily generalize to the novel cat-
+egories, we further introduce Squared Gradient Magnitude
+loss proposed in (Hariharan and Girshick 2017) to regular-
+ize representation learning. Thus, the objective function at
+
+i = p(y = k |xi ), and then
+
+i
+
+KnowledgeGraphKnowledge Graph Transfer ModuleCNNFeature ExtractionGNNGNN…PredictionSimilaritymetricw𝑖𝑛𝑖𝑡label distributionw∗xt=0t=Tthis stage can be deﬁned as
+
+L1 = Lc + λLs
+
+where
+
+Nbase(cid:88)
+Kbase(cid:88)
+Nbase(cid:88)
+Kbase(cid:88)
+
+k=1
+
+i=1
+
+i=1
+
+k=1
+
+Lc = − 1
+
+Nbase
+
+Ls =
+
+1
+
+Nbase
+
+1(k = yi ) log pk
+
+i
+
+i − 1(k = yi ))2 ||xi ||2
+(pk
+
+2
+
+(11)
+
+(12)
+
+where Nbase is the number of training samples in all base
+categories, 1(k = yi ) is an indicator that equals 1 when k =
+yi is true and 0 otherwise, λ is a parameter to balance two
+loss terms and it is set as 0.005 by following (Hariharan and
+Girshick 2017). At this stage, the model is trained using the
+SGD algorithm with a batch size of 256, momentum of 0.9
+and weight decay of 0.0005. The learning rate is initialized
+as 0.1 and is divided by 10 for every 30 epochs.
+Stage 2: We ﬁx the parameters of the feature extractor and
+use both the base and novel set to train the other compo-
+nents, including winit , the parameters of GGNN and scale
+factor s. Similarly, we obtain its probability vector pi =
+i } and use the cross-entropy loss as the ob-
+jective function. To handle class imbalance, we sample the
+novel and base samples by 1:1 ratio in each batch. Besides,
+for inner product, we introduce an additional regularization
+term on the classiﬁer weighs, thus the overall objective func-
+tion can be deﬁned as
+
+{p1
+i , p2
+i , . . . , pK
+
+K(cid:88)
+
+N(cid:88)
+
+K(cid:88)
+
+L2 = − 1
+N
+
+1(k = yi ) log pk
+i + η
+
+||w∗
+k ||2
+
+2 (13)
+
+i=1
+
+k=1
+
+k=1
+
+where N is the number of all training samples, η is a param-
+eter to balance two loss terms and it is set as 0.001 empiri-
+cally. In this stage, we train the model using SGD algorithm
+with a batch size of 1,000, momentum of 0.9, weight decay
+of 0.0001, and learning rate of 0.01.
+
+Graph Construction
+
+Experiment
+
+The knowledge graph encodes the correlations among differ-
+ent categories. It can be constructed according to different
+prior knowledge. Here, we introduce two kinds of knowl-
+edge, i.e., semantic similarity and category hierarchy.
+Semantic similarity. Semantic word of a speciﬁc category
+well carries its semantic information, and the semantic dis-
+tance of two categories encodes their correlations. In other
+words, two categories are of high correlation if their se-
+mantic distance is small, and are of low correlation other-
+wise. Thus, we ﬁrst exploit this property to construct the
+graph. Speciﬁcally, given two categories i and j with se-
+mantic words wi and wj , we ﬁrst extract their semantic fea-
+ture vector f w
+i and f w
+j using the GloVe model (Pennington,
+Socher, and Manning 2014) and compute their Euclidean
+distance dij . Then, we apply a monotone decreasing func-
+tion aij = λdij −min dik ,∀k (cid:54)=i (we set λ =0.4) to map the dis-
+tance to the correlation coefﬁcient aij . Besides, we also con-
+sider the self-message of each node so that we set aii = 1.
+
+Category hierarchy. Category hierarchy encodes category
+correlations via different levels of concept abstraction. Gen-
+erally, the distance from one category to another indicates
+their correlation, where a small distance indicates a high cor-
+relation while a large distance indicates a low correlation.
+In this work, we also exploit this knowledge based on the
+WordNet (Miller 1995) to construct the graph. Concretely,
+given two categories i and j , we compute the shortest path
+from node i to j as the distance dij and we also apply a sim-
+ilar monotone decreasing function to map the distance to the
+correlation coefﬁcient aij .
+
+Datasets
+
+Unlike previous few-shot benchmark with low-resolution
+images and few novel categories, we consider the more re-
+alistic dataset with large scale base and novel categories:
+ImageNet Few-Shot (ImageNet-FS) dataset. To further ver-
+ify our approach, we construct a more challenging dataset
+ImageNet-6K, which covers 5,000 novel categories.
+ImageNet-FS. In this work, we ﬁrst evaluate our proposed
+model on the widely used ImageNet-FS dataset. The dataset
+covers 1,000 categories from ILSVRC2012 and is divided
+into 389 base categories and 611 novel categories where 193
+base categories and 300 novel categories are used for cross-
+validation and the remaining 196 categories and 311 novel
+categories are used for testing. Each base category has about
+1,280 training images and 50 test images.
+ImageNet-6K. To evaluate our proposed method on larger
+scale categories, we further construct a new benchmark
+ImageNet-6K that covers 6,000 categories. It contains 1,000
+categories from ImageNet 2012 dataset with all the labeled
+training samples as the base categories, and we further se-
+lect 5,000 categories from the ImageNet 2011 as novel cat-
+egories. Concretely, 2,500 categories are used for validation
+and the rest 2,500 categories for ﬁnal evaluation. Each cate-
+gory has 50 test samples.
+For k-shot learning, only k labeled images of the novel
+categories are used. We follow previous works (Hariharan
+and Girshick 2017; Wang et al. 2018a) to repeat the process
+by 5 times and report the average accuracy. Here, we set k
+as 1, 2, 5, 10 on ImageNet-FS and ImageNet-6K.
+Evaluation Metrics. We follow previous works (Wang et
+al. 2018a) to evaluate our proposed model on the top-5 ac-
+curacy of the novel categories (Acc of novel) and all (base +
+novel) categories (Acc of all).
+
+Comparison with State-of-the-Art
+
+Performance on ImageNet-FS dataset. We present the re-
+
+sults of the above metrics on 1, 2, 5, 10 shot learning on
+the ImageNet-FS in Table 1. As shown, our proposed model
+outperforms all existing methods by a sizable margin. Take
+the “novel” metric as example, our model achieves the accu-
+racies of 62.1%, 70.9%, 78.4%, and 82.3%, outperforming
+current best results by 2.0%, 1.3%, 1.0%, and 0.3%, on 1, 2,
+5, 10 shot learning, respectively.
+Notably, compared with KTCH which also introduces
+word embedding as the external knowledge, we construct
+semantic correlation based on word embedding to transfer-
+ring information between classiﬁer weight and obtain an im-
+
+Novel
+
+Dataset
+
+Method
+
+ImageNet-FS
+
+ImageNet-6K
+
+MN(Vinyals et al. 2016)
+PN(Snell, Swersky, and Zemel 2017)
+SGM(Hariharan and Girshick 2017)
+SGM w/ G(Hariharan and Girshick 2017)
+AWG(Gidaris and Komodakis 2018)
+PMN(Wang et al. 2018a)
+PMN w/ G(Wang et al. 2018a)
+LSD(Douze et al. 2018)
+KTCH(Li et al. 2019)
+IDeMe-Net(Chen et al. 2019c)
+Ours(CosSim)
+Ours(PearsonCorr)
+Ours(InnerProduct)
+SGM(Hariharan and Girshick 2017)
+SGM w/ G(Hariharan and Girshick 2017)
+AWG(Gidaris and Komodakis 2018)
+Ours(CosSim)
+Ours(PearsonCorr)
+Ours(InnerProduct)
+
+1
+53.5
+49.6
+54.3
+52.9
+53.9
+53.3
+54.7
+57.7
+58.1
+60.1
+61.4
+61.5
+
+62.1
+
+26.7
+26.3
+27.6
+
+30.5
+
+30.4
+29.5
+
+2
+63.5
+64.0
+67.0
+64.9
+65.5
+65.2
+66.8
+66.9
+67.3
+69.6
+70.4
+70.6
+
+70.9
+
+35.0
+35.5
+35.9
+
+37.5
+
+37.2
+36.8
+
+10
+77.4
+78.1
+81.9
+82.0
+80.3
+80.1
+81.4
+77.6
+81.8
+80.2
+82.2
+
+82.3
+82.3
+
+51.5
+52.0
+49.4
+51.7
+51.8
+
+52.1
+
+All
+
+2
+71.0
+71.4
+71.6
+71.9
+72.3
+72.1
+73.5
+–
+–
+–
+74.7
+74.4
+
+75.2
+
+44.8
+46.4
+45.2
+46.8
+46.8
+
+46.9
+
+5
+77.0
+78.0
+80.2
+80.2
+79.1
+78.8
+80.2
+–
+–
+–
+
+80.9
+
+80.7
+80.8
+53.1
+
+54.4
+
+52.1
+53.8
+53.7
+
+54.4
+
+1
+64.9
+61.4
+60.7
+63.9
+65.1
+64.8
+65.7
+–
+–
+–
+67.7
+67.5
+
+68.3
+
+37.7
+39.4
+39.3
+41.0
+
+41.1
+
+40.8
+
+10
+80.2
+80.0
+
+83.6
+83.6
+
+82.1
+81.7
+82.8
+–
+–
+–
+
+83.6
+
+83.5
+83.5
+58.5
+
+58.8
+
+55.4
+58.5
+58.5
+58.7
+
+5
+72.7
+74.4
+77.4
+77.3
+75.9
+75.9
+77.4
+73.8
+77.6
+77.4
+78.4
+
+78.5
+
+78.4
+44.7
+
+46.2
+
+45.0
+46.0
+45.9
+46.1
+
+Table 1: Top5-accuracy in “novel” and “all” metrics of our model and current state-of-the-art methods on the ImageNet-FS
+and ImageNet-6K datasets. For fair comparison, all the methods use ResNet-50 for feature extraction. Some methods train an
+additional generator to hallucinate extra training samples for the novel categories (w/ G). The best and second best results are
+highlighted in bold and italic, respectively. “-” denotes the corresponding result is not provided.
+
+provement of 4.0%, 3.6% in 1-shot and 2-shot setting, which
+shows our superiority of utilizing external knowledge. Be-
+sides, it is worth noting that the improvement is more no-
+table if the samples of novel categories are fewer, e.g., 7.4%
+on 1-shot learning v.s. 0.3% on 10-shot learning. One possi-
+ble reason for this phenomenon is that learning from fewer
+samples is more challenging and thus depends more on prior
+knowledge. Similar improvements are observed on the “all”
+metrics.
+
+Performance on ImageNet-6K dataset. All the forego-
+
+ing comparisons focus on recognizing about 500 categories.
+In fact, there are much more categories in a real-world set-
+ting. To evaluate the proposed model on larger scale cate-
+gories, we further conduct experiments on the ImageNet-6K
+dataset. As SGM (Hariharan and Girshick 2017) and AWG
+(Gidaris and Komodakis 2018) are current leading methods,
+we use the released codes to implement these methods on
+this dataset for comparison. Following (Hariharan and Gir-
+shick 2017), we train models with and without generating
+samples for the novel categories. The comparison results are
+presented in Table 1. Even though ImageNet-6K is more
+challenging and much larger in category size, our proposed
+model still outperforms existing methods. Speciﬁcally, it ob-
+tains the “novel” accuracy of 30.5%, 37.5%, an improve-
+ment of 2.9%, 1.6% on the 1-shot and 2-shot learning com-
+pared with existing methods. This comparison suggests the
+proposed method is scalable in category size.
+
+Ablative study
+
+Analysis of Knowledge Embedding. The core of our pro-
+
+posed model is the prior knowledge graph that correlates
+base and novel categories to help regularize parameter prop-
+agation. As discussed above, our model follows SGM (Har-
+
+iharan and Girshick 2017) to use ResNet-50 as feature ex-
+tractor and also use identical loss function for optimization,
+thus SGM can be regarded as the baseline of our model. In
+this part, we emphasize the comparison with SGM to eval-
+uate the effectiveness of knowledge embedding model. As
+shown in Table 1, our framework signiﬁcantly outperforms
+SGM, with accuracy improvement of 7.8%, 7.6% on two
+metrics in 1-shot setting.
+To further analyze the effect of knowledge embedding,
+we further replace the category correlations with other non-
+informative form to demonstrate its beneﬁt. Speciﬁcally, we
+consider the following two variants: 1) Uniform graph in
+which all the correlation values are uniformly set as 1
+K and
+2) Random graph in which all the correlation values are ran-
+domly selected from a uniform distribution. The comparison
+results are presented in Table 2. We ﬁnd that these two vari-
+ants perform comparably with each other as both incur no
+additional information. Note that they achieve slightly bet-
+ter results than the baseline SGM. One possible reason is
+that knowledge propagation can help to better learn the clas-
+siﬁer weights of novel categories. Still, our model with prior
+knowledge embedding signiﬁcantly outperforms both two
+variants on all metrics for 1, 2, 5, 10 shot learning. These
+comparisons clearly demonstrate the beneﬁt of knowledge
+embedding.
+
+Analysis on Different Kinds of Knowledge. The correla-
+
+tions between categories can be constructed based on differ-
+ent kinds of knowledge, e.g., semantic similarity and cate-
+gory hierarchy in the paper. Here, we further conduct exper-
+iments with these two kinds of knowledge and present their
+results in Table 2. We ﬁnd that introducing both kinds of
+knowledge leads to obvious improvement than the baseline
+SGM and those with non-informative correlations, which
+
+Graph
+
+u-graph
+r-graph
+c-graph
+s-graph
+
+1
+
+53.4
+54.4
+60.1
+
+62.1
+
+Novel
+
+2
+
+67.4
+67.4
+69.4
+
+70.9
+
+5
+
+77.8
+77.8
+78.1
+
+78.4
+
+10
+
+81.5
+81.9
+82.1
+
+82.3
+
+All
+
+2
+
+73.3
+73.3
+74.4
+
+75.2
+
+5
+
+80.3
+80.5
+80.7
+
+80.8
+
+10
+
+82.9
+83.2
+83.3
+
+83.5
+
+1
+
+63.8
+64.5
+67.0
+
+68.3
+
+Table 2: Top5-accuracy in “novel” and “all” metrics of our
+proposed model with semantic correlation knowledge (s-
+graph), with category hierarchy knowledge (c-graph), uni-
+form correlation value (u-graph), and random correlation
+value (r-graph).
+
+Figure 4: Top5-accuracy in “novel” and “all” metrics of
+our model that initializes Wbase with random values (Ours-
+random) and with the parameters pre-trained at the ﬁrst
+training stage (Ours-pretrained).
+
+suggests that our model can adapt to different kinds of
+knowledge. On the other hand, we ﬁnd introducing semantic
+similarity knowledge achieves slightly better performance
+than introducing category hierarchy. One possible reason is
+that semantic similarity provides stronger and more direct
+correlations among different categories.
+
+Analysis on Different Similarity Metrics.
+
+In this work,
+the classiﬁer is viewed as similarity measure between the
+input feature and the classiﬁer weight, and three different
+similarity metrics, including inner product, cosine similar-
+ity and Pearson correlation coefﬁcient, are evaluated. As
+shown in Table 1, with different metrics, we still achieve
+better performance than the previous best result. Besides,
+we notice that inner product leads to slightly better accu-
+racy than other metrics on ImageNet-FS, while cosine sim-
+ilarity and Pearson correlation coefﬁcient perform better in
+much larger scale scenarios, for example, cosine similarity
+achieves higher accuracy than the inner product, with an in-
+crease of 1.0% and 0.7% for 1-shot and 2-shot setting in
+ImageNet-6K.
+
+Analysis on Classiﬁer Weight Initialization. At the sec-
+
+ond stage of the training process, we randomly initialize
+
+k=Kbase+1
+
+both Wbase = {wk }Kbase
+k=1
+
+and Wnovel = {wk }K
+
+to initialize the graph nodes. Actually, it is also intuitive to
+initialize Wbase with the parameters pre-trained at the ﬁrst
+stage and initialize Wnovel randomly. Here, we further com-
+pare these two initialization settings and present the results
+in Figure 4. We ﬁnd that random initialization leads to much
+better results, up to 5.0% accuracy improvement on 1-shot
+learning for the novel categories. The reason for this phe-
+
+Method
+
+ImageNet2012/2010
+
+Novel
+3
+
+1
+
+2
+
+4
+
+5
+
+NN
+SGM(Hariharan and Girshick 2017)
+PPA(Qiao et al. 2018b)
+LSD(Douze et al. 2018)
+KTCH(Li et al. 2019)
+Ours
+
+34.2
+31.6
+33.0
+33.2
+39.0
+
+42.5
+
+43.6
+42.5
+43.1
+44.7
+48.9
+
+50.3
+
+48.7
+49.0
+48.5
+50.2
+54.9
+
+55.4
+
+52.3
+53.5
+52.5
+53.4
+
+58.7
+
+58.4
+
+54.0
+56.8
+55.4
+57.6
+60.5
+
+60.7
+
+Table 3: Top5-accuracy on ImageNet2012/2010 dataset.
+
+nomenon is updating Wbase from scratch enables training
+the graph propagation mechanism using sufﬁcient samples
+of the base categories and can be easily generalized to up-
+date the weights of the novel categories.
+
+Further evaluation
+
+Comparison on the large scale few-shot benchmark Ima-
+
+geNet2012/2010. Here we also evaluate our method on an-
+other large scale few-shot benchmark ImageNet2012/2010,
+proposed by (Li et al. 2019). Brieﬂy, in ImageNet2012/2010,
+all 1,000 categories from ILSVRC2012 are considered
+as the base categories, and 360 novel categories from
+ILSVRC2010, which are not overlapped with the base cate-
+gories, are used as the novel categories. The base categories
+cover 200,000 labeled samples and the novel categories have
+150 test samples. Same with (Li et al. 2019), We set k as 1,
+2, 3, 4, 5. Since we are not able to use the same training
+samples as (Li et al. 2019) did, we randomly select training
+samples for 5 times as we did on ImageNet-FS dataset and
+report the mean accuracy as the ﬁnal result.
+We compare with several methods on this benchmark in-
+cluding NN (nearest neighbor) (Li et al. 2019), SGM (Har-
+iharan and Girshick 2017), PPA (parameter prediction from
+activations) (Qiao et al. 2018a), LSD (large-scale diffusion)
+(Douze et al. 2018), and KTCH (Li et al. 2019). The com-
+parative results are shown in Table 3. It can be seen that our
+method achieves superior performance in most settings and
+exceeds over the best reported results by 3.5%, 1.4%, 0.5%
+in 1, 2, 3 shot. Notably, KTCH also incorporates semantic
+word embedding as prior knowledge. Both KTCH and our
+method achieve signiﬁcant improvements over other com-
+peting methods. Moreover, our method obtains superior re-
+sults than KTCH, demonstrating its effectiveness.
+
+Conclusion
+
+In this work, we explore incorporating prior knowledge of
+category correlations to guide exploiting knowledge from
+base categories to help learn the classiﬁer weights of novel
+categories. To this end, we formulate a novel Knowledge
+Graph Transfer Network model, which correlates classiﬁer
+weights with a graph constructed based on their correlations
+and introduce a graph neural network to iteratively propa-
+gate and update classiﬁer weights. Extensive experiments
+on the widely used ImageNet-FS and newly constructed
+ImageNet-6K dataset demonstrate the effectiveness of our
+proposed model over state-of-the-art methods.
+
+12510Examples per novel class (k)6065707580Top-5 accuracy (%)NovelOurs-pretrainedOurs-random12510Examples per novel class (k)67.570.072.575.077.580.082.5Top-5 accuracy (%)AllOurs-pretrainedOurs-randomReferences
+
+[Chen et al. 2018a] Chen, T.; Chen, R.; Nie, L.; Luo, X.; Liu, X.;
+and Lin, L. 2018a. Neural task planning with and–or graph repre-
+sentations. IEEE Transactions on Multimedia 21(4):1022–1034.
+[Chen et al. 2018b] Chen, T.; Lin, L.; Chen, R.; Wu, Y.; and Luo,
+X. 2018b. Knowledge-embedded representation learning for ﬁne-
+grained image recognition. arXiv preprint arXiv:1807.00505.
+[Chen et al. 2018c] Chen, T.; Wu, W.; Gao, Y.; Dong, L.; Luo, X.;
+and Lin, L.
+2018c. Fine-grained representation learning and
+recognition by exploiting hierarchical semantic embedding. arXiv
+preprint arXiv:1808.04505.
+[Chen et al. 2019a] Chen, T.; Xu, M.; Hui, X.; Wu, H.; and Lin, L.
+2019a. Learning semantic-speciﬁc graph representation for multi-
+label image recognition. In Proceedings of the IEEE International
+Conference on Computer Vision, 522–531.
+[Chen et al. 2019b] Chen, T.; Yu, W.; Chen, R.; and Lin, L. 2019b.
+Knowledge-embedded routing network for scene graph generation.
+In Proceedings of the IEEE Conference on Computer Vision and
+Pattern Recognition, 6163–6171.
+[Chen et al. 2019c] Chen, Z.; Fu, Y.; Wang, Y.-X.; Ma, L.; Liu, W.;
+and Hebert, M. 2019c. Image deformation meta-networks for one-
+shot learning. In Proceedings of the IEEE Conference on Computer
+Vision and Pattern Recognition, 8680–8689.
+[Douze et al. 2018] Douze, M.; Szlam, A.; Hariharan, B.; and
+J ´egou, H. 2018. Low-shot learning with large-scale diffusion.
+In Proceedings of the IEEE Conference on Computer Vision and
+Pattern Recognition, 3349–3358.
+[Finn, Abbeel, and Levine 2017] Finn, C.; Abbeel, P.; and Levine,
+S. 2017. Model-agnostic meta-learning for fast adaptation of deep
+networks. In Proceedings of the 34th International Conference on
+Machine Learning-Volume 70, 1126–1135. JMLR. org.
+[Garcia and Bruna 2017] Garcia, V., and Bruna, J. 2017. Few-
+shot
+learning with graph neural networks.
+arXiv preprint
+arXiv:1711.04043.
+[Gidaris and Komodakis 2018] Gidaris, S., and Komodakis, N.
+2018. Dynamic few-shot visual learning without forgetting.
+In
+Proceedings of the IEEE Conference on Computer Vision and Pat-
+tern Recognition, 4367–4375.
+[Hariharan and Girshick 2017] Hariharan, B., and Girshick, R.
+2017. Low-shot visual recognition by shrinking and hallucinat-
+ing features. In 2017 IEEE International Conference on Computer
+Vision (ICCV), 3037–3046. IEEE.
+[He et al. 2016] He, K.; Zhang, X.; Ren, S.; and Sun, J. 2016. Deep
+residual learning for image recognition. In Proceedings of the IEEE
+conference on computer vision and pattern recognition, 770–778.
+[Hui, Chen, and Chen 2019] Hui, X.; Chen, R.; and Chen, T. 2019.
+Graph attention propagation for few-shot learning. In Proceedings
+of the ACM Turing Celebration Conference-China, 103. ACM.
+[Jiang et al. 2018] Jiang, C.; Xu, H.; Liang, X.; and Lin, L. 2018.
+Hybrid knowledge routed modules for large-scale object detection.
+In Advances in Neural Information Processing Systems, 1552–
+1563.
+[Kim et al. 2019] Kim, J.; Oh, T.-H.; Lee, S.; Pan, F.; and Kweon,
+I. S. 2019. Variational prototyping-encoder: One-shot learning
+with prototypical images. In Proceedings of the IEEE Conference
+on Computer Vision and Pattern Recognition, 9462–9470.
+[Kipf and Welling 2016] Kipf, T. N., and Welling, M. 2016. Semi-
+supervised classiﬁcation with graph convolutional networks. arXiv
+preprint arXiv:1609.02907.
+
+[Krizhevsky, Sutskever, and Hinton 2012] Krizhevsky,
+A.;
+Sutskever, I.; and Hinton, G. E.
+2012.
+Imagenet classiﬁca-
+tion with deep convolutional neural networks.
+In Advances in
+neural information processing systems, 1097–1105.
+[Lee et al. 2018] Lee, C.-W.; Fang, W.; Yeh, C.-K.;
+and
+Frank Wang, Y.-C.
+2018. Multi-label zero-shot
+learning
+with structured knowledge graphs.
+In Proceedings of
+the
+IEEE Conference on Computer Vision and Pattern Recognition,
+1576–1585.
+[Li et al. 2017] Li, Z.; Zhou, F.; Chen, F.; and Li, H. 2017. Meta-
+sgd: Learning to learn quickly for few-shot learning. arXiv preprint
+arXiv:1707.09835.
+[Li et al. 2019] Li, A.; Luo, T.; Lu, Z.; Xiang, T.; and Wang, L.
+2019. Large-scale few-shot learning: Knowledge transfer with
+class hierarchy. In Proceedings of the IEEE Conference on Com-
+puter Vision and Pattern Recognition, 7212–7220.
+[Marino, Salakhutdinov, and Gupta 2017] Marino, K.; Salakhutdi-
+nov, R.; and Gupta, A. 2017. The more you know: Using knowl-
+edge graphs for image classiﬁcation. In Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition, 2673–
+2681.
+[Miller 1995] Miller, G. A. 1995. Wordnet: a lexical database for
+english. Communications of the ACM 38(11):39–41.
+[Pennington, Socher, and Manning 2014] Pennington, J.; Socher,
+R.; and Manning, C. 2014. Glove: Global vectors for word rep-
+resentation. In Proceedings of the 2014 conference on empirical
+methods in natural language processing (EMNLP), 1532–1543.
+[Qi, Brown, and Lowe 2018] Qi, H.; Brown, M.; and Lowe, D. G.
+2018. Low-shot learning with imprinted weights. In Proceedings of
+the IEEE Conference on Computer Vision and Pattern Recognition,
+5822–5830.
+[Qiao et al. 2018a] Qiao, S.; Liu, C.; Shen, W.; and Yuille, A.
+2018a. Few-shot image recognition by predicting parameters from
+activations. In IEEE Conference on Computer Vision and Pattern
+Recognition.
+[Qiao et al. 2018b] Qiao, S.; Liu, C.; Shen, W.; and Yuille, A. L.
+2018b. Few-shot image recognition by predicting parameters from
+activations. In Proceedings of the IEEE Conference on Computer
+Vision and Pattern Recognition, 7229–7238.
+[Snell, Swersky, and Zemel 2017] Snell,
+J.; Swersky, K.; and
+Zemel, R. 2017. Prototypical networks for few-shot learning. In
+Advances in Neural Information Processing Systems, 4077–4087.
+[Sung et al. 2018] Sung, F.; Yang, Y.; Zhang, L.; Xiang, T.; Torr,
+P. H.; and Hospedales, T. M. 2018. Learning to compare: Relation
+network for few-shot learning. In Proceedings of the IEEE Confer-
+ence on Computer Vision and Pattern Recognition, 1199–1208.
+[Vinyals et al. 2016] Vinyals, O.; Blundell, C.; Lillicrap, T.; Wier-
+stra, D.; et al. 2016. Matching networks for one shot learning. In
+Advances in Neural Information Processing Systems, 3630–3638.
+[Wang et al. 2018a] Wang, Y.-X.; Girshick, R.; Hebert, M.; and
+Hariharan, B. 2018a. Low-shot learning from imaginary data. In
+IEEE Conference on Computer Vision and Pattern Recognition.
+[Wang et al. 2018b] Wang, Z.; Chen, T.; Ren, J.; Yu, W.; Cheng, H.;
+and Lin, L. 2018b. Deep reasoning with knowledge graph for social
+relationship understanding. arXiv preprint arXiv:1807.00504.
+[Wang, Ye, and Gupta 2018] Wang, X.; Ye, Y.; and Gupta, A. 2018.
+Zero-shot recognition via semantic embeddings and knowledge
+graphs. In Proceedings of the IEEE Conference on Computer Vi-
+sion and Pattern Recognition, 6857–6866.
+
+[Yang et al. 2019] Yang, W.; Wang, X.; Farhadi, A.; Gupta, A.; and
+Mottaghi, R. 2019. Visual semantic navigation using scene priors.
+In International Conference on Machine Learning.
+[Zhu, Mumford, and others 2007] Zhu, S.-C.; Mumford, D.; et al.
+2007. A stochastic grammar of images. Foundations and Trends R(cid:13)
+in Computer Graphics and Vision 2(4):259–362.
+
+

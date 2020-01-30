@@ -1,0 +1,1164 @@
+Customized Graph Embedding: Tailoring the Embedding
+Vector to a Speciﬁc Application
+
+Bitan Hou1, Yujing Wang22,5 , Ming Zeng3
+Shan Jiang4, Ole J. Mengshoel3 , Yunhai Tong2 , Jing Bai5
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+4
+5
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract. The graph is a natural representation of data in a vari-
+ety of real-world applications, for example as a knowledge graph, a
+social network, or a biological network. To better leverage the infor-
+mation behind the data, the method of graph embedding is recently
+proposed and extensively studied. The traditional graph embedding
+method, while it provides an effective way to understand what is be-
+hind the graph data, is unfortunately sub-optimal in many cases. This
+is because its learning procedure is disconnected from the target ap-
+plication. In this paper, we propose a novel approach, Customized
+Graph Embedding (CGE), to tackle this problem. The CGE algo-
+rithm learns a customized vector representation of the graph by dif-
+ferentiating the varying importance of distinct graph paths. Experi-
+ments are carried out on a diverse set of node classiﬁcation datasets
+and strong performance is demonstrated.
+
+1
+
+Introduction
+
+Graphs are a natural representation to use in a broad range of real-
+world applications [10, 9], for example in the context of graph em-
+bedding. Graph embedding methods produce dense vector represen-
+tations of graphs and thus provide information about what is behind
+the data. Such dense vector representations consequently can beneﬁt
+a variety of downstream applications such as node classiﬁcation. Ex-
+isting graph embedding methods can be categorized into three cate-
+gories, namely factorization-based [10], random walk-based [20] and
+deep learning-based [14]. Random walk-based approaches are popu-
+lar in many real-world problems, because they are efﬁcient and scal-
+able to large graphs. While efﬁcient and effective, the existing ran-
+dom walk methods are often sub-optimal because the path generation
+procedures are disjoint from the target applications. As a result, these
+methods do not generate embedding vectors that are customized to
+the application at hand.
+We study in this paper whether the information requirements, as
+far as the graph is concerned, vary from application to application.
+A medical Q&A-application provides an example. Suppose that we
+want to enhance the performance of medical Q&A by exploiting
+a Wikipedia knowledge graph. Wikipedia is a general knowledge
+graph which contains knowledge from many domains. Knowledge
+from non-medical domains may be irrelevant or even distracting
+
+1 Shanghai Jiao Tong University, houbitan@sjtu.edu.cn. The work was par-
+tially done when Bitan visited MSRA. The ﬁrst three authors contributed
+equally to this paper.
+2 Key Laboratory of Machine Perception, MOE, School of EECS, Peking
+University, {yujwang, yhtong}@pku.edu.cn
+3 Carnegie Mellon University,{ming.zeng, ole.mengshoel}@sv.cmu.edu
+4 University of Illinois at Urbana-Champaign, sjiang18@illinois.edu
+5 Microsoft Research Asia, {yujwang, jbai@microsoft.com}
+
+for a medical application. It thus makes sense, intuitively, that such
+non-medical knowledge should be de-emphasized in the embedding
+learning procedure to obtain more customized embedding. However,
+it is a non-trivial problem to select the most relevant knowledge auto-
+matically from a large graph to provide stronger support to a speciﬁc
+application.
+In this paper, we propose Customized Graph Embedding (CGE)
+to address this problem. With CGE, the path generation procedure
+is tailored to a speciﬁc application. CGE ﬁrst samples a set of paths
+randomly from the graph, and then re-weights them through a neu-
+ral network model before the embedding calculation. CGE’s embed-
+ding procedure with path re-weighting is formalized as a bi-level
+optimization problem [21], which consists of two loops. In the in-
+ner loop, we train the embedding vectors and supervised model pa-
+rameters based on a ﬁxed re-weighting model. In the outer loop, the
+goal is to optimize the re-weighting model to minimize the semi-
+supervised loss. We study two neural network architectures for the re-
+weighting model, i.e., Convolutional Neural Network [15] and Long
+Short-Term Memory [11]. We also implement a simple re-weighting
+strategy based on average pooling for comparison. Following Yang et
+al. [26], we develop both transductive and inductive variants of CGE.
+The transductive model only learns the embedding for instances ob-
+served at the training time, while the inductive model is able to gen-
+eralize to unobserved instances in the training phase.
+We carry out experiments on four open datasets for node classiﬁ-
+cation: CITESEER, CORA, PUBMED and NELL. The experimental
+results demonstrate the effectiveness and robustness of CGE. On the
+four datasets, CGE outperforms or performs on par with state-of-the-
+art methods and establishes the best-ever performance scores when
+combined with the Graph Convoluational Network (GCN) [14]. The
+source code is publicly available.6 To summarize, the contributions
+of this paper are as follows:
+• CGE is, to our best knowledge, the ﬁrst attempt to customize
+graph embedding by tailoring the information in the graph to the
+application at hand.
+• CGE achieves state-of-the-art performances on four node classi-
+ﬁcation datasets (CITESEER, CORA, PUBMED and NELL) that
+are widely used for the empirical evaluation of graph embedding
+methods.
+• We provide deep insights into CGE, to explain the beneﬁts of
+the path re-weighting. We observe that the method can automati-
+cally retrieve task-oriented paths from the graph, and the weight-
+ing scores are affected by the lengths and node diversities of the
+paths, which agrees well with human common-sense.
+
+6 The code will be open-sourced once the paper is accepted.
+
+ 
+ 
+ 
+ 
+ 
+ 
+In the rest of this paper, we ﬁrst cover related work in Section 2.
+We then discuss our novel Customized Graph Embedding (CGE)
+method in Section 3. Experimental protocols and results for CGE
+are presented in Section 4, while Section 5 concludes and mentions
+future research opportunities.
+
+2 Related Work
+
+Graph embedding beneﬁts a wide variety of graph analytic applica-
+tions. The advantage of graph embedding is that “translates” all kinds
+of information from graphs into dense vectors. These dense vectors
+can then be used by downstream applications as advanced feature
+representation. For example, Zhang et al. [27] propose a deep fea-
+ture learning paradigm by mining visual-semantic embeddings from
+noisy, sparse, and diverse social image collections. They demon-
+strated superior performance of graph embedding in various applica-
+tions such as content-based retrieval, classiﬁcation, and image cap-
+tioning.
+The input types for graph embedding include homogeneous graph,
+heterogeneous graph, graph with auxiliary information, and graph
+constructed from non-relational data [3]. The homogeneous graph,
+such as a Webpage link graph [24], is a primary setting of graph rep-
+resentation. Here, every node and edge in the graph is of the same
+type. The heterogeneous graph is another standard setting where
+nodes and edges are of different types. For example, a knowledge
+graph constructed from Wikipedia consists of three types of nodes
+(entity e, category c, and word w) and three types of edges (e-e, e-c,
+and w-w) [28]. One can also build graphs with auxiliary information
+(e.g., attributes, labels, and text descriptions) on nodes to improve the
+embedding quality [6]. Besides, the graph can be constructed from
+non-relational data in order to beneﬁt from graph embedding tech-
+niques. For instance, Yan et al. [25] construct an intrinsic graph to
+capture intra-class compactness, and a penalty graph to characterize
+inter-class separation. Moreover, there are four major types of graph
+embedding outputs: node embedding, edge embedding, hybrid em-
+bedding, and whole-graph embedding [3]. This paper mainly focuses
+on node embedding, but the idea of customized graph embedding is
+not restricted to it and may beneﬁt other types of graph embedding
+outputs.
+The techniques of graph embedding can be categorized into
+three broad groups, i.e., factorization-based, random walk-based,
+and deep learning-based approaches [10]. Factorization-based al-
+gorithms represent the connection between nodes in the form of a
+matrix (including an adjacency matrix [1], a Laplacian matrix [2],
+or a node transition probability matrix [4]) and calculate the em-
+bedding vectors by factorizing the corresponding matrix. The limi-
+tation of factorization-based methods is that they are prohibitive on
+large graphs since the proximity matrix construction or the eigen-
+decomposition of the matrix is time and space consuming [8]. Ran-
+dom walk-based methods [20, 17] are more efﬁcient and scalable for
+large graphs and have been extensively studied. Speciﬁcally, Deep-
+Walk [20] samples a set of paths by random walks on the graph and
+leverages SkipGram-based Word2Vec [18] to calculate node repre-
+sentation vectors. However, DeepWalk ignores the label information
+in embedding learning so that the embedding vectors are not cus-
+tomized for a speciﬁc application task. Node2vec [12] offers a way
+to adapt the sampling strategy to BFS or DFS according to the re-
+quirements of different applications, but it is not expressive enough
+to incorporate all kinds of sampling strategies. Planetoid [26] is a
+semi-supervised graph embedding framework that jointly optimizes
+the node label and graph context. Nevertheless, the path sampling
+
+strategy is not application task-speciﬁc. In addition, deep learning-
+based approaches utilize auto-encoders [23] or convolutional neural
+networks [19] on the whole graph directly without a random walk.
+For example, the Graph Convolutional Network (GCN) [14] is a
+state-of-the-art semi-supervised graph embedding approach that has
+obtained a superior result on node classiﬁcation. It aggregates feature
+information from local neighborhoods in a graph iteratively using a
+convolutional neural network.
+
+3 Customized Graph Embedding
+
+The overall pipeline of Customized Graph Embedding (CGE) is il-
+lustrated in Figure 1. The inputs to the pipeline include a large graph
+(with nodes and edges) and a target task with labeled instances (cor-
+responding to graph nodes), and the outputs are embedding vectors
+(in the transductive setting) or embedding models (in the inductive
+setting) for each node. Similar to traditional random walk-based ap-
+proaches, we sample a collection of sub-paths from the input graph,
+where the start and end nodes in each sub-path formulates a node
+pair. The most salient procedure proposed in CGE is to re-weight
+each pair by a neural network model, for instance, LSTM, to reﬂect
+its importance for a speciﬁc task. Based on the labeled instances, we
+generate additional node pairs where two nodes within a pair share
+the same label. As these pairs are well-aligned with the target task,
+we set the weighting score as 1 and do not apply re-weighting to
+them during training. The loss function is semi-supervised, where
+the unsupervised pair can be constructed by the weighted pairs, and
+the supervised part can be formulated as cross-entropy on labeled
+instances. Finally, the optimization procedure is conducted on the
+semi-supervised loss and the embedding vectors or models are gen-
+erated as outputs.
+
+Figure 1. Overall pipeline of CGE. The input is a graph and a downstream
+task with labeled instances. The outputs are node embedding vectors (in the
+transductive setting) or embedding models (in the inductive setting).
+
+3.1 Path Sampling & Pair Generation
+
+The sampled paths are generated by a random walk on the entire
+graph. We take each node as a starting point and sample the next node
+
+GraphPathsRe-weight PairsLSTMLabeled  InstancesEmbeddingPairsUnsupervised LossSupervised LossUpdateAlternately UpdateSame
+LabelRandom
+WalkSkipGramWeightsuniformly from its neighbors. This sampling process is repeated mul-
+tiple times until the path is long enough. We then extract sub-paths
+from each path within a ﬁxed sliding window. For example, if the
+original path is n1n2n3n4n5 , and the sliding window size is 3, all
+the sub-path extracted should be n1 ; n2 ; n3 ; n4 ; n5 ; n1n2 ; n2n3 ;
+n3n4 ; n4n5 ; n1n2n3 ; n2n3n4 ; and n3n4n5 . The starting and end-
+ing node in each sub-path formulates a node pair. To use the labeled
+instances, following [26], we sample a collection of virtual paths that
+consist of nodes with the same label. Then, we get additional pairs
+from these virtual paths because these nodes are highly relevant with
+each other.
+
+3.2 Path Re-weighting
+
+In unsupervised graph embedding methods such as DeepWalk [20],
+paths are usually assumed to be equally weighted in the loss function.
+However, the embedding vectors learned in this way are not always
+optimal for an arbitrary application. Take the Wikipedia knowledge
+graph as an example. Each path in the graph reﬂects a piece of knowl-
+edge in a particular domain, and a random path may be noisy or irrel-
+evant to the target application. Thus, we re-weight the graph paths to
+indicate their importance scores so that the essential knowledge for a
+speciﬁc task can be emphasized.
+Our re-weighting model is based on neural network architecture.
+We denote the re-weighting model as A, which takes a sequence
+of nodes in the path as input and outputs an importance weight in
+the range of [0, 1]. The framework is quite general, and a variety of
+architectures can be leveraged as the re-weighting model. Here we
+employ two neural network architectures, i.e., Convolutional Neural
+Network (CNN), and Long Short-Term Memory (LSTM). For com-
+parison, we also implement a baseline re-weighting strategy based
+on average pooling. The three re-weighting models are described as
+follows:
+• Average Pooling: It calculates the average embedding vectors of
+all nodes in the path. A feed-forward layer is applied before Sig-
+moid activation.
+
+• CNN:
+
+Two 1-D convolution layers are stacked on the input vector, as
+shown in the equations below. In each convolutional layer, the ﬁl-
+ter size is set to be 3, and the number of ﬁlters is 1. The weight of
+path pk is given by:
+
+h1
+k = Conv1D(pk , w1 )
+h2
+k , w2 )
+A(pk ) = sigmoid(h2
+k )
+
+k = Conv1D(h1
+
+3.3 Loss Function
+
+The loss function is semi-supervised and consists of two parts, i.e.,
+the supervised loss Ls , and unsupervised loss Lu .
+The supervised loss optimizes the prediction of the target variables
+explicitly, while the unsupervised loss is used as regularization. The
+semi-supervised loss is formulated as:
+
+L(A, e, θ) = Ls + λLu ,
+
+(3)
+
+where λ is a hyper-parameter that controls the trade-off between the
+Ls and Lu and θ denotes the set of trainable parameters in the super-
+vised model. e is the ﬁnal output embedding vector for the node.
+
+3.3.1 Unsupervised Loss
+
+Given an input graph, our goal is to learn the embedding representa-
+tion of each node in the graph tailored to the particular task. Learn-
+ing the embedding vectors of nodes in the graph formalizes a unsu-
+pervised graph embedding problem which can be solved by Deep-
+Walk [20], where the loss function is similar to Skip-Gram [18]. We
+generalize the loss function of previous work by enabling importance
+weighting on each path, in our revised loss function:
+
+Lu =
+
+A(pk )loss(wi , ej )
+
+(4)
+
+k
+
+where pk represents a sub-path sampled randomly from the graph;
+A(pk ) calculates the importance weight of the sub-path; i and j de-
+note the start node and end node of pk respectively; wi represents
+the input embedding vector of node i; ej is the output vector of node
+j ; and loss(wi , ej ) is the loss of predicting node j by node i. The
+loss function is:
+
+loss(wi , ej ) = − log p(ej |wi )
+= − log
+exp(e
+j wi )
+k=1 exp(e
+kwi )
+
+(cid:80)K
+
+(cid:124)
+
+(cid:124)
+
+(5)
+
+where K is the number of all distinct nodes. In practice, if the graph
+size is too large, we can apply negative sampling [18] to accelerate
+to training process.
+
+3.3.2
+
+Supervised Loss
+
+Based on the embedding vectors ei , supervised loss of node classiﬁ-
+cation can be written as below:
+
+(cid:88)
+
+(cid:88)
+
+(1)
+
+Ls =
+
+l(yi , f (xi , ei , θ)),
+
+(6)
+
+where w1 and w2 are the parameters in the ﬁrst and second lay-
+ers respectively. h1
+k is a vector, whose dimension equals to the
+embedding size, and h2
+k is a scalar.
+• LSTM: LSTM is a natural choice for modeling sequential in-
+put [13]. In our implementation, the hidden state of LSTM is
+passed to a feed-forward layer and then to a sigmoid output layer.
+The weight of path pk is calculated by:
+
+hk = LSTM(pk , w)
+
+vk = (wlinear )T hk
+
+A(pk ) = sigmoid(vk )
+
+(2)
+
+where w and hk are the parameters and hidden states of LSTM
+model respectively;
+wlinear is the vector of parameters for the feed-forward layer.
+
+i
+
+where xi and ei represent the feature vector and embedding vector
+of node i respectively; f denotes the supervised model, and θ is the
+parameters of the model. The ground truth label for node i is yi , and
+l(·, ·) denotes the loss function (cross-entropy, mean squared, etc.).
+In our experiments, we utilize cross-entropy loss in node classiﬁca-
+tion tasks.
+We implement two ﬂavors of the supervised loss, namely trans-
+ductive and inductive [26]. In the transductive setting, the embedding
+vector ei is trained on the training data and retrieved directly when
+the same node appears in the test phase. The drawback is that the
+model cannot be generalized to unseen nodes in the training phase.
+To alleviate this problem, we also implement the inductive setting,
+where a model is learned to project any feature vector xi to the cor-
+responding embedding vector e(xi ).
+
+• Transductive Setting: the embedding vectors ei serves as ad-
+ditional features to xi and can be learnt jointly in the semi-
+supervised model. The transductive semi-supervised loss is:
+
+(cid:88)
+
+(cid:88)
+
+Ls =
+
+l(yi , f (xi , ei , θ)),
+
+i
+
+f (xi , ei , θ) = softmax(hk (xi ), hl (ei ))
+
+(7)
+
+(8)
+
+where hk and hl are single feed-forward layers, taking the feature
+vectors and embedding vectors as input respectively; θ represents
+the learnable parameters of layer hk and hl . The results of the
+feed-forward layers are concatenated before calculating the pre-
+diction result by softmax in (8).
+• Inductive Setting: the embedding vector ei is calculated as a
+function of the input feature vector xi , thus can be generalized to
+unseen instances. The semi-supervised loss in the inductive ﬂavor
+is shown below:
+
+Ls =
+
+l(yi , f (xi , e(xi ), θ)),
+
+i
+
+f (xi , e(xi ), θ) = softmax(h(xi , e(xi ))
+
+(9)
+
+(10)
+
+where h is a single feed-forward layer, taking the concatenation of
+features vector xi and embedding vector e(xi ) as input; θ stands
+for the learnable parameters in layer h. In our experiments, the em-
+bedding function e(xi ) is implemented as a single feed-forward
+layer.
+
+3.4 Optimization
+
+The goal of customized graph embedding is to automatically ﬁnd the
+optimal function A∗ that minimizes the validation loss L(A∗ , e∗ , θ∗ )
+where the embedding vector e∗ and model parameter θ∗ are learned
+jointly to ﬁt the training data. It can be naturally formulated as a bi-
+level optimization problem:
+
+min
+
+A
+
+s.t.
+
+Lval (A, e
+
+∗
+
+∗
+
+)
+
+, θ
+
+∗
+
+e
+
+, θ
+
+∗
+
+= argmin
+
+Ltrain (wA , e, θ)
+
+(11)
+
+e,θ
+
+In this problem, A is constrained to be the solution of a given
+optimization problem parameterized by e and θ . Let α = (e, θ) and
+wA denotes the parameters in the weighting model A, (11) can be
+rewritten as:
+
+min
+
+wA
+
+s.t.
+
+Lval (wA , α
+
+∗
+
+)
+
+∗
+
+α
+
+= argmin
+
+Ltrain (wA , α)
+
+α
+
+(12)
+
+Solving the bi-level optimization problem in (12) exactly is pro-
+hibitive, because of the nested structure: the optimal value of α∗
+needs to be recomputed whenever wA has any change. We thus intro-
+duce an approximate iterative optimization procedure similar to [16],
+where α and wA are updated alternately. First, we update α = (e, θ)
+for a single step towards minimizing the training loss Ltrain (wA , α).
+Then, keeping the embedding vector e and supervised model pa-
+rameter θ ﬁxed, we update the parameter wA (which controls the
+weighting strategy of sampled paths) towards minimizing the valida-
+tion loss:
+
+where ξ is the learning rate of a virtual gradient step. The idea behind
+virtual gradient step is to ﬁnd a weighting strategy wA which has low
+validation loss when the supervised parameter α∗ (wA ) is optimized.
+Here the one-step unroll weights serve as a surrogate for the optimal
+value α∗ (wA ).
+The optimization procedure updates the following two gradients
+in equation (14) and (15) alternately:
+
+∇αLtrain (wA , α) = ∇αLs,train (wA , α) + ∇αLu (wA , α)
+
+(14)
+
+∇wA Lval (wA , α − ξ∇αLtrain (wA , α))
+= ∇wA Lu (wA , α − ξ∇αLtrain (wA , α))
+
+(15)
+
+Here Ls,train represents the supervised loss on the training nodes, Lu
+is the unsupervised loss on the sampled paths, which do not differ-
+entiate for Ltrain and Lval . Note that the supervised loss does not have
+derivation to wA , so the ﬁrst item Ls,val in (15) can be ignored.
+Take the transductive setting as an example. The overall procedure
+of CGE is summarized in Algorithm 1. The inputs include labeled
+data and unlabeled data, while the outputs are node embedding vec-
+tors.
+
+Algorithm 1: Transductive algorithm of CGE
+: graph G, labeled data x1:nL , y1:nL , unlabeled data
+
+Input
+
+xnL :nL+nU ;
+
+parameters of weighting model wA ;
+parameters of supervised model α = (e, θ);
+hyper-parameter λ, ξ
+Output: embedding vector e; model parameters wA , θ
+1 Initialize embedding vector and model parameters
+2 Sampling a collection of paths randomly.
+3 while not converged do
+Update α by descending
+
+4
+
+5
+
+∇αLs,train (wA , α) + ∇αLu (wA , α)
+∇wA Lu (wA , α − ξ∇αLtrain (wA , α)
+
+Update wA by descending
+
+4 Experiments
+4.1 Datasets
+
+Six datasets generated from four corpora are used for evaluation (Ta-
+ble 1). All datasets reﬂect graph structures in different learning tasks.
+
+Corpus
+
+#Classes
+
+#Nodes
+
+#Edges
+
+#Labeled
+
+#Test&Valid
+
+CITESEER
+CORA
+PUBMED
+NELL01
+NELL001
+NELL0001
+
+6
+7
+3
+210
+210
+210
+
+3,327
+2,708
+19,717
+65,755
+65,755
+65,755
+
+4,732
+5,429
+44,338
+266,14
+266,14
+266,14
+
+120
+140
+60
+1,054
+161
+105
+
+1,000
+1,000
+1,000
+848
+987
+969
+
+Table 1. Six datasets used in our experiments: CITESEER, CORA,
+PUBMED, and three variants of NELL.
+
+In the text classiﬁcation experiments (CITECEER, CORA, and
+PUBMED7 ), 20 instances in each class are leveraged for training
+while 1000 instances are used for validation and test. The NELL
+(Never-Ending Language Learning) corpus is built on the NELL
+
+Lval (wA , α − ξ∇αLtrain (wA , α))
+
+(13)
+
+7 Datasets are available from https://linqs.soe.ucsc.edu/data
+
+Method
+Unsupervised DeepWalk
+
+Transductive
+
+Inductive
+
+CITESEER CORA PUBMED NELL01 NELL001 NELL0001
+
+0.610
+0.619
+0.610
+0.622
+
+0.635∗
+
+0.629
+0.679
+0.667
+0.674
+
+0.691
+
+0.667
+0.692
+0.718
+0.745
+
+0.761∗
+
+0.740
+0.674
+0.672
+0.684
+
+0.692∗
+
+0.749
+0.74
+0.737
+0.691
+0.682
+
+0.754∗
+0.804
+
+0.792
+0.779
+0.800
+
+0.619
+0.642
+0.724
+0.629
+0.623
+
+0.726
+
+0.631
+0.614
+0.609
+
+0.664∗
+
+0.426
+0.458
+0.488
+0.417
+0.416
+
+0.514∗
+
+0.433
+0.416
+0.414
+
+0.475∗
+
+0.205
+0.206
+0.266
+0.208
+0.204
+
+0.356∗∗
+
+0.200
+0.191
+0.180
+
+0.295∗
+
+node2vec
+PLANETOID-T
+CGE-AVERAGE
+CGE-CNN
+CGE-LSTM
+PLANETOID-I
+CGE-AVERAGE
+CGE-CNN
+CGE-LSTM
+
+Table 2. Accuracy of the unsupervised baselines (DeepWalk and node2vec), a state-of-the-art semi-supervised method (PLATOID-T/I), and the Customized
+Graph Embedding (CGE) models (CGE-Average, CGE-CNN, CGE-LSTM). PLANETOID-T and PLANETOID-I denote transductive and inductive semi-
+supervised graph embedding respectively. Signiﬁcance tests show that our CGE-based results are, except for PUBMED, signiﬁcantly better than the results of
+PLANETOID-T and PLANETOID-I respectively, with p < 0.05 (marked by one star ∗ ) and p < 0.01 (marked by two stars ∗∗ ).
+
+knowledge base [5] and a hierarchical entity classiﬁcation dataset
+[7]. The entities and relations in the graph are extracted from the
+NELL knowledge base [26]. The goal is to classify the entities in
+the knowledge base into one of the 210 classes given the features
+of graph nodes. Following Yang et al. [26], we use three datasets
+(NELL01, NELL001, NELL0001) generated from the NELL corpus,
+with different labeled data ratios.8
+Dataset statistics are shown in Table 1. The original datasets do
+not distinguish between validation and test, so we randomly select
+50% for test and 50% for validation. The same data split is used for
+the different algorithms.
+
+4.2 Experimental Settings
+
+For all datasets, we follow the original data split [26] and adopt
+accuracy as the evaluation metric for node classiﬁcation. We com-
+pare CGE with a state-of-the-art semi-supervised graph embed-
+ding method, Planetoid [26], in the transductive and inductive set-
+tings, respectively.9 We also adopt two commonly-used unsuper-
+vised approaches, DeepWalk [20] and node2vec [12], as baseline
+methods. Three variants of CGE are evaluated in the experiments,
+namely CGE-Average (reweighting with average pooling), CGE-
+CNN (reweighting with CNN), and CGE-LSTM (reweighting with
+LSTM). In our experiments, the embedding sizes of the CITESEER,
+CORA, PUBMED, and NELL datasets are set to 50, 135, 128, and
+256 respectively. In the path sampling procedure, the max path length
+is set to 10. Sliding window size is 3 by default, but we change it to
+10 when analyzing the correlation between path weights and path
+lengths. SGD is used for bi-level optimization.
+
+4.3 Results
+
+4.3.1
+
+comparison to baselines
+
+The experimental results are shown in Table 2. On all the six
+datasets, the transductive CGE methods outperform or perform on
+par with previous state-of-the-art methods. In particular, comparing
+to PLANETOID-T, CGE-CNN achieves 2.5% and 4.3% improve-
+ments in accuracy on the CITESEER and CORA datasets; CGE-
+LSTM achieves 1.7% improvement on PUBMED, and 0.2%, 2.6%,
+
+8 The datasets can be found at http://www.cs.cmu.edu/˜zhiliny/
+data/nell_data.tar.gz
+
+9 We search for the best hyper-parameters of both algorithms on the validation
+set.
+
+and 9% enhancements on the NELL01, NELL001, and NELL0001
+datasets respectively. In the inductive setting, CGE-LSTM achieves
+on par performance with PLANETOID-I on PUBMED and outper-
+forms the best state-of-the-art results by a large margin on the other
+ﬁve datasets. The results suggest that CGE methods effectively learn
+better embedding representations that signiﬁcantly improve node
+classiﬁcation accuracy. In addition, the LSTM model turns out to be
+the best re-weighting strategy for CGE.
+
+4.3.2 Combination with GCN
+
+CITESEER
+
+GCN Baseline
+GCN + CGE
+
+0.720
+
+0.747∗
+
+CORA
+
+0.813
+
+0.827∗
+
+PUBMED
+
+0.792
+
+0.846∗
+
+Table 3. Accuracy of GCN baseline and CGN + CGE. Signiﬁcance tests
+show that GCN+CGE results are signiﬁcantly better than the results of GCN
+baseline with p < 0.05 (marked by a star ∗ ).
+
+The Graph Convolutional Network (GCN) is a relatively recent
+state-of-the-art method for semi-supervised node classiﬁcation for
+graphs [14]. GCN encodes the graph structure using a neural network
+and trains the supervised target on all labeled nodes. As this method
+does not calculate node embedding vectors, it is not directly com-
+parable to other graph embedding approaches. Instead, we combine
+GCN and CGE, in a GCN + CGE hybrid, for the purpose of node
+classiﬁcation. Speciﬁcally, the softmax output from CGE is used as
+an additional feature for each node in the GCN model.
+Strong results for our GCN + CGE hybrid relative to the GCN
+baseline are summarized in Table 3. These results suggest that the
+output of CGE provides extra information to the original GCN
+model, achieving new state-of-art performances on the CITECEER,
+CORA, and PUBMED datasets.
+
+4.4 Analysis of Re-weighting
+
+The weighting scores learned in the CGE model are distinctive, a dis-
+tribution of which is illustrated in Figure 2. To better understand how
+path re-weighting beneﬁts the graph embedding results, we further
+analyze the correlation of different graph paths and their weighting
+scores. We adopt the CGE-LSTM-inductive algorithm in these em-
+pirical studies. To summarize, these studies suggest the following ob-
+servations: (1) CGE automatically retrieves very relevant paths from
+
+the graph. (2) The re-weighting scores are highly related to some key
+attributes of the graph paths. Details underlying these two observa-
+tions are provided below in Section 4.4.1 and Section 4.4.2 respec-
+tively.
+
+Figure 2. Weighting score distribution of CGE-LSTM-Transductive
+method on CITESEER dataset
+
+4.4.1 Path Relevance
+
+Figure 3. Comparison of average weighting score of graph paths with (light
+blue) and without (dark blue) target labels in CGE-LSTM.
+
+Class Label
+
+Communications of ACM
+Computer
+IEEE Transactions on Computer
+Discrete Mathematics
+Theoretical Computer Science
+Computational and Applied Mathematics
+
+Number
+
+817
+254
+776
+10
+114
+36
+
+Table 4. Summary of paper citation graph
+
+To examine if our method can select highly (and perhaps even the
+most) relevant paths automatically, we randomly sample half of the
+labels to create a target supervision task. Other labels are masked
+in the training phase so that they can be leveraged only in an un-
+supervised manner. We train the CGE model and compare the aver-
+age weighting scores of the paths. If our hypothesis holds, the most
+relevant paths (with target labels) should be emphasized by larger
+weights than other paths that do not contain the target labels. As
+shown in Figure 3, the results agree well with our intuition that the
+weighting scores of relevant paths are consistently larger than the
+remaining paths, at least in this case.
+Since we do not know the semantic meaning of the labels, we
+need another graph to analyze path relevance and hopefully provide
+
+more profound insights. We build a sub-graph from a paper citation
+network10 [22] extracted from DBLP, ACM, MAG (Microsoft Aca-
+demic Graph), and other sources. The dataset contains 629,814 pa-
+pers and 632,752 citations in total. Each paper is associated with the
+title, authors, abstract, venue, and published year. We exclude the
+nodes with incomplete information and choose the nodes with a high
+number of edges (to make the graph denser than the original dataset).
+Eventually, we obtain a sub-graph with 2,007 nodes and 2,721 edges.
+Each node belongs to one of 6 classes (venues), as summarized in Ta-
+ble 4. In the experiments, we use each class as the target task, respec-
+tively. Taking class Discrete Mathematics as an example, the target
+task is boiled down to a binary classiﬁcation problem: identify if an
+arbitrary node belongs to this class or not. We classify the sampled
+path into different categories and compare the average re-weighting
+score of each category. Speciﬁcally, if a path contains a node that
+belongs to class y , the path is classiﬁed into this category. Note that
+a path may contain nodes with different labels so that the categories
+can overlap. Although the categorization rule is somewhat crude, it
+does not prevent us from obtaining valid insights into the operation
+of the CGE algorithm.
+Figure 6 shows the average weighting score of paths containing
+each category when taking another category as the classiﬁcation tar-
+get. This ﬁgure is similar to the visualization of pairwise attention,
+where a larger weighting score indicates higher relevance between
+the corresponding classes. For example, when the supervision tar-
+get is Discrete Mathematics, the paths related to Discrete Mathemat-
+ics and Computational and Applied Mathematics are emphasized by
+larger weighting scores due to the topic relevance. The results sug-
+gest that the CGE algorithm underlines the more relevant paths au-
+tomatically based on the graph structures, although it does not have
+the exact semantics of each label. Another ﬁnding in Figure 6 is that
+each node has the strongest relevance to itself. Moreover, the average
+weights of categories Communications of ACM, Computer and IEEE
+Transactions on Computer are lower. It is reasonable because the
+three categories contain papers from broader areas and have a larger
+amount of nodes. Therefore, the CGE algorithm puts more empha-
+sizes on the rare paths so that the specialized information can be fully
+captured.
+To demonstrate the beneﬁt of reweighting, Figure 2 shows wegiht
+distribution of CITESEER dataset
+in CGE-LSTM-Transductive,
+which means the learned weights do have considerable variance,
+and our re-weighting scheme indeed beneﬁts the target applica-
+tion. Moreover, our algorithm is a general framework which adapts
+to each dataset automatically. If some paths conform to the la-
+bels more naturally, the algorithm will set large weighting score to
+them, otherwise the weight score should be small. Thus, the vari-
+ance of weighting scores reﬂects how much the algorithm beneﬁts
+from re-weighting. For example, using CGE-LSTM-Transductive al-
+gorithm, CITESEER dataset has lower weight variance 0.0272, and
+PUBMED dataset has higher weight variance 0.0467, which means
+PUBMED dataset beneﬁts more from path reweighting.
+
+4.4.2 Weight Correlation
+
+We also visualize the correlation between weighting scores and two
+major properties of the graph path, i.e., length and diversity. Given
+a path (ni , ni+1 , ..., nj ), the length is j − i + 1 and the diversity
+is the number of distinct nodes in the path. The correlation between
+path weight and path length is visualized in Figure 4. The x-axis
+
+10 The datasets is here: https://www.aminer.cn/citation.
+
+CITESEERCORAPUBMED0.440.450.460.470.480.490.5WeightNot contain target labelsContain target labelsFigure 4. Correlation coefﬁcient r between path weight and node distance for three different datasets from left to right: (a) CITESEER (r = −0.82) (b)
+CORA (r = −0.97) (c) PUBMED (r = −0.62).
+
+Figure 5. Correlation coefﬁcient r between path weight and path diversity for three different datasets from left to right: (a) CITESEER (r = 0.98) (b) CORA
+(r = 0.92) (c) PUBMED (r = 0.84).
+
+trast to previous semi-supervised graph embedding approaches, our
+method is capable of capturing the varying importance of different
+graph paths when learning node embedding vectors. The experimen-
+tal results demonstrate signiﬁcant improvements over state-of-the-art
+methods. Further analysis shows that the CGE algorithm automat-
+ically distinguishes highly relevant paths in the graph. In addition,
+there are strong correlations between the weighting scores and spe-
+ciﬁc properties of graph paths, which agree well with human intu-
+ition. One direction of future work is to extend our customized node
+embedding framework to support the embedding of edges and sub-
+graphs. We also hope to apply this method to other applications, such
+as search relevance and recommendation systems.
+
+Figure 6. Visualization of relevance between different categories.
+
+REFERENCES
+
+denotes the path length, and the y -axis shows the average weighting
+score of the corresponding path. Figure 4 shows that the path weight
+decreases when the length becomes larger. This suggests that FILL
+IN SOME MORE DETAIL HERE.
+Figure 5 shows the impact of node diversity on path weights, visu-
+alizing the results of the CGE-LSTM algorithm on the CITESEER,
+CORA, and PUBMED datasets, respectively. The x-axis indicates
+node diversity, while the y -axis shows the average weight of the cor-
+responding path. We observe that the path weight increases with the
+enlargement of node diversity. The visualization results indicate that
+the path containing more distinct nodes is much informative, so it
+receives a higher path weight.
+
+5 Conclusion and Future Work
+
+In this paper, we introduce a new method for semi-supervised graph
+embedding, namely Customized Graph Embedding (CGE). In con-
+
+[1] Amr Ahmed, Nino Shervashidze, Shravan Narayanamurthy, Vanja Josi-
+fovski, and Alexander J Smola, ‘Distributed large-scale natural graph
+factorization’, in Proceedings of the 22nd international conference on
+World Wide Web, pp. 37–48. ACM, (2013).
+[2] Mikhail Belkin and Partha Niyogi, ‘Laplacian eigenmaps and spectral
+techniques for embedding and clustering’, in Advances in neural infor-
+mation processing systems, pp. 585–591, (2002).
+[3] Hongyun Cai, Vincent W. Zheng, and Kevin Chang, ‘A comprehensive
+survey of graph embedding: problems, techniques and applications’,
+in IEEE Transactions on Knowledge and Data Engineering, IEEE,
+(2018).
+[4] Shaosheng Cao, Wei Lu, and Qiongkai Xu, ‘Grarep: Learning graph
+representations with global structural information’, in Proceedings of
+the 24th ACM international on conference on information and knowl-
+edge management, pp. 891–900. ACM, (2015).
+[5] Andrew Carlson, Justin Betteridge, Bryan Kisiel, Burr Settles, Este-
+vam R Hruschka Jr, and Tom M Mitchell, ‘Toward an architecture for
+never-ending language learning.’, in AAAI, volume 5, p. 3. Atlanta,
+(2010).
+[6] Hanjun Dai, Bo Dai, and Le Song, ‘Discriminative embeddings of la-
+tent variable models for structured data’, in International Conference
+on Machine Learning, pp. 2702–2711, (2016).
+
+12345678910Length0.40.450.50.55Weight12345678910Length0.30.350.40.450.5Weight12345678910Length0.30.40.50.60.7Weight1234567891011Diversity0.350.40.450.50.550.6Weight1234567891011Diversity0.350.40.450.50.550.6Weight1234567891011Diversity0.350.40.450.50.550.6Weight[8]
+
+[7] Bhavana Dalvi, Aditya Mishra, and William W Cohen, ‘Hierarchical
+semi-supervised classiﬁcation with incomplete class hierarchies’, in
+Proceedings of the Ninth ACM International Conference on Web Search
+and Data Mining, pp. 193–202. ACM, (2016).
+James Demmel, Ioana Dumitriu, and Olga Holtz, ‘Fast linear algebra is
+stable’, Numerische Mathematik, 108(1), 59–91, (2007).
+[9] Xiaoyi Fu, Xinqi Ren, Ole J Mengshoel, and Xindong Wu, ‘Stochas-
+tic optimization for market return prediction using ﬁnancial knowl-
+edge graph’, in 2018 IEEE International Conference on Big Knowledge
+(ICBK), pp. 25–32. IEEE, (2018).
+[10] Palash Goyal and Emilio Ferrara, ‘Graph embedding techniques, ap-
+plications, and performance: A survey’, in Knowledge-Based Systems,
+volume 151, 78–94, Elsevier, (2018).
+[11] Alex Graves and J ¨urgen Schmidhuber, ‘Framewise phoneme classiﬁ-
+cation with bidirectional lstm and other neural network architectures’,
+Neural Networks, 18(5-6), 602–610, (2005).
+[12] Aditya Grover and Jure Leskovec, ‘node2vec: Scalable feature learn-
+ing for networks’, in Proceedings of the 22nd ACM SIGKDD interna-
+tional conference on Knowledge discovery and data mining, pp. 855–
+864. ACM, (2016).
+[13] Sepp Hochreiter and J ¨urgen Schmidhuber, ‘Long short-term memory’,
+Neural computation, 9(8), 1735–1780, (1997).
+[14] Thomas N Kipf and Max Welling, ‘Semi-supervised classiﬁcation
+with graph convolutional networks’, arXiv preprint arXiv:1609.02907,
+(2016).
+[15] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton, ‘Imagenet
+classiﬁcation with deep convolutional neural networks’, in Advances
+in neural information processing systems, pp. 1097–1105, (2012).
+[16] Hanxiao Liu, Karen Simonyan, and Yiming Yang, ‘Darts: Differen-
+tiable architecture search’, in arXiv preprint arXiv:1806.09055, (2018).
+[17] Ole J. Mengshoel, Youssef Ahres, and Tong Yu, ‘Markov chain analysis
+of noise and restart in stochastic local search’, in Proceedings of the
+Twenty-Fifth International Joint Conference on Artiﬁcial Intelligence,
+IJCAI’16, pp. 639–646. AAAI Press, (2016).
+[18] Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg S Corrado, and Jeff
+Dean, ‘Distributed representations of words and phrases and their com-
+positionality’, in Advances in neural information processing systems,
+pp. 3111–3119, (2013).
+[19] Mathias Niepert, Mohamed Ahmed, and Konstantin Kutzkov, ‘Learn-
+ing convolutional neural networks for graphs’, in International confer-
+ence on machine learning, pp. 2014–2023, (2016).
+[20] Bryan Perozzi, Rami Al-Rfou, and Steven Skiena, ‘Deepwalk: Online
+learning of social representations’, in Proceedings of the 20th ACM
+SIGKDD international conference on Knowledge discovery and data
+mining, pp. 701–710. ACM, (2014).
+[21] Ankur Sinha, Pekka Malo, and Kalyanmoy Deb, ‘A review on bilevel
+optimization: from classical to evolutionary approaches and applica-
+tions’, IEEE Transactions on Evolutionary Computation, 22(2), 276–
+295, (2018).
+Jie Tang, Jing Zhang, Limin Yao, Juanzi Li, Li Zhang, and Zhong Su,
+‘Arnetminer: Extraction and mining of academic social networks’, in
+Proceedings of the 14th ACM SIGKDD international conference on
+Knowledge discovery and data mining, pp. 990–998, (2008).
+[23] Daixin Wang, Peng Cui, and Wenwu Zhu, ‘Structural deep network
+embedding’, in Proceedings of the 22nd ACM SIGKDD international
+conference on Knowledge discovery and data mining, pp. 1225–1234.
+ACM, (2016).
+[24] Xiao Wang, Peng Cui, Jing Wang, Jian Pei, Wenwu Zhu, and Shiqiang
+Yang, ‘Community preserving network embedding.’, in AAAI, pp. 203–
+209, (2017).
+[25] Shuicheng Yan, Dong Xu, Benyu Zhang, Hong-Jiang Zhang, Qiang
+Yang, and Stephen Lin, ‘Graph embedding and extensions: A general
+framework for dimensionality reduction’, IEEE transactions on pattern
+analysis and machine intelligence, 29(1), 40–51, (2007).
+[26] Zhilin Yang, William Cohen, and Ruslan Salakhudinov, ‘Revisiting
+semi-supervised learning with graph embeddings’, in International
+Conference on Machine Learning, pp. 40–48, (2016).
+[27] Hanwang Zhang, Xindi Shang, Huanbo Luan, Meng Wang, and Tat-
+Seng Chua, ‘Learning from collective intelligence: Feature learning us-
+ing social images and tags’, ACM transactions on multimedia comput-
+ing, communications, and applications (TOMM), 13(1), 1, (2017).
+[28] Yu Zhao, Zhiyuan Liu, and Maosong Sun, ‘Representation learning
+for measuring entity relatedness with rich information.’, in IJCAI, pp.
+1412–1418, (2015).
+
+[22]
+
+

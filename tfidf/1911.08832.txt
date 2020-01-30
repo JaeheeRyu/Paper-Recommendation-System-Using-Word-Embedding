@@ -1,0 +1,2200 @@
+Streaming Frequent Items with Timestamps and Detecting Large
+Neighborhoods in Graph Streams
+
+Christian Konrad
+
+christian.konrad@bristol.ac.uk
+
+Department of Computer Science, University of Bristol, UK
+
+Detecting frequent items is a fundamental problem in data streaming research. However, in
+many applications, besides the frequent items themselves, meta data such as the timestamps
+of when the frequent items appeared or other application-speciﬁc
+
+Abstract
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+S
+
+D
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+2
+3
+8
+8
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+ 
+ 
+ 
+ 
+ 
+ 
+1
+
+Introduction
+
+The streaming model of computation addresses the fundamental issue that modern massive data
+sets are too large to ﬁt into the Random-Access Memory (RAM) of modern computers. Typical
+examples of such data sets are Internet traﬃc logs, ﬁnancial transaction streams, database logs, and
+massive graphical data sets, such as the Web graph and social network graphs. A data streaming
+algorithm receives its input piece by piece in a linear fashion and has access to only a sublinear
+amount of memory. This prevents the algorithm from seeing the input in its entirety at any one
+moment.
+Detecting heavy hitters or frequent elements is one of the fundamental problems considered in
+data streaming research. Given a stream S = s1 , s2 , . . . , sn of length n with si ∈ [m], for some
+integer m, the goal is to identify items in [m] that appear at least ǫn times, for some ǫ > 0. This
+problem was ﬁrst solved by Misra and Gries in 1982 [41] and has since been addressed in countless
+research papers (e.g.
+[15, 38, 23, 40, 19, 35, 9, 11]), culminating in provably optimal algorithms
+[10]. However, in many applications, only knowing the frequent items is insuﬃcient, and additional
+application-speciﬁc data is required. For example:
+
+• Given a database log, a heavy hitters algorithm can be used to detect a frequently updated (or
+queried) value in a database. Users, however, that committed these updates (or queries) cannot
+be reported by such an algorithm.
+
+• Given a stream of friendship updates in a social network graph, a heavy hitters algorithm can
+detect nodes of large degree (e.g., an inﬂuencer in a social network). Their neighbors (e.g.,
+followers of an inﬂuencer), however, cannot be outputted by such an algorithm.
+
+• Given the traﬃc log of an Internet router logging timestamps, source, and destination IP ad-
+dresses of forwarded IP packages, Denial-of-Service attacks can be detected by identifying distinct
+heavy hitters, that is, frequent target IP addresses that are requested from many distinct sources
+[24]. Here, a (distinct) heavy hitters algorithm only reports frequent target IP addresses and
+thus potential machines that were under attack, however, the timestamps of when these attacks
+occurred or the various source IP addresses from where the attacks originated remain unknown1 .
+
+Applications such as those mentioned above have in common that items in the input stream arrive
+together with additional application-speciﬁc satellite data. Besides the frequent items themselves,
+the satellite data of frequent items also needs to be reported.
+To this end, we introduce the Neighborhood Detection problem, which accurately models the
+problems mentioned above and addresses the fundamental task of identifying large neighborhoods
+or stars in graph streams (see Section 1.1):
+
+Problem 1 (Neighborhood Detection). In Neighborhood Detection(n, d), we are given a bipartite
+
+graph G = (A, B , E ) with |A| = n and |B | = poly n, a threshold parameter d, and the promise that
+G contains at least one A-vertex of degree at least d. The goal is to output an A-vertex together
+with at least d/c of its neighbors, for some c ≥ 1, where c is the approximation factor.
+The bipartite nature of the problem deﬁnition reﬂects applications such as the ones mentioned
+above, where items correspond to A-vertices, satellite data corresponds to B -vertices, and the
+
+1We remark that in this example knowing the sender IP addresses may unfortunately not always be helpful as
+sender IP addresses are often spoofed in Denial-of-Service attacks.
+
+1
+
+appearance of an item in the stream corresponds to the insertion of an edge connecting this item
+to satellite data, thus forming a stream of the edges of a graph. Observe that this representation
+allows us to associate multiple items to the same satellite data. The restriction |B | = poly n is
+imposed for convenience as it is reasonable and simpliﬁes the complexity bounds of our algorithms.
+Neighborhood Detection is closely related to the task of approximating the largest star in a graph
+stream, which is a fundamental problem that deserves attention in its own right:
+
+Problem 2 (Star Detection). Given a general graph G = (V , E ), the Star Detection problem consists
+of computing the largest star in G, i.e., determining a node of largest degree together with its
+neighborhood. A c-approximation algorithm to Star Detection outputs a node together with at least
+∆/c of its neighbors, where ∆ is the maximum degree in the input graph.
+
+Star Detection ties in with various works in the streaming literature that address the problem
+of approximating certain graph structures, such as large independent sets and cliques [27, 16], and
+large matchings (e.g. [26, 34]). We will show that streaming algorithms for Neighborhood Detection
+can be used to solve Star Detection.
+
+1.1 Graph Streams
+
+Streaming algorithms for graph problems have been studied for twenty years [29], and a multitude
+of graph problems such as matchings, independent sets, graph sparsiﬁcation, spanners, connectivity,
+and diﬀerent subgraph counting problems have since been addressed in various graph stream models
+(see [39] for an excellent survey). The following models are relevant to our work:
+
+1. In insertion-only streams, the input consists of a sequence of the edges of a graph in arbitrary
+order. The ob jective is to design algorithms that make a single pass over the input and use as
+little space as possible. Concerning Neighborhood Detection, observe that using space ˜O(nd)2
+the problem can be solved exactly by storing the ﬁrst min{deg(a), d} edges incident to every
+A-vertex a. Our ob jective is therefore to obtain algorithms that use space o(nd).
+
+2. In insertion-deletion streams (also known as turnstile or dynamic streams), the input consists
+of a sequence of edge insertions and deletions, where edges can only be deleted if they have
+previously been inserted, thereby modeling graphs that undergo change. Using l0 -sampling
+techniques [17, 18], it is possible to sample min{deg(a), d} edges incident to every A-vertex a in
+the insertion-deletion model. This also yields a ˜O(nd) space algorithm that solves Neighborhood
+
+Detection exactly.
+
+While some graph problems are equally hard to solve in insertion-only and in insertion-deletion
+streams (up to poly-log factors in their space complexity), such as Connectivity [1, 42] and Maximum
+Independent Set [27], others, such as Maximum Matching [33, 5], require substantially more space
+in insertion-deletion streams. Our results show that approximation algorithms for Neighborhood
+Detection require substantially more space if deletions are allowed.
+It is known that Ω(n) is a natural space barrier for many graph problems in insertion-only
+streams [26, 25, 42]. Semi-streaming algorithms [26], i.e., algorithms that use space O(n polylog n),
+have therefore received particular attention. We will see that our results yield a O(log n)-approximation
+semi-streaming algorithm for Star Detection in insertion-only streams.
+
+2We use ˜O, ˜Θ and ˜Ω to mean O, Θ and Ω, respectively, with log factors suppressed.
+
+2
+
+1.2 Our Results
+
+1
+
+1
+
+In this paper, we give streaming algorithms and space lower bounds for Neighborhood Detection in
+both insertion-only and insertion-deletion streams.
+In insertion-only streams, for integers c ≥ 2, we give a one-pass c-approximation streaming
+algorithm with space ˜O(n + n
+c d) that succeeds with high probability3 (Theorem 3.2). This
+algorithm can also be used to obtain a O(log n)-approximation semi-streaming algorithm for Star
+Detection (Corollary 3.3). We complement this result with a lower bound, showing that space
+Ω(n/c2 + n
+c−1 d/c2 ) is necessary for every algorithm that computes a c/1.01 approximation, for
+every integer c ≥ 2 (Theorems 4.8 and 4.1). Up to poly-logarithmic factors, our algorithm is
+thus optimal for every poly-logarithmic c.
+In insertion-deletion streams, we give a one-pass c-approximation streaming algorithm with
+c2 ) if c ≤ √n, and space ˜O(
+c ) if c > √n that succeeds w.h.p. (Theorem 5.4). This
+space ˜O( dn
+result yields a O(√n)-approximation semi-streaming algorithm for Star Detection (Corollary 5.5).
+We complement our algorithm with a lower bound showing that space ˜Ω( dn
+c2 ) is required (Theorem 6.4),
+which renders our algorithm optimal (if c ≤ √n) up to poly-logarithmic factors.
+1.3 Further Related Work
+
+√nd
+
+Neighborhood Detection shares similarities with covering problems such as Set Cover since the node
+of largest degree covers most vertices. Almost all streaming algorithms for Set Cover [21, 22, 14, 4,
+28, 3] assume that the input stream consists of the sets themselves. One exception is [31], where
+an edge-arrival setting is considered, and the input stream consists of a sequence of tuples (i, j )
+indicating that element i belongs to set j . Our results show that in this setting it is even impossible
+to ﬁnd or approximate the set that covers most items in a single pass using small space, suggesting
+that the edge-arrival setting is strictly harder than the setting where entire sets arrive one by one.
+Recently, it was shown that linear sketches are universal for the class of insertion-deletion
+streaming algorithms that can handle streams of length Ω(ℓ2 ), where ℓ is the dimension of the
+vector described by the input stream [30] (see also [37, 2])4 . A consequence of these results is that
+lower bounds for insertion-deletion streaming algorithms can also be proved in the simultaneous
+model of communication, where multiple parties each send a message to a referee, who then outputs
+the result. This approach has, for example, been used to prove lower bounds for Maximum Matching
+in insertion-deletion streams [33, 5]. We note that two-party communication lower bounds such as
+the one given in this paper are more general since they also apply to algorithms that rely on short
+input streams.
+
+1.4 Outline
+
+We start with an extensive technical overview in Section 2 that summarizes all the results presented
+in this paper. In Section 3, we give our algorithm for insertion-only streams, and in Section 4, we
+present our lower bound for these streams. Our algorithm for insertion-deletion streams is given in
+Section 5, and we conclude with a matching lower bound in Section 6.
+
+3We say that an event occurs with high probability (in short: w.h.p.) if it happens with probability at least 1 − 1
+n ,
+where n is a suitable parameter associated with the input size.
+4For graphs on n vertices, the dimension can be as large as Θ(n2 ) since such a graph may have up to Θ(n2 ) edges.
+The class of relevant algorithms is thus those that can handle streams of length Ω(n4 ).
+
+3
+
+2 Technical Overview
+
+We consider simple bipartite graphs G = (A, B , E ) with |A| = n and |B | = m = poly(n). The
+maximum degree of an A-node is denoted by ∆. We say that a tuple (a, S ) ∈ A×2B is a neighborhood
+in G if S ⊆ Γ(a). The size |(a, S )| of (a, S ) is deﬁned as |(a, S )| = |S |. Using this terminology, the
+ob jective of Neighborhood Detection is to output a neighborhood of size at least d/c.
+Let A be a random variable distributed according to D . The Shannon Entropy of A is denoted
+by HD (A), or simply H (A) if the distribution D is clear from the context. The mutual information
+of two jointly distributed random variables A, B with distribution D is denoted by ID (A, B ) :=
+HD (A) − HD (A | B ) (again, D may be dropped), where HD (A | B ) is the entropy of A conditioned
+on B . For an excellent overview on information theory we refer the reader to [20].
+
+2.1 Communication Complexity
+
+We now provide the necessary context on communication complexity (see [36] for more information).
+In the one-way p-party communication model, for p ≥ 2, p parties P1 , P2 , . . . , Pp communicate
+with each other to jointly solve a problem. Each party Pi holds their own private input Xi and has
+access to both private and public random coins. Communication is one-way: P1 sends a message
+M1 to P2 , who then sends a message M2 to P3 . This process continues until Pp receives a message
+Mp−1 from Pp−1 and then outputs the result.
+The way the parties interact is speciﬁed by a communication protocol Π. We say that Π is an ǫ-
+error protocol for a problem Prob if it is correct with probability 1 − ǫ on any input (X1 , X2 , . . . , Xp )
+that is valid for Prob, where the probability is taken over the randomness (both private and public)
+used by the protocol. The communication cost of Π is the size of the longest message sent by
+any of the parties, that is, max1≤i≤p−1{|Mi |}, where |Mi | is the maximum length of message Mi .
+The randomized one-way communication complexity R→ǫ (Prob) of a problem Prob is the minimum
+communication cost among all ǫ-error protocols Π.
+Let D be any input distribution for a speciﬁc problem Prob. The distributional one-way com-
+munication complexity of Prob, denoted D→
+D ,ǫ(Prob), is the minimum communication cost among all
+deterministic communication protocols for Prob that succeed with probability at least 1 − ǫ, where
+the probability is taken over the inputs D . In order to prove lower bounds on R→ǫ (Prob), by Yao’s
+lemma it is enough to bound the distributional communication complexity for any suitable input
+distribution since R→ǫ (Prob) = maxD D→
+D ,ǫ(Prob). In our lower bound arguments we will therefore
+consider deterministic protocols with distributional error. This is mainly for convenience as this
+allows us to disregard public and private coins. We note however that with additional care about
+private and public coins, our arguments also directly apply to randomized protocols.
+Our lower bound arguments follow the information complexity paradigm. There are various
+deﬁnitions of information complexity (e.g.
+[7, 6, 13]), and for the sake of simplicity we will in
+fact omit a precise deﬁnition. Information complexity arguments typically measure the amount of
+information revealed by a communication protocol about the inputs of the participating parties.
+This quantity is a natural lower bound on the total amount of communication, as the amount of
+information revealed cannot exceed the number of bits exchanged. We will follow this approach
+in that we give lower bounds on quantities of the form ID (Xi
+: Mj ), for some j ≥ i + 1. This
+then implies a lower bound on the communication complexity of a speciﬁc problem Prob since
+ID (Xi
+: Mj ) ≤ HD (Mj ) ≤ |Mj | holds for any protocol.
+
+4
+
+2.2
+
+Insertion-only Streams
+
+2.2.1 One-pass Streaming Algorithm
+
+Insertion-only streaming algorithms for Neighborhood Detection are faced with the following chal-
+lenge: An A-vertex of large degree needs to be detected, and, at the same time, its incident edges
+need to be stored. Since, however, we will only know that an A-vertex is of large degree once we
+have already seen many of its incident edges, we will necessarily miss some of these. The challenge
+is thus to minimize the number of missed edges. We will prove the following theorem:
+
+1
+
+c
+
+d
+
+Theorem 3.2 (restated) Suppose that the input graph G = (A, B , E ) contains at least one A-node
+of degree at least d. For every integral c ≥ 2, there is a randomized one-pass streaming algorithm that
+ﬁnds a neighborhood of size d
+c with probability at least 1 − 1
+c d log2 n) .
+n and uses space O(n log n + n
+For every i ∈ {0, 1, . . . , c − 1}, our algorithm runs the following strategy in parallel: First,
+sample uniformly at random Θ(n1/c log n) A-vertices from the set of nodes of degree at least id
+using reservoir sampling [43] combined with degree counts. This sampling process consumes the
+ﬁrst id
+c edges of every sampled vertex. Then, for every sampled vertex, we store the next d/c of
+its incident edges (or fewer in case there are not that many left). In more detail, our algorithm
+maintains the degrees of all A-vertices. As soon as the degree of an A-vertex exceeds id
+c it is inserted
+with a suitable probability into a reservoir of size Θ(n1/c log n) (and another vertex may then be
+removed from the reservoir), and we then collect up to d/c edges incident to every vertices in the
+reservoir.
+Concerning space, O(n log n) bits are needed to maintain vertex degrees. As we store at most
+c edges for every sampled vertex, and we sample overall O(c · n1/c log n) vertices, we obtain a total
+space of O(n log n + d · n1/c log2 n) (accounting space O(log n) for every edge).
+To see why this algorithm succeeds, denote by Ai the set of A-vertices of degree at least i · d/c
+and observe that A = A0 ⊇ A1 ⊇ . . . Ac−1 . Furthermore, let Si denote the set of sampled vertices
+for run i of our algorithm. Observe that Si is a uniform random subset of Ai of size Θ(n
+c log n).
+Consider ﬁrst the run for i = 0: Then S0 is a uniform random sample of size Θ(n1/c log n) of all
+A-vertices. Observe that if there were Ω(n1− 1
+c ) A-vertices of degree at least d
+c , i.e., |A1 | = Ω(n1− 1
+c ),
+then this run would succeed as S0 contained such a node w.h.p. and d/c incident edges of such
+a node would subsequently be stored. However, if this run fails, then we are guaranteed that
+there are O(n1− 1
+c ) A-vertices of degree at least d
+c (i.e., |A1 | = O(n1− 1
+c )). Observe that the run for
+i = 1 samples Θ(n1/c log n) vertices from exactly this set of vertices A1 . By the same argument
+as before, this run would succeed if Ω(n1− 2
+c ) of these vertices had in fact a degree of at least 2d
+c ,
+i.e., |A2 | = Ω(n1− 2
+c ). Generalizing, we see that if all runs for i ∈ {0, 1, . . . , c − 2} failed, then
+run i = c − 1 would succeed if |Ac | = Ω(1) - in fact, parameters are chosen so that we obtain
+the condition |Ac | ≥ 1. Since we are guaranteed that there is at least one vertex of degree d, the
+inequality |Ac | ≥ 1 indeed holds and run i = c − 1 would therefore succeed if all other runs failed.
+
+1
+
+2.2.2 Lower Bound for One-pass Streaming Algorithms
+
+Concerning our lower bound for insertion-only streams, observe that if the edges of any graph are
+arbitrarily partitioned among k parties, then one of them necessarily holds at least a k-fraction of the
+edges incident to an A-node of maximum degree. Computing a k-approximation to Neighborhood
+
+5
+
+Detection is thus trivial in any k-party communication setting. Hence, in order to prove a c-
+approximation lower bound, the number of parties needs to be larger than c.
+Our approach is as follows. We ﬁrst deﬁne a p-party communication problem denoted Bit-
+Vector-Learning, and we prove a lower bound on its communication complexity. Then we argue that
+a streaming algorithm for Neighborhood Detection implies a communication protocol for Bit-Vector-
+Learning, which yields a suitable lower bound.
+In Bit-Vector-Learning, the bits of n binary strings of diﬀerent lengths are partitioned among p
+parties, and the last party is required to output at least a p/1.01-fraction of the bits of one of the
+n strings. Formally, the problem is deﬁned as follows:
+Problem 4 (Bit-Vector Learning(p, n, k) - restated) Let X1 = [n] and for every 2 ≤ i ≤ p, let Xi be
+a uniform random subset of Xi−1 of size ni = n1− i−1
+p−1 . Furthermore, for every 1 ≤ i ≤ p and every
+1 ≤ j ≤ n, let Y j
+i ∈ {0, 1}k be a uniform random bit-string if j ∈ Xi , and let Y j
+i = ǫ (the empty
+string) if j /∈ Xi . For j ∈ [n], let Z j = Y j
+1 ◦ Y j
+p be the bit string obtained by concatenation.
+Party i holds Xi and Yi := Y 1
+i , . . . , Y n
+i . Communication is one-way and party p needs to output an
+index I ∈ [n] and at least 1.01k bits from string Z I .
+An instance of Bit-Vector Learning(3, 4, 5) is illustrated in Figure 1.
+
+2 ◦ · · · ◦ Y j
+
+M2
+
+Alice
+
+M1
+
+X1 = {1, 2, 3, 4}
+
+Y 1
+1 = 10010
+Y 2
+1 = 01000
+Y 3
+1 = 01011
+Y 4
+1 = 01111
+
+Bob
+
+X2 = {1, 4}
+
+Y 1
+2 = 11011
+Y 2
+2 = ǫ
+Y 3
+2 = ǫ
+Y 4
+2 = 01010
+
+Charlie
+
+X3 = {4}
+
+Y 1
+3 = ǫ
+Y 2
+3 = ǫ
+Y 3
+3 = ǫ
+Y 4
+3 = 00011
+
+Figure 1: Example instance of Bit-Vector Learning(3, 4, 5). Charlie needs to output at least 1.01·5 po-
+sitions of one of the strings Z 1 = 1001011011, Z 2 = 01000, Z 3 = 01011, or Z 4 = 011110101000011.
+
+Observe that even without communication party p already knows a p-fraction of string Z j ,
+where j is the unique element in Xp . We will show that outputting slightly more than a p-fraction
+of one the strings requires a large amount of communication, which constitutes our main result:
+
+Theorem 4.7. (restated) For every ǫ < 0.005, the randomized one-way communication complexity
+of Bit-Vector Learning(p, n, k) is bounded as fol lows:
+
+R→ǫ (Bit-Vector Learning(p, n, k)) = Ω(
+
+1
+
+p−1
+
+kn
+p
+
+) .
+
+Bit-Vector-Learning could be solved if any party i ∈ [p − 1] managed to send at least 0.01k bits
+of Y j
+i to party i + 1, for some j ∈ Xi+1 . However, since party i has no knowledge of the set Xi+1 ,
+on an intuitive level they can therefore only guess which of their bits are relevant. The sizes of
+the sets X1 , . . . , Xp are however chosen so that many guesses are required, yielding large messages.
+
+6
+
+Y x1
+i−1 , Y x2
+
+Our key lemma reﬂecting this intuition is as follows: (we use the notation Y Xi
+i−1 to mean the strings
+i−1 , . . . where x1 , x2 , . . . are the elements of Xi )
+Lemma 4.5. (restated) The fol lowing inequality holds:
+I (Mi−1 : Y Xi
+i−1 | Xi ) ≤ |Mi−1 |
+n
+
+p−1
+
+.
+
+1
+
+1
+
+1
+
+Y Xi
+
+The previous lemma shows that Mi−1 carries only little information about the relevant strings
+i−1 . If we wanted party i to learn at least 0.01k bits from any of the bit-strings Y j
+i−1 , for some
+j ∈ Xi , then a message of size at least n
+p−1 · 0.01k = Ω(n
+p−1 k) would be needed. Since there are
+p parties, there are p − 1 possibilities for the parties to learn 0.01k relevant bits. This explains on
+an intuitive level why our ﬁnal lower bound given in Theorem 4.7 is Ω(n
+p−1 k/p).
+The proof of Lemma 4.5 relies on a combination of the chain rule for mutual information and
+Baranyai’s theorem concerning the coloring of complete regular hypergraphs [8], which can also be
+stated as follows: Let S be the set of all k-subsets of [n], for some k that divides n. Then S can be
+partitioned into |S | k
+n = (cid:0)n
+n sets S1 , S2 , . . . such that |Si | = n
+k and ∪x∈Si x = [n] holds for every
+i. First, using elementary information theoretic arguments, we rewrite (for justiﬁcations of each
+individual inequality see the proof in Section 4.4):
+I (Mi−1 : Y Xi
+i−1 | Xi ) ≤ I (Mi−1 : Y Xi
+i−1 | XiXi−1 )
+=
+I (Mi−1 : Y xi
+i−1 | Xi−1 = xi−1 ) .
+
+k (cid:1) k
+
+(1)
+
+E
+
+1
+
+xi−1←Xi−1
+
+E
+xi←Xi
+
+ni
+
+ni−1
+
+E
+xi←Xi
+
+Next, for any ﬁxed value xi−1 for Xi−1 , the random variable Xi is a uniform random subset of
+xi−1 of size ni . Let X (xi−1 ) be the set of all ni -subsets of xi−1 . Then, by Baranyai’s theorem, we
+can partition X (xi−1 ) into |X (xi−1 )| ni
+subsets X1 (xi−1 ), X2 (xi−1 ), . . . each of size ni−1
+so that
+∪x∈Xj (xi−1 )x = xi−1 , for every j . With some more rewriting, we obtain:
+I (Mi−1 : Y xi
+i−1 | Xi−1 = xi−1 )
+|X (xi−1 )| Xxi∈X (xi−1 )
+1
+I (Mi−1 : Y xi
+i−1 | Xi−1 = xi−1 )
+1
+|X (xi−1 )| Xj∈[|X (xi−1 )| ni
+Since the elements in Xj (xi−1 ) precisely make up xi−1 , we will use the chain rule for mutual
+information. Denoting the elements of Xj (xi−1 ) by x1 , x2 , . . . , we obtain
+I (Mi−1 : Y xℓ
+I (Mi−1 : Y xℓ
+i−1 | x1 , . . . , xℓ−1 , Xi−1 = xi−1 )
+
+I (Mi−1 : Y xi
+i−1 | Xi−1 = xi−1 ) .
+
+] Xxi ∈Xj (xi−1 )
+
+(2)
+
+ni−1
+
+=
+
+=
+
+i−1 | Xi−1 = xi−1 ) ≤ Xxℓ∈Xj (xi−1 )
+
+Xxℓ∈Xj (xi−1 )
+
+= I (Mi−1 : Yi−1 | Xi−1 = xi−1 ) .
+Then, from Inequalities 3, 2, and 1 we obtain
+|X (xi−1 )| ni
+|X (xi−1 )|
+
+I (Mi−1 : Y Xi
+i−1 | Xi ) ≤
+
+· I (Mi−1 : Yi−1 | Xi−1 ) ≤
+
+ni
+ni−1
+
+ni−1
+
+H (Mi−1 ) ≤
+
+(3)
+
+ni
+ni−1 |Mi−1 | ,
+
+7
+
+which completes the informal proof of Lemma 4.5.
+Last, it remains to argue that a streaming algorithm for Neighborhood Detection can be used
+for solving Bit-Vector-Learning. Indeed, based on their inputs for Bit-Vector-Learning(p, n, k), the p
+parties construct a bipartite graph G = (A, ˙∪i∈[p]Bi , ˙∪i∈[p]Ei ), where A = [n] and |Bi | = 2k , for
+every i. Party i adds edges Ei between the A-vertices and the set Bi . This is done as follows: For
+each j ∈ Xi , vertex aj is connected to k of the 2k vertices in Bi . The 2k vertices in Bi are regarded
+as k 2-tuples of vertices, where each tuple corresponds to one position in the bit strings Yi . Then,
+depending on the value of the bit Y j
+i [ℓ], for every 1 ≤ ℓ ≤ k , aj is either connected to the ﬁrst or
+the second vertex of the ℓth tuple. Observe that ∆ = kp in this construction.
+See Figure 2 for an illustration of the example given in Figure 1.
+
+Alice
+a2
+a3
+
+a4
+
+a1
+
+Bob
+a3
+
+a2
+
+a4
+
+a1
+
+Charlie
+a2
+a3
+
+a4
+
+a1
+
+B1
+
+1 0 1 0 1 0 1 0 1 0
+
+B2
+
+1 0 1 0 1 0 1 0 1 0
+
+B3
+
+1 0 1 0 1 0 1 0 1 0
+
+Figure 2: In the example instance given in Figure 1, Alice holds Y 1
+1 = 10010, Y 2
+1 = 01000, Y 3
+1 =
+01011, and Y 4
+1 = 01111. For each string Y j
+1 , Alice connects vertex aj to 5 vertices, each indicating
+one bit of the respective bit string. For example, when reading the labels of the B -vertices connected
+to a4 from left-to-right, we obtain the bit sequence 01111 which equals Y 4
+1 .
+
+p
+
+The parties then simulate any
+1.01 -approximation streaming algorithm A for Neighborhood
+Detection with parameter d = ∆ = kp as follows: The ﬁrst party runs A on edges E1 and sends
+the resulting memory state to the second party, who then continues the algorithm on E2 . This
+process continues until party p completes the algorithm and thus computes a neighborhood of size
+at least 1.01d/p = 1.01k . Since each edge of this neighborhood allows us to identify one position in
+the respective bit string, we obtain a solution to Bit-Vector-Learning. This yields our lower bound
+result:
+
+Theorem 4.8.
+
+(restated) Let A be a c-approximation streaming algorithm for Neighborhood
+Detection with error probability at most 0.005 with c = p
+1.01 , for some integer p ≥ 2. Then A uses
+space at least:
+
+Ω(
+
+2.3
+
+Insertion-deletion Streams
+
+2.3.1 One-pass Streaming Algorithm
+
+1
+
+p−1
+
+dn
+c2
+
+) .
+
+The approach taken for insertion-only streams cannot be applied to insertion-deletion streams
+since vertex degrees may decrease over the course of the algorithm. Essentially all known insertion-
+deletion streaming algorithms are solely based on the computation of linear sketches, and our
+algorithm is no exception. An l0 -sampler in insertion-deletion streams outputs a uniform random
+element from the non-zero coordinates of the vector described by the input stream, and implemen-
+
+8
+
+tations of l0 -sampling are known that require poly-logarithmic space [32]. In our setting, the input
+vector is of dimension n · m where each coordinate indicates the presence or absence of an edge.
+l0 -sampling allows us, for example, to sample uniformly at random from the edges of the input
+graph, or, by considering the substream of edges incident to a speciﬁc vertex, to sample from the
+edges incident to a speciﬁc vertex. Our algorithm combines these two strategies:
+
+1. Vertex Sampling. Sample u.a.r. Θ( n
+c log n) A-vertices before processing the stream. Then,
+for each sampled vertex, sample Θ( d
+c log n) edges (with repetition) from its incident edges using
+l0 -sampling. This yields at least d
+c diﬀerent edges if the degree of the sampled node is at least
+c . This strategy uses space ˜O( nd
+c2 ) and yields a c-approx. to Neighborhood Detection if the input
+graph contains Ω(c) nodes of degree at least d
+c , since then one of these nodes would be sampled.
+
+d
+
+2. Edge Sampling. Sample ˜Θ( nd
+
+c2 ) edges from the input stream using l0 -sampling. Observe that if
+the vertex sampling strategy does not succeed, then we are guaranteed that the input graph con-
+tains O(c) A-vertices of degree at least d
+c . This implies that the input graph has O (cid:0)c · ∆ + n · d
+edges. The probability that an l0 -sampler returns an edge incident to a distinguished node of
+degree ∆ is hence Ω(
+), and since we run ˜Θ( nd
+c2 ) l0 -samplers, we expect
+∆
+nd
+c2 ! = Ω (cid:18) ∆n
+d
+c (cid:19) = Ω (cid:18) d
+c (cid:19) ,
+c2∆ + dn ·
+c · ∆ + n · d
+l0 -samplers to return edges incident to a node of degree ∆, using the fact that c2 ≤ n and ∆ ≥ d.
+Conducting a more careful analysis, we obtain the following theorem:
+
+Ω 
+
+c (cid:1)
+
+∆
+c·∆+n· d
+
+c
+
+c ·
+
+Theorem 5.4. (restated) There is a one-pass c-approximation streaming for insertion-deletion
+streams that uses space ˜O( dn
+c2 ) if c ≤ √n, and space ˜O(
+c ) if c > √n and succeeds w.h.p.
+
+√nd
+
+2.3.2 Lower Bound for One-pass Streaming Algorithms
+
+Our lower bound for insertion-deletion streaming algorithms relies on proving a lower bound for a
+new two-party communication problem denoted Augmented-Matrix-Row-Index, which can be seen as
+an extension of the well-known Augmented Index problem to two dimensions. We use the following
+notation: Let X be an n-by-m matrix. Then the ith row of X is denoted Xi . A position (i, j ) is a
+tuple chosen from [n] × [m]. We will index the matrix X by a set of positions S , i.e., XS , meaning
+the matrix positions Xi,j , for every (i, j ) ∈ S .
+
+Problem 5. (Augmented-Matrix-Row-Index(n, m, k) - restated)
+
+In Augmented-Matrix-Row-Index,
+
+Alice holds a binary matrix X ∈ {0, 1}n×m where every Xij is a uniform random Bernoul li variable,
+for some integers n, m. Bob holds a uniform random index J ∈ [n] and for each i 6= J , Bob holds
+a uniform random subset of positions Yi ⊆ {i} × [m] with |Yi | = m − k and also knows XYi . Alice
+sends a message to Bob who then outputs the entire row XJ .
+For ease of notation, we deﬁne YI = ⊥ and Y = Y1 , Y2 , . . . , Yn . An example instance of
+Augmented-Matrix-Row-Index(4, 6, 2) is given in Figure 3. As our main theorem, we prove a lower
+bound on the one-way communication complexity of Augmented-Matrix-Row-Index (ǫ denotes the
+error probability of the protocol):
+
+9
+
+Theorem 6.2. (restated) Let ǫ ≤ k
+2m . Then:
+
+R→ǫ (Augmented-Matrix-Row-Index(n, m, k)) = Ω(nk) .
+
+Alice
+
+M
+
+Bob
+
+
+
+
+0 1 1 1 0 0
+1 1 0 0 1 0
+0 0 0 0 1 0
+1 0 1 0 1 0
+
+
+
+
+
+
+
+0 1 1
+1 1
+0
+
+0 1
+
+0 1 0
+
+0
+
+0
+0
+
+
+
+
+Figure 3: Example Instance of Augmented-Matrix-Row-Index(4, 6, 2). Bob needs to output the
+content of row 3. Bob knows 6 − 2 = 4 random positions in every row except row 3.
+
+Our goal is to bound the term I (X : M ) from below, which then also bounds |M |. To this end,
+ﬁrst, using a Fano-type argument, since Bob’s knowledge, i.e., the variables M , J, Y , XY , allows
+Bob to determine row XI , we show that I (XJ : M J Y XY ) = Ω(m), which further implies that
+
+(4)
+
+I (X ˜ZJ
+
+: M | J Y XY ) = Ω(k) ,
+where ˜ZJ are arbitrary k positions in row J . This inequality will be used later.
+Next, for i 6= J let Zi denote all positions of row i unknown to Bob, i.e., Zi = ({i} × [m]) \ Yi ,
+let ZJ = ⊥, and let Z = Z1 , Z2 , . . . , Zn . We partition the matrix X as follows:
+I (X : M ) = I (XY XJ XZ : M ) = I (XY XJ : M ) + I (XZ : M | XJ XY )
+≥ I (XZ : M | XJ XY ) .
+Our goal is to show that the information about the parts unknown to Bob in each row diﬀerent to
+the row J is large. To this end, let L be a variable that is uniformly distributed in [n] \ I . Then:
+I (XZ : M | XJ XY ) = Xi∈[n]\J
+I (XZi
+: M | XJ XY XZ1 , . . . , XZi−1 )
+
+≥ Xi∈[n]\J
+
+I (XZi
+
+: M | XJ XY ) = (n − 1) · I (XZL : M | XJ XY L) .
+
+It remains to show that I (XZL : M | XJ XY L) = Ω(k). This expression measures the amount of
+information about k random positions in a random row L contained in M conditioned on knowing
+various bits in all rows. Observe that this expression is similar to the one in Equality 4 with a
+slightly diﬀerent conditioning.
+In our full argument, we exploit this similarity to complete the
+proof.
+Last, we show that a c-approximation algorithm for Neighborhood Detection(n, d) with space s
+yields a communication protocol for Augmented-Matrix-Row-Index(n, 2d, d
+c − 1) with message size
+O(s · c · log n). To this end, Alice and Bob permute each row i of matrix X independently using
+random permutations πi chosen from public randomness. Assuming that row J contains at least
+d 1s, we show that a c-approximation algorithm for Neighborhood Detection(d, c) allows Bob to
+learn a uniform random Θ(c)-fraction of the 1s in row J . By concentration bounds, repeating this
+
+10
+
+algorithm Θ(c log n) times, Bob learns all 1s in row J , and therefore knows that the remaining
+entries are 0s. To cover the case when row J contains fewer than d 1s, we run the same protocol
+on the matrix where every entry is inverted. This yields the following result:
+
+Theorem 6.4. (restated) Every c-approximation insertion-deletion streaming algorithm for Neigh-
+borhood Detection(n, d) that fails with probability δ ≤ 1
+2d requires space Ω (cid:16) nd
+
+c2 log n )(cid:17).
+
+3 Algorithm for Insertion-only Streams
+
+Before presenting our algorithm for Neighborhood Detection in insertion-only streams, we discuss a
+sampling subroutine that combines reservoir sampling with degree counts.
+
+3.1 Degree-based Reservoir Sampling
+
+The subroutine Deg-Res-Sampling(d1 , d2 , s) samples s nodes uniformly at random from the set
+of nodes of degree at least d1 , and for each of these nodes computes a neighborhood of size
+min{d2 , deg −d1 + 1}, where deg is the degree of the respective node.
+If at least one neighbor-
+hood of size d2 is found then we say that the algorithm succeeds and returns a uniform random
+neighborhood among the stored neighborhoods of sizes d2 . Otherwise, we say that the algorithm
+fails and it reports fail.
+This is achieved as follows: While processing the stream of edges, the degrees of all A-vertices
+are maintained. The algorithm maintains a reservoir of size s that fulﬁlls the invariant that at any
+moment it contains a uniform sample of size s of the set of nodes whose current degrees are at
+least d1 (or, in case there are fewer than s such nodes, it contains all such nodes). To this end,
+as soon as the degree of an A-vertex reaches d1 , the vertex is introduced into the reservoir with
+an appropriate probability (and another vertex is removed if the reservoir is already full), so as to
+maintain a uniform sample. Once a vertex is introduced into the reservoir, incident edges to this
+vertex are collected until at most d2 such edges are found.
+The description of Algorithm 1 assumes that we have a function Coin(p) to our disposal that
+outputs true with probability p and false with probability 1 − p.
+Disregarding the maintenance of the vertex degrees, the algorithm uses space O(sd2 log n) since
+at most d2 neighbors for each vertex in the reservoir are stored, and we account space O(log n) for
+storing an edge.
+
+Lemma 3.1. Suppose that G contains at most n1 A-nodes of degree at least d1 and at least n2
+A-nodes of degree at least d1 + d2 − 1. Then, Algorithm Deg-Res-Sampling(d1 , d2 , s) succeeds
+with probability at least
+s
+)n2 ≥ 1 − e− sn2
+1 − (1 −
+n1
+Proof. Let D ⊆ V be the set of vertices of degree at least d1 (then |D | ≤ d1 ). First, suppose that
+d1 ≤ s. Then the algorithm stores all nodes of degree at least d1 (including all nodes of degree
+d1 + d2 − 1) and collects its incident edges (except the ﬁrst d1 − 1 such edges). It therefore necessarily
+ﬁnds a neighborhood of size d2 .
+Otherwise, by well-known properties of reservoir sampling (e.g. [43]), at the end of the algorithm
+the set R constitutes a uniform random sample of D of size s. The probability that no node of
+
+n1
+
+.
+
+11
+
+Algorithm 1 Deg-Res-Sampling(d1 , d2 , s)
+
+5:
+
+6:
+
+7:
+
+3:
+4:
+
+Require: Integral degree bounds d1 and d2 , reservoir size s
+1: R ← {} {reservoir}, S ← {} {collected edges}, x ← 0 {counter for nodes of degree ≥ d1 }
+2: while stream not empty do
+Let ab be next edge in stream
+Increment degree deg(a) by one
+if deg(a) = d1 then {candidate to be inserted into reservoir}
+x ← x + 1
+if |R| < s then {Reservoir not yet full}
+else {Reservoir full}
+s
+) then {Insert a into reservoir with probability s
+x
+Let a′ be a uniform random element in R
+R ← (R \ {a′ }) ∪ {a}, delete all edges incident to a′ from S
+if a ∈ R and degS (a) < d2 then {collect edges incident to vertices in R}
+15: return Random neighborhood among those of size d2 in S , if none exists return fail
+
+S ← S ∪ {ab}
+
+R ← R ∪ {a}
+
+if Coin(
+
+x }
+
+13:
+
+14:
+
+8:
+
+9:
+
+10:
+
+11:
+
+12:
+
+(cid:1)
+
+(cid:0)n1−n2
+(cid:0)n1
+s
+
+degree at least d1 + d2 − 1 is sampled is at most:
+(n1 − n2 )!(n1 − s)!
+(n1 − s) · (n1 − s − 1) · . . . · (n1 − s − n2 + 1)
+=
+=
+(n1 − n2 − s)!n1 !
+n1 · (n1 − 1) · . . . · (n1 − n2 + 1)
+≤ (cid:18) n1 − n2 − s + 1
+n1 − n2 + 1 (cid:19)n2
+s
+= (1 −
+n1 − n2 + 1
+where the last inequality holds for n2 ≥ 1 (which is always the case).
+
+n1−n2+1 ≤ e− sn2
+n1
+
+)n2 ≤ e− sn2
+
+s (cid:1)
+
+,
+
+3.2 Main Algorithm
+
+Our main algorithm runs the subroutine presented in the previous subsection in parallel for multiple
+diﬀerent threshold values d1 . We will prove that the existence of a node of degree d implies that at
+least one of these runs will succeed with high probability.
+
+Algorithm 2 One-pass c-approximation Streaming Algorithm for Neighborhood Detection
+Require: Space s, degree bound d
+s ← ⌈ln(n) · n
+
+c ⌉
+
+1
+
+for i = 0 . . . c − 1 do in parallel
+
+(ai , Si ) ← Deg-Res-Sampling(max{1, i · d
+
+c }, d
+c , s)
+return Uniform random neighborhood (ai , Si ) among those runs that succeeded
+
+Theorem 3.2. Suppose that the input graph G = (A, B , E ) contains at least one A-node of degree
+at least d. For every integral c ≥ 2, Algorithm 2 ﬁnds a neighborhood of size d
+c with probability at
+least 1 − 1
+n and uses space
+c d log2 n) .
+
+O(n log n + n
+
+1
+
+12
+
+Proof. Concerning the space bound, the algorithm needs to keep track of the degrees of all A-
+vertices which requires space O(n log n) (using the assumption m = poly n). The algorithm runs the
+subroutine Algorithm 1 c times in parallel. Each of these runs requires space O(s · d
+c log n). Besides
+c d log2 n)
+the vertex degrees, we thus have an additional space requirement of O(s · d log n) = O(n
+bits, which justiﬁes the space requirements.
+Concerning correctness, let n0 be the number of A-nodes of degree at least 1, and for i ≥ 1, let
+ni be the number of A-nodes of degree at least i · d
+c . Observe that n ≥ n0 ≥ n1 ≥ n2 ≥ · · · ≥ nc ≥ 1,
+where the last inequality follows from the assumption that the input graph contains at least one
+A-node of degree at least d.
+We will prove that at least one of the runs succeeds with probability at least 1 − 1
+n . For the sake
+of a contradiction, assume that the error probability of every run is strictly larger than 1
+n . Then,
+using Lemma 3.1, we obtain for every 0 ≤ i ≤ c − 1:
+
+1
+
+sni+1
+ni
+
+e−
+
+>
+
+ni+1 <
+
+, which implies
+
+1
+n
+ln(n)ni
+s
+
+.
+
+Since n0 ≤ n we obtain:
+
+and since nc ≥ 1 we have:
+
+ni < n (cid:18) ln n
+s (cid:19)i
+
+,
+
+1 < n (cid:18) ln n
+s (cid:19)c
+However, since the reservoir size in Algorithm 2 is chosen to be ⌈n
+Hence, at least one run succeeds with probability 1 − 1/n.
+The previous result can be used to obtain a semi-streaming algorithm for Star Detection.
+
+which implies
+
+c ln n⌉, we obtain a contradiction.
+
+s < n
+
+c ln n .
+
+1
+
+1
+
+Corollary 3.3. There is a semi-streaming O(log n)-approximation algorithm for Star Detection
+that succeeds with high probability.
+
+Proof. Let G = (V , E ) be the graph described by the input stream in an instance of Star Detection.
+We use O(log1+ǫ n) guesses ∆′ ∈ {1, 1+ ǫ, (1+ ǫ)2 , . . . , (1+ ǫ)⌈log1+ǫ n⌉ } for ∆, the maximum degree in
+the input graph. For each guess ∆′ we run our insertion-only algorithm for Neighborhood Detection
+with threshold value d = ∆′ on the bipartite graph H = (V , V , E ′ ), where for every edge uv in the
+input stream, we include the two edges uv and vu into H .
+Consider the run with the largest value for ∆′ that is not larger than ∆. Then, ∆′ ≥ ∆/(1 + ǫ).
+This run detects a neighborhood of size at least ∆′/c ≥ ∆/(c(1 + ǫ)) and thus a star of this size in G.
+We thus obtain a (1 + ǫ)c-approximation algorithm with space ˜O(log1+ǫ(n)n1+ 1
+c ). Using any ﬁxed
+constant for ǫ and c = log n, this construction yields a (1 + ǫ) log n-approximation semi-streaming
+algorithm for approximating the largest star in a general graph.
+
+13
+
+4 Lower Bound for Insertion-only Streams
+
+In this section, we ﬁrst point out that a simple Ω(n/c2 ) lower bound follows from the one-way
+communication complexity of a multi-party version of the Set-Disjointness problem. Next, we give
+some important inequalities involving entropy and mutual information that are used subsequently.
+Then, we prove our main lower bound result of this section. To this end, we ﬁrst deﬁne the
+multi-party one-way communication problem Bit-Vector Learning and prove a lower bound on its
+communication complexity. We then show that a streaming algorithm for Neighborhood Detection
+yields a protocol for Bit-Vector Learning, which gives the desired lower bound.
+
+4.1 An Ω(n/c2) Lower Bound via Multi-party Set-Disjointness
+
+Consider the one-way multi-party version of the well-known Set-Disjointness problem:
+
+Problem 3 (Set-Disjointnessp ). Set-Disjointnessp is a p-party communication problem where every
+
+party i holds a subset Si ⊆ U of a universe U of size n. The parties are given the promise that
+either their sets are pairwise disjoint, i.e., Si
+
+1. Chain Rule for Entropy: H (AB | C ) = H (A | C ) + H (B | AC )
+2. Conditioning reduces Entropy: H (A) ≥ H (A | B ) ≥ H (A | BC )
+3. Chain Rule for Mutual Information: I (A : BC ) = I (A : B ) + I (A : C | B )
+4. Data Processing Inequality: 5 Suppose that C is a deterministic function of B . Then: I (A :
+B ) ≥ I (A : C )
+5. Independent Events: Let E be an event independent of A, B , C . Then: I (A : B | C, E ) =
+I (A : B | C )
+We will also use the following claim: (see Claim 2.3. in [4] for a proof )
+
+Lemma 4.2. Let A, B , C, D be jointly distributed random variables so that A and D are independent
+conditioned on C . Then: I (A : B | CD) ≥ I (A : B | C ).
+
+4.3 Hard Communication Problem: Bit-Vector Learning
+
+We consider the following one-way p-party communication game:
+
+2 ◦ · · · ◦ Y j
+
+Problem 4 (Bit-Vector Learning(p, n, k)). Let X1 = [n] and for every 2 ≤ i ≤ p, let Xi be a uniform
+random subset of Xi−1 of size ni = n1− i−1
+p−1 . Furthermore, for every 1 ≤ i ≤ p and every 1 ≤ j ≤ n,
+let Y j
+i ∈ {0, 1}k be a uniform random bit-string if j ∈ Xi , and let Y j
+i = ǫ (the empty string) if
+j /∈ Xi . For j ∈ [n], let Z j = Y j
+1 ◦ Y j
+p be the bit string obtained by concatenation.
+Party i holds Xi and Yi := Y 1
+i , . . . , Y n
+i . Communication is one way from party 1 through party
+p and party p needs to output an index I ∈ [n] and at least 1.01k bits from string Z I . 6
+Observe that the previous deﬁnition also deﬁnes an input distribution. All subsequent entropy
+and mutual information terms refer to this distribution. An example instance of Bit-Vector Learn-
+ing(3, 4, 5) is given in Figure 1 in Section 2.2.2.
+In the following, for a subset S ⊆ [n], we will use the notation Y S
+i , which refers to the strings
+, Y s2
+, . . . , Y
+, where S = {s1 , s2 , . . . , s|S |}.
+Observe further that there is a protocol that requires no communication and outputs an index
+I and k bits of Z I : Party p simply outputs the single element I ∈ Xp together with the bit string
+Y I
+p . As our main result of this section we show that every protocol that outputs at least 1.01k bits
+of any string Z i (i ∈ [n]) needs to send at least one message of length Ω( kn
+Remark: For technical reasons we will only consider values for n so that n
+p−1 is integral. This
+condition implies that ni+1 | ni for every 1 ≤ i ≤ p − 1 since
+= n
+p−1 . The reason for this
+restriction is that we will apply Baranyai’s theorem [8], which is stated as Theorem 4.4 below, and
+requires this property.
+
+Y s1
+i
+
+ni+1
+
+).
+
+1
+
+1
+
+p−1
+
+p
+
+s|S |
+
+i
+
+i
+
+ni
+
+1
+
+5Technically the data processing inequality is more general, however, the inequality stated here is suﬃcient for
+our purposes.
+6More formally, the output is an index I ∈ [n] and a set of tuples {(i1 , ˜Z1 ), (i2 , ˜Z2 ), . . . } of size at least 1.01k with
+ij 6= ik for every j 6= k so that Z I [ij ] = ˜Zj , for every j .
+
+15
+
+4.4 Lower Bound Proof for Bit-Vector Learning
+
+Fix now an arbitrary deterministic protocol Π for Bit-Vector Learning(p, n, k) with distributional
+error ǫ. Let Out = (I , ˜Z I ) denote the neighborhood outputted by the protocol. Furthermore, denote
+by Mi the message sent from party i to party i + 1. Throughout this section let s = maxi |Mi |.
+Since the last party correctly identiﬁes 1.01k bits of Z I , the mutual information between Z I
+and all random variables known to the last party, that is, Mp−1 , Xp and Yp , needs to be large. This
+is proved in the next lemma:
+
+Lemma 4.3. We have:
+
+(6)
+
+I (Mp−1XpYp : Z I ) ≥ (1 − ǫ)1.01k − 1 .
+Proof. We will ﬁrst bound the term I (Out : Z I ) = H (Z I ) − H (Z I | Out). To this end, let E be
+the indicator variable of the event that the protocol errs. Then, P[E = 1] ≤ ǫ. We have:
+H (E , Z I | Out) = H (Z I | Out) + H (E | Out, Z I ) = H (Z I | Out) ,
+(5)
+where we used the chain rule for entropy and the fact that H (E | Out, Z I ) = 0 since E is fully
+determined by Out and Z I . Furthermore,
+H (E , Z I | Out) = H (E | Out) + H (Z I | E , Out) ≤ 1 + H (Z I | E , Out) ,
+using the chain rule for entropy and the bound H (E | Out) ≤ H (E ) ≤ 1 (conditioning reduces
+entropy). From Inequalities 5 and 6 we obtain:
+H (Z I | Out) ≤ 1 + H (Z I | E , Out) .
+Next, we bound the term H (Z I | E , Out) as follows:
+H (Z I | E , Out) = P [E = 0] H (Z I | Out, E = 0) + P [E = 1] H (Z I | Out, E = 1) .
+(8)
+Concerning the term H (Z I | Out, E = 0), since no error occurs, Out already determines at least
+1.01k bits of Z I . We thus have that H (Z I | Out, E = 0) ≤ H (Z I ) − 1.01k . We bound the term
+H (Z I | Out, E = 1) by H (Z I | Out, E = 1) ≤ H (Z I ) (since conditioning can only decrease entropy).
+The quantity H (Z I | E , Out) can thus be bounded as follows:
+H (Z I | E , Out) ≤ (1 − ǫ)(H (Z I ) − 1.01k) + ǫH (Z I ) = H (Z I ) − (1 − ǫ)1.01k .
+Next, using Inequalities 7 and 9, we thus obtain:
+I (Out : Z I ) = H (Z I ) − H (Z I | Out) ≥ H (Z I ) − 1 − H (Z I | E , Out)
+≥ H (Z I ) − 1 − (H (Z I ) − (1 − ǫ)1.01k) = (1 − ǫ)1.01k − 1 .
+Last, observe that Out is a function of Mp−1 , Xp , and Yp . The result then follows from the data
+processing inequality.
+
+(7)
+
+(9)
+
+Next, since the set Xi is a uniform random subset of Xi−1 , we will argue in Lemma 4.5 that the
+message Mi−1 can only contain a limited amount of information about the bits Y Xi
+i−1 . This will be
+stated as a suitable conditional mutual information expression that will be used later. The proof of
+Lemma 4.5 relies on Baranyai’s theorem [8], which in its original form states that every complete
+regular hypergraph is 1-factorizable, i.e., the set of hyperedges can be partitioned into 1-factors.
+We restate this theorem as Theorem 4.4 in a form that is more suitable for our purposes.
+
+16
+
+|S | k
+
+Theorem 4.4 (Baranyai’s theorem [8] - rephrased). Let k , n be integers so that k | n. Let S ⊆ 2[n]
+be the set consisting of al l subsets of [n] of cardinality k. Then there exists a partition of S into
+n subsets S1 , S2 , . . . , S
+such that:
+1. |Si | = n
+k , for every i,
+2. Si
+
+|S | k
+
+n
+
+I (Mi−1 : Y Xi
+i−1 | XiXi−1 ) ≤
+=
+
+E
+
+ni
+I (Mi−1 : Yi−1 | Xi−1 = xi−1 )
+ni−1
+ni
+I (Mi−1 : Yi−1 | Xi−1 ) ≤
+H (Mi−1 ) ≤
+ni−1
+
+xi−1←Xi−1
+
+ni
+ni−1
+
+ni
+ni−1 |Mi−1 | .
+
+The next lemma shows that the last party’s knowledge about the crucial bits Y X2
+is limited.
+
+1
+
+, Y X3
+
+2
+
+, . . . , Y Xp
+
+p−1
+
+Lemma 4.6. The fol lowing inequality holds: (recal l that s = maxi |Mi |)
+I (Mp−1XpYp : Y X2
+. . . Y Xp
+s(p − 1)
+p−1 ) ≤
+n
+
+1 Y X3
+2
+
+p−1
+
+1
+
+.
+
+1
+
+Proof. Let 3 ≤ i ≤ p be an integer. Then:
+I (Mi−1XiYi
+: Y X2
+. . . Y Xi
+i−1 ) = I (XiYi
+: Y X2
+. . . Y Xi
+i−1 ) + I (Mi−1 : Y X2
+= 0 + I (Mi−1 : Y X2
+. . . Y Xi
+i−1 | Xi ) ,
+where we ﬁrst applied the chain rule, then used that the respective random variables are indepen-
+dent, and ﬁnally eliminated the conditioning on Yi , which can be done since all other variables
+are independent with Yi (see Rule 5 in Section 4.2). Next, we apply the chain rule again, invoke
+Lemma 4.5, and remove variables from the conditioning as they are independent with all other
+variables:
+
+. . . Y Xi
+i−1 | XiYi )
+(12)
+
+1
+
+1
+
+1
+
+1
+
+I (Mi−1 : Y X2
+
+. . . Y Xi
+i−1 | Xi ) = I (Mi−1 : Y Xi
+i−1 | Xi ) + I (Mi−1 : Y X2
+np
++ I (Mi−1 : Y X2
+. . . Y Xi−1
+np−1
+Next, we bound the term I (Mi−1 : Y X2
+. . . Y Xi−1
+| Y Xi
+i−1 ) by using the data processing inequality,
+the chain rule, and remove an independent variable from the conditioning:
+
+. . . Y Xi−1
+| Y Xi
+i−1 ) .
+
+| XiY Xi
+i−1 )
+
+≤ |Mi−1 |
+
+i−2
+
+i−2
+
+i−2
+
+1
+
+1
+
+1
+
+I (Mi−1 : Y X2
+
+1
+
+. . . Y Xi−1
+
+i−2
+
+We have thus shown:
+
+1
+
+| Y Xi
+i−1 ) ≤ I (Mi−2Xi−1Yi−1 : Y X2
+. . . Y Xi−1
+| Y Xi
+i−1 )
+= I (Xi−1 Yi−1 : Y X2
+. . . Y Xi−1
+| Y Xi
+i−1 )
++ I (Mi−2 : Y X2
+. . . Y Xi−1
+| Xi−1Yi−1Y Xi
+i−1 )
+= 0 + I (Mi−2 : Y X2
+. . . Y Xi−1
+| Xi−1 ) .
+
+i−2
+i−2
+i−2
+
+i−2
+
+1
+
+1
+
+1
+
+I (Mi−1 : Y X2
+
+ni
+ni−1
+Using a slightly simpler version of the same reasoning, we can show that:
+
+. . . Y Xi
+i−1 | Xi ) ≤ |Mi−1 |
+
++ I (Mi−2 : Y X2
+
+1
+
+1
+
+. . . Y Xi−1
+
+i−2
+
+I (M1 : Y X2
+
+1
+
+| X2 ) ≤ |M1 |
+
+n2
+n1
+
+.
+
+18
+
+| Xi−1 ) .
+
+(13)
+
+(14)
+
+Using Equality 12 and Inequalities 13 and 14, we obtain:
+p−1XpYp ) ≤ s (cid:18) np
+. . . Y Xp
+np−1
+
+I (Mp−1 : Y X2
+
++
+
+1
+
+np−1
+np−2
+
++ · · · +
+
+n2
+n1 (cid:19) =
+
+(p − 1)s
+n
+
+p−1
+
+1
+
+.
+
+Finally we are ready to proof the main result of this section.
+
+Theorem 4.7. For every ǫ < 0.005, the randomized one-way communication complexity of Bit-
+Vector Learning(p, n, k) is bounded as fol lows:
+
+1
+
+p−1
+
+1
+
+p−1
+
+i
+
+) .
+
+= Ω(
+
+kn
+p
+
+R→ǫ (Bit-Vector Learning(p, n, k)) ≥
+
+(0.005k − 1)n
+p − 1
+Proof. Let q be the largest integer i such that Y I
+6= ǫ. Recall that by Lemma 4.3 we have
+I (Mp−1XpYp : Z I ) ≥ (1 − ǫ)1.01k − 1. However, we also obtain:
+I (Mp−1XpYp : Z I ) = I (Mp−1XpYp : Y I
+2 . . . Y I
+q )
+= I (Mp−1XpYp : Y I
+2 . . . Y I
+q−1 ) + I (Mp−1XpYp : Y I
+q | Y I
+≤ I (Mp−1XpYp : Y I
+2 . . . Y I
+q−1 ) + H (Y I
+q )
+≤ I (Mp−1XpYp : Y X2
+. . . Y Xp
+p−1) + k ≤
+where we ﬁrst applied the chain rule for mutual information, then observed that the variables
+Y I
+2 . . . Y I
+q−1 are contained in the variables Y X 2
+. . . Y Xp
+p−1 , and then invoked Lemma 4.6. This
+is thus only possible if:
+
+(p − 1)s
+n
+
+2 . . . Y I
+q−1 )
+
+1 Y I
+1 Y I
+1 Y I
+
+1 Y X 3
+2
+
+1 Y X3
+2
+
+1 Y I
+
+1 Y I
+
++ k ,
+
+1
+
+p−1
+
+(1 − ǫ)1.01k − 1 ≤
+
+which, using ǫ < 0.005, implies
+
+(p − 1)s
+n
+
+p−1
+
+1
+
++ k ,
+
+(0.005k − 1)n
+≤ s .
+p − 1
+Since we considered an arbitrary protocol Π, the result follows.
+
+p−1
+
+1
+
+4.5 Reduction: Neighborhood Detection to Bit-Vector Learning
+
+In this subsection, we show that a streaming algorithm for Neighborhood Detection implies a com-
+munication protocol for Bit-Vector Learning. The lower bound on the communication complexity
+of Bit-Vector Learning thus yields a lower bound on the space requirements of any algorithm for
+
+Neighborhood Detection.
+
+Theorem 4.8. Let A be a c-approximation streaming algorithm for Neighborhood Detection with
+error probability at most 0.005 and c = p
+1.01 , for some integer p ≥ 2. Then A uses space at least:
+dn
+c2
+
+Ω(
+
+) .
+
+p−1
+
+1
+
+19
+
+i=1Ei )
+
+Proof. Given their inputs for Bit-Vector Learning(p, n, k), the p parties construct a graph
+G = ([n], [2kp], ∪p
+so that party i holds edges Ei . The edges of party i ∈ [p] are as follows:
+Ei = {(ℓ, 2k · (i − 1) + 2 · (j − 1) + Y ℓ
+i [j ] + 1) : ℓ ∈ Xi and j ∈ [k ]} .
+Observe that ∆ = kp (the vertex in Xp has such a degree).
+Let A be a c-approximation streaming algorithm for Neighborhood Detection(n, d) with c = p
+and d = ∆ = kp. Party 1 simulates algorithm A on their edges E1 and sends the resulting memory
+state to party 2. This continues until party p completes algorithm and outputs a neighborhood
+(I , S ). We observe that every neighbor s ∈ S of vertex I allows us to determine one bit of string
+Z I . Since the approximation factor of A is
+1.01 , we have |S | ≥ 1.01·∆
+p = 1.01k . We can thus predict
+1.01k bits of string Z I . By Theorem 4.7, every such protocol requires a message of length
+
+1.01
+
+p
+
+1
+
+p−1
+
+kn
+p
+
+Ω(
+
+) = Ω(
+
+1
+
+p−1
+
+dn
+c2
+
+) ,
+
+which implies the same space lower bound for A.
+
+5 Upper Bound for Insertion-deletion Streams
+
+In this section, we discuss our streaming algorithm for Neighborhood Detection for insertion-deletion
+streams.
+Our algorithm is based on the combination of two sampling strategies which both rely on the
+very common l0 -sampling technique: An l0 -sampler in insertion-deletion streams outputs a uniform
+random element from the non-zero coordinates of the vector described by the input stream. In our
+setting, the input vector is of dimension n·m where each coordinate indicates the presence or absence
+of an edge. Jowhari et al. showed that there is an l0 -sampler that uses space O(log2 (dim) log 1
+δ ),
+where dim is the dimension of the input vector, and succeeds with probability 1 − δ [32].
+In the following, we will run ˜O(nd) l0 -samplers. To ensure that they succeed with large
+enough probability, we will run those samplers with δ = 1
+n10d which yields a space requirement
+of O(log2 (nm) · log(nd)) for each sampler.
+l0 -sampling allows us to, for example, sample uniformly at random from all edges of the input
+graph or from all edges incident to a speciﬁc vertex.
+Our algorithm is as follows:
+c , √n}
+1. Let x = max{ n
+2. Vertex Sampling: Before processing the stream, sample a uniform random subset
+A′ ⊆ A of size 10x ln n. For each sampled vertex a, run 10 d
+c ln n l0 -samplers on the set
+of edges incident to a. This strategy requires space ˜O( xd
+c ).
+c (cid:1) ln(nm) l0 -samplers on the stream, each producing
+a uniform random edge. This strategy requires space ˜O (cid:0) nd
+4. Output any neighborhood of size at least d
+c among the stored edges if there is one,
+otherwise report fail
+
+3. Edge Sampling: Run 10 nd
+
+c (cid:0) 1
+x + 1
+
+c (cid:0) 1
+x + 1
+
+c (cid:1)(cid:1).
+
+20
+
+Algorithm 3: One-pass streaming algorithm for insertion-deletion streams
+
+The analysis of our algorithm relies on the following lemma, whose proof uses standard concen-
+tration bounds and is deferred to the appendix.
+Lemma 5.1. Let y , k , n be integers with y ≤ k ≤ n. Let U be a universe of size n and let X ⊆ U
+be a subset of size k. Further, let Y be the subset of U obtained by sampling C ln(n) ny
+k times from
+U uniformly at random (with repetition), for some C ≥ 4. Then, |Y
+
+6 Lower Bound for Insertion-deletion Streams
+
+We will give now our lower bound for Neighborhood Detection in insertion-deletion streams. To
+this end, we ﬁrst deﬁne a two-party communication problem denoted Augmented-Matrix-Row-Index
+and then lower bound its communication complexity. Finally, we argue that an insertion-deletion
+
+streaming algorithm for Neighborhood Detection can be used to solve Augmented-Matrix-Row-Index,
+
+which yields the desired lower bound.
+
+6.1 The Augmented-Matrix-Row-Index Problem
+
+Before deﬁning the problem of interest, we require additional notation. Let M be an n-by-m matrix.
+Then the ith row of M is denoted Mi . A position (i, j ) is a tuple chosen from [n] × [m]. We will
+index the matrix M by a set of positions S , i.e., MS , meaning the matrix positions Mi,j , for every
+(i, j ) ∈ S .
+The problem Augmented-Matrix-Row-Index(n, m, k) is deﬁned as follows:
+
+Problem 5 (Augmented-Matrix-Row-Index(n, m, k)). In Augmented-Matrix-Row-Index, Alice holds
+
+a binary matrix X ∈ {0, 1}n×m where every Xij is a uniform random Bernoul li variable, for some
+integers n, m. Bob holds a uniform random index J ∈ [n] and for each i 6= J , Bob holds a uniform
+random subset of positions Yi ⊆ {i} × [m] with |Yi | = m − k and also knows XYi . Alice sends a
+message to Bob who then outputs the entire row XJ .
+
+For ease of notation, we deﬁne YI = ⊥ and Y = Y1 , Y2 , . . . , Yn . An example instance of
+
+Augmented-Matrix-Row-Index(4, 6, 2) is given in Figure 3.
+
+6.2 Lower Bound Proof for Augmented-Matrix-Row-Index
+
+We now prove a lower bound on the one-way communication complexity of Augmented-Matrix-Row-
+Index(n, m, k). To this end, let Π be a deterministic communication protocol for Augmented-Matrix-
+Row-Index(n, m, k) with distributional error at most ǫ > 0 and denote by M the message that Alice
+sends to Bob.
+First, we prove that the mutual information between row XJ and Bob’s knowledge, that is
+M J Y XY , is large. Since the proof of the next lemma is almost identical to Lemma 4.3 we postpone
+it to the appendix:
+
+Lemma 6.1. We have:
+
+I (XJ : M J Y XY ) ≥ (1 − ǫ)m − 1 .
+Next, we prove our communication lower bound for Augmented-Matrix-Row-Index:
+
+Theorem 6.2. We have:
+
+R→ǫ (Augmented-Matrix-Row-Index(n, m, k)) ≥ (n − 1)(k − 1 − ǫm) .
+
+Proof. Our goal is to bound the term I (X : M ) from below. To this end, we partition the matrix
+M as follows: Let Z be all positions that are diﬀerent to row J and the positions known to Bob,
+i.e., the set Y . Then:
+
+I (X : M ) = I (XY XJ XZ : M ) = I (XY XJ : M ) + I (XZ : M | XJ XY )
+
+22
+
+≥ I (XZ : M | XJ XY ) ,
+where we applied the chain rule for mutual information. For i 6= J , let Zi = ({i} × [m]) \ Yi , i.e.,
+the positions of row i unknown to Bob, and let ZJ = ⊥. Furthermore, let L be a random variable
+that is uniformly distributed in [n] \ J . Then, using the chain rule for mutual information and the
+fact that XZi and XZj are independent, for every i 6= j , we obtain:
+I (XZ : M | XJ XY ) = Xi∈[n]\J
+I (XZi
+: M | XJ XY XZ1 , . . . , XZi−1 )
+
+≥ Xi∈[n]\J
+
+I (XZi
+
+: M | XJ XY )
+
+= (n − 1) · I (XZL : M | XJ XY L) .
+Our goal is to show that I (XZL : M | XJ XY L) ≥ k , which then completes the theorem. To this
+end, we will relate the previous expression to the statement in Lemma 6.1, as follows: First, let Y ′J
+be m − k uniform random positions in row J . Then by independence, we obtain
+I (XZL : M | XJ XY L) ≥ I (XZL : M | XY ′
+XY L) .
+Next, denote by Y \ YL := Y1 , . . . , YL−1 , YL+1 , . . . , Yn . Then, by using the chain rule again, we
+obtain:
+
+J
+
+J
+
+J
+
+J
+
+J
+
+I (XL : M | XY ′
+
+XY \YL L) = I (XYL XZL : M | XY ′
+XY \YL L)
+= I (XYL : M | XY ′
+XY \YL L) + I (XZL : M | XY ′
+≤ H (XYL ) + I (XZL : M | XY ′
+XY L)
+≤ (m − k) + I (XZL : M | XY ′
+XY L) .
+Last, it remains to argue that I (XZL : M | XY ′
+XY \YL L) is equivalent to I (XZJ
+: M | J Y XY ).
+Indeed, ﬁrst observe that L is chosen uniformly at random from [n] \ J , which is equivalent to a
+value chosen uniformly at random from [n] since J is itself a uniform random value in [n]. Observe
+further that the conditioning is also equivalent: both XY ′
+XY \YL and XY reveal m − k uniform
+random positions of each row diﬀerent to row L and J , respectively. Hence, using Lemma 6.1 we
+obtain:
+
+XY L)
+
+J
+
+J
+
+J
+
+J
+
+J
+
+I (XZL : M | XY ′
+XY L) ≥ I (XL : M | XY ′
+XY \YL L)− (m − k) = (1− ǫ)m − 1− (m − k) = k − 1− ǫm .
+We have thus shown that I (X : M ) ≥ (n − 1)(k − 1 − ǫm). The result then follows, since
+I (X : M ) ≤ H (M ) ≤ |M |.
+
+J
+
+6.3 Reduction: Neighborhood-Detection to Augmented-Matrix-Row-Index
+
+Lemma 6.3. Let A be a c-approximation insertion-deletion streaming algorithm for Neighborhood
+Detection(n, d) with space s that fails with probability at most δ. Then there is a one-way commu-
+c − 1) with message size
+
+nication protocol for Augmented-Matrix-Row-Index(n, 2d, d
+
+O(s · c · log n)
+that fails with probability at most δ + n−10 .
+
+23
+
+Proof. We will show how to solve Augmented-Matrix-Row-Index(n, 2d, d
+c − 1) using algorithm A.
+Assume from now on that the number of 1s in row J of matrix X is at least d. We will argue later
+what to do if this is not the case. Alice and Bob repeat the following protocol Θ(c log n) times in
+parallel:
+First, Alice and Bob use public randomness to chose n permutations πi : [2d] → [2d] at random
+and permute the elements of each row i independently using πi . Observe that this operation does
+not change the number of 1s in each row. Let X ′ be the permuted matrix. Then, Alice and
+Bob interpret the matrix X ′ as the adjacency matrix of a bipartite graph, where Bob’s knowledge
+about X ′ is treated as edge deletions. Under the assumption that row J contains at least d 1s,
+and since none of the elements of row J are deleted by Bob’s input, we have a valid instance for
+Neighborhood Detection(n, d). Alice then runs A on the graph obtained from X ′ and sends the
+resulting memory state to Bob. Bob then continues A on his input and outputs a neighborhood of
+size at least d
+c . Observe that after Bob’s deletions, every row except row J contains at most d
+c − 1
+1s, which implies that A reports a neighborhood rooted at A-vertex J (the vertex that corresponds
+to row J ). Bob thus learns at least d
+c positions of row J where the matrix X ′ is 1. Bob then
+applies (πJ )−1 and thus learns at least d
+c positions of row J of matrix X where the value is 1.
+Observe that since the permutation πJ was chosen uniformly at random, the probability that a
+speciﬁc position with value 1 in row J of matrix X is learnt by the algorithm is at least d/c
+Applying concentration bounds, since the protocol is repeated Θ(c · log n) times (where Θ hides a
+large enough constant), we learn all 1s in row J with probability 1 − n−10 and thus have solved
+c − 1).
+It remains to address the case when row J contains fewer than d 1s. To address this case, Alice
+and Bob simultaneously run the algorithm mentioned above on the matrix obtained by inverting
+every bit, which allows them to learn all positions in row J where the matrix X is 0. Finally, Bob
+can easily decide in which of the two cases they are: If row J contained at most d − 1 1s then the
+strategy without inverting the input would therefore report at most d − 1 1s. Bob thus knows in
+which case they are.
+
+Augmented-Matrix-Row-Index(n, 2d, d
+
+2d = 1
+2c .
+
+c2 log n )(cid:17).
+
+Theorem 6.4. Every c-approximation insertion-deletion streaming algorithm for Neighborhood
+Detection(n, d) that fails with probability δ ≤ 1
+2d requires space Ω (cid:16) nd
+Proof. Let A be a streaming algorithm as in the description of this theorem. Then, by Lemma 6.3,
+there is a one-way communication protocol for Augmented-Matrix-Row-Index(n, 2d, d
+c − 1) that suc-
+ceeds with probability δ + n−10 and communicates O(s · c log n) bits. Then, by Theorem 6.2, we
+have:
+s · c log n = Ω (cid:18)(n − 1)(
+d
+c − 2 − (δ + n−10 )2d(cid:19) = Ω (cid:18) nd
+c (cid:19) ,
+s = Ω (cid:18) nd
+c2 log n (cid:19) .
+
+which yields
+
+References
+
+[1] Kook Jin Ahn, Sudipto Guha, and Andrew McGregor. Analyzing graph structure via linear
+measurements. In Proceedings of the Twenty-third Annual ACM-SIAM Symposium on Discrete
+
+24
+
+Algorithms, SODA ’12, pages 459–467, Philadelphia, PA, USA, 2012. Society for Industrial and
+Applied Mathematics.
+
+[2] Yuqing Ai, Wei Hu, Yi Li, and David P. Woodruﬀ. New characterizations in turnstile streams
+with applications. In 31st Conference on Computational Complexity, CCC 2016, May 29 to
+June 1, 2016, Tokyo, Japan, pages 20:1–20:22, 2016.
+
+[3] Sepehr Assadi. Tight space-approximation tradeoﬀ for the multi-pass streaming set cover
+problem. In Proceedings of the 36th ACM SIGMOD-SIGACT-SIGAI Symposium on Principles
+of Database Systems, PODS 2017, Chicago, IL, USA, May 14-19, 2017, pages 321–335, 2017.
+
+[4] Sepehr Assadi, Sanjeev Khanna, and Yang Li. Tight bounds for single-pass streaming complex-
+ity of the set cover problem. In Proceedings of the 48th Annual ACM SIGACT Symposium on
+Theory of Computing, STOC 2016, Cambridge, MA, USA, June 18-21, 2016, pages 698–711,
+2016.
+
+[5] Sepehr Assadi, Sanjeev Khanna, Yang Li, and Grigory Yaroslavtsev. Maximum matchings
+in dynamic graph streams and the simultaneous communication model. In Proceedings of the
+Twenty-Seventh Annual ACM-SIAM Symposium on Discrete Algorithms, SODA 2016, Arling-
+ton, VA, USA, January 10-12, 2016, pages 1345–1364, 2016.
+
+[6] Z. Bar-Yossef, T. S. Jayram, R. Kumar, and D. Sivakumar. Information theory methods in
+communication complexity. In Proceedings 17th IEEE Annual Conference on Computational
+Complexity, pages 93–102, May 2002.
+
+[7] Ziv Bar-Yossef, T. S. Jayram, Ravi Kumar, and D. Sivakumar. An information statistics
+approach to data stream and communication complexity. In Proceedings of the 43rd Symposium
+on Foundations of Computer Science, FOCS ’02, pages 209–218, Washington, DC, USA, 2002.
+IEEE Computer Society.
+
+[8] Zsolt Baranyai. The edge-coloring of complete hypergraphs i. Journal of Combinatorial Theory,
+Series B, 26(3):276 – 294, 1979.
+
+[9] Radu Berinde, Graham Cormode, Piotr Indyk, and Martin J. Strauss. Space-optimal heavy
+hitters with strong error bounds. In Proceedings of the Twenty-eighth ACM SIGMOD-SIGACT-
+SIGART Symposium on Principles of Database Systems, PODS ’09, pages 157–166, New York,
+NY, USA, 2009. ACM.
+
+[10] Arnab Bhattacharyya, Palash Dey, and David P. Woodruﬀ. An optimal algorithm for &ell;1-
+heavy hitters in insertion streams and related problems. ACM Trans. Algorithms, 15(1):2:1–
+2:27, October 2018.
+
+[11] Yousra Chabchoub, Christine Fricker, and Hanene Mohamed. Analysis of a bloom ﬁlter algo-
+rithm via the supermarket model. In 21st International Teletraﬃc Congress, ITC 2009, Paris,
+France, September 15-17, 2009, pages 1–8, 2009.
+
+[12] Amit Chakrabarti, Subhash Khot, and Xiaodong Sun. Near-optimal lower bounds on the
+multi-party communication complexity of set disjointness. In 18th Annual IEEE Conference
+on Computational Complexity (Complexity 2003), 7-10 July 2003, Aarhus, Denmark, pages
+107–117, 2003.
+
+25
+
+[13] Amit Chakrabarti, Yaoyun Shi, Anthony Wirth, and Andrew Chi-Chih Yao. Informational
+complexity and the direct sum problem for simultaneous message complexity. In 42nd Annual
+Symposium on Foundations of Computer Science, FOCS 2001, 14-17 October 2001, Las Vegas,
+Nevada, USA, pages 270–278, 2001.
+
+[14] Amit Chakrabarti and Anthony Wirth. Incidence geometries and the pass complexity of semi-
+streaming set cover. In Proceedings of the Twenty-Seventh Annual ACM-SIAM Symposium on
+Discrete Algorithms, SODA 2016, Arlington, VA, USA, January 10-12, 2016, pages 1365–1373,
+2016.
+
+[15] Moses Charikar, Kevin Chen, and Martin Farach-Colton. Finding frequent items in data
+streams. In Proceedings of the 29th International Col loquium on Automata, Languages and
+Programming, ICALP ’02, pages 693–703, Berlin, Heidelberg, 2002. Springer-Verlag.
+
+[16] Graham Cormode, Jacques Dark, and Christian Konrad. Independent Sets in Vertex-Arrival
+Streams. In Christel Baier, Ioannis Chatzigiannakis, Paola Flocchini, and Stefano Leonardi,
+editors, 46th International Col loquium on Automata, Languages, and Programming (ICALP
+2019), volume 132 of Leibniz International Proceedings in Informatics (LIPIcs), pages 45:1–
+45:14, Dagstuhl, Germany, 2019. Schloss Dagstuhl–Leibniz-Zentrum fuer Informatik.
+
+[17] Graham Cormode and Donatella Firmani. A unifying framework for &#8467;0-sampling algo-
+rithms. Distrib. Paral lel Databases, 32(3):315–335, September 2014.
+
+[18] Graham Cormode and Hossein Jowhari. Lp samplers and their applications: A survey. ACM
+Comput. Surv., 52(1):16:1–16:31, February 2019.
+
+[19] Graham Cormode and S. Muthukrishnan. An improved data stream summary: The count-min
+sketch and its applications. J. Algorithms, 55(1):58–75, April 2005.
+
+[20] Thomas M. Cover and Joy A. Thomas. Elements of Information Theory (Wiley Series in
+Telecommunications and Signal Processing). Wiley-Interscience, New York, NY, USA, 2006.
+
+[21] Erik D. Demaine, Piotr Indyk, Sepideh Mahabadi, and Ali Vakilian. On streaming and com-
+munication complexity of the set cover problem. In Distributed Computing - 28th International
+Symposium, DISC 2014, Austin, TX, USA, October 12-15, 2014. Proceedings, pages 484–498,
+2014.
+
+[22] Yuval Emek and Adi Ros´en. Semi-streaming set cover. ACM Trans. Algorithms, 13(1):6:1–6:22,
+2016.
+
+[23] Cristian Estan and George Varghese. New directions in traﬃc measurement and accounting:
+Focusing on the elephants, ignoring the mice. ACM Trans. Comput. Syst., 21(3):270–313,
+August 2003.
+
+[24] Shir Landau Feibish, Yehuda Afek, Anat Bremler-Barr, Edith Cohen, and Michal Shagam.
+Mitigating DNS random subdomain ddos attacks by distinct heavy hitters sketches. In Pro-
+ceedings of the ﬁfth ACM/IEEE Workshop on Hot Topics in Web Systems and Technologies,
+HotWeb 2017, San Jose / Silicon Val ley, CA, USA, October 12 - 14, 2017, pages 8:1–8:6,
+2017.
+
+26
+
+[25] Joan Feigenbaum, Sampath Kannan, Andrew McGregor, Siddharth Suri, and Jian Zhang.
+Graph distances in the streaming model: The value of space. In Proceedings of the Sixteenth
+Annual ACM-SIAM Symposium on Discrete Algorithms, SODA ’05, pages 745–754, Philadel-
+phia, PA, USA, 2005. Society for Industrial and Applied Mathematics.
+
+[26] Joan Feigenbaum, Sampath Kannan, Andrew McGregor, Siddharth Suri, and Jian Zhang. On
+graph problems in a semi-streaming model. Theoretical Computer Science, 348(2):207 – 216,
+2005. Automata, Languages and Programming: Algorithms and Complexity (ICALP-A 2004).
+
+[27] Magn´us M. Halld´orsson, Xiaoming Sun, Mario Szegedy, and Chengu Wang. Streaming and
+communication complexity of clique approximation. In Artur Czuma j, Kurt Mehlhorn, Andrew
+Pitts, and Roger Wattenhofer, editors, Automata, Languages, and Programming, pages 449–
+460, Berlin, Heidelberg, 2012. Springer Berlin Heidelberg.
+
+[28] Sariel Har-Peled, Piotr Indyk, Sepideh Mahabadi, and Ali Vakilian. Towards tight bounds for
+the streaming set cover problem. In Proceedings of the 35th ACM SIGMOD-SIGACT-SIGAI
+Symposium on Principles of Database Systems, PODS 2016, San Francisco, CA, USA, June
+26 - July 01, 2016, pages 371–383, 2016.
+
+[29] Monika R. Henzinger, Prabhakar Raghavan, and Sridhar Ra jagopalan. External memory
+algorithms. chapter Computing on Data Streams, pages 107–118. American Mathematical
+Society, Boston, MA, USA, 1999.
+
+[30] Kaave Hosseini, Shachar Lovett, and Grigory Yaroslavtsev. Optimality of linear sketching
+under modular updates. In 34th Computational Complexity Conference, CCC 2019, July 18-
+20, 2019, New Brunswick, NJ, USA., pages 13:1–13:17, 2019.
+
+[31] Piotr Indyk, Sepideh Mahabadi, Ronitt Rubinfeld, Jonathan Ullman, Ali Vakilian, and Anak
+Yodpinyanee. Fractional set cover in the streaming model. In Approximation, Randomization,
+and Combinatorial Optimization. Algorithms and Techniques, APPROX/RANDOM 2017, Au-
+gust 16-18, 2017, Berkeley, CA, USA, pages 12:1–12:20, 2017.
+
+[32] Hossein Jowhari, Mert Sa˘glam, and G´abor Tardos. Tight bounds for lp samplers, ﬁnding
+duplicates in streams, and related problems. In Proceedings of the Thirtieth ACM SIGMOD-
+SIGACT-SIGART Symposium on Principles of Database Systems, PODS ’11, pages 49–58,
+New York, NY, USA, 2011. ACM.
+
+[33] Christian Konrad. Maximum matching in turnstile streams.
+In Nikhil Bansal and Irene
+Finocchi, editors, Algorithms - ESA 2015, pages 840–852, Berlin, Heidelberg, 2015. Springer
+Berlin Heidelberg.
+
+[34] Christian Konrad, Fr´ed´eric Magniez, and Claire Mathieu. Maximum matching in semi-
+streaming with few passes. In Anupam Gupta, Klaus Jansen, Jos´e Rolim, and Rocco Serve-
+dio, editors, Approximation, Randomization, and Combinatorial Optimization. Algorithms and
+Techniques, pages 231–242, Berlin, Heidelberg, 2012. Springer Berlin Heidelberg.
+
+[35] Abhishek Kumar and Jun (Jim) Xu. Sketch guided sampling - using on-line estimates of ﬂow
+size for adaptive data collection.
+In INFOCOM 2006. 25th IEEE International Conference
+on Computer Communications, Joint Conference of the IEEE Computer and Communications
+Societies, 23-29 April 2006, Barcelona, Catalunya, Spain, 2006.
+
+27
+
+[36] Eyal Kushilevitz and Noam Nisan. Communication Complexity. Cambridge University Press,
+New York, NY, USA, 2006.
+
+[37] Yi Li, Huy L. Nguyen, and David P. Woodruﬀ. Turnstile streaming algorithms might as well
+be linear sketches. In Proceedings of the Forty-sixth Annual ACM Symposium on Theory of
+Computing, STOC ’14, pages 174–183, New York, NY, USA, 2014. ACM.
+
+[38] Gurmeet Singh Manku and Ra jeev Motwani. Approximate frequency counts over data streams.
+In Proceedings of the 28th International Conference on Very Large Data Bases, VLDB ’02,
+pages 346–357. VLDB Endowment, 2002.
+
+[39] Andrew McGregor. Graph stream algorithms: A survey. SIGMOD Rec., 43(1):9–20, May
+2014.
+
+[40] Ahmed Metwally, Divyakant Agrawal, and Amr El Abbadi. Eﬃcient computation of frequent
+and top-k elements in data streams. In Proceedings of the 10th International Conference on
+Database Theory, ICDT’05, pages 398–412, Berlin, Heidelberg, 2005. Springer-Verlag.
+
+[41] Jayadev Misra and David Gries. Finding repeated elements. Sci. Comput. Program., 2(2):143–
+152, 1982.
+
+[42] Xiaoming Sun and David P. Woodruﬀ. Tight bounds for graph problems in insertion streams.
+In Approximation, Randomization, and Combinatorial Optimization. Algorithms and Tech-
+niques, APPROX/RANDOM 2015, August 24-26, 2015, Princeton, NJ, USA, pages 435–448,
+2015.
+
+[43] Jeﬀrey S. Vitter. Random sampling with a reservoir. ACM Trans. Math. Softw., 11(1):37–57,
+March 1985.
+
+A Sampling Lemma
+
+Lemma 5.1. Let y , k , n be integers with y ≤ k ≤ n. Let U be a universe of size n and let X ⊆ U
+be a subset of size k. Further, let Y be the subset of U obtained by sampling C ln(n) ny
+k times from
+U uniformly at random (with repetition), for some C ≥ 4. Then, |Y
+
+k ≥ C
+
+Suppose ﬁrst that y ≥ k
+2 . Then, we use the approximation n ≤ µ ≤ n ln(k). By a Chernoﬀ
+bound, the probability that more than C ln(n) ny
+2 n ln(n) samples are needed is at most
+exp −
+( C
+2 − 1)2
+1
+n(cid:19) .
+2 + C
+2 − 1
+2
+Next, suppose that y < k
+2 . Then, we use the (crude) approximations 1 ≤ µ ≤ ny
+k . By a Chernoﬀ
+bound, the probability that more than C ln(n) ny
+k samples are needed is at most:
+exp (cid:18)−
+2 + (C − 1) ln n (cid:19) ≤ n−C+3 .
+(C − 1)2 ln(n)2
+
+n! ≤ exp (cid:18)−
+
+B Missing Proof: Insertion-deletion Stream Lower Bound
+
+Lemma 6.1 We have:
+
+I (XJ : M J Y XY ) ≥ (1 − ǫ)m − 1 .
+Proof. Let Out be the output produced by the protocol for Augmented-Matrix-Row-Index. We will
+ﬁrst bound the term I (Out : XJ ) = H (XJ ) − H (XJ | Out). To this end, let E be the indicator
+random variable of the event that the protocol errs. Then, P[E = 1] ≤ ǫ. We have:
+H (E , XJ | Out) = H (XJ | Out) + H (E | Out, XJ ) = H (XJ | Out) ,
+(15)
+where we used the chain rule for entropy and the fact that H (E | Out, XJ ) = 0 since E is fully
+determined by Out and XJ . Furthermore,
+H (E , XJ | Out) = H (E | Out) + H (XJ | E , Out) ≤ 1 + H (XJ | E , Out) ,
+(16)
+using the chain rule for entropy and the bound H (E | Out) ≤ H (E ) ≤ 1. From Inequalities 15 and
+16 we obtain:
+
+(17)
+
+H (XJ | Out) ≤ 1 + H (XJ | E , Out) .
+Next, we bound the term H (XJ | E , Out) as follows:
+H (XJ | E , Out) = P [E = 0] H (XJ | Out, E = 0) + P [E = 1] H (XJ | Out, E = 1) .
+(18)
+Concerning the term H (XJ | Out, E = 0), since no error occurs, Out determines XJ . We thus
+have that H (XJ | Out, E = 0) = 0. We bound the term H (XJ | Out, E = 1) by H (XJ | Out, E =
+1) ≤ H (XJ ) = m (since conditioning can only decrease entropy). The quantity H (XJ | E , Out)
+can thus be bounded as follows:
+H (XJ | E , Out) ≤ (1 − ǫ) · 0 + ǫH (XJ ) = ǫH (XJ ) .
+Next, using Inequalities 17 and 19, we thus obtain:
+I (Out : XJ ) = H (XJ ) − H (XJ | Out) ≥ H (XJ ) − 1 − H (XJ | E , Out)
+≥ H (XJ ) − 1 − ǫH (XJ ) = (1 − ǫ)H (XJ ) − 1 = (1 − ǫ)m − 1 .
+Last, observe that Out is a function of M , J, Y and XY . The result then follows from the data
+processing inequality.
+
+(19)
+
+29
+
+

@@ -1,0 +1,1207 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+7
+0
+1
+7
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+SMART: Skeletal Motion Action Recognition aTtack
+
+He Wang
+University of Leeds
+United Kingdom
+
+Feixiang He
+University of Leeds
+United Kingdom
+
+Zhexi Peng
+Beijing University of Posts
+and Telecommunications, China
+
+h.e.wang@leeds.ac.uk
+
+scfh@leeds.ac.uk
+
+pzx0307@bupt.edu.cn
+
+Yongliang Yang
+University of Bath
+United Kingdom
+
+Tianjia Shao
+Zhejiang University
+China
+
+Kun Zhou
+Zhejiang University
+China
+
+strongyang@gmail.com
+
+tianjiashao@gmail.com
+
+kunzhou@acm.org
+
+David Hogg
+University of Leeds
+United Kingdom
+
+D.C.Hogg@leeds.ac.uk
+
+Abstract
+
+Adversarial attack has inspired great interest in com-
+puter vision, by showing that classiﬁcation-based solutions
+are prone to imperceptible attack in many tasks. In this pa-
+per, we propose a method, SMART, to attack action rec-
+ognizers which rely on 3D skeletal motions. Our method
+involves an innovative perceptual loss which ensures the im-
+perceptibility of the attack. Empirical studies demonstrate
+that SMART is effective in both white-box and black-box
+scenarios. Its generalizability is evidenced on a variety of
+action recognizers and datasets. Its versatility is shown in
+different attacking strategies. Its deceitfulness is proven in
+extensive perceptual studies. Finally, SMART shows that
+adversarial attack on 3D skeletal motion, one type of time-
+series data, is signiﬁcantly different from traditional adver-
+sarial attack problems.
+
+1. Introduction
+
+Adversarial attack has invoked a new wave of research
+interest recently. On the one hand, it shows that deep learn-
+ing models, as powerful as they are, are vulnerable to at-
+tack, leading to security and safety concerns [29]; on the
+other hand, it has been proven to be useful in improving
+the robustness of existing models [14]. Starting from ob-
+ject recognition, the list of target tasks for adversarial attack
+has been rapidly expanding, now including face recognition
+[25], point clouds [38], and 3D meshes [40].
+
+While adversarial attack on static data (images, geome-
+tries, etc.) has been explored, its effectiveness on time-
+series has only been attempted under general settings [9].
+In computer vision, video-based attack has been attempted
+in attacking recognition tasks [36]. In this paper, we would
+like to attack another type of time-series data: 3D skeletal
+motions, for action recognition tasks.
+Skeletal motion has been widely used in action recogni-
+tion [3]. It can greatly improve recognition accuracy by mit-
+igating issues such as lighting, occlusion and posture ambi-
+guity. In this paper we show that 3D skeletal motions are
+also vulnerable to adversarial attack and it can thus cause
+serious concerns.
+Adversarial attack on 3D skeletal motion faces two
+unique and related challenges which are signiﬁcantly dif-
+ferent from other attack problems: low redundancy and per-
+ceptual sensitivity. When attacking images/videos, it is pos-
+sible to perturb some pixels without causing too much vi-
+sual distortion. This largely depends on the redundancy in
+image space [31]. Unlike images, which have thousands of
+Degrees of Freedom (DoFs), a motion frame (or a pose) in
+3D skeletal motions is usually parameterized by fewer than
+100 DoFs (in our experiments, we use 25 joints, equiva-
+lent to 25*3=75 DoFs). This not only restricts the space of
+possible attacks, but also has severe consequences on the
+imperceptibility of the adversarial examples: a small per-
+turbation on a single joint can be easily noticed. Further-
+more, coordinated perturbations on multiple joints in only
+one frame can hardly work either, because in the temporal
+domain, similar constraints apply. Any sparsity-based per-
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+turbation (on single joints or individual frames) will greatly
+affect the dynamics (causing jittering or bone-length viola-
+tions) and will be very obvious to an observer.
+We propose an adversarial attack method, SMART,
+based on an optimization framework that explicitly consid-
+ers motion dynamics and skeletal structures. The optimiza-
+tion ﬁnds perturbations by balancing between classiﬁcation
+goals and perceptual distortions, formulated as classiﬁca-
+tion loss and perceptual loss. Varying the classiﬁcation loss
+leads to different attacking strategies. The new perceptual
+loss fully utilizes the dynamics of the motions and bone
+structures. We empirically show that SMART is effective
+in both white-box and black-box settings, on several state-
+of-the-art models, across a variety of datasets.
+Formally, our contributions include:
+• A novel perceptual loss function for adversarial attack
+on action recognition based on 3D skeletal motions.
+The new perceptual loss captures the perceptual real-
+ism and fully exploits the motion dynamics.
+• Empirical evidence that 3D skeletal motions are vul-
+nerable to attack under multiple settings and attacking
+strategies, by extensive experiments and user studies.
+• Insights into the role of dynamics in the imperceptibil-
+ity of adversarial attack based on comprehensive per-
+ceptual studies. This result differs signiﬁcantly from
+widely accepted approaches, which use l-norm with -
+ball constraints on static data such as images.
+
+2. Related Work
+
+2.1. Skeleton-based Action Recognition
+
+Action recognition is crucial for many important ap-
+plications, namely visual surveillance, human-robot inter-
+action and entertainment. Recent advances in 3D sens-
+ing and pose estimation motivate the use of clean skele-
+ton data to robustly classify human actions, overcoming the
+biases from raw RGB video due to body occlusion, scat-
+tered background, lighting variation, etc. Unlike conven-
+tional approaches that are limited to handcrafted skeletal
+features [32, 5, 2], recent methods taking the advantage of
+trained features from deep learning have gained the state-
+of-the-art performance. According to the representation
+of the skeleton data used for training, deep learning based
+methods can be classiﬁed into three categories, including
+sequence-based methods, image-based methods, and graph-
+based methods, respectively.
+Sequence-based methods represent skeleton data as a
+chronological sequence of postures, each of which con-
+sists of the coordinates of all the joints. Then RNN-
+based architecture is employed to perform the classiﬁca-
+tion [3, 23, 17, 28, 46].
+Image-based methods represent
+
+skeletal motion as a pseudo-image, which is a 2D tensor
+where one dimension corresponds to time, and the other di-
+mension stacks all joints from a single skeleton. Such rep-
+resentation enables CNN-based image classiﬁcation to be
+applied in the action recognition context [18, 10]. Different
+from the previous two categories that mainly rely on skele-
+ton geometry represented by the joint coordinates, graph-
+based methods utilize graph representation to naturally con-
+sider the skeleton topology (i.e., joint connectivity) encoded
+by bones that connect neighboring joints. Graph neural
+networks (GNN) are used to train the classiﬁer and recog-
+nize the action [42, 30, 26]. Based on the code released
+by the original authors, we perform adversarial attacks on
+two most representative categories (i.e., RNN- and GNN-
+based), demonstrating the vulnerability of different types of
+neural networks.
+
+2.2. Adversarial Attacks
+
+Despite its signiﬁcance of enhancing vision-based tasks
+such as classiﬁcation and recognition, deep neutral net-
+works are vulnerable to carefully crafted adversarial attacks
+as ﬁrstly pointed out in [29]. In other words, delicately de-
+signed neural networks with high performance can be eas-
+ily fooled by an unnoticeable perturbation on the original
+data. With the above concern being addressed, researchers
+have extensively investigated adversarial attacks on differ-
+ent data types, including 2D images [6, 22, 19, 39, 41],
+videos [37, 35], 3D shapes [15, 45, 40, 38], physical ob-
+jects [12, 1, 4], while rare attention has been paid on 3D
+skeletal motions.
+Adversarial attacks in the context of action recognition is
+much less explored. Inkawhich et al. [8] perform adversar-
+ial attacks for optical-ﬂow based action recognition classi-
+ﬁers, which is mainly inspired from image classiﬁer attacks
+and differs from our work in terms of the input data.
+In recent contemporaneous work to our own [16] , adver-
+sarial attack is applied to a GNN network for action classi-
+ﬁcation from skeletal motion [42]. The loss function used
+for the attack minimises the acceleration of joint positions,
+for which there is a qualitative demonstration of impercep-
+tibility. In our work, we demonstrate improved results using
+a perceptual loss that minimises acceleration relative to the
+original skeletal motion, thereby preserving the large accel-
+erations intrinsic to actions such as running and jumping.
+We also perform a perceptual study to validate the imper-
+ceptibility of the perturbed skeletal motions and the effec-
+tiveness of our choice of perceptual loss.
+We demonstrate successful attacks on a range of network
+architectures, including RNN and GNN based methods, us-
+ing three datasets. Finally, we present results for three dif-
+ferent attack objectives, including the novel objective of
+placing the correct action beneath the ﬁrst n actions in a
+ranked classiﬁcation, for a given n.
+
+3. Methodology
+
+SMART is formulated as an optimization problem,
+where the minimizer is an adversarial example, for a given
+motion, that minimizes the perceptual distortion while fool-
+ing the target model. The optimization has three vari-
+ants constructed for three different attacking strategies:
+Anything-but Attack, Anything-but-N Attack and Speciﬁed
+Attack. They are used in white-box and black-box scenar-
+ios.
+
+3.1. Optimization for Attack
+
+In an action recognition task, given a motion q = {q0 ,
+q1 , ... ,qt}, where qt is the frame at time t and consists of
+stacked 3D joint locations, a trained classiﬁer Φ can pre-
+dict its class label yq = C (Φ(q)), where Φ is namely a deep
+neural network and Φ(q) is the predicted distribution over
+class labels. C is usually a softmax function and yq is the
+predicted label. We aim to ﬁnd a perturbed example, ˆq , for
+q , such as yq (cid:54)= y ˆq .
+Without any constraints, it is trivial to ﬁnd ˆq . So nor-
+mally, it requires that the difference between q and ˆq is not
+perceptible. This can be formulated into a generic optimiza-
+tion problem:
+
+arg min
+
+L = arg min
+
+ˆq
+
+ˆq
+
+wLc (q , ˆq) + (1 − w)Lp (q , ˆq) (1)
+
+where Lc and Lp are classiﬁcation loss and perceptual loss
+respectively and w is a weight. We use w = 0.4. Intuitively,
+there are two forces governing ˆq . Lc is the classiﬁcation loss
+where we can design different attacking strategies. Lp is the
+perceptual loss which dictates that the ˆq should be visually
+indistinguishable from q .
+To optimize for ˆq , we have only one mild assumption: we
+can compute the gradient: ∂L
+∂ ˆq . This way, we can compute ˆq
+iteratively by ˆqt+1 = ˆqt + f ( ∂L
+, ˆqt ) where ˆqt is ˆq at step t,
+f computes the updates and  is the learning rate. We set ˆq0
+= q and use Adam [11] for f .
+
+∂ ˆqt
+
+3.2. Perceptual Loss
+
+Imperceptibility is a hard constraint in adversarial at-
+tacks. It requires that human cannot distinguish easily be-
+tween the adversarial examples and real data. Many exist-
+ing approaches on images and videos achieve impercepti-
+bility by computing the image-wise or frame-wise minimal
+changes, measured by a certain type of l norm, e.g. l1 , l2 or
+l∞ . However, it would not work for motions because they
+do not consider dynamics.
+To fully represent the dynamics of a motion, we need
+the derivatives from zero-order (joint location), ﬁrst-order
+(joint velocity) up to nth-order. One common approxima-
+tion is to use ﬁrst n terms, e.g. up to the second-order. When
+it comes to imperceptibility on motions, the perceived mo-
+tion naturalness is vital and not all derivatives are at the
+
+same level of importance [33]. Inspired by the work in char-
+acter animation [33, 34], we propose a new perceptual loss:
+(2)
+
+M(cid:88)
+
+i=1
+
+Lp (q , ˆq) = αldyn + (1 − α)lbl
+1
+||B l(qi ) − B l( ˆqi )||2
+M
+βn ||γ (qn − ˆqn )||2
+
+∞(cid:88)
+
+2 where
+
+βn = 1 (4)
+
+(3)
+
+2
+
+lbl = ||B l(q) − B l( ˆq)||2
+2 =
+
+∞(cid:88)
+
+ldyn =
+
+n=0
+
+n=0
+
+where α is a weight and set to 0.3 for our experiments.
+lbl penalizes any bone length deviations in every frame
+where M is the total frame number. Theoretically, the bone
+lengths do not change over time. However, due to motion
+capture errors, they do change in different frames even in
+the original motions. This is why lbl is designed to be a
+frame-wise bone length loss term.
+ldyn is the dynamics loss. We use a strategy called
+derivative matching. It is a weighted (by βn ) sum of frame-
+wise l2 distance between qn and ˆqn , where qn and ˆqn are
+the nth-order derivatives and can be computed by forward
+differencing. γ is a 25-dimensional vector of joint weights.
+Although n goes up to inﬁnity, in practice, we explored up
+to n = 4, which includes joint position, velocity, accelera-
+tion, jerk and snap. After exhaustive experiments, we found
+that a good compromise is to set β0 = 0.6, β2 = 0.4 and the
+rest to 0. Matching the 2nd-order proﬁles of two motions is
+critical. For skeletal motions, small location deviations can
+still generate large acceleration differences, resulting two
+distinctive motions. More often, it generates severe jitter-
+ing and thus totally unnatural motions. An alternative way
+of regulating the dynamics is to purely smooth the motion,
+by e.g. minimizing the acceleration. But it damps highly
+dynamic motions such as jumping [33]. Also, considering
+more derivatives makes the optimization harder to solve and
+over-weighs their beneﬁts.
+Finally, we ﬁx the values of γ s. Based on our preliminary
+studies, we found that the perceived motion naturalness is
+not affected by all joint equally. The jittering on the torso
+has higher impact. So we use higher weights on the spinal
+joints. For all our experiments, the skeleton has 25 joints.
+We use 0.04 for the 5 spinal joints and 0.02 for the rest.
+
+3.3. White-box Attack
+
+With the perceptual loss ﬁxed, varying the formulation
+of classiﬁcation loss allows us to form different attacking
+strategies. We present three strategies.
+Anything-but Attack (AB). Anything-but Attack aims
+to fool the classiﬁer so that yq (cid:54)= y ˆq . This can be achieved
+by maximizing the cross entropy between Φ(q) and Φ( ˆq):
+(5)
+Comparatively, AB is the easiest optimization problem
+among the three strategies. Φ( ˆq) could peak on any class
+
+Lc (q , ˆq) = −cross entropy(Φ(q), Φ( ˆq))
+
+label but the ground-truth or even become just ﬂat.
+
+Anything-but-N Attack (ABN). Anything-but-N At-
+
+tack is a generalization of AB. It aims to confuse the clas-
+siﬁer so that it has similar conﬁdence levels in multiple
+classes. ABN is more suitable to confuse classiﬁers which
+rely on top N accuracy. In addition, we found that it per-
+forms better in black-box attacks by transferability, which
+will be detailed in experiments.
+Instead of simply using multiple AB for the top N
+classes, we propose an easier loss function, maximizing the
+entropy of the predicted distribution of ˆq :
+
+Lc (q , ˆq) = −Entropy(Φ( ˆq))
+yq (cid:54)∈ T opN (Φ( ˆq))
+
+(6)
+
+where T opN is the set of top n class labels in the predictive
+distribution Φ( ˆq). By minimizing Lc , we actually maxi-
+mize the entropy of Φ( ˆq), i.e. forcing it to be ﬂat over all
+class labels and thus reduce the conﬁdence of the classiﬁer
+over any particular class. We stop the optimization once the
+ground-truth label falls beyond the top n classes. ABN is a
+harder optimization problem than AB because it needs the
+predictive distribution to be as ﬂat as possible.
+
+3.3.1 Speciﬁed Attack (SA)
+
+Different from AB and ABN, sometimes it is useful to fool
+the classiﬁer with a speciﬁc class label. Given a fake label
+y ˆq , we can compute its corresponding class label distribu-
+tion Φ ˆq and minimize the cross entropy:
+
+Lc (q , ˆq) = cross entropy(Φ( ˆq), Φ ˆq )
+
+(7)
+
+However, this is the most difﬁcult scenario because it is
+highly related to the similarity between the source and tar-
+get labels. Turning a ‘clapping over the head’ motion into
+a ‘raising two hands’ is easy and causes minimal visual
+changes; while turning a ‘running’ motion into a ‘squat’
+motion is impossible without noticeable visual changes.
+
+3.4. Black-box Attack
+
+Black-box attack assumes that any information about
+the target classiﬁer is not accessible. Under such circum-
+stances, we use attack by transferability [31]. It begins with
+training a surrogate classiﬁer. Then adversarial examples
+are computed by attacking the surrogate classiﬁer. Finally,
+the adversarial examples can be used to attack the target
+classiﬁer. In this paper, we do not construct our own surro-
+gate model. Instead, we use an existing classiﬁer as our sur-
+rogate classiﬁer to attack the others. In experiments, we at-
+tack several state-of-the-art models. To test the transferabil-
+ity and generalizability of our method, we use every model
+in turns as the surrogate model and attack the others.
+
+4. Experimental Results
+
+We ﬁrst introduce the datasets (Section 4.1) and mod-
+els (Section 4.2) for our experiments. Then we present our
+white-box (Section 4.3) and black-box (Section 4.4) attack
+results. Finally, we present our perceptual studies on imper-
+ceptibility (Section 4.5).
+Since we attack multiple models on multiple datasets, we
+ﬁrst use the source code shared by the authors if available
+or implement the models ourselves. Then we train them
+strictly following the protocols in their papers. Next, we
+test the models and collect the data samples that the trained
+classiﬁers can successfully recognize, to create our adver-
+sarial attack datasets. Finally, we compute the adversarial
+samples using different attacking strategies.
+
+4.1. Datasets
+
+When choosing datasets, our criteria are: 1. It needs to
+be widely used and contain 3D skeletal motions. 2. The
+motion quality needs to be as high as possible because it is
+tightly related to our perceptual study. Finally, we chose 3
+benchmark datasets:
+HDM05 dataset [20] is a 3D motion database captured
+with an Mocap system. It contains 2337 sequences for 130
+actions performed by 5 non-professional actors. The 3D
+joint locations of the subjects are provided in each frame.
+
+Berkeley MHAD dataset [21] is captured using a multi-
+
+modal acquisition system.
+It consists of 11 actions per-
+formed by 12 subjects, where 5 repetitions are performed
+for each action, resulting in 659 sequences. In each frame
+the 3D joint positions are extracted based on the 3D marker
+trajectory.
+NTU RGB+D dataset [24] is captured by Kinect v2 and
+is currently one of the largest publicly available datasets for
+3D action recognition. It is composed of more than 56,000
+action sequences. A total of 60 action classes are performed
+by 40 subjects. The videos are captured from 80 distinct
+viewpoints. The 3D coordinates of joints are provided by
+the Kinect data. Due to the huge number of samples and the
+large intra-class and viewpoint variations, the NTU RGB+D
+dataset is very challenging and is highly suitable to validate
+the effectiveness and generalizability of our approach.
+
+4.2. Target Models
+
+We selected 5 state-of-the-art methods: HRNN [44], ST-
+GCN [43], AS-GCN [13], DGNN [26] and 2s-AGCN [27].
+They include both RNN- and GNN-based models. We im-
+plemented HRNN following the paper and used the code
+shared online for the rest four methods.
+We also followed their protocols in data pre-processing.
+Speciﬁcally, we preprocess the HDM05 dataset and Berke-
+ley MHAD dataset as in [44], and the NTU RGB+D dataset
+as in [27]. Their respective class numbers are 65, 11 and
+
+and different target models, demonstrating the generaliz-
+ability of SMART.
+
+Model
+HRNN
+ST-GCN
+AS-GCN
+DGNN
+2s-AGCN
+mean
+
+HDM05 MHAD NTU
+100
+100
+99.56
+99.57
+99.96
+100
+99.36
+92.84
+97.43
+96.09
+94.46
+92.51
+99.18
+95.97
+100
+98.84
+96.65
+97.9
+
+Table 1. Success rate of Anything-but (AB) Attack.
+
+Figure 2. Normalized confusion matrix of 2s-AGCN on HDM05
+(Left, 65 classes), MHAD (Middle, 11 classes) and NTU (Right,
+60 classes). The darker the cell, the higher the value.
+
+In addition, we show the normalized confusion matrices
+of 2s-AGCN on all datasets using AB (Figure 2). High-
+resolution results are in available the supplementary ma-
+terial.
+In AB attack, we found that semantically simi-
+lar motions can be easily confused, such as the grab mo-
+tions (‘Grab XX’) vs. deposit motions (‘Deposit XX’) in
+HDM05, ‘Jumping in place’ vs ‘Jumping jacks’ in MHD
+and ‘wear a shoe’ vs ‘take off a shoe’ in NTU. Some of
+them mainly differ in the temporal order, and some of them
+mainly differ in spatial variations. These are classes that are
+hard to distinguish in action recognition and are thus prone
+to being attacked.
+Next, we show the results of ABN in Table 2. As a gen-
+eralization of AB, we show two variations: AB3 and AB5.
+They are good for attacking classiﬁers based on top N ac-
+curacy. Although the overall performance is still good, the
+success rates are relatively lower compared with AB. It ver-
+iﬁes our qualitative analysis in Section 3.3. ABN is harder
+than AB. Also AB5 is harder than AB3. In addition, the re-
+sults on MHAD is worse than the other two. This is because
+there are only 11 classes as oppose to 65 and 60 in the other
+two. Excluding the ground-truth label from the top 5 out of
+11 classes is harder than that of 65 and 60 classes.
+Next, Table 3 shows the results of SA, which are not so
+good as AB or ABN. Again, this is consistent with our ex-
+pectation on the difﬁculties of the tasks. SA is the most
+difﬁcult because randomly selected class labels often come
+from signiﬁcantly different action classes. Although it is
+relatively easy to confuse the model between a deposit mo-
+tion and a grab motion, it is extremely difﬁcult to do so for a
+jumping motion and a wear-a-shoe motion. However, even
+
+Figure 1. Skeletal structure with 25 joints and their labels.
+
+60. We also map different skeletons to a standard 25-joint
+skeleton as in [33] (see Figure 1). Please refer to relevant
+papers for details.
+The ﬁve target models require different inputs, but they
+can be easily uniﬁed. HRNN, ST-GCN and AS-GCN all
+take joint positions in each frame as input. DGNN and 2s-
+AGCN require joint positions and bones. Although bones
+are taken as an independent input, they can be computed
+from joint positions. So we add another input layer before
+the original model to compute bones from joint positions.
+As this layer is only for computing bones and introduce no
+new variables, it does not change the behaviours of the orig-
+inal models.
+
+4.3. White-box Attack
+
+In this section, we qualitatively and quantitatively evalu-
+ate the performance of SMART on the aforementioned three
+datasets. We use a learning rate between 0.005 and 0.0005
+and a maximum of 300 iterations. The setting for AB and
+ABN is straightforward. In SA, the number of experiments
+needed will be prohibitively large if we attack every mo-
+tion with every other label but the ground-truth. Instead, we
+randomly select a fake label to attack. Since the number of
+motions attacked is large, the results are adequately repre-
+sentative. Note that this is a very strict test as most of the
+motions are rather distinctive.
+To perform the attack, we ﬁrst train the target models
+using the settings in the original papers to ensure similar
+training results. We then test the models with the testing
+dataset and record the motions that can be successfully rec-
+ognized. Lastly, we attack these motions and record the
+success rates. For simplicity, we only show representative
+results in the paper. For more comprehensive results, please
+refer to the supplementary material and video1 .
+
+4.3.1 Attack Results
+
+We show the quantitative results of AB in Table 1. High suc-
+cess rates are universally achieved across different datasets
+
+1 https://youtu.be/C1G1Ucz2gCI
+
+4.3.2 Attack Behavioural Analysis
+
+We also analyze the behaviour of SMART by looking at
+which joint or joint groups are vulnerable.
+Initially, we
+thought that if some joints tend to be attacked together, the
+correlation between the displacements of these joints should
+be high. So we compute the l2 norm of joint displacements
+after the attack and their Pearson correlations. We show the
+results of HDM05 and MHAD on 2SAGCN and DGNN re-
+spectively using AB in Figure 4 Left. Although some local
+high correlations between joint 2 and 3, 6 and 7, 9 and 10,
+20 and 21 can be found, they are not universal. Please see
+other results in the supplementary material. Then we tried
+to ﬁnd if across-joint correlations are action-dependent. But
+no universal conclusion was found either.
+
+Model (AB3/AB5)
+HDM05
+MHAD
+NTU
+HRNN
+100/100
+100/100
+99.84/99.62
+ST-GCN
+93.30/90.28
+76.86/70.5
+95.86/91.32
+AS-GCN
+91.46/82.83
+42.07/22.34
+91.18/82.47
+DGNN
+93.55/86.32
+87.54/74.27
+98.73/97.62
+2s-AGCN
+83.40/75.2
+55.9/32.08
+100/100
+mean
+92.34/86.93
+72.47/59.84
+97.12/94.21
+Table 2. Success rate of Anything-but-N Attack. The results are
+when n = 3 (AB3) and 5 (AB5).
+
+under such circumstances, SMART is still able to succeed
+in more than 70% cases on average.
+
+Model
+HRNN
+ST-GCN
+AS-GCN
+DGNN
+2s-AGCN
+mean
+
+HDM05 MHAD NTU
+67.19
+57.41
+49.17
+74.95
+66.93
+100
+64.62
+40.18
+99.48
+97.26
+96.13
+99.99
+96.72
+97.53
+100
+80.15
+71.64
+89.73
+
+Table 3. Success rate of Speciﬁed Attack.
+
+Finally, we also shows one motion in NTU attacked us-
+ing three strategies in Figure 3.
+
+Figure 4. Joint correlations: displacement-displacement (Left),
+displacement-speed
+(Middle)
+and
+displacement-acceleration
+(Right). The brighter the color is, the bigger the value is. Top:
+2S-AGCN on HDM05. Bottom: DGNN on MHAD.
+
+Finally,
+the displacement-speed and displacement-
+acceleration correlations can give a consistent description
+of SMART, shown in Figure 4 Middle and Right. The
+correlations are computed between the joint displacements
+and the original velocities and accelerations, respectively.
+These two correlations reveal the behaviour of SMART: the
+higher the speed/acceleration is, the more the joint is at-
+tacked (shown by the high values along the main diagonal).
+In addition, they also reveal some consistent across-joint
+correlations (as shown by red squares). Note that the joints
+in a red square belong to one part of the body (four limbs
+and one trunk). Finally, this also suggests joints with high
+velocity and acceleration are important features in the target
+models because these joints are attacked the most.
+
+4.4. Black-box Attack
+
+In the black-box setting, we need a surrogate model to
+fool target models. To this end, we use three models: AS-
+GCN, DGNN and 2s-AGCN, and one dataset: NTU. This is
+because these models are the latest state-of-the-art methods
+
+Figure 3. AS-GCN on NTU. Four rows from top to bottom: Orig-
+inal, AB, AB5 and SA. ‘brushing teeth’ is the ground-truth label.
+
+and their original implementations are available online. In
+addition, NTU dataset is the one used in all three papers.
+To test the generalizability of SMART, we in turns take ev-
+ery model as the surrogate model and produce adversarial
+examples using AB and AB5. Then we use the adversarial
+examples to attack the other two models. Results are shown
+in Table 4.
+
+Surrogate/Target/
+DGNN(AB/AB5)
+2s-AGCN(AB/AB5)
+AS-GCN(AB/AB5)
+
+DGNN
+n/a
+98.37(98.46)
+10.90(12.97)
+
+Table 4. Success rate of black-box attack.
+
+2s-AGCN
+90.6(90.99)
+n/a
+91.17(91.99)
+
+AS-GCN
+7.24(7.63)
+98.10(98.96)
+n/a
+
+Firstly, AB5 results are in general better than AB. We
+speculate that there are two factors. First, the predictive
+class distribution of AB5 is likely to be ﬂatter than AB. The
+ﬂatness improves the transferability because a target model
+with similar decision boundaries will also produce a simi-
+larly ﬂat predictive distribution, and thus is more likely to
+be fooled. Besides, since the ground-truth label is pushed
+away from the top 5 classes in the surrogate model, it is also
+likely to be far away from the top in the target model.
+We also notice that the transferability is not universally
+successful. DGNN and AS-GCN cannot easily fool one an-
+other. Meanwhile, 2S-AGCN can fool and be fooled by
+both of them. Since the transferability can be described by
+distances between decision boundaries [31], our specula-
+tion is that 2S-AGCN’s boundary structure overlaps with
+both DGNN and AS-GCN signiﬁcantly but the other two
+overlap little. The theoretic reason is hard to identify, as the
+formal analysis on transferability has just emerged on static
+data [31, 47]. The theoretic analysis of time-series data is
+beyond the scope of this paper and is therefore left for future
+work.
+
+4.5. Perceptual Study
+
+Imperceptibility is a requirement for adversarial attack.
+Although it is possible to do qualitative visual comparisons
+on image-based attack, more rigorous evaluations need to
+be done for more complex data [40]. This is especially the
+case for motions which are time-series data.
+To investigate the imperceptibility, we conducted three
+user studies (Deceitfulness, Naturalness and Indistinguisha-
+bility). Since our sample space is huge (5 models × 3
+datasets × 3 attacking strategies), we chose the most repre-
+sentative model and data. We chose 2S-AGCN as our model
+because it is one of the latest state-of-the-art methods, with
+AB as the attacking strategy. We use HDM05 and MHAD
+datasets because NTU dataset has motion jittering and gen-
+erally lower visual quality (see the video for details).
+In
+total, we recruited 37 subjects (age between 18 and 37).
+Deceitfulness. In each user study, we randomly chose
+100 motions with the ground-truth and attacked label for
+
+100 trials.
+In each trial, the video was played for 6 sec-
+onds then the user was asked to choose which label best de-
+scribes the motion with no time limit. This is to test whether
+SMART visually changes the semantics of the motion.
+Naturalness. Since unnatural motions can be easily
+identiﬁed as the result of attack, we performed ablation tests
+on different loss term combinations. We designed four set-
+tings: l2, l2-acc, l2-bone, SMART. l2 is where only the l2
+error of joint locations is used, l2-acc is l2 plus the accel-
+eration proﬁle loss, l2-bone is l2 plus the bone-length loss
+and SMART is our proposed perceptual loss. We ﬁrst show
+qualitative comparisons in Figure 5. Video comparisons are
+available in the supplementary video. Visually, SMART is
+the best. Even from static postures, one can easily see the
+artifacts caused by joint displacements. The spine joints are
+the most obvious. The joint displacements causes unnatural
+zig-zag bending in l2, l2-acc and l2-bone.
+
+Figure 5. Visual ablation test between different loss terms.
+
+Next, we conducted user studies. In each study, we ran-
+domly selected 50 motions. For each motion, we made two
+trials. The ﬁrst includes one attacked motion by SMART
+and one randomly selected from l2, l2-acc and l2-bone.
+The second includes two motions randomly drawn from l2,
+l2-acc and l2-bone. The ﬁrst trial aims to evaluate our re-
+sults again other alternatives and the second gives insights
+to the impact of different perceptual loss terms. In each of
+the 100 trials, two motions were played together for 6 sec-
+onds twice, then the user was asked to choose which mo-
+tion looks more natural or cannot tell the difference, with
+no time limit.
+Indistinguishability. In this study, we did a very strict
+test to see if the users can tell if a motion is changed in any
+way at all. In each experiment, 100 pairs of motions were
+randomly selected. In each trial, the left motion is always
+the original and the user is told so. The right one can be
+
+the original (sensitivity) or attacked (perceivability). We
+ask if the user can see any visual differences. Each video is
+played for 6 seconds then the user was asked to choose if the
+right motion is a changed version of the left, with no time
+limit. This user study serves two purposes. Perceivability
+is a direct test on Indistinguishability on the attack while
+sensitivity is to screen out subjects who tend to give random
+choices. Most users are able to recognize if two motions
+are the same (close to 100% accuracy), but there are a few
+whose choices are more random. We discard any user data
+which falls below 80% accuracy on the sensitivity test.
+
+4.5.1 Results
+
+The success rate of Deceitfulness is 93.32% overall, which
+means that most of the time SMART does not change the se-
+mantics of the motions. When looking into the success rates
+on different datasets, SMART achieved 86.77% on HDM05
+and 96.38% on MHAD. So we looked into in what motions
+SMART did change the visual meanings. We discovered
+that the confusion was caused by the motion ambiguity in
+the original data and labels. For instance, when a ’Hop-
+ping’ motion is attacked into a ’Jumping’ motion, some
+users chose ’Jumping’. Similar situations occur for ’Waving
+one hand’ with ’Throwing a ball’, ’Walking forward’ with
+’Walking LC’. All these motions have small spatial varia-
+tions and do not distinguish well.
+Next, Figure 6 shows the results of Naturalness. Users’
+preferences over different losses are SMART > l2-acc >
+l2 > l2-bone. SMART leads to the most natural results as
+expected.
+Dynamics in Imperceptibility. To investigate the beneﬁts
+of exploiting dynamics compared to joint-only perturbation,
+we did further analysis on SMART-vs-l2 where users chose
+SMART over l2. We ﬁrst compute their respective joint-
+wise deviations from the original motions, shown in Figure
+7.
+In general, the perturbations of SMART is in general
+higher than l2 and have larger standard deviations. How-
+ever, the users still chose SMART over l2. It indicates that
+with proper exploitation of dynamics, larger joint deviations
+
+can generate even more desirable results. This is signiﬁ-
+cantly different from the static data (e.g.
+images), where
+it is believed that l-norms are tightly tied to imperceptibil-
+ity [7] (under a -ball constraints).
+Finally, we did the Indistinguishability test. The ﬁ-
+nal results are 81.9% on average, 80.83% on HDM05 and
+83.97% on MHAD. Note that this is a side-by-side com-
+parison and thus is very harsh on SMART. The users were
+asked to ﬁnd any visual differences they could. To avoid
+situations where motions are too fast to spot any differences
+(e.g. kicking and jumping motions), we also played the mo-
+tions three times slower than the original. Even under such
+harsh tests, SMART is still able to fool humans most of the
+time.
+
+5. Discussion
+
+Imperceptibility is vital in adversarial attack. When it
+comes to skeletal motions, perceptual studies are essential
+because existing metrics (e.g. l-norm) cannot fully reﬂect
+perceived realism/naturalness/quality. In addition, it helps
+us to uncover a unique feature of attacking skeletal motions.
+Losses solely based on joint location deviations are often
+overly conservative. It is understandable because they are
+mainly used for static data and thus are not able to fully
+utilize the dynamics.
+Next,
+forming the joint deviation as a hard con-
+straint [16] is not the best strategy in our problem. First,
+a threshold needs to be given and it is unclear how to set
+it. Second, restricting joint deviation implies that it is solely
+the most important factor on imperceptibility. Our percep-
+tual study shows that larger joint deviations can be used if
+the dynamics are exploited properly.
+Lastly, we could also use joint angles as representations.
+However, in practice, we ﬁnd that perturbing joint angles
+causes jittering and makes the system hard to optimize, sim-
+ilar to [33].
+
+Figure 6. Normalized user preferences on Naturalness.
+our:
+SMART. bone: l2-bone. acc: l2-acc. The vertical axis is the per-
+centage of user preference on a particular loss
+
+Figure 7. The mean (Top) and standard deviation (Bottom) of the
+joint-wise deviations of SMART and l2.
+
+6. Conclusion and Future Work
+
+In this paper, we proposed a method, SMART, to attack
+action recognizers based on 3D skeletal motions. Through
+comprehensive qualitative and quantitative evaluations, we
+show that SMART is general across multiple state-of-the-
+art models on various benchmark datasets. Moreover,
+SMART is versatile as it can delivery both white-box and
+black-box attacks with multiple attacking strategies. Fi-
+nally, SMART is deceitful veriﬁed in extensive perceptual
+studies. We hope that this work will lead to further inves-
+tigation and counter measures to improve the robustness of
+action recognizers in the future.
+In the future, we would like to theoretically investigate
+why the transferability varies between different models un-
+der black-box attack. Although there has been research on
+static data, dynamic data is still not investigated. It involves
+testing more target models and developing a method to de-
+scribe the structures of class boundaries. We will also in-
+vestigate on what attack is in people’s blind regions. Our
+experiments indicate that there might be a blind-region sub-
+space of motions where changes are not perceivable to hu-
+mans. Adversarial attacks in this sub-space would lead to
+better results regarding human perception.
+
+References
+
+[1] Anish Athalye, Logan Engstrom, Andrew Ilyas, and Kevin
+Kwok. Synthesizing robust adversarial examples. arXiv,
+abs/1707.07397, 2017. 2
+[2] M. Devanne, H. Wannous, S. Berretti, P. Pala, M. Daoudi,
+and A. Del Bimbo.
+3-d human action recognition by
+shape analysis of motion trajectories on riemannian mani-
+fold. IEEE Transactions on Cybernetics, 45(7):1340–1352,
+2015. 2
+[3] Yong Du, Wei Wang, and Liang Wang. Hierarchical recur-
+rent neural network for skeleton based action recognition.
+In The IEEE Conference on Computer Vision and Pattern
+Recognition (CVPR), pages 1110–1118, 2015. 1, 2
+[4] Ivan Evtimov, Kevin Eykholt, Earlence Fernandes, Ta-
+dayoshi Kohno, Bo Li, Atul Prakash, Amir Rahmati, and
+Dawn Song. Robust physical-world attacks on machine
+learning models. arXiv, abs/1707.08945, 2017. 2
+[5] B. Fernando, E. Gavves, M. Jos ´e Oramas, A. Ghodrati, and
+T. Tuytelaars. Modeling video evolution for action recog-
+nition. In 2015 IEEE Conference on Computer Vision and
+Pattern Recognition (CVPR), pages 5378–5387, 2015. 2
+[6] Ian J. Goodfellow, Jonathon Shlens, and Christian Szegedy.
+Explaining and harnessing adversarial examples, 2014. 2
+[7] Qian Huang, Isay Katsman, Horace He, Zeqi Gu, Serge J.
+Belongie, and Ser-Nam Lim. Enhancing adversarial exam-
+ple transferability with an intermediate level attack. CoRR,
+abs/1907.10823, 2019. 8
+[8] Nathan Inkawhich, Matthew Inkawhich, Yiran Chen, and
+Hai Li. Adversarial attacks for optical ﬂow-based action
+recognition classiﬁers. arXiv, abs/1811.11875, 2018. 2
+
+[9] Fazle Karim, Somshubra Majumdar, and Houshang Darabi.
+Adversarial attacks on time series. arXiv, abs/1902.10755,
+2019. 1
+[10] Q. Ke, M. Bennamoun, S. An, F. Sohel, and F. Boussaid.
+A new representation of skeleton sequences for 3d action
+recognition. In 2017 IEEE Conference on Computer Vision
+and Pattern Recognition (CVPR), pages 4570–4579, 2017. 2
+[11] Diederik P. Kingma and Jimmy Lei Ba. Adam : A method
+for stochastic optimization. arXiv, abs/1412.6980v9, 2014.
+3
+[12] Alexey Kurakin, Ian J. Goodfellow, and Samy Bengio.
+Adversarial examples in the physical world.
+arXiv,
+abs/1607.02533, 2016. 2
+[13] Maosen Li, Siheng Chen, Xu Chen, Ya Zhang, Yanfeng
+Wang, and Qi Tian. Actional-structural graph convolutional
+networks for skeleton-based action recognition. In The IEEE
+Conference on Computer Vision and Pattern Recognition
+(CVPR), June 2019. 4
+[14] Fangzhou Liao, Ming Liang, Yinpeng Dong, Tianyu Pang,
+Xiaolin Hu, and Jun Zhu. Defense against adversarial at-
+tacks using high-level representation guided denoiser. In The
+IEEE Conference on Computer Vision and Pattern Recogni-
+tion (CVPR), June 2018. 1
+[15] Hsueh-Ti Derek Liu, Michael Tao, Chun-Liang Li, Derek
+Nowrouzezahrai, and Alec Jacobson. Beyond pixel norm-
+balls: Parametric adversaries using an analytically differen-
+tiable renderer.
+In International Conference on Learning
+Representations, 2019. 2
+[16] Jian Liu, Naveed Akhtar, and Ajmal Mian. Adversarial at-
+tack on skeleton-based human action recognition. arXiv,
+abs/1909.06500, 2019. 2, 8
+[17] Jun Liu, Amir Shahroudy, Dong Xu, and Gang Wang.
+Spatio-temporal lstm with trust gates for 3d human action
+recognition.
+In Bastian Leibe, Jiri Matas, Nicu Sebe, and
+Max Welling, editors, Computer Vision – ECCV 2016, pages
+816–833, 2016. 2
+[18] Mengyuan Liu, Hong Liu, and Chen Chen. Enhanced skele-
+ton visualization for view invariant human action recogni-
+tion. Pattern Recogn., 68(C):346–362, 2017. 2
+[19] S. Moosavi-Dezfooli, A. Fawzi, and P. Frossard. Deepfool:
+A simple and accurate method to fool deep neural networks.
+In 2016 IEEE Conference on Computer Vision and Pattern
+Recognition (CVPR), pages 2574–2582, 2016. 2
+[20] M. M ¨uller, T. R ¨oder, M. Clausen, B. Eberhardt, B. Kr ¨uger,
+and A. Weber. Documentation mocap database hdm05.
+Technical Report CG-2007-2, Universit ¨at Bonn, June 2007.
+4
+[21] F. Oﬂi, R. Chaudhry, G. Kurillo, R. Vidal, and R. Bajcsy.
+Berkeley mhad: A comprehensive multimodal human action
+database. In 2013 IEEE Workshop on Applications of Com-
+puter Vision (WACV), pages 53–60, Jan 2013. 4
+[22] Nicolas Papernot, Patrick D. McDaniel, Somesh Jha, Matt
+Fredrikson, Z. Berkay Celik, and Ananthram Swami. The
+limitations of deep learning in adversarial settings. arXiv,
+abs/1511.07528, 2015. 2
+[23] A. Shahroudy, J. Liu, T. Ng, and G. Wang. Ntu rgb+d: A
+large scale dataset for 3d human activity analysis. In 2016
+
+[38] Chong Xiang, Charles R. Qi, and Bo Li. Generating 3d ad-
+versarial point clouds. In The IEEE Conference on Computer
+Vision and Pattern Recognition (CVPR), pages 9136–9144,
+June 2019. 1, 2
+[39] Chaowei Xiao, Bo Li, Jun yan Zhu, Warren He, Mingyan
+Liu, and Dawn Song. Generating adversarial examples with
+adversarial networks. In IJCAI, pages 3905–3911, 2018. 2
+[40] Chaowei Xiao, Dawei Yang, Bo Li, Jia Deng, and Mingyan
+Liu. Meshadv: Adversarial meshes for visual recognition.
+In The IEEE Conference on Computer Vision and Pattern
+Recognition (CVPR), pages 6898–6907, 2019. 1, 2, 7
+[41] Chaowei Xiao, Jun-Yan Zhu, Bo Li, Warren He, Mingyan
+Liu, and Dawn Song. Spatially transformed adversarial ex-
+amples. In International Conference on Learning Represen-
+tations, 2018. 2
+[42] Sijie Yan, Yuanjun Xiong, and Dahua Lin. Spatial tempo-
+ral graph convolutional networks for skeleton-based action
+recognition. In Proceedings of the Thirty-Second AAAI Con-
+ference on Artiﬁcial Intelligence, AAAI’18, 2018. 2
+[43] Sijie Yan, Yuanjun Xiong, and Dahua Lin. Spatial tempo-
+ral graph convolutional networks for skeleton-based action
+recognition. In AAAI, 2018. 4
+[44] Yong Du, W. Wang, and L. Wang. Hierarchical recur-
+rent neural network for skeleton based action recognition.
+In 2015 IEEE Conference on Computer Vision and Pattern
+Recognition (CVPR), pages 1110–1118, June 2015. 4
+[45] Xiaohui Zeng, Chenxi Liu, Yu-Siang Wang, Weichao Qiu,
+Lingxi Xie, Yu-Wing Tai, Chi-Keung Tang, and Alan L.
+Yuille. Adversarial attacks beyond the image space. In The
+IEEE Conference on Computer Vision and Pattern Recogni-
+tion (CVPR), pages 4302–4311, 2019. 2
+[46] P. Zhang, C. Lan, J. Xing, W. Zeng, J. Xue, and N.
+Zheng. View adaptive neural networks for high perfor-
+mance skeleton-based human action recognition.
+IEEE
+Transactions on Pattern Analysis and Machine Intelligence,
+41(8):1963–1978, 2019. 2
+[47] Chenxiao Zhao, P. Fletcher, Mixue Yu, Yaxin Peng, Guixu
+Zhang, and Chaomin Shen. The adversarial attack and detec-
+tion under the ﬁsher information metric. Proceedings of the
+AAAI Conference on Artiﬁcial Intelligence, 33:5869–5876,
+07 2019. 7
+
+IEEE Conference on Computer Vision and Pattern Recogni-
+tion (CVPR), pages 1010–1019, 2016. 2
+[24] Amir Shahroudy, Jun Liu, Tian-Tsong Ng, and Gang Wang.
+Ntu rgb+d: A large scale dataset for 3d human activity anal-
+ysis. In IEEE Conference on Computer Vision and Pattern
+Recognition, June 2016. 4
+[25] Mahmood Sharif, Sruti Bhagavatula, Lujo Bauer, and
+Michael K. Reiter. Accessorize to a crime: Real and stealthy
+attacks on state-of-the-art face recognition. In Proceedings of
+the 23rd ACM SIGSAC Conference on Computer and Com-
+munications Security, 2016. 1
+[26] Lei Shi, Yifan Zhang, Jian Cheng, and Hanqing Lu.
+Skeleton-based action recognition with directed graph neural
+networks. In The IEEE Conference on Computer Vision and
+Pattern Recognition (CVPR), pages 7912–7921, June 2019.
+2, 4
+[27] Lei Shi, Yifan Zhang, Jian Cheng, and Hanqing Lu. Two-
+stream adaptive graph convolutional networks for skeleton-
+based action recognition. In The IEEE Conference on Com-
+puter Vision and Pattern Recognition (CVPR), June 2019. 4
+[28] Sijie Song, Cuiling Lan, Junliang Xing, Wenjun Zeng, and
+Jiaying Liu. An end-to-end spatio-temporal attention model
+for human action recognition from skeleton data.
+In Pro-
+ceedings of the Thirty-First AAAI Conference on Artiﬁcial
+Intelligence, AAAI’17, pages 4263–4270, 2017. 2
+[29] Christian Szegedy, Wojciech Zaremba, Ilya Sutskever, Joan
+Bruna, Dumitru Erhan,
+Ian Goodfellow, and Rob Fer-
+gus.
+Synthesizing robust adversarial examples.
+arXiv,
+abs/1312.6199, 2014. 1, 2
+[30] Y. Tang, Y. Tian, J. Lu, P. Li, and J. Zhou. Deep progres-
+sive reinforcement learning for skeleton-based action recog-
+nition. In 2018 IEEE Conference on Computer Vision and
+Pattern Recognition, pages 5323–5332, 2018. 2
+[31] Florian Tram `er, Nicolas Papernot, Ian J. Goodfellow, Dan
+Boneh, and Patrick D. McDaniel. The space of transferable
+adversarial examples. arXiv, abs/1704.03453, 2017. 1, 4, 7
+[32] R. Vemulapalli, F. Arrate, and R. Chellappa. Human action
+recognition by representing 3d skeletons as points in a lie
+group. In 2014 IEEE Conference on Computer Vision and
+Pattern Recognition, pages 588–595, 2014. 2
+[33] H. Wang, E. S. L. Ho, H. P. H. Shum, and Z. Zhu. Spatio-
+temporal manifold learning for human motions via long-
+horizon modeling. IEEE Transactions on Visualization and
+Computer Graphics, pages 1–1, 2019. 3, 5, 8
+[34] He Wang, Kirill A Sidorov, Peter Sandilands, and Taku Ko-
+mura. Harmonic parameterization by electrostatics. ACM
+Transactions on Graphics (TOG), 32(5):155, 2013. 3
+[35] Jue Wang and Anoop Cherian. Learning discriminative video
+representations using adversarial perturbations.
+In Vitto-
+rio Ferrari, Martial Hebert, Cristian Sminchisescu, and Yair
+Weiss, editors, Computer Vision – ECCV 2018, pages 716–
+733, 2018. 2
+[36] Xingxing Wei, Jun Zhu, and Hang Su. Sparse adversarial
+perturbations for videos. arXiv, abs/1803.02536, 2018. 1
+[37] Xingxing Wei, Jun Zhu, Sha Yuan, and Hang Su. Sparse
+adversarial perturbations for videos. In AAAI, 2018. 2
+
+

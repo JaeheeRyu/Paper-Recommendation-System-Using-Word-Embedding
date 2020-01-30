@@ -1,0 +1,1514 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+3
+8
+8
+7
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Vision-Language Navigation with Self-Supervised Auxiliary Reasoning Tasks
+
+Fengda Zhu1
+Yi Zhu2
+Xiaojun Chang1
+Xiaodan Liang3,4
+1Monash University 2University of Chinese Academy of Sciences
+3Sun Yat-sen University 4Dark Matter AI Inc.
+
+zhufengda@yahoo.com
+cxj273@gmail.com
+
+zhu.yee@outlook.com
+xdliang328@gmail.com
+
+Abstract
+
+Vision-Language Navigation (VLN) is a task where
+agents learn to navigate following natural language in-
+structions. The key to this task is to perceive both the visual
+scene and natural language sequentially. Conventional ap-
+proaches exploit the vision and language features in cross-
+modal grounding. However, the VLN task remains challeng-
+ing, since previous works have neglected the rich semantic
+information contained in the environment (such as implicit
+navigation graphs or sub-trajectory semantics). In this pa-
+per, we introduce Auxiliary Reasoning Navigation (AuxRN),
+a framework with four self-supervised auxiliary reasoning
+tasks to take advantage of the additional training signals
+derived from the semantic information. The auxiliary tasks
+have four reasoning objectives: explaining the previous
+actions, estimating the navigation progress, predicting the
+next orientation, and evaluating the trajectory consistency.
+As a result, these additional training signals help the agent
+to acquire knowledge of semantic representations in order
+to reason about its activity and build a thorough perception
+of the environment. Our experiments indicate that auxiliary
+reasoning tasks improve both the performance of the main
+task and the model generalizability by a large margin. Em-
+pirically, we demonstrate that an agent trained with self-
+supervised auxiliary reasoning tasks substantially outper-
+forms the previous state-of-the-art method, being the best
+existing approach on the standard benchmark1 .
+
+1. Introduction
+
+Increasing interest rises in Vision-Language Navigation
+(VLN) [5] tasks, where an agent navigates in 3D indoor en-
+vironments following a natural language instruction, such
+as Walk between the columns and make a sharp turn right.
+Walk down the steps and stop on the landing. The agent
+
+1VLN leaderboard: https://evalai.cloudcv.org/web/challenges/
+challenge-page/97/leaderboard/270
+
+Figure 1. A simple demonstration of an agent learning to navigate
+with auxiliary reasoning tasks. The green circle is the start position
+and the red circle is the goal. Four nodes are reachable by the agent
+in the navigation graph. Auxiliary reasoning tasks (in the yellow
+box) help the agent to infer its current status.
+
+begins at a random point and goes toward a goal by means
+of active exploration. A vision image is given at each step
+and a global step-by-step instruction is provided at the be-
+ginning of the trajectory.
+Recent research in feature extraction [14, 4, 24, 31], at-
+tention [4, 9, 22] and multi-modal grounding [6, 21, 36]
+have helped the agent to understand the environment. Previ-
+ous works in Vision-Language Navigation have focused on
+improving the ability of perceiving the vision and language
+inputs [13, 10, 42] and cross-modal matching [41]. With
+these approaches, an agent is able to perceive the vision-
+language inputs and encode historical information for navi-
+gation.
+However, the VLN task remains challenging since rich
+semantic information contained in the environments is ne-
+glected: 1) Past actions affect the actions to be taken in
+the future. To make a correct action requires the agent to
+have a thorough understanding of its activity in the past. 2)
+The agent is not able to explicitly align the trajectory with
+
+1
+
+!"!#➢Istepinthedoorandgoforward.➢Ihavecompleted50%➢ThetrajectoryandtheinstructionNOTmatch.➢Iwillturnright30°NavigationNodeNavigationEdgeFeasibleEdge%&'(!) 
+ 
+ 
+ 
+ 
+ 
+the instruction. Thus, it is uncertain whether the vision-
+language encoding can fully represent the current status of
+the agent. 3) The agent is not able to accurately assess the
+progress it has made. Even though Ma et al. [23] proposed
+a progress monitor to estimate the normalized distance to-
+ward the goal, labels in this method are biased and noisy.
+4) The action space of the agent is implicitly limited since
+only neighbour nodes in the navigation graph are reachable.
+Therefore, if the agent gains knowledge of the navigation
+map and understands the consequence of its next action, the
+navigation process will be more accurate and efﬁcient.
+We introduce auxiliary reasoning tasks to solve these
+problems. There are three key advantages to this solu-
+tion. First of all, auxiliary tasks produce additional train-
+ing signals, which improves the data efﬁciency in training
+and makes the model more robust. Secondly, using reason-
+ing tasks to determine the actions makes the actions easier
+to explain. It is easier to interpret the policy of an agent
+if we understand why the agent takes a particular action.
+An explainable mechanism beneﬁts human understanding
+of how the agent works. Thirdly, the auxiliary tasks have
+been proven to help reduce the domain gap between seen
+and unseen environments. It has been demonstrated [34, 35]
+that self-supervised auxiliary tasks facilitate domain adap-
+tation. Besides, it has been proven that ﬁnetuning the agent
+in an unseen environment effectively reducing the domain
+gap [41, 37]. We use auxiliary tasks to align the represen-
+tations in the unseen domain alongside those in the seen
+domain during ﬁnetuning.
+In this paper, we introduce Auxiliary Reasoning Nav-
+igation (AuxRN), a framework facilitates navigation learn-
+ing. AuxRN consists of four auxiliary reasoning tasks: 1) A
+trajectory retelling task , which makes the agent explain
+its previous actions via natural language generation; 2) A
+progress estimation task, to evaluate the percentage of the
+trajectory that the model has completed; 3) An angle pre-
+diction task, to predict the angle by which the agent will
+
+turn next. 4) A cross-modal matching task which allows
+
+the agent to align the vision and language encoding. Unlike
+“proxy tasks” [21, 36, 33] which only consider the cross-
+modal alignment at one time, our tasks handle the temporal
+context from history in addition to the input of a single step.
+The knowledge learning of these four tasks are presumably
+reciprocal. As shown in Fig. 1, the agent learns to reason
+about the previous actions and predict future information
+with the help of auxiliary reasoning tasks.
+Our experiment demonstrates that AuxRN dramatically
+improves the navigation performance on both seen and un-
+seen environments. Each of the auxiliary tasks exploits
+useful reasoning knowledge respectively to indicate how
+an agent understands an environment. We adopt Success
+weighted by Path Length (SPL) [3] as the primary metric for
+evaluating our model. AuxRN pretrained in seen environ-
+
+ments with our auxiliary reasoning tasks outperforms our
+baseline [37] by 3.45% on validation set. Our ﬁnal model,
+ﬁnetuned on unseen environments with auxiliary reasoning
+tasks obtains 65%, 4% higher than the previous state-of-
+the-art result, thereby becoming the ﬁrst-ranked result in the
+VLN Challenge in terms of SPL.
+
+2. Related Work
+
+Vision-Language Reasoning Bridging vision and language
+is attracting attention from both the computer vision and
+the natural language processing communities. Various as-
+sociated tasks have been proposed, including Visual Ques-
+tion Answering (VQA) [1], Visual Dialog Answering [38],
+Vision-Language Navigation (VLN) [5] and Visual Com-
+monsense Reasoning (VCR) [44]. Vision-Language Rea-
+soning [29] plays an important role in solving these prob-
+lems. Anderson et al. [4] apply an attention mechanism
+on detection results to reason visual entities. More re-
+cent works, such as LXMERT [36], ViLBERT [21], and
+B2T2 [2] obtain high-level semantics by pretraining a
+model on a large-scale dataset with vision-language reason-
+ing tasks.
+
+Learning with Auxiliary Tasks Self-supervised auxiliary
+
+tasks have been widely applied in the ﬁeld of machine learn-
+ing. Moreover, the concept of learning from auxiliary tasks
+to improve data efﬁciency and robustness [16, 28, 39, 23]
+has been extensively investigated in reinforcement learn-
+ing. Mirowski et al. [25] propose a robot which obtains
+additional training signals by recovering a depth image
+with colored image input and predicting whether or not it
+reaches a new point. Furthermore, self-supervised auxiliary
+tasks have been widely applied in the ﬁelds of computer vi-
+sion [45, 12, 27], natural language processing [9, 19] and
+meta learning [40, 20]. Gidaris et al. [11] unsupervisedly
+learn image features with a 2D rotate auxiliary loss, while
+Sun et al. [35] indicate that self-supervised auxiliary tasks
+are effective in reducing domain shift.
+
+Vision Language Navigation A number of simulated 3D
+
+environments have been proposed to study navigation, such
+as Doom [17], AI2-THOR [18] and House3D [43]. How-
+ever, the lack of photorealism and natural language instruc-
+tion limits the application of these environments. Anderson
+et al. [5] propose Room-to-Room (R2R) dataset, the ﬁrst
+Vision-Language Navigation (VLN) benchmark based on
+real imagery [8].
+The Vision-Language Navigation task has attracted
+widespread attention since it is both widely applicable and
+challenging. Earlier work [42] combined model-free [26]
+and model-based [30] reinforcement learning to solve VLN.
+Fried et al. propose a speaker-follower framework for data
+augmentation and reasoning in supervised learning. In addi-
+tion, a concept named “panoramic action space” is proposed
+to facilitate optimization. Later work [41] has found it ben-
+
+Figure 2. An overview of AuxRN. The agent embeds vision and language features respectively and performs co-attention between them
+both. The embedded features are given to reasoning modules and supervised by auxiliary losses. The feature after vision-language is fused
+with the candidate features to produce the action. The “P”, “S”, and “C” in the white circles stand for the mean pooling, random shufﬂe
+and concatenate operations respectively.
+
+eﬁcial to combine imitation learning [7, 15] and reinforce-
+ment learning [26, 32]. The self-monitoring method [23]
+is proposed to estimate progress made towards the goal.
+Researchers have identiﬁed the existence of the domain
+gap between training and testing data. Unsupervised pre-
+exploration [41] and Environmental dropout [37] are pro-
+posed to improve the ability of generalization.
+
+3. Method
+
+3.1. Problem Setup
+
+The Vision-and-Language Navigation (VLN) task gives
+a global natural sentence I = {w0 , ..., wl } as an instruction,
+where each wi is a token while the l is the length of the
+sentence. The instruction consists of step-by-step guidance
+toward the goal. At step t, the agent observes a panoramic
+i=1 as the vision input. The panoramic
+view is divided into 36 RGB image views, while each of
+these views consists of image feature vi and an orientation
+
+view Ot = {ot,i}36
+
+description (sin θt,i , cos θt,i , sin φt,i , cos φt,i ). For each
+
+step, the agent chooses a direction to navigate over all can-
+didates in the panoramic action space [10]. Candidates in
+the panoramic action space consist of k neighbours of the
+current node in the navigation graph and a stop action. Can-
+didates for the current step are deﬁned as {ct,1 , ..., ct,k+1},
+where ct,k+1 stands for the stop action. Note that for each
+step, the number of neighbours k is not ﬁxed.
+
+3.2. Vision-Language Forward
+
+We ﬁrst deﬁne the attention module, which is widely ap-
+plied in our pipeline. Then we illustrate vision embedding
+and vision-language embedding mechanisms. At last, we
+demonstrate the approach of action prediction.
+Attention Module At ﬁrst we deﬁne the attention mod-
+
+ule, an important part of our pipeline. Suppose we have
+a sequence of feature vectors noted as {f0 , ..., fn} to fuse
+and a query vector q . We implement an attention layer
+
+(cid:98)f = Attn({f0 , ..., fn}, q) as:
+αi = softmax(fiWAttn q)
+(cid:98)f = (cid:88) αi fi .
+
+(1)
+
+WAttn represents the fully connected layer of the attention
+mechanism. αi is the weight for the ith feature for fusing.
+Vision Embedding As mentioned above, the panoramic ob-
+servation Ot denotes the 36 features consisting of vision and
+orientation information. We then fuse {ot,1 , ..., ot,36} with
+cross-modal context of the last step (cid:98)ft−1 and introduce an
+LSTM to maintain a vision history context (cid:101)f o
+t for each step:
+(2)
+
+(cid:98)f o
+t = Attno ({ot,1 , ..., ot,36}, (cid:101)ft−1 )
+(cid:101)f o
+t = LSTMv ( (cid:98)f o
+t , ht−1 ),
+
+where (cid:101)f o
+t = ht is the output of the LSTMv . Note that un-
+like the other two LSTM layers in our pipeline (as shown in
+Fig. 2) which are computed within a step. LSTMv is com-
+puted over a whole trajectory.
+
+Vision-Language Embedding Similar to [10, 37], we em-
+
+bed each word token wi to word feature f w
+i , where i stands
+for the index. Then we encode the feature sequence by a
+Bi-LSTM layer to produce language features and a global
+language context f
+w :
+l } = Bi-LSTMw ({f w
+
+l })
+0 , ..., f w
+
+{ (cid:101)f w
+
+0 , ..., (cid:101)f w
+f
+
+w
+
+=
+
+1
+l
+
+i .
+
+l(cid:88)i=1 (cid:101)f w
+
+(3)
+
+Turnleftandwalkthroughthelivingroom.Exittheroomandturnright.Attnw!"#$%&$'Bi-LSTMwAttncLSTMv!(%)*+,-.!/-.0$!12!32Walkawayfromthebedandturnright.ThetrajectoryisconsistoftheinstructionDirectingto270°.Chooseoneofthecandidatestogo.ReasoningResultsAttnot-1AuxiliaryReasoningtFCNavigationGraphFCFCFCFCCSLossesPLSTMs6789:Attns!;'<.'$==Completed 50% of the trajectory.fw<latexit sha1_base64="uQSN7wmopBUBDNNlNEjANaaLgTI=">AAAB+XicbVDLSgMxFM3UV62vUZdugkVwVWa0+NgV3bisYB/QjiWTZtrQTDIkmUoZ5k/cuFDErX/izr8xMx1ErQcCh3Pu4d4cP2JUacf5tEpLyyura+X1ysbm1vaOvbvXViKWmLSwYEJ2faQIo5y0NNWMdCNJUOgz0vEn15nfmRKpqOB3ehYRL0QjTgOKkTbSwLb7wthZOgnS++QhHdhVp+bkgIvELUgVFGgO7I/+UOA4JFxjhpTquU6kvQRJTTEjaaUfKxIhPEEj0jOUo5AoL8kvT+GRUYYwENI8rmGu/kwkKFRqFvpmMkR6rP56mfif14t1cOEllEexJhzPFwUxg1rArAY4pJJgzWaGICypuRXiMZIIa1NWJS/hMsPZ95cXSfuk5p7W6rf1auOqqKMMDsAhOAYuOAcNcAOaoAUwmIJH8AxerMR6sl6tt/loySoy++AXrPcvmvGUbg==</latexit>efot<latexit sha1_base64="1YLl53t1/uqpKXYsBWXkTrR6M/s=">AAAB/nicbVDLSsNQEL3xWesrKq7cBIvgqiRafOyKblxWsA9oY7m5mbSX3jy4d6KUEPBX3LhQxK3f4c6/MU2DqPXAwOGcGWbmOJHgCk3zU5ubX1hcWi6tlFfX1jc29a3tlgpjyaDJQhHKjkMVCB5AEzkK6EQSqO8IaDujy4nfvgOpeBjc4DgC26eDgHucUcykvr7bu+cuIBcuJF7aTzC9TcK0r1fMqpnDmCVWQSqkQKOvf/TckMU+BMgEVaprmRHaCZXImYC03IsVRJSN6AC6GQ2oD8pO8vNT4yBTXMMLZVYBGrn6cyKhvlJj38k6fYpD9debiP953Ri9MzvhQRQjBGy6yIuFgaExycJwuQSGYpwRyiTPbjXYkErKMEusnIdwPsHJ98uzpHVUtY6rtetapX5RxFEie2SfHBKLnJI6uSIN0iSMJOSRPJMX7UF70l61t2nrnFbM7JBf0N6/AKmnlro=</latexit>efot 1<latexit sha1_base64="eskp7XHIFGdmxsJDlF1e+s6CIl8=">AAACAHicbVDJSgNBEO1xjXGLevDgpTEIXgwzyZjlFvTiUcGokMTQ01OjTXoWumuUMMzFX/HiQRGvfoY3/8aZGMTtQcHjvSqq6jmRFBpN892Ymp6ZnZsvLBQXl5ZXVktr62c6jBWHDg9lqC4cpkGKADooUMJFpID5joRzZ3iY++c3oLQIg1McRdD32VUgPMEZZtKgtNm7FS6gkC4kXjpIcM9KL5MwHZTKZsVutPYbDZoTq2rWclKv280qtSrmGGUywfGg9NZzQx77ECCXTOuuZUbYT5hCwSWkxV6sIWJ8yK6gm9GA+aD7yfiBlO5kiku9UGUVIB2r3ycS5ms98p2s02d4rX97ufif143Ra/YTEUQxQsA/F3mxpBjSPA3qCgUc5SgjjCuR3Ur5NVOMY5ZZcRxCK0f96+W/5KxasWoV+8Qutw8mcRTIFtkmu8QiDdImR+SYdAgnKbknj+TJuDMejGfj5bN1ypjMbJAfMF4/AA7wl4I=</latexit>0 , ..., (cid:101)f w
+0 , ..., (cid:101)f w
+l }, (cid:101)f o
+t ).
+
+The global language context participates f
+w the auxiliary
+task learning descripted in Sec. 3.4. Finally, we fuse the
+language features { (cid:101)f w
+l } with the vision history con-
+text (cid:101)f o
+t to produce the cross-modal context (cid:98)ft for the current
+step:
+(cid:98)ft = Attnw ({ (cid:101)f w
+(4)
+Action Prediction In the VLN setting, the adjacent naviga-
+ble node is visible. Thus, we can obtain the reachable can-
+didates C = {ct,1 , ..., ct,k+1 } from the navigation graph.
+Similar to observation O , candidates in C are concatenated
+features of vision features and orientation descriptions. We
+obtain the probability function pt (at ) for action at by:
+
+(5)
+
+(cid:98)f c
+t = Attnc ({ct,1 , ..., ct,k+1 }, (cid:98)ft )
+pt (at ) = softmax( (cid:98)f c
+t ).
+
+s Three ways for action prediction are applied to differ-
+ent scenarios: 1) imitation learning: following the labeled
+teacher action a∗t regardless of pt ; 2) reinforcement learn-
+ing: sample action following the probability distribution
+at ∼ pt (at ); 3) testing: choose the candidate which has
+the greatest probability at = argmax(pt (at )).
+
+3.3. Objectives for Navigation
+
+In this section, we introduce two learning objectives for
+the main task:
+imitation learning (IL) and reinforcement
+learning (RL). The main task is jointly optimized by these
+two objectives.
+Imitation Learning forces the agent to mimic the behavior
+of its teacher. IL has been proven [10] to achieve good per-
+formance in VLN tasks. Our agent learns from the teacher
+action a∗t for each step:
+
+LIL = (cid:88)t
+
+−a∗t log(pt ),
+
+(6)
+
+where a∗t is a one-hot vector indicating the teacher choice.
+Reinforcement Learning is introduced for generalization
+since adopting IL alone could result in overﬁtting. We
+implement
+the A2C algorithm,
+the parallel version of
+A3C [26], and our loss function is calculated as:
+
+LRL = − (cid:88)t
+
+at log(pt )At .
+
+(7)
+
+At is a scalar representing the advantage deﬁned in A3C.
+
+3.4. Auxiliary Reasoning Learning
+
+The vision-language navigation task remains challeng-
+ing, since the rich semantics contained in the environments
+are neglected. In this section, we introduce auxiliary rea-
+soning learning to exploit additional training signals from
+environments.
+
+In Sec. 3.2, we obtain the vision context (cid:101)f o
+t from Eq. 2,
+w from Eq. 3 and the cross-
+the global language context f
+modal context (cid:98)ft from Eq. 4. In addition to action predic-
+tion, we give the contexts to the reasoning modules in Fig. 2
+to perform auxiliary tasks. We discuss four auxiliary objec-
+tives use the contexts for reasoning below.
+Trajectory Retelling Task Trajectory reasoning is critical
+for an agent to decide what to do next. Previous works train
+a speaker to translate a trajectory to a language instruction.
+The methods are not end-to-end optimized, which limit the
+performances.
+As shown in Fig. 2, we adopt a teacher forcing method
+to train an end-to-end speaker. The teacher is deﬁned as
+l }, the same word embeddings as in Eq. 4. We
+use LSTMs to encode these word embeddings. We then
+introduce a cycle reconstruction objective named trajectory
+retelling task:
+
+{f w
+0 , ..., f w
+
+(8)
+
+l(cid:88)i=1
+
+l
+
+{ (cid:101)f w
+
+0 , ..., (cid:101)f w
+(cid:98)f s
+
+LSpeaker = − 1
+
+0 , ..., f w
+l }),
+T }, (cid:101)f w
+0 , ..., (cid:101)f o
+i ),
+log p(wi | (cid:98)f s
+i ).
+
+l } = LSTMs ({f w
+i = Attns ({ (cid:101)f o
+Our trajectory retelling objective is jointly optimized with
+the main task.
+It helps the agent to obtain better feature
+representations since the agent come to know the seman-
+tic meanings of the actions. Moreover, trajectory retelling
+makes the activity of the agent explainable.
+Progress Estimation Task We propose a progress esti-
+mation task to learn the navigation progress. Earlier re-
+search [23] uses normalized distances as labels and op-
+timizes the prediction module with Mean Square Error
+(MSE) loss. However, we use the percentage of steps rt ,
+noted as a soft binary label { t
+T } to represent the
+progress:
+
+T , 1 − t
+
+Lprogress = − 1
+
+T
+
+T(cid:88)t=1
+
+rt log σ(Wr (cid:98)ft ).
+
+(9)
+
+Here Wr is the weight of the fully connected layer and
+σ is the sigmoid activation layer. Our ablation study re-
+veals that the method that learning from percentage of steps
+rt with BCE loss achieves higher performance then previ-
+ous method. Normalized distance labels introduce noise,
+which limits performance. Moreover, we also ﬁnd that Bi-
+nary Cross Entropy (BCE) loss performs better than MSE
+loss with our step-percentage label since logits learned from
+BCE loss are unbiased. The progress estimation task re-
+quires the agent to align the current view with correspond-
+ing words in the instruction. Thus, it is beneﬁcial to vision
+language grounding.
+Cross-modal Matching Task We propose a binary classiﬁ-
+cation task, motivated by LXMERT [36], to predict whether
+
+Leader-Board (Test Unseen)
+Models
+Random [5]
+Seq-to-Seq [5]
+Look Before You Leap [42]
+Speaker-Follower [10]
+Self-Monitoring [23]
+Reinforced Cross-Modal [41]
+Environmental Dropout [37]
+AuxRN(Ours)
+
+NE
+9.79
+20.4
+7.5
+6.62
+5.67
+6.12
+5.23
+
+5.15
+
+Single Run
+OR
+SR
+0.18
+0.17
+0.27
+0.20
+0.32
+0.25
+0.44
+0.35
+0.59
+0.48
+0.50
+0.43
+0.59
+0.51
+
+0.62
+
+0.55
+
+SPL
+0.12
+0.18
+0.23
+0.28
+0.35
+0.38
+0.47
+
+0.51
+
+NE
+-
+-
+-
+-
+-
+4.21
+3.97
+
+3.69
+
+Pre-explore
+OR
+SR
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+0.67
+0.61
+0.70
+0.64
+
+0.75
+
+0.68
+
+SPL
+-
+-
+-
+-
+-
+0.59
+0.61
+
+0.65
+
+Beam Search
+SR
+-
+-
+-
+0.54
+0.61
+0.63
+0.69
+
+0.71
+
+TL
+-
+-
+-
+1257
+373
+358
+687
+41
+
+SPL
+-
+-
+-
+0.01
+0.02
+0.02
+0.01
+
+0.21
+
+Table 1. Leaderboard results comparing AuxRN with the previous state-of-the-art on test split in unseen environments. We compare
+three training settings: Single Run (without seeing unseen environments), Pre-explore (ﬁnetuning in unseen environments), and Beam
+Search(comparing success rate regardless of TL and SPL). The primary metric for Single Run and Pre-explore is SPL, while the primary
+metric for Beam Search is the success rate (SR). We only report two decimals due to the precision limit of the leaderboard.
+
+f
+
+or not the trajectory matches the instruction. We shufﬂe
+w from Eq. 3 with feature vector in the same batch with
+the probability of 0.5. The shufﬂed operation is marked as
+“S” in the white circle in Fig. 2 and the shufﬂed feature is
+noted as f (cid:48)w We concatenate the shufﬂed feature with the
+attended vision-language feature (cid:98)ft . We then supervise the
+prediction result with mt , a binary label indicating whether
+the feature has been shufﬂed or remains unchanged.
+
+LM atching = − 1
+
+T
+
+T(cid:88)t=1
+
+mt log σ(Wm [ (cid:98)ft , f (cid:48)w
+
+]),
+
+(10)
+
+where Wm stands for the fully connected layer. This task
+requires the agent to align historical vision-language fea-
+tures in order to distinguish if the overall trajectory matches
+the instruction. Therefore, it facilitates the agent to encode
+historical vision and language features.
+Angle Prediction Task The agent make the choice among
+the candidates to decide which step it will take next. Com-
+pared with the noisy vision feature, the orientation is much
+cleaner. Thus we consider learning from orientation infor-
+mation in addition to learning from candidate classiﬁcation.
+We thus propose a simple regression task to predict the ori-
+entation that the agent will turn to:
+
+Langle = − 1
+
+T
+
+T(cid:88)t=1
+
+(cid:107) et − We (cid:98)ft (cid:107),
+
+(11)
+
+where at is the angle of the teacher action in the imita-
+tion learning, while Wa stands for the fully connected layer.
+Since this objective requires a teacher angle for supervision,
+we do not forward this objective in RL.
+Above all, we jointly train all the four auxiliary reason-
+ing tasks in an end-to-end manner:
+
+Ltotal = LSpeaker + LP rogress + LAngle + LM atching .
+
+(12)
+
+4. Experiment
+
+4.1. Setup
+
+Dataset and Environments We evaluate the proposed
+
+AuxRN method on the Room-to-Room (R2R) dataset [5]
+based on Matterport3D simulator [8]. The dataset, compris-
+ing 90 different housing environments, is split into a train-
+ing set, a seen validation set, an unseen validation set and
+a test set. The training set consists of 61 environments and
+14,025 instructions, while the seen validation set has 1,020
+instructions using the save environments with the training
+set. The unseen validation set consists of another 11 envi-
+ronments with 2,349 instructions, while the test set consists
+of the remaining 18 environments with 4,173 instructions.
+Evaluation Metrics A large number of metrics are used to
+evaluate models in VLN, such as Trajectory Length (TL),
+the trajectory length in meters, Navigation Error (NE), the
+navigation error in meters, Oracle Success Rate (OR), the
+rate if the agent successfully stops at the closest point, Suc-
+cess Rate (SR), the success rate of reaching the goal, and
+Success rate weighted by (normalized inverse) Path Length
+(SPL) [3]. In our experiment, we take all of these into con-
+sideration and regard SPL as the primary metric.
+Implementation Details Our training process is divided
+into three steps: Firstly, we pretrain our model on the train-
+ing set with auxiliary reasoning tasks for 80K iterations. Af-
+ter that, we train our model with the highest SPL on the un-
+seen validation split with auxiliary reasoning tasks on aug-
+mented data generated by back-translation [37] for another
+80K iterations. Finally, we ﬁne-tune the model in test envi-
+ronments for pre-exploration, which is the same as [41, 37],
+for 80K iterations. We sample trajectories in test environ-
+ments, then use a pretrained speaker to translate trajectories
+into instructions to train the model. In ﬁnetuning, we re-
+duce all auxiliary loss weight by half. We sample trajecto-
+ries from test environments, and use the speaker trained in
+Sec. 3.2 to generate self-supervised instructions.
+
+Models
+baseline
+baseline+LSpeaker
+baseline+Lprogress
+baseline+LM atching
+baseline+LAngle
+baseline+LT otal
+baseline+BT [37]
+baseline+BT+LT otal
+
+NE (m)
+4.51
+4.13
+4.35
+4.70
+4.25
+4.22
+4.04
+
+3.33
+
+Val Seen
+OR (%)
+SR (%)
+65.62
+58.57
+69.05
+60.92
+68.27
+60.43
+65.33
+56.51
+70.03
+60.63
+72.28
+62.88
+70.13
+63.96
+
+77.77
+
+70.23
+
+SPL (%)
+55.87
+57.71
+57.15
+53.55
+57.68
+
+58.89
+
+61.37
+
+67.17
+
+NE (m)
+5.77
+5.64
+5.80
+5.74
+5.87
+5.63
+5.39
+
+5.28
+
+Val Unseen
+OR (%)
+SR (%)
+53.47
+46.40
+57.05
+49.34
+56.75
+48.57
+55.85
+47.98
+55.00
+47.94
+59.60
+50.62
+56.62
+50.28
+
+62.32
+
+54.83
+
+SPL (%)
+42.89
+45.24
+44.74
+44.10
+43.77
+
+45.67
+
+46.84
+
+50.29
+
+Table 2. Ablation study for different auxiliary reasoning tasks. We evaluate our models on two validation splits: validation for the seen
+and unseen environments. Four metrics are compared, including NE, OR, SR and SPL.
+
+4.2. Test Set Results
+
+In this section, we compare our model with previous
+state-of-the-art methods. We compare the proposed AuxRN
+with two baselines and ﬁve other methods. A brief descrip-
+tion of previous models as followed. 1) Random: randomly
+take actions for 5 steps. 2) Seq-to-Seq: A sequence to se-
+quence model reported in [5]. 3) Look Before You Leap: a
+method combining model-free and model-based reinforce-
+ment learning. 4) Speaker-Follower: a method introduces a
+data augmentation approach and panoramic action space. 5)
+Self-Monitoring: a method regularized by a self-monitoring
+agent. 6) Reinforced Cross-Modal: a method with cross-
+modal attention and combining imitation learning with re-
+inforcement learning. 7) Environmental Dropout: a method
+augment data with environmental dropout. Additionally, we
+evaluate our models on three different training settings: 1)
+Single Run: without seeing the unseen environments and 2)
+Pre-explore: ﬁnetuning a model in the unseen environments
+with self-supervised approach. 3) Beam Search: predicting
+the trajectories with the highest rate to success.
+As shown in Tab. 1, AuxRN outperforms previous mod-
+els in a large margin on all three settings. In Single Run, we
+achieve 3% improvement on oracle success, 4% improve-
+ment on success rate and 4% improvement on SPL. In Pre-
+explore setting, our model greatly reduces the error to 3.69,
+which shows that AuxRN navigates further toward the goal.
+AuxRN signiﬁcantly boost oracle success by 5%, success
+rate 4% and SPL to 4%. AuxRN achieves similiar improve-
+ments on two domains, which indicates that the auxiliary
+reasoning tasks we proposed is immune from domain gap.
+We also achieve the state-of-the-art in Beam Search
+setup. Our ﬁnal model with Beam Search algorithm
+achieves 71% success rate, which is 2% higher than Envi-
+ronmental Dropout, the previous state-of-the-art. Our beam
+search result has the least trajectory length, which reveals
+that AuxRN is time efﬁcient in navigation.
+
+4.3. Ablation Experiment
+
+Auxiliary Reasoning Tasks Comparison In this section,
+
+we compare performances between different auxiliary rea-
+
+S
+
+l
+
+a
+
+V
+
+n
+e
+e
+
+Models
+Baseline
+Matching Critic [41]
+Student Forcing [5]
+Teacher Forcing(share)
+Teacher Forcing(ours)
+n Baseline
+Matching Critic
+Student Forcing
+Teacher Forcing(share)
+Teacher Forcing
+
+e
+e
+s
+
+U
+
+a
+
+V
+
+n
+
+l
+
+OR(%)
+65.62
+63.76
+65.72
+66.90
+65.62
+53.47
+55.26
+54.92
+56.41
+57.05
+
+34.85
+
+SR(%) Acc(%)
+58.57
+-
+55.73
+19.58
+57.59
+25.37
+60.33
+59.55
+46.40
+46.74
+47.42
+48.19
+49.34
+
+26.34
+-
+18.88
+25.04
+
+38.49
+
+25.95
+
+SPL(%)
+55.87
+52.77
+54.95
+
+57.23
+
+56.99
+42.89
+43.44
+43.78
+44.47
+
+45.24
+
+Table 3. Ablation study for Trajectory Retelling Task. Four met-
+rics are compared, including OR, SR, SPL and Acc (sentence pre-
+diction accuracy).
+
+soning tasks. We use the previous state-of-the-art [37] as
+our baseline. We train the models with each single task
+based on our baseline. We evaluate our models on both the
+seen and unseen validation set and the results are shown in
+Tab. 2. It turns out that each task promotes the performance
+based on our baseline independently. And training all tasks
+together is able to further boost the performance, achiev-
+ing improvements by 3.02% on the seen validation set and
+by 2.78% on the unseen validation set. It indicates that the
+auxiliary reasoning tasks are presumably reciprocal.
+Moreover, our experiments show that our auxiliary
+losses and back-translation method has a mutual promo-
+tion effect. On the seen validation set, baseline with back-
+tranlation gets 5.50% improvement while combining back-
+translation promotes SPL by 11.30%, greater than the sum
+of the performance improvement of baseline with auxil-
+iary losses and with back-translation independently. Sim-
+ilar results have been observed on the unseen validation set.
+Baseline with back-translation gets 3.95% promotion while
+combining back-translation boosts SPL by 7.40%. The pro-
+motion of auxiliary reasoning tasks with back-translation is
+even larger than the sum of promotion by each single model.
+
+Ablation for Trajectory Retelling Task We evaluate four
+
+different implementations for trajectory retelling task. All
+method uses visual contexts for trajectories to predict word
+tokens.
+1) Teacher Forcing: The standard Trajectory
+Retelling approach as described in Sec. 3.4. 2) Teacher
+Forcing(share): an variant of teacher forcing which uses ˜fw
+
+a
+
+V
+
+e
+e
+
+Models
+n Baseline
+Progress Monitor [23]
+Step-wise+MSE(ours)
+Step-wise+BCE(ours)
+n Baseline
+Progress Monitor
+Step-wise+MSE(ours)
+Step-wise+BCE(ours)
+
+e
+e
+s
+
+U
+
+l
+
+a
+
+V
+
+S
+
+l
+
+n
+
+OR(%)
+65.62
+66.01
+64.15
+
+68.27
+
+53.47
+
+57.09
+
+55.90
+56.75
+
+SR(%)
+58.57
+57.1
+53.97
+
+60.43
+
+46.40
+46.57
+46.74
+
+48.57
+
+Error
+-
+0.72
+0.27
+
+0.13
+
+-
+0.80
+0.32
+
+0.16
+
+SPL(%)
+55.87
+53.43
+50.81
+
+57.15
+
+42.89
+42.21
+43.16
+
+44.74
+
+Table 4. Ablation study for Progress Estimation Task. Four met-
+rics are compared, including OR, SR, SPL and Error (normalized
+absolute error).
+
+to attend visual features. 3) Matching Critic: regards op-
+posite number of the speaker loss as a reward to encourage
+the agent. 4) Student Forcing: a seq-to-seq approach trans-
+lating visual contexts to word tokens without ground truth
+sentence input. In addition to OR, SR, and SPL, we add
+a new metric, named sentence prediction accuracy (Acc).
+This metric calculates the precision model predict the cor-
+rect word.
+The result of ablation study for Trajectory Retelling
+Task is shown as Tab. 3. Firstly, teacher forcing outper-
+forms Matching Critic [41] by 1.8% and 4.22% respec-
+tively. Teacher forcing performs 7.07% and 6.76% more
+than Matching Critic in terms of accuracy.
+Secondly,
+teacher forcing outperforms student forcing by 1.46% and
+2.04% in terms of SPL in two validation sets. The results
+also indicate that teacher forcing is better in sentence pre-
+diction compared with student forcing. Thirdly, in terms
+of SPL, standard teacher forcing outperforms the teacher
+forcing with shared context on the unseen validation set by
+0.77%. Besides, we notice that the teacher forcing with
+shared context outperforms standard teacher forcing about
+12% in word prediction accuracy (Acc). We infer that the
+teacher forcing with shared context overﬁts on the trajectory
+retelling task.
+Progress Estimation Task To valid the progress estimation
+task, we investigation two variants in addition to our stan-
+dard progress estimator. 1) Progress Monitor: We imple-
+ment Progress Monitor [23] based on our baseline method.
+2) we train our model use Mean Square Error (MSE) rather
+than BCE Loss with the same step-wise label t
+T . We com-
+pare these models with four metris: OR, SR, Error and SPL.
+The Error is calculated by the mean absolute error between
+the progress estimation prediction and the label. To give a
+fair comparison between the error for step-wise label and
+distance label, we normalized all label distributions and the
+corresponding predictions.
+The result is shown as Tab. 4. Our standard model out-
+performs other two variants and baseline on most of the
+metrics. Our Step-wise MSE model performs 2.62% higher
+on the seen validation set 2.53% higher on the unseen val-
+idation set than Progress Monitor [23], indicating that la-
+bel measured by normalized distances is noisier than label
+
+Figure 3. The language attention map for the baseline model and
+our ﬁnal model. The x-axis stands for the position of words and the
+y-axis stands for the navigation time steps. Since each trajectory
+has variable number of words and number of steps, we normalize
+each attention map to the same size before we sum all the maps.
+
+measured by steps. In addition, we ﬁnd that the Progress
+Monitor we implement performs even worse than baseline.
+Since the original method [23] trains the agent with imita-
+tion learning rather than the mixed training policy combin-
+ing imitation learning and reinforcement learning. We infer
+that the performance drop is due to reinforcement learning.
+When the agent begins to deviate from the labeled path, the
+progress label become even more noisy, making the perfor-
+mance even worse than baseline.
+We compare different loss functions with step-wise la-
+bels. Our model with BCE loss is 6.34% higher on the seen
+validation set and 1.58% higher on the unseen validation
+set. Furthermore, the prediction error of the model trained
+by MSE loss is higher than which trained by BCE loss. The
+Error of the Step-wise+MSE model is 0.14 higher on the
+seen validation set and 0.16 higher on the unseen validation
+set than Step-wise+BCE model. It shows that step-wise la-
+bel and BCE loss are suitable for progress estimation task.
+
+4.4. Visualization
+
+Regularized Language Attention We visualize the atten-
+
+tion map for Attnw after Bi-LSTMw . The dark region in
+the map stands for where the language features receive high
+attention. We observe from Fig. 4 that the attention regions
+on both two maps go left when the navigation step increas-
+ing (marked as 1). It means that both models learns to pay
+an increasing attention to the latter words. At the last few
+steps, models pay high attention to the ﬁrst feature and the
+last feature (marked as 2 and 3), since the Bi-LSTM encodes
+sentence information at the ﬁrst and the last feature.
+Compared with the baseline model, the attention region
+of our model moves more regular by navigation steps. At
+early steps, our model pays a more focused attention to a
+speciﬁc region which makes the left bottom region (marked
+as 1) in the left image looks darker than the right one. In
+addition, it indicates that our model has a higher success
+rate than the baseline, since the attention map tends to be an
+uniform distribution when the agent gets lost. By compar-
+ing region 2 and 3 for both two maps, we conclude that our
+model learns a more ﬁrm policy to pay attention to the ﬁrst
+
+123123Figure 4. Visualization process of two trajectories in testing. Two complex language instructions are shown in top boxes. Each image is a
+panoramic view, which is the vision input for AuxRN, where the direction the agent is going to navigate is represented as a red arrow. For
+each step, the results progress estimator and the matching function are shown as left.
+
+feature and the last feature. We infer from our experiments
+that auxiliary reasoning losses help regularize the language
+attention map, which turns out to be beneﬁcial.
+
+Navigation Visualization We visualize two sample trajec-
+tories to show the process of navigation. For each step,
+AuxRN navigate to an adjacent navigatable node toward
+the goal, which direction is shown as a red arrow. To fur-
+ther demonstrate how AuxRN understand the environment,
+we show the result of the progress estimator and matching
+function. The estimated progress continues growing dur-
+ing navigation while the matching result is increasing expo-
+nentially. When AuxRN reaches the goal, the progress and
+matching results both jump to almost 1 at the same time.
+It turns out that our agent is able to precisely reasoning
+
+the current progress and whether the trajectory is consistent
+with the instruction.
+
+5. Conclusion
+
+In this paper, we presented a novel framework, auxiliary
+Reasoning Navigation (AuxRN), that facilitates navigation
+learning with four auxiliary reasoning tasks. These auxil-
+iary reasoning tasks help the agent to acquire knowledge
+to reason about its activity and build a thorough perception
+of the environment. Our experiments conﬁrm that AuxRN
+improves the performance of the VLN task quantitatively
+and qualitatively. We plan to build a general framework for
+auxiliary reasoning tasks to exploit the common sense in-
+formation and improve the model generalization.
+
+References
+
+[1] Aishwarya Agrawal, Jiasen Lu, Stanislaw Antol, Mar-
+garet Mitchell, C. Lawrence Zitnick, Dhruv Batra, and
+Devi Parikh. Vqa: Visual question answering. arXiv
+preprint arXiv:1505.00468, 2015. 2
+[2] Chris Alberti, Jeffrey Ling, Michael Collins, and
+David Reitter. Fusion of detected objects in text for
+visual question answering.
+In 2019 Conference on
+Empirical Methods in Natural Language Processing,
+2019. 2
+[3] Peter Anderson, Angel X. Chang, Devendra Singh
+Chaplot, Alexey Dosovitskiy, Saurabh Gupta, Vladlen
+Koltun, Jana Kosecka, Jitendra Malik, Roozbeh Mot-
+taghi, Manolis Savva, and Amir Roshan Zamir. On
+evaluation of embodied navigation agents.
+arXiv
+preprint arXiv:1807.06757, 2018. 2, 5
+[4] Peter Anderson, Xiaodong He, Chris Buehler, Damien
+Teney, Mark Johnson, Stephen Gould, and Lei Zhang.
+Bottom-up and top-down attention for image caption-
+ing and visual question answering. In 2018 IEEE/CVF
+Conference on Computer Vision and Pattern Recogni-
+tion, pages 6077–6086, 2018. 1, 2
+[5] Peter Anderson, Qi Wu, Damien Teney, Jake Bruce,
+Mark Johnson, Niko Sunderhauf, Ian Reid, Stephen
+Gould, and Anton van den Hengel. Vision-and-
+language navigation: Interpreting visually-grounded
+navigation instructions in real environments. In 2018
+IEEE/CVF Conference on Computer Vision and Pat-
+tern Recognition, pages 3674–3683, 2018. 1, 2, 5, 6
+[6] Stanislaw Antol, Aishwarya Agrawal, Jiasen Lu, Mar-
+garet Mitchell, Dhruv Batra, C. Lawrence Zitnick, and
+Devi Parikh. Vqa: Visual question answering. In 2015
+IEEE International Conference on Computer Vision
+(ICCV), pages 2425–2433, 2015. 1
+[7] Mariusz Bojarski, Davide Del Testa, Daniel
+Dworakowski, Bernhard Firner, Beat Flepp, Pra-
+soon Goyal, Lawrence D. Jackel, Mathew Monfort,
+Urs Muller, Jiakai Zhang, Xin Zhang, Jake Zhao, and
+Karol Zieba. End to end learning for self-driving cars.
+arXiv preprint arXiv:1604.07316, 2016. 2
+[8] Angel Chang, Angela Dai, Thomas Funkhouser, Ma-
+ciej Halber, Matthias Niebner, Manolis Savva, Shuran
+Song, Andy Zeng, and Yinda Zhang. Matterport3d:
+Learning from rgb-d data in indoor environments. In
+2017 International Conference on 3D Vision (3DV),
+pages 667–676, 2017. 2, 5
+[9] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. Bert: Pre-training of deep bidirec-
+tional transformers for language understanding. arXiv
+preprint arXiv:1810.04805, 2018. 1, 2
+
+[10] Daniel Fried, Ronghang Hu, Volkan Cirik, Anna
+Rohrbach, Jacob Andreas, Louis-Philippe Morency,
+Taylor Berg-Kirkpatrick, Kate Saenko, Dan Klein, and
+Trevor Darrell. Speaker-follower models for vision-
+and-language navigation.
+In NIPS 2018: The 32nd
+Annual Conference on Neural Information Processing
+Systems, pages 3314–3325, 2018. 1, 3, 4, 5
+[11] Spyros Gidaris, Praveer Singh, and Nikos Komodakis.
+Unsupervised representation learning by predicting
+image rotations. In ICLR 2018 : International Con-
+ference on Learning Representations 2018, 2018. 2
+[12] Jiuxiang Gu, Handong Zhao, Zhe Lin, Sheng Li, Jian-
+fei Cai, and Mingyang Ling. Scene graph genera-
+tion with external knowledge and image reconstruc-
+tion. In Proceedings of the IEEE Conference on Com-
+puter Vision and Pattern Recognition, pages 1969–
+1978, 2019. 2
+[13] Saurabh Gupta, Varun Tolani,
+James Davidson,
+Sergey Levine, Rahul Sukthankar, and Jitendra Malik.
+Cognitive mapping and planning for visual navigation.
+arXiv preprint arXiv:1702.03920, 2017. 1
+[14] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian
+Sun. Deep residual learning for image recognition.
+arXiv preprint arXiv:1512.03385, 2015. 1
+[15] Jonathan Ho and Stefano Ermon.
+adversarial
+imitation learning.
+arXiv:1606.03476, 2016. 2
+[16] Max Jaderberg, Volodymyr Mnih, Wojciech Marian
+Czarnecki, Tom Schaul, Joel Z Leibo, David Silver,
+and Koray Kavukcuoglu. Reinforcement learning with
+unsupervised auxiliary tasks. In ICLR 2017 : Interna-
+tional Conference on Learning Representations 2017,
+2017. 2
+[17] Micha Kempka, Marek Wydmuch, Grzegorz Runc,
+Jakub Toczek, and Wojciech Jakowski. Vizdoom:
+A doom-based ai research platform for visual rein-
+forcement learning. arXiv preprint arXiv:1605.02097,
+2016. 2
+[18] Eric Kolve, Roozbeh Mottaghi, Daniel Gordon, Yuke
+Zhu, Abhinav Gupta, and Ali Farhadi. Ai2-thor:
+An interactive 3d environment for visual ai. arXiv
+preprint arXiv:1712.05474, 2017. 2
+[19] Zhenzhong Lan, Mingda Chen, Sebastian Good-
+man, Kevin Gimpel, Piyush Sharma, and Radu Sori-
+cut. Albert: A lite bert for self-supervised learn-
+ing of language representations.
+arXiv preprint
+arXiv:1909.11942, 2019. 2
+[20] Shikun Liu, Andrew Davison, and Edward Johns.
+Self-supervised generalisation with meta auxiliary
+learning. In NeurIPS 2019 : Thirty-third Conference
+on Neural Information Processing Systems, 2019. 2
+
+Generative
+arXiv preprint
+
+[21] Jiasen Lu, Dhruv Batra, Devi Parikh, and Stefan
+Lee. Vilbert: Pretraining task-agnostic visiolinguis-
+tic representations for vision-and-language tasks.
+In
+NeurIPS 2019 : Thirty-third Conference on Neural In-
+formation Processing Systems, 2019. 1, 2
+[22] Jiasen Lu, Jianwei Yang, Dhruv Batra, and Devi
+Parikh. Hierarchical question-image co-attention for
+visual question answering. In Advances in Neural In-
+formation Processing Systems, pages 289–297, 2016.
+1
+[23] Chih-Yao Ma, jiasen lu, Zuxuan Wu, Ghassan Al-
+Regib, Zsolt Kira,
+richard socher, and Caiming
+Xiong. Self-monitoring navigation agent via auxiliary
+progress estimation. In ICLR 2019 : 7th International
+Conference on Learning Representations, 2019. 2, 4,
+5, 7
+[24] Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg S
+Corrado, and Jeff Dean. Distributed representations
+of words and phrases and their compositionality.
+In
+Advances in Neural Information Processing Systems
+26, pages 3111–3119, 2013. 1
+[25] Piotr Mirowski, Razvan Pascanu, Fabio Viola, Hubert
+Soyer, Andy Ballard, Andrea Banino, Misha Denil,
+Ross Goroshin, Laurent Sifre, Koray Kavukcuoglu,
+Dharshan Kumaran, and Raia Hadsell. Learning to
+navigate in complex environments. In ICLR 2017 : In-
+ternational Conference on Learning Representations
+2017, 2017. 2
+[26] Volodymyr Mnih, Adri Puigdomnech Badia, Mehdi
+Mirza, Alex Graves, Tim Harley, Timothy P. Lillicrap,
+David Silver, and Koray Kavukcuoglu. Asynchronous
+methods for deep reinforcement learning. In ICML’16
+Proceedings of the 33rd International Conference on
+International Conference on Machine Learning - Vol-
+ume 48, pages 1928–1937, 2016. 2, 4
+[27] Augustus Odena, Christopher Olah, and Jonathon
+Shlens. Conditional image synthesis with auxiliary
+classiﬁer gans. In ICML’17 Proceedings of the 34th
+International Conference on Machine Learning - Vol-
+ume 70, pages 2642–2651, 2017. 2
+[28] Deepak Pathak, Pulkit Agrawal, Alexei A. Efros, and
+Trevor Darrell. Curiosity-driven exploration by self-
+supervised prediction. In International Conference on
+Machine Learning, pages 2778–2787, 2017. 2
+[29] Judea Pearl. Probabilistic Reasoning in Intelligent
+Systems: Networks of Plausible Inference. 1988. 2
+[30] Sbastien Racanire, Theophane Weber, David P. Re-
+ichert, Lars Buesing, Arthur Guez, Danilo Jimenez
+Rezende, Adri Puigdomnech Badia, Oriol Vinyals,
+Nicolas Heess, Yujia Li, Razvan Pascanu, Peter W.
+Battaglia, Demis Hassabis, David Silver, and Daan
+
+Wierstra. Imagination-augmented agents for deep re-
+inforcement learning. In Advances in Neural Informa-
+tion Processing Systems, pages 5690–5701, 2017. 2
+[31] Shaoqing Ren, Kaiming He, Ross Girshick, and Jian
+Sun. Faster r-cnn: Towards real-time object detec-
+tion with region proposal networks. arXiv preprint
+arXiv:1506.01497, 2015. 1
+[32] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec
+Radford, and Oleg Klimov. Proximal policy optimiza-
+tion algorithms.
+arXiv preprint arXiv:1707.06347,
+2017. 2
+[33] Weijie Su, Xizhou Zhu, Yue Cao, Bin Li, Lewei
+Lu, Furu Wei, and Jifeng Dai. Vl-bert: Pre-training
+of generic visual-linguistic representations.
+arXiv
+preprint arXiv:1908.08530, 2019. 2
+[34] Yu Sun, Eric Tzeng, Trevor Darrell, and Alexei A.
+Efros. Unsupervised domain adaptation through self-
+supervision. arXiv preprint arXiv:1909.11825, 2019.
+2
+[35] Yu Sun, Xiaolong Wang, Zhuang Liu, John Miller,
+Alexei A. Efros, and Moritz Hardt. Test-time training
+for out-of-distribution generalization. arXiv preprint
+arXiv:1909.13231, 2019. 2
+[36] Hao Tan and Mohit Bansal. Lxmert: Learning cross-
+modality encoder representations from transformers.
+In 2019 Conference on Empirical Methods in Natural
+Language Processing, 2019. 1, 2, 4
+[37] Hao Tan, Licheng Yu, and Mohit Bansal. Learning to
+navigate unseen environments: Back translation with
+environmental dropout. In NAACL-HLT 2019: Annual
+Conference of the North American Chapter of the As-
+sociation for Computational Linguistics, pages 2610–
+2621, 2019. 2, 3, 5, 6
+[38] Jesse Thomason, Michael Murray, Maya Cakmak,
+and Luke Zettlemoyer. Vision-and-dialog navigation.
+arXiv preprint arXiv:1907.04957, 2019. 2
+[39] Vivek Veeriah, Matteo Hessel, Zhongwen Xu, Richard
+Lewis, Janarthanan Rajendran, Junhyuk Oh, Hado van
+Hasselt, David Silver, and Satinder Singh. Discovery
+of useful questions as auxiliary tasks. arXiv preprint
+arXiv:1909.04607, 2019. 2
+[40] Vivek Veeriah, Richard L Lewis, Janarthanan Rajen-
+dran, David Silver, and Satinder Singh. The discov-
+ery of useful questions as auxiliary tasks. In NeurIPS
+2019 : Thirty-third Conference on Neural Information
+Processing Systems, 2019. 2
+[41] Xin Wang, Qiuyuan Huang, Asli Celikyilmaz,
+Jianfeng Gao, Dinghan Shen, Yuan-Fang Wang,
+William Yang Wang, and Lei Zhang. Reinforced
+cross-modal matching and self-supervised imitation
+
+learning for vision-language navigation. In Proceed-
+ings of the IEEE Conference on Computer Vision and
+Pattern Recognition, pages 6629–6638, 2018. 1, 2, 3,
+5, 6, 7
+[42] Xin Wang, Wenhan Xiong, Hongmin Wang, and
+William Yang Wang. Look before you leap: Bridg-
+ing model-free and model-based reinforcement learn-
+ing for planned-ahead vision-and-language naviga-
+tion. arXiv preprint arXiv:1803.07729, 2018. 1, 2,
+5
+[43] Yi Wu, Yuxin Wu, Georgia Gkioxari, and Yuandong
+Tian. Building generalizable agents with a realistic
+and rich 3d environment. In ICLR 2018 : International
+Conference on Learning Representations 2018, 2018.
+2
+[44] Rowan Zellers, Yonatan Bisk, Ali Farhadi, and Yejin
+Choi. From recognition to cognition: Visual common-
+sense reasoning.
+In Proceedings of the IEEE Con-
+ference on Computer Vision and Pattern Recognition,
+pages 6720–6731, 2018. 2
+[45] Hengshuang Zhao, Jianping Shi, Xiaojuan Qi, Xiao-
+gang Wang, and Jiaya Jia. Pyramid scene parsing net-
+work. In 2017 IEEE Conference on Computer Vision
+and Pattern Recognition (CVPR), pages 6230–6239,
+2017. 2
+
+

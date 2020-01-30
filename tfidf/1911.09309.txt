@@ -1,0 +1,1135 @@
+Decoding Spiking Mechanism with Dynamic
+Learning on Neuron Population
+
+Zhijie Chen, Junchi Yan∗ , Longyuan Li and Xiaokang Yang Fellow, IEEE
+MoE Key Lab of Artiﬁcial Intelligence, Shanghai Jiao Tong University
+{chen-zhijie, yanjunchi, jefﬂi, xkyang}@sjtu.edu.cn
+
+1
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+C
+
+N
+
+.
+
+o
+
+i
+
+b
+
+-
+
+q
+
+[
+
+1
+v
+9
+0
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract—A main concern in cognitive neuroscience is to
+decode the overt neural spike train observations and infer
+latent representations under neural circuits. However, traditional
+methods entail strong prior on network structure and hardly
+meet the demand for real spike data. Here we propose a novel
+neural network approach called Neuron Activation Network that
+extracts neural information explicitly from single trial neuron
+population spike trains. Our proposed method consists of a
+spatiotemporal learning procedure on sensory environment and
+a message passing mechanism on population graph, followed
+by a neuron activation process in a recursive fashion. Our
+model is aimed to reconstruct neuron information while inferring
+representations of neuron spiking states. We apply our model
+to retinal ganglion cells and the experimental results suggest
+that our model holds a more potent capability in generating
+neural spike sequences with high ﬁdelity than the state-of-the-art
+methods, as well as being more expressive and having potential
+to disclose latent spiking mechanism. The source code will be
+released with the ﬁnal paper.
+Index Terms—neuroscience, relation modeling, sequence learn-
+ing, machine learning
+
+IN TRODUC T ION AND R ELAT ED WORK
+
+Spiking activity of a neuron population contains a large
+amount of cerebral information [3], [21] and has been studied
+extensively in neuroscience. Decoding the relationship be-
+tween neural spike trains and latent structure in neuron circuits
+can advance therapeutic neuro-technologies such as closed-
+loop deep brain stimulation [19] and brain-machine interface
+(BMI) [15], [20], [22]. As a symbolization of intricate designs
+in human physiology, the spike train of a neuron is dependent
+upon multiple factors like sensory environment and the latent
+structure of neuron population [6], [7]. How these factors are
+combined and ultimately act on neural spikes is still not very
+clear and under heated discussion.
+Existing methods can be categorized into two groups. Super-
+vised learning techniques are used to study neuron spikes. An
+enlightening work is the linear-nonlinear-Poisson (LNP) cas-
+cade model [16], [24], in which spikes are generated according
+to an inhomogeneous Poisson process, with rate determined
+by an instantaneous nonlinear function of the ﬁltered input.
+Based on LNP, another well-known model, the generalized
+linear model (GLM) [17] is proposed. GLM consists of a set
+of linear ﬁlters followed by a nonlinearity and probabilistic
+spike generation. The components of GLM strictly conforms
+to certain phenomenon in neural spikes, which offers a con-
+cise description of neural population activity. Among all the
+derivatives and optimization of GLM [24], [27], [28], [33],
+
+pyGLM [13] combines latent variable network models with
+GLM in a hierarchical Bayesian framework. However, all the
+above model-based approaches have limitations as they entail
+strong prior on neuron population structure and hence are
+susceptible to the selection of hyperparameters.
+Other endeavors involve unsupervised learning on neuron
+spike data. The common route is to discover nonlinear map-
+ping from latent variable to neural responses, where the low-
+dimensional variable evolves in time according to a Gaussian
+process prior [4], [8], [29], [30]. These models are efﬁcient in
+extracting latent variables from population spikes in relatively
+small sizes, but exhibit less satisfying efﬁcacy in dealing with
+large scale data, which will be the common case in upcoming
+revolution in large-scale neuron data collection. It reminds us
+of a fact that an inductive model with stronger scalability is
+needed in practical use.
+Recently, deep neural networks have been used in cog-
+nitive neuroscience and primarily validated its feasibility in
+parametrizing nonlinear mapping from latent space to spike
+rates. One basic idea is ﬁtting a recurrent neural network
+for sequential analysis [2], [18]. A similar way is to use
+convolutional neural networks to ﬁnd relationship between
+stimulus and neuron response [14]. Nevertheless, these mod-
+els focus on individual neuron activities and need ﬁtting
+separately for different cell types. These black-box models
+also have difﬁculty in extracting underlying representations
+w.r.t. contributing factors. To deal with the defects in current
+literature, this paper is motivated to adopt a novel neural
+network approach, thereby separately modeling the effects of
+sensory environment, spiking history and surrounding neuron
+activities. This paper has the following contributions:
+1) We propose neuron activation process where hidden state
+determines spiking activity of a single neuron. We combine
+log likelihoood of spike sequences and mutual information to
+capture local and global patterns in spike generation.
+2) We devise a deep network approach to extract neural
+information as latent variables under neural circuits. Our
+method involves a spatiotemporal
+learning of the sensory
+environment, together with an online neuron relation learning
+process that supports dynamic neuron population graphs.
+3) Extensive experimental results show that our proposed
+method has a potent capability in generating simulation neu-
+ral spikes with high ﬁdelity and is instructive in inferring
+representations of neuron hidden state. Our proposed method
+also takes the ﬁrst step in explicitly disclosing latent neuron
+structure and spike eliciting mechanism.
+
+ 
+ 
+ 
+ 
+ 
+ 
+2
+
+Fig. 1: Neuron Activation Network (NAN). It consists of neuron relation and spatiotemporal learning to extract hidden states
+from the input spike sequences. The neuron hidden state is mapped to spike ﬁring rate with neuron activation process.
+
+PRO PO SED A P PROACH
+
+Notations and Problem Formulation
+Suppose we have recorded the spike trains from N neurons.
+Let X ∈ RN ×T denote the matrix of spike count data, with
+neurons indexed by i ∈ {1, 2, ..., N } and spike counted in
+discrete time bins indexed by t ∈ {1, 2, ...T }. The stimulus
+that elicits the spike trains is denoted as Ψ ∈ RW ×H×T , which
+is a three-dimensional matrix, with the ﬁrst two dimensions
+standing for spatial width and height respectively, and the
+third dimension stands for recording time bins in accord with
+neuron spikes. Our goal is to construct a model that grasps the
+latent mechanism in spike train generation and make forward
+prediction for a spike sequence.
+Assuming prediction step to be τ , i.e. the length of predic-
+tion spike sequence, Y ∈ RN ×τ is the prediction matrix of
+spike sequence in the next τ time bins given X. E ∈ RN ×N
+denotes the learned relation intensity matrix of neuron couples,
+and S ∈ RN ×τ ×np is the stimulus factor matrix, elements of
+which are np -dimension embeddings of input stimulus. Being
+consistent with former researches, we assume the spike activity
+of a single neuron is determined by its hidden state variable
+hi,t ∈ Rnh , which is an nh -element vector. H ∈ RN ×T ×nh
+denotes the hidden state matrix of neuron population through-
+out the whole recording time.
+With the settings stated above, we can now derive the joint
+distribution over prediction spike sequence and other latent
+variables or learned representations:
+
+p(Y , H, E, S|{Ψ, X})
+=p(Y |H)p(H|E, S, X)p(E|X)p(S|Ψ)
+p(yi,t |hi,t )p(hi,t |E, si,t , hi,t−1 , ..., hi,1 , X)
+
+=
+
+(1)
+
+N(cid:89)
+
+τ(cid:89)
+
+p(eij |Xi , Xj )
+
+p(si,t |Ψ:,:,t )
+
+N(cid:89)
+N(cid:89)
+
+i=1
+
+τ(cid:89)
+N(cid:89)
+
+t=1
+
+i=1
+
+j=1
+
+i=1
+
+t=1
+
+where Xi and Xj represent the i-th and j -th row of matrix X,
+namely the neuron spike observations of neuron i and j . Our
+goal is to maximize the log marginal likelihood associated with
+the joint distribution in Eq. 1 as well as to get a convincing
+estimate for H, E, S, respectively. To this end, all latent
+
+variables and representations are required to be marginalized
+out:
+
+log p(Y) = log
+
+= log
+
+(cid:90)
+
+(cid:90) (cid:90)
+
+p(Y , H, E, S)dHdEdS
+p(Y |H)
+p(H|E, S)
+p(E|X)p(X)
+p(S|Ψ)p(Ψ)dΨdXdSdEdH
+
+(2)
+
+(cid:90) (cid:90) (cid:90)
+(cid:90)
+(cid:90)
+
+As the latent variables in a neuron population largely
+interplay with each other, using the traditional coordinate
+descent for learning can be inefﬁcient and may lead to local
+optima [30]. Therefore, in the following parts, we are going
+to separately model the terms in Eq. 2 with a novel neural
+network approach.
+
+Neuron Activation Process
+Let λi,t = f (hi,t ) denote the ﬁring rate of neuron i at time
+t. Here neuron ﬁring rate is in unit of spikes per time bin, and
+f is a shared internal function mapping the nh -dimensional
+representation of hidden state hi,t to a scalar ﬁring rate. The
+spike count of neuron i at t follows a Poisson distribution with
+its mean equal to λi,t :
+
+yi,t |f , hi,t ∼ Poisson(f (hi,t ))
+
+The hidden state hi,t is updated for each interval to capture
+the effect of time-varying factors:
+Sensory environment. Assume the neurons are continu-
+ously exposed to a movie during recording. The movie works
+as an exogenous stimulus for spike train generation;
+Spike history. Spike trains are strongly time-dependent, one
+of the evidences is the existence of refractory period. In our
+implementation, a neuron’s ﬁring rate evolves with respect to
+the previous hidden state in a recursive fashion;
+
+Surrounding neuron states. As an important way for mes-
+
+sage passing in neuron population, the hidden state of a neuron
+not only determines its own ﬁring rate, but also interferes with
+the activities of surrounding neurons. This effect is not limited
+to the synaptic structure, but exists extensively in a neuron
+population [17].
+
+Neuron Relation LearningFeatureExtractionSpatiotemporalLearningMutualInformationNeuronActivationLogLikelihoodXhYyTo combine the above contributing factors, we update the
+hidden state of each neuron in a recurrent architecture.
+
+synaptic integration in a biological neuron [9], the aggregation
+of received messages can be deﬁned as:
+
+3
+
+hi,t = g(CONCAT[hi,t−1 ; st ; mi,t−1 ])
+
+(3)
+
+where mi,t denotes the representation of overall message
+received by neuron i at time t. Inspired by the former analysis,
+we devise a neural network called Neuron Activation Network
+(NAN) which consists of three jointly trained components to
+separately model the terms in interest. An overview of network
+structure is shown in Fig. 1. We will introduce the details of
+different functional components in turn.
+
+Spatiotemporal Learning of Sensory Environment
+To capture speciﬁc patterns in sensory environment, we
+use convolutional neural network (CNN) [12] and thereby
+acquire an embedding for the stimulus effect. Due to its
+generality,
+the usage of CNN can make our model well
+applied to any structured sensory modalities, like visual and
+auditory stimulus. As a comparison to the conventional CNN,
+we add a temporal dimension to the ﬁlters considering the
+temporal correlation of stimulus with neuron spikes. Hence,
+the sensory environment variable Mt ∈ RW ×H×η denotes a
+three-dimension matrix, with the width, height and timescale
+respectively. Notice that Mt contains history stimulus in the
+previous η time bins. With the above settings, the stimulus
+factor st can be formulated as below:
+
+st = CNN(Mt )
+
+(4)
+
+Message Passing via Population Graph
+For lack of prior knowledge on neuron connectivity, we con-
+struct a fully-connected graph on the neuron population, which
+means messages can be passed between any two neurons.
+Each node in the population graph represents a neuron and the
+edges represent the message between coupling neurons. Our
+purpose is to learn the message embedding mi,t of neuron i
+and thereby update the hidden state vector of each neuron. The
+embedding representation of edge derives from hidden states
+of the two associated neurons:
+
+eij,t = fedge (hi,t , hj,t )
+
+(5)
+
+where fedge is a neural network that
+transfers individual
+neuron representations to edge representations. Each neuron
+aggregates all
+the messages it receives from surrounding
+neurons to update its message embedding mi,t . Although
+the population graph is constructed as fully-connected, the
+relations between neurons are not quite the same, depending
+on neuron types, and center distances. Therefore, a weighted
+factor that represents the relation intensity between neurons is
+needed. Inspired by the Graph Attention Network (GAT) [25]
+and gated attention network (GaaN) [32], we come up with
+an auxiliary neural network that directly learns the relation
+between neurons with purely the spike train observations.
+This auxiliary network also adopts the form of message
+acquisition in Eq. 5, but uses a 1-dimension channel output
+and ultimately gets a weighted matrix K ∈ RN ×N , where
+Kij denotes neuron j ’s effect on neuron i. To mimic the
+
+mi,t = AGGREGATE[Kij fnode (eij,t )]
+
+(6)
+where fnode is a neural network that transfers edge embed-
+dings to node embeddings. Since the spike train observations
+are dynamic throughout the whole recording time, the learned
+relation matrix K can also change by time, which enables our
+model to support operating on dynamic graphs. This might be
+useful for the neural recording that spans ultra-long timescales
+or that consists of multiple periods separated by several time
+intervals. In summary, the design of neuron relation learning
+process makes the whole graph insusceptible to changes in
+neuron structure and supports online learning.
+
+Learning Representation with Mutual Information
+One of our goals is to derive a high quality representation
+of the neuron hidden state H, which will be beneﬁcial to
+more downstream applications in neuron coding technology.
+While a single neuron may be unreliable due to high trial-to-
+trial variability, the whole neuron population always exhibits
+a relatively stable neural activity. That means, with a ﬁxed
+stimulus input, the visual cortex can always encode the stimu-
+lus precisely and invariantly. It is intuitively because noises are
+averaged over the single neurons in the population. Theoretical
+studies also have shown that most types of noise are indeed
+harmless at the population level [1], [5], [23]. So on analysis
+of single-trial neuron spikes, apart from the exactness of our
+generated, artiﬁcial spikes of single neurons, we try to extract
+information under this stability across neuron population.
+Based on the aforementioned observations, an underlying
+working pattern of neuron coding can be constructed. To
+this end, we assume that with given stimulus, neurons in a
+population work as a group, so they share information within
+the neighbourhood to guarantee the most remarkable pattern of
+the stimulus is captured even considering its own variability.
+It can be deemed as another implicit way they interfere with
+each other. These more telling information is preserved in
+the neuron’s hidden state, which is a high dimension space
+providing intrinsic cerebral condition.
+To concretize the measurement, we are inspired to use mu-
+tual information for learning representation of high quality as
+well as eliminating the single neuron uncertainty. Statistically,
+mutual information can be regarded as the Kullback-Leibler
+(KL) divergence from the joint density p(x, y) to the product
+of the marginals p(x)p(y), and thus can be regarded as a
+measure of statistical dependency between random variables
+X and Y . The mutual information can be formally expressed
+as below:
+
+(cid:90) (cid:90)
+
+I (X; Y) =
+
+p(x, y) log
+
+p(x, y)
+p(x)p(y)
+
+(7)
+
+As the neurons collaborate with each other,
+they will
+preserve a certain kind of similarity both from local neigh-
+bours and the entire population. And at the same breath, the
+representation of the whole graph will be more telling since it
+is enforced to grasp all of the similarities among neurons.
+In this paper, we are motivated to maximize the pair-wise
+
+neuron mutual information. Theoretical proof can be given
+to show that this objective can also maximize the mutual
+information between whole graph and single neurons. We
+consider a 2-neuron circumstance. The distribution of features
+can be expressed as p1 and p2 for the two nodes, and that of
+the whole graph is denoted as q . Since I (p1; q) + I (p2; q) =
+
+H (p1 ) + H (p2 ) − H (p1 |q) − H (p2 |q) ≤ H (p1 ) + H (p2 ) −
+H (p1p2 |q) and I (p1 ; p2 ) = H (p1 ) + H (p2 ) − H (p1p2 ) ≤
+
+H (p1 ) + H (p2 ) − H (p1p2 |q), whereH (·) is the information
+entropy function. We can see the two paradigms have identical
+objective functions.
+Hence, our overall optimization function can be formally
+expressed as below. It is a combination of the log likelihood
+of neural sequences with regularization terms:
+
+(cid:88)
+
+L = log p(Y |X) + ||K|| +
+
+I (hi,t ; hj,t )
+
+(8)
+
+i,j
+
+where ||K|| represents the Euclidean norm of K. Intuitively,
+the introduction of mutual information maximization can be
+seen as another regularization other than ||K||. While the latter
+is inspired by the synaptic sparsity, maximizing the mutual
+information can reduce the redundancy of the high dimension
+hidden state. Since the spike series is a low dimension display
+of the hidden state, such a regularization is necessary in
+acquring high-quality representations.
+
+EX PER IM EN T S
+
+Dataset and Protocol
+We ﬁt our models with retinal ganglion cells (RGCs)
+recorded in virto from a segment of isolated macaque monkey
+retina by multiple electrodes. Based on light response proper-
+ties and density, these neurons were identiﬁed as ON and OFF
+cells. In the neuron population in study, there are 27 neurons in
+all, with OFF cells indexed from 0 to 15 and ON cells indexed
+from 16 to 26 respectively. The retina was stimulated with
+a spatiotemporal pseudo-random binary sequence refreshing
+at 120Hz. The spike trains are simultaneously recorded with
+every stimulus frame which means the neuron population spike
+train is also sampled at a frequency of 120Hz. This dataset is
+the same one as used in [13], [17]. In this paper, the neural
+recordings are transformed appropriately to spike trains that
+approximate latent ﬁring rates.
+In practice, the ﬁrst-hand spike data appear in a form of
+event sequence, with the exact spike generation time recorded.
+For simplicity of analysis and data processing, we convert the
+inconsistent event sequences to simultaneous spike trains on
+neuron population. We also aggregate the successive time bins
+at a certain stride to get spike count data. For the stimulus,
+we concatenate multiple previous stimulus frames on the third
+dimension, forming a stimulus movie for every time bin in
+study. All the dataset is partitioned into training, validation
+and testing set by 10:1:1.
+
+4
+
+set N = 27 and T = 20. The ﬁrst component of the NAN
+is a neural network that captures the relations between single
+neuron units, a.k.a inferring the relation matrix K ∈ RN ×N .
+The node-edge translation function fedge takes the concatena-
+tion of the spike sequences (with a length of 20 time slots) of
+the two vertices of an edge as input. The architecture of fedge
+is a fully connected neural network with input dimension of
+60 and has one hidden layer with dimension of 128 and an
+output layer with dimension of 1. Hence the relativity of every
+two neurons is demonstrated by a scalar. In the spatiotemporal
+learning process, a 3D Convnet
+is proposed, which takes
+a tensor M ∈ RW ×H×η as input. Here W = H = 5
+which means our input is of size 5 × 5. And η is selected
+as 20. The convolution kernel is of size 3 × 3 × 20. The
+output of the network is vectorized as the representation of
+stimulus’s impact on the neurons. The message aggregation
+process involves an edge-node translation function fnode and
+its counterpart fedge . Similar as the one stated above, fedge
+here only has a mere modiﬁcation that the output dimension
+is 128, deemed as the representation of edge. fnode takes
+this representation in and uses a two layer ELU with output
+dimension 128. Its output is multiplied by the corresponding
+element in K (which acts as attention mechanism) according
+to Eq. 6, the output of which is our learned representation
+of the impact on a neuron by its neighbours. So with the
+stimulus representation and the surrounding representation, we
+can refer to Eq. 3 and update the hidden state representation
+of each neuron. Function g used in Eq. 3 is an MLP mapping
+the concatenation of hi,t−1 ,st and mi,t−1 to a 256 (nh )-
+dimension vector. We train the model on Nvidia GeForce RTX
+2080Ti with 10GB memory. Although the given equations
+are in neuron granularity, our implementation takes advantage
+of matrix computation and can be parallelized on a whole
+population scale, which contributes to the scalability of the
+model.
+In the optimization objective we adopt, mutual information
+is notoriously difﬁcult to compute, particularly in continuous
+and high-dimensional settings [11]. We leverage a similar
+design described in previous works
+[26]. In actuality, any
+divergence between the joint and the product of marginals
+should be sufﬁcient for estimating and maximization mutual
+information. Hence we adopt a standard binary cross-entropy
+loss between positive and negative samples. Considering the
+adversarial learning prerequisite, we divide the samples into
+positive and negative ones according to the relation intensity
+between two neurons. The neuron pair with higher relation
+intensity indicates they share more information with each
+other. Thus we deﬁne the variant mutual information loss as
+below,
+
+MILoss = log D(hi,t ; hj,t ) + log(1 − D(hi,t ; hk,t ))
+
+(9)
+
+Model Setup
+We clarify the architecture and parameters used in our
+proposed method, Neuron Activation Network (NAN). This
+model has an input of spike history X ∈ RN ×T . Here we
+
+where hj,t and hk,t are positive and negative samples respec-
+tively for neuron i. D is a discriminative network with a scalar
+output. To guarantee the symmetry of mutual
+information
+(I (x; y) = I (y ; x)), network D is a bilinear regressor, which
+mathematically conforms with the commutative law.
+
+5
+
+(a) Reciprocal of MAE
+
+(b) Fraction of EV
+
+(c) Xcorr. on Neuron 18
+
+(d) Xcorr. on Neuron 20
+
+(e) Real (RGC) and simulated (NAN, pyGLM) neuron spike sequences
+
+Fig. 2: Illustration of model performance. Fig. 1(a) shows the reciprocal of mean absolute error (MAE) comparing NAN and
+pyGLM. Fig. 1(b) shows the fraction of explainable variance of NAN, GLM and RNN. Fig. 1(c) shows the cross-correlation
+of the recorded and generated spike trains on Neuron 18 by NAN (red), pyGLM (purple), RNN (green). Fig. 1(d) shows a
+similarly conducted cross-correlation on Neuron 20. Fig. 1(e) shows the responses of different neurons generated by NAN and
+pyGLM, both compared with the real retinal ganglion cell spikes. The curves are smoothed with interpolation.
+
+TABLE I: Comparison of cross correlation on the whole neuron population. Each element here denotes the peak of the cross
+correlation from the generated neural spike series. The ﬁrst number is its peak value in cross-correlation (in a unit of 10−1 ).
+The integer in brackets is the offset by which the cross correlation deviates from its original position to meet the maximum.
+
+models
+# 1
+pyGLM 0.328(-1)
+RNN
+0.337(1)
+NAN
+
+0.353(0)
+
+models
+#10
+pyGLM 0.321(0)
+RNN
+0.334(1)
+NAN
+
+0.347(0)
+
+models
+# 19
+pyGLM 0.340(1)
+RNN
+0.341(3)
+NAN
+
+0.367(0)
+
+# 2
+0.319(-2)
+0.331(2)
+
+0.354(0)
+
+# 3
+0.337(0)
+0.330(0)
+
+0.349(0)
+
+# 4
+0.317(-1)
+0.334(0)
+
+0.369(0)
+
+# 5
+0.316(0)
+0.340(6)
+
+0.346(0)
+
+# 6
+0.339(0)
+0.337(2)
+
+0.353(0)
+
+# 7
+0.327(0)
+0.325(0)
+
+0.363(0)
+
+# 11
+0.349(0)
+0.342(1)
+
+0.386(0)
+
+#20
+0.332(3)
+0.344(-3)
+
+0.407(0)
+
+# 12
+0.323(0)
+0.339(1)
+
+0.364(0)
+
+# 21
+0.330(0)
+0.347(0)
+
+0.396(0)
+
+# 13
+0.325(-1)
+0.342(1)
+
+0.367(0)
+
+# 22
+0.348(4)
+0.343(-1)
+
+0.368(0)
+
+# 14
+0.334(0)
+0.350(0)
+
+0.351(0)
+
+# 23
+0.322(0)
+0.340(0)
+
+0.371(0)
+
+#15
+0.323(0)
+0.345(1)
+
+0.361(0)
+
+# 24
+0.338(0)
+0.349(-2)
+
+0.359(0)
+
+# 16
+0.329(-1)
+0.342(0)
+
+0.343(0)
+
+#25
+0.345(1)
+
+0.539(3)
+
+0.366(0)
+
+# 8
+0.331(0)
+0.347(1)
+
+0.375(0)
+
+# 17
+0.343(1)
+0.338(0)
+
+0.360(0)
+
+# 26
+0.333(0)
+0.334(-1)
+
+0.372(0)
+
+# 9
+0.366(0)
+
+0.388(1)
+
+0.382(0)
+
+# 18
+0.360(7)
+0.368(-3)
+
+0.395(0)
+
+# 27
+0.337(1)
+0.333(-2)
+
+0.359(0)
+
+Model Performance
+With our Neuron Activation Network (NAN), we can predict
+a spike sequence given spike history and the stimulus that
+elicits the spikes. We train a Bayesian inference based model
+pyGLM [13] to show the superiority of NAN. We calculate the
+mean absolute error (MAE) of the predicted spike sequence
+with the targeted one. The MAE is averaged across all the 27
+neurons in different time bins. Fig. 2a compares the reciprocal
+of MAE with NAN and pyGLM. It suggests that our NAN
+consistently outperforms pyGLM in almost every single time
+bin.
+To further quantitatively evaluate the accuracy of our pre-
+dicted spike sequences, we calculate the fraction of explain-
+able variance (EV), which has also been used in previous
+literature [2], [10]. This metric compares the generated spike
+sequence with the recorded one by using simulated ﬁring rate
+as a predictor of the recorded rate. The fraction of explainable
+
+variance is computed according to the following deﬁnition:
+
+(cid:80)
+(cid:80)
+
+t (r(t) − rs (t))2
+t (r(t) − µ)2
+
+F (r, rs ) = 1 −
+
+(10)
+
+where r(t) is the recorded spike count data, rs (t) is the
+generated spike sequence, and µ is the average recorded rate.
+Fig. 2b shows the fraction of explainable variance. We com-
+pare our NAN with pyGLM and an RNN baseline. The choice
+of baseline is validated in [2], as varying RNN architectures
+lead to similar levels of performance. We ﬁnd that our model
+captures around 80% of the explainable variance and gives
+numerical evidence in our improvement for high-quality spike
+train generation.
+MAE and fraction of EV are static metrics focusing on
+single time bin and single neuron respectively. Actually, NAN
+is more powerful as a spike dynamics generator. From the
+generated spike sequences shown in Fig. 2e, we can have
+
+NANpyGLMRNN0.00.20.40.60.8Fraction  of  EV0.00.20.40.60.81.0pyGLM0.00.20.40.60.81.0NANRGCpyGLMNANC.D.NANpyGLMRNN0.00.20.40.60.8Fraction  of  EV0.00.20.40.60.81.0pyGLM0.00.20.40.60.81.0NANRGCpyGLMNANA.B.C.D.RGCpyGLMNAN6
+
+Fig. 4: Neuron relation intensity matrix. A brighter color
+signiﬁes a stronger relation between neurons. Red dashed lines
+separate neurons of different types.
+
+Fig. 5: Temporal ﬁlter extracted from spatio-temporal ﬁlter in
+sensory network. Our ﬁlter is displayed in green compared
+with that derived from GLM in orange.
+
+states, neurons with various ﬁring rates are mingled with each
+other. After extracting features using NAN, nodes are clearly
+clustered. For instance, the neurons with high ﬁring rates
+(denoted by red nodes) concentrate in the top of the ﬁgure.
+From the embeddings we have learned, we also observe that
+the neuron activation process is continuously distributed. The
+transition of neuron activation condition is featured in our
+embeddings, as displayed by the gradual change in color from
+peripheral to central.
+
+Interpretable Insights
+Due to the black-box characteristic of deep neural networks,
+it is a challenging task for one to gain insight into the way
+our model learns from neural spike data. However, it is a most
+important part in neuroscience we not only expect the model
+itself to learn how neuron population works, but also want to
+extract and disclose knowledge explicitly and facilitate human-
+level comprehension. On this concern, our model has made
+its ﬁrst strides in explaining the working mechanism of spike
+generation.
+
+Learning Neuron Relation In virtue of the design of
+
+neuron relation learning process, we are able to dynamically
+infer the neuron relation intensity matrix K. In Fig. 4, we
+visualize the matrix at a speciﬁc time bin. A similar plot on
+the same dataset can be found in [13]. The brightness indicates
+the relation intensity between neuron pairs. We ﬁnd that the
+
+Fig. 3: Juxtaposed t-SNE embeddings of the neuron features
+from a randomly initialized NAN (left) and a trained NAN
+model (right). These points contain all the neurons across
+large scale of timeline. Color of each node represents neuron
+activity (high: red / medium: orange / low: yellow) of the
+neuron based on its spiking rate observation. With NAN,
+neurons of different activation conditions are clustered.
+
+a global view of the temporal performance of NAN. NAN
+produces a spike curve that is geometrically correlated with
+the observed neuron recordings, showing its capability beyond
+only giving a numerical approximation of the ﬁring rates
+within a single time bin. As a single-trial spike generation
+is always varied due to ﬂuctuation in individual neurons,
+to predict the trend of a spiking activity is much more an
+important and illuminative work. Moreover, superior to the
+pyGLM model depicted in Fig. 2e, our model has the ability
+to make long-term predictions accurately without an obvious
+depravity in performance or displacement of spike curve as
+shown in pyGLM.
+This displacement of spike curve can be modeled with a
+statistical method called cross correlation which is a standard
+metric in estimating the degree to which two series are
+correlated and has been used extensively in neuron spike
+analysis. The complete cross correlation of generated neural
+spikes are shown in Table. I. For display purpose, we take
+Neuron 18 and Neuron 20 for example. Fig. 2c and Fig. 2d
+show the cross-correlation depending on time bin lags. First,
+we subtract the time-varying mean ﬁring rate of two spikes
+to eliminate correlations induced by similarity in mean ﬁring
+rates. Then we calculate the time-lagged cross-correlations
+for the spike trains generated by NAN, pyGLM and RNN
+respectively with the recorded spike series. In the ﬁgures, our
+proposed Neural Activation Network consistently achieve the
+highest correlation with target spike train on zero time lag
+both within its own spike series and compared with other two
+simulated spike series. Meanwhile, as shown in Table. I, both
+pyGLM and RNN always suffer from a correlation peak with
+a certain time lag offset, which means the simulated spike
+series by these models tend to show displacement from the
+target spike series and entail extra effort to be adjusted.
+Moreover, the feature vector extracted by NAN is also of
+high quality. Fig. 3 shows the initial and learned embeddings
+for all the neurons in the population sampled from different
+time bins. The nodes are classiﬁed into different colors ac-
+cording to its activation condition (ﬁring rate). For the initial
+
+051015202505101520250.40.50.60.70.80.9−20−15−50−10 time  bins0.00.10.20.3GLMNANwhole matrix is segmented into four orthogons according to
+the difference in colors, which is made more remarkable by
+manually putting two red dashed lines on the border of each
+orthogon. Notice that as described above, the 0-15 cells are
+classiﬁed as OFF cells and 16-26 cells are ON cells. The
+borders in the matrix exactly split the two neuron types. It
+suggests that our model can learn the type of cells as well
+as the relations between different types with no prior and in
+an unsupervised fashion merely based on the pattern in spike
+observations.
+
+Learning Temporal Filter In this paper, we apply a
+
+spatiotemporal ﬁltering to the input sensory environment.
+With this implementation, individual neurons are enabled to
+capture both spatial and temporal features from stimulus.
+Fig. 5 shows the temporal dimension of the spatiotemporal
+ﬁlter in the 3D ConvNet. More speciﬁcally, we apply a rank-
+one factorization for the ﬁlter parameter matrix Zw×h×η via
+Canonical Polyadic (CP) Decomposition. We compare the
+inferred temporal dimension of the spatiotemporal ﬁlter to
+that derived from GLM [17] and ﬁnd that the geometrical
+characteristics are strongly correlated between the two derived
+ﬁlter curves. It means our model has a credible property in
+discovering temporal relations from stimulus and ensures that
+our model has decoded the stimulus in a right and meaningful
+way. This approximation also provides us another option to
+infer the temporal effects on neuron spike generation beyond
+GLM.
+
+Discussion
+The experiments show that NAN is not only replacing
+a black-box model (cerebral information processing system)
+with another (artiﬁcial neural network), but also to integrate
+human designs and insights into a potent non-linear system.
+Our method is prominent in generating spike sequences with
+high ﬁdelity as well as disclosing latent characteristics under
+neural circuits. The former ensures our model has captured the
+spike generation mechanism on the whole. The latter, which
+is more expressive and exciting, suggests that we are able
+to extract neural information from the model. This strategy
+of constructing a deep network to capture neural mechanism
+function and then constraining it
+to better understand the
+mechanism will be useful in a variety of neural systems in
+response to much more complex stimuli.
+Nevertheless, it is still an onerous task to further explore
+and exploit more valuable information in spike train data.
+First, we are still not able to uncover anatomical connections
+between cells. Although we have revealed characteristics of
+individual neurons and explain the relation intensity to some
+degree, we cannot tell if the inferred intensity actually reﬂects
+a connection between neurons or just depending on shared
+input noise. In fact, decoding neuron relations is challenging
+for lack of ground-truth data in practice, which makes the
+problem a seemingly unsolvable one. It needs more than the
+spike train observations and a more specialized neuro-probing
+technique that might contribute to our knowledge of neuron
+population. Second, being consistent with previous traditional
+works, our proposed method also treats the spike train data
+
+7
+
+as multidimensional time series, where a core problem is to
+determine the granularity by which we aggregate discrete time
+bins. This will unavoidably lose several mechanisms known to
+exist in neurons (for example refractory period). One possible
+solution is to treat the spike train data as event sequences. A
+ﬂourishing technique called event sequence analysis is helpful
+in this scenario. Techinques combining the event sequences
+with generative models like variational auto-encoder or gener-
+ative adversarial network e.g. WGANTPP [31], is a promising
+direction, which we leave for future work.
+
+CONC LU S ION
+
+We have tried to answer a fundamental and intriguing prob-
+lem in cognitive neuroscience – how do spike trains form in a
+neuron population and how can we disclose underlying neuron
+characteristics using spike train observations? We ﬁnd that
+traditional methods are usually plagued by a lack of ﬂexibility
+or scalability. Few researches have turned to adopt a neural
+network approach, which has a stronger ability for nonlinear
+ﬁtting. We believe that using neural networks, we can get
+easier access to the spike eliciting generation mechanism in
+neuron populations.
+To this end, we propose the Neuron Activation Network
+(NAN) to model the contributing factors and emulate spik-
+ing activities. Experiments have shown that our model can
+generate high quality spike sequences as well as learn rep-
+resentations for neuron hidden state. In summary, this paper
+makes a progress in combining perception in neuron spike
+generation mechanism with neural network models to exploit
+more valuable knowledge in cognitive neuroscience. We hope
+this model can give light to and co-evolve with development
+in neuroscience.
+
+R E F ER ENC E S
+[1] Larry F Abbott and Peter Dayan. The effect of correlated variability on
+the accuracy of a population code. Neural computation, 11(1):91–101,
+1999.
+[2] Eleanor Batty, Josh Merel, Nora Brackbill, Alexander Heitman, Alexan-
+der Sher, Alan Litke, EJ Chichilnisky, and Liam Paninski. Multilayer
+recurrent network models of primate retinal ganglion cell responses.
+2016.
+[3] William Bialek and Fred Rieke. Reliability and information transmission
+in spiking neurons. Trends in neurosciences, 15(11):428–434, 1992.
+[4] Lea Duncker and Maneesh Sahani. Temporal alignment and latent
+gaussian process factor inference in population spike trains. In Advances
+in Neural Information Processing Systems, pages 10445–10455, 2018.
+[5] Alexander S Ecker, Philipp Berens, Andreas S Tolias, and Matthias
+Bethge. The effect of noise correlations in populations of diversely
+tuned neurons. Journal of Neuroscience, 31(40):14272–14283, 2011.
+[6] Nicolas Fourcaud-Trocm ´e, David Hansel, Carl Van Vreeswijk, and Nico-
+las Brunel. How spike generation mechanisms determine the neuronal
+response to ﬂuctuating inputs. Journal of Neuroscience, 23(37):11628–
+11640, 2003.
+[7] Nicolas Fr ´emaux and Wulfram Gerstner. Neuromodulated spike-timing-
+dependent plasticity, and theory of three-factor learning rules. Frontiers
+in neural circuits, 9:85, 2016.
+[8] Yuanjun Gao, Lars Busing, Krishna V Shenoy, and John P Cunningham.
+High-dimensional neural spike train analysis with generalized count
+linear dynamical systems. In Advances in neural information processing
+systems, pages 2044–2052, 2015.
+[9] Jiang Hao, Xu-dong Wang, Yang Dan, Mu-ming Poo, and Xiao-hui
+Zhang. An arithmetic rule for spatial summation of excitatory and
+inhibitory inputs in pyramidal neurons. Proceedings of the National
+Academy of Sciences, 106(51):21906–21911, 2009.
+
+8
+
+[31] Shuai Xiao, Mehrdad Farajtabar, Xiaojing Ye, Junchi Yan, Le Song, and
+Hongyuan Zha. Wasserstein learning of deep generative point process
+models. In Advances in Neural Information Processing Systems, pages
+3247–3257, 2017.
+[32] Jiani Zhang, Xingjian Shi, Junyuan Xie, Hao Ma, Irwin King, and Dit-
+Yan Yeung. Gaan: Gated attention networks for learning on large and
+spatiotemporal graphs. arXiv preprint arXiv:1803.07294, 2018.
+[33] David Zoltowski and Jonathan W Pillow. Scaling the poisson glm
+to massive neural datasets through polynomial approximations.
+In
+Advances in Neural Information Processing Systems, pages 3517–3527,
+2018.
+
+[10] Alexander Heitman, Nora Brackbill, Martin Greschner, Alexander Sher,
+Alan M Litke, and EJ Chichilnisky. Testing pseudo-linear models of
+responses to natural scenes in primate retina. bioRxiv, page 045336,
+2016.
+[11] R Devon Hjelm, Alex Fedorov, Samuel Lavoie-Marchildon, Karan Gre-
+wal, Phil Bachman, Adam Trischler, and Yoshua Bengio. Learning deep
+representations by mutual information estimation and maximization.
+arXiv preprint arXiv:1808.06670, 2018.
+[12] Yann LeCun, L ´eon Bottou, Yoshua Bengio, Patrick Haffner, et al.
+Gradient-based learning applied to document recognition. Proceedings
+of the IEEE, 86(11):2278–2324, 1998.
+[13] Scott Linderman, Ryan P Adams, and Jonathan W Pillow. Bayesian
+latent structure discovery from multi-neuron recordings. In Advances in
+neural information processing systems, pages 2002–2010, 2016.
+[14] Lane McIntosh, Niru Maheswaranathan, Aran Nayebi, Surya Ganguli,
+and Stephen Baccus. Deep learning models of the retinal response to
+natural scenes. In Advances in neural information processing systems,
+pages 1369–1377, 2016.
+[15] Chethan Pandarinath, Daniel J OShea, Jasmine Collins, Rafal Jozefow-
+icz, Sergey D Stavisky, Jonathan C Kao, Eric M Trautmann, Matthew T
+Kaufman, Stephen I Ryu, Leigh R Hochberg, et al.
+Inferring single-
+trial neural population dynamics using sequential auto-encoders. Nature
+methods, page 1, 2018.
+[16] Liam Paninski. Maximum likelihood estimation of cascade point-process
+neural encoding models. Network: Computation in Neural Systems,
+15(4):243–262, 2004.
+[17] Jonathan W Pillow, Jonathon Shlens, Liam Paninski, Alexander Sher,
+Alan M Litke, EJ Chichilnisky, and Eero P Simoncelli. Spatio-temporal
+correlations and visual signalling in a complete neuronal population.
+Nature, 454(7207):995, 2008.
+[18] Alex Pitti, Philippe Gaussier, and Mathias Quoy.
+Inferno: A novel
+architecture for generating long neuronal sequences with spikes.
+In
+International Symposium on Neural Networks, pages 421–428. Springer,
+2017.
+[19] Boris Rosin, Maya Slovik, Rea Mitelman, Michal Rivlin-Etzion,
+Suzanne N Haber, Zvi Israel, Eilon Vaadia, and Hagai Bergman. Closed-
+loop deep brain stimulation is superior in ameliorating parkinsonism.
+Neuron, 72(2):370–384, 2011.
+[20] Soﬁa Sakellaridi, Vassilios N Christopoulos, Tyson Aﬂalo, Kelsie W Pe-
+jsa, Emily R Rosario, Debra Ouellette, Nader Pouratian, and Richard A
+Andersen. Intrinsic variable learning for brain-machine interface control
+by human anterior intraparietal cortex. Neuron, 2019.
+[21] Emilio Salinas and Terrence J Sejnowski. Correlated neuronal activity
+and the ﬂow of neural
+information. Nature reviews neuroscience,
+2(8):539, 2001.
+[22] Mijail D Serruya, Nicholas G Hatsopoulos, Liam Paninski, Matthew R
+Fellows, and John P Donoghue. Brain-machine interface: Instant neural
+control of a movement signal. Nature, 416(6877):141, 2002.
+[23] Haim Sompolinsky, Hyoungsoo Yoon, Kukjin Kang, and Maoz Shamir.
+Population coding in neuronal systems with correlated noise. Physical
+Review E, 64(5):051904, 2001.
+[24] Wilson Truccolo, Uri T Eden, Matthew R Fellows, John P Donoghue,
+and Emery N Brown. A point process framework for relating neural
+spiking activity to spiking history, neural ensemble, and extrinsic co-
+variate effects. Journal of neurophysiology, 93(2):1074–1089, 2005.
+[25] Petar Veli ˇckovi ´c, Guillem Cucurull, Arantxa Casanova, Adriana Romero,
+Pietro Lio, and Yoshua Bengio. Graph attention networks. arXiv preprint
+arXiv:1710.10903, 2017.
+[26] Petar Veli ˇckovi ´c, William Fedus, William L Hamilton, Pietro Li `o,
+Yoshua Bengio, and R Devon Hjelm. Deep graph infomax. arXiv
+preprint arXiv:1809.10341, 2018.
+[27] Michael Vidne, Yashar Ahmadian, Jonathon Shlens, Jonathan W Pillow,
+Jayant Kulkarni, Alan M Litke, EJ Chichilnisky, Eero Simoncelli, and
+Liam Paninski. Modeling the impact of common noise inputs on the
+network activity of retinal ganglion cells.
+Journal of computational
+neuroscience, 33(1):97–121, 2012.
+[28] Alison I Weber and Jonathan W Pillow. Capturing the dynamical
+repertoire of single neurons with generalized linear models. Neural
+computation, 29(12):3260–3289, 2017.
+[29] Anqi Wu, Stan Pashkovski, Sandeep R Datta, and Jonathan W Pillow.
+Learning a latent manifold of odor representations from neural responses
+in piriform cortex.
+In Advances in Neural Information Processing
+Systems, pages 5378–5388, 2018.
+[30] Anqi Wu, Nicholas A Roy, Stephen Keeley, and Jonathan W Pillow.
+Gaussian process based nonlinear latent structure discovery in multi-
+variate spike train data. In Advances in neural information processing
+systems, pages 3496–3505, 2017.
+
+

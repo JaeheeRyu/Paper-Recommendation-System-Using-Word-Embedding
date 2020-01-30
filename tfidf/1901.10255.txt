@@ -1,0 +1,1904 @@
+Understanding and Training Deep Diagonal Circulant
+Neural Networks
+
+Alexandre Araujo1,2 Benjamin Negrevergne2 Yann Chevaleyre2
+
+Jamal Atif2
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+3
+v
+5
+5
+2
+0
+1
+
+.
+
+1
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract.
+
+In this paper, we study deep diagonal circulant neural net-
+works, that is deep neural networks in which weight matrices are the
+product of diagonal and circulant ones. Besides making a theoretical
+analysis of their expressivity, we introduced principled techniques
+for training these models: we devise an initialization scheme and
+proposed a smart use of non-linearity functions in order to train deep
+diagonal circulant networks. Furthermore, we show that these net-
+works outperform recently introduced deep networks with other types
+of structured layers. We conduct a thorough experimental study to
+compare the performance of deep diagonal circulant networks with
+state of the art models based on structured matrices and with dense
+models. We show that our models achieve better accuracy than other
+structured approaches while required 2x fewer weights as the next best
+approach. Finally we train deep diagonal circulant networks to build
+a compact and accurate models on a real world video classiﬁcation
+dataset with over 3.8 million training examples.
+
+1
+
+Introduction
+
+The deep learning revolution has yielded models of increasingly large
+size. In recent years, designing compact and accurate neural networks
+with a small number of trainable parameters has been an active re-
+search topic, motivated by practical applications in embedded systems
+(to reduce memory footprint [24]), federated and distributed learning
+(to reduce communication [16]), derivative-free optimization in rein-
+forcement learning (to simplify the computation of the approximated
+gradient [8]). Besides a number of practical applications, it is also an
+important research question whether or not models really need to be
+this big or if smaller results can achieve similar accuracy [5].
+Structured matrices are at the very core of most of the work on com-
+pact networks. In these models, dense weight matrices are replaced by
+matrices with a prescribed structure (e.g. low rank matrices, Toeplitz
+matrices, circulant matrices, LDR, etc.). Despite substantial efforts
+(e.g. [7, 21]), the performance of compact models is still far from
+achieving an acceptable accuracy motivating their use in real-world
+scenarios. This raises several questions about the effectiveness of such
+models and about our ability to train them. In particular two main
+questions call for investigation:
+
+Q1 How to efﬁciently train deep neural networks with a large
+number of structured layers?
+Q2 What is the expressive power of structured layers compared to
+dense layers?
+
+1 Wavestone, Paris, France, email: alexandre.araujo@dauphine.eu
+2 Universit ´e Paris-Dauphine, PSL Research University, LAMSADE, CNRS,
+UMR 7243, Paris, France
+
+In this paper, we provide principled answers to these questions for
+the particular case of deep neural networks based on diagonal and
+circulant matrices (a.k.a. Diagonal-circulant networks or DCNNs).
+The idea of using diagonal and circulant matrices together comes
+from a series of results in linear algebra by Muller et al. [22] and
+Huhtanen et al. [14]. The most recent result from Huhtanen et al. [14]
+demonstrates that any matrix A in Cn×n can be decomposed into
+the product of 2n − 1 alternating diagonal and circulant matrices.
+The diagonal-circulant decomposition inspired Moczulski et al. [21]
+to design the AFDF structured layer, which is the building block of
+DCNNs. However, they were not able to train deep neural networks
+based on AFDF.
+To answer Q1, we ﬁrst describe a theoretically sound initialization
+procedure for DCNN which allows the signal to propagate through the
+network without vanishing or exploding. Furthermore, we provide a
+number of empirical insights to explain the behaviour of DCNNs, and
+show the impact of the number of the non-linearities in the network on
+the convergence rate and the accuracy of the network. By combining
+all these insights, we are able (for the ﬁrst time) to train large and
+deep DCNNs. We demonstrate the good performance of DCNNs on a
+large scale application (the YouTube-8M video classiﬁcation problem)
+and obtain very competitive accuracy.
+To answer Q2, we propose an analysis of the expressivity of DC-
+NNs by extending the results by Huhtanen et al. [14]. We introduce a
+new bound on the number of diagonal-circulant required to approx-
+imate a matrix that depends on its rank. Building on this result, we
+demonstrate that a DCNN with bounded width and small depth can
+approximate any dense networks with ReLU activations.
+
+Outline of the paper: We present in Section 2 the related work on
+structured neural networks and several compression techniques. Sec-
+tion 3 introduces circulant matrices, our new result extending the one
+from Huhtanen et al. [14]. Section 4 proposes an theoretical analysis
+on the expressivity on DCNNs. Section 5 describes two efﬁcient tech-
+niques for training deep diagonal circulant neural networks. Finally,
+Section 6 presents extensive experiments to compare the performance
+of deep diagonal circulant neural networks in different settings w.r.t.
+other state of the art approaches. Section 7 provides a discussion and
+concluding remarks.
+
+2 Related Work
+
+Structured matrices exhibit a number of good properties which have
+been exploited by deep learning practitioners, mainly to compress
+large neural networks architectures into smaller ones. For example
+Hinrichs et al. [12] have demonstrated that a single circulant matrix
+can be used to approximate the Johson-Lindenstrauss transform, often
+
+ 
+ 
+ 
+ 
+ 
+ 
+used in machine learning to perform dimensionality reduction. Build-
+ing upon this result, Cheng et al. [7] proposed to replace the weight
+matrix of a fully connected layer by a circulant matrix effectively
+replacing the complex transform modeled by the fully connected layer
+by a simple dimensionality reduction. Despite the reduction of expres-
+sivity, the resulting network demonstrated good accuracy using only a
+fraction of its original size (90% reduction).
+Comparison with ACDC. Moczulski et al. [21] have introduced
+two Structured Efﬁcient Linear Layers (SELL) called AFDF and
+ACDC. The AFDF structured layer beneﬁts from the theoretical re-
+sults introduced by Huhtanen et al. [14] and can be seen the building
+block of DCNNs. However, Moczulski et al. [21] only experiment
+using ACDC, a different type of layer that does not involve circulant
+matrices. As far as we can tell, the theoretical guarantees available for
+the AFDF layer do not apply on the ACDC layer since the cosine trans-
+form does not diagonalize circulant matrices [25]. Another possible
+limit of the ACDC paper is that they only train large neural networks
+involving ACDC layers combined with many other expressive layers.
+Although the resulting network demonstrates good accuracy, it is dif-
+ﬁcult the characterize the true contribution of the ACDC layers in this
+setting.
+
+Comparison with Low displacement rank structures. More re-
+
+cently, Thomas et al. [28] have generalized these works by proposing
+neural networks with low-displacement rank matrices (LDR), that are
+structured matrices encompassing a large family of structured matri-
+ces, including Toeplitz-like, Vandermonde-like, Cauchy-like and more
+notably DCNNs. To obtain this result, LDR represents a structured
+matrix using two displacement operators and a low-rank residual.
+Despite being elegant and general, we found that the LDR frame-
+work suffers from several limits which are inherent to its generality,
+and makes it difﬁcult to use in the context of large and deep neural
+networks. First, the training procedure for learning LDR matrices
+is highly involved and implies many complex mathematical objects
+such as Krylov matrices. Then, as acknowledged by the authors, the
+number of parameters required to represent a given structured matrix
+(e.g. a Toeplitz matrix) in practice is unnecessarily high (higher than
+required in theory).
+
+Other compression techniques. Besides structured matrices, a
+
+variety of techniques have been proposed to build more compact
+deep learning models. These include model distillation [13], Tensor
+Train [23], Low-rank decomposition [9], to mention a few. However,
+Circulant networks show good performances in several contexts (the
+interested reader can refer to the results reported by Moczulski et al.
+[21] and Thomas et al. [28]).
+
+3 A primer on circulant matrices and a new result
+
+An n-by-n circulant matrix C is a matrix where each row is a cyclic
+right shift of the previous one as illustrated below.
+
+C = circ(c) =
+
+Circulant matrices exhibit several interesting properties from the
+perspective of numerical computations. Most importantly, any n-by-n
+circulant matrix C can be represented using only n coefﬁcients instead
+of the n2 coefﬁcients required to represent classical unstructured
+
+2
+
+
+
+c0
+c1
+c2
+...
+cn−1
+
+cn−1
+c0
+c1
+
+cn−2
+cn−1
+c0
+
+cn−2
+
+cn−3
+
+. . .
+
+. . .
+
+c1
+c2
+c3
+...
+c0
+
+
+
+matrices. In addition, the matrix-vector product is simpliﬁed from
+O(n2 ) to O(n log(n)) using the convolution theorem.
+As we will show in this paper, circulant matrices also have a strong
+expressive power. So far, we know that a single circulant matrix can
+be used to represent a variety of important linear transforms such
+as random projections [12]. When they are combined with diagonal
+matrices, they can also be used as building blocks to represent any
+linear transform [26, 14] with an arbitrary precision. Huhtanen et
+al. [14] were able to bound the number of factors that is required to
+approximate any matrix A with arbitrary precision.
+
+Relation between diagonal circulant matrices and low rank ma-
+
+trices We recall this result in Theorem 1 as it is the starting point of
+our theoretical analysis (note that in the rest of the paper, (cid:107) · (cid:107) denotes
+the (cid:96)2 norm when applied to vectors, and the operator norm when
+applied to matrices).
+
+Theorem 1. (Reformulation from Huhtanen et al. [14]) For every
+matrix A ∈ Cn×n , for any  > 0, there exists a sequence of matri-
+ces B1 . . . B2n−1 where Bi is a circulant matrix if i is odd, and a
+diagonal matrix otherwise, such that (cid:107)B1B2 . . . B2n−1 − A(cid:107) < .
+Unfortunately, this theorem is of little use to understand the expres-
+sive power of diagonal-circulant matrices when they are used in deep
+neural networks. This is because: 1) the bound only depends on the
+dimension of the matrix A, not on the matrix itself, 2) the theorem
+does not provide any insights regarding the expressive power of m
+diagonal-circulant factors when m is much lower than 2n − 1 as it is
+the case in most practical scenarios we consider in this paper.
+In the following theorem, we enhance the result by Huhtanen et
+al. [14] by expressing the number of factors required to approximate
+A, as a function of the rank of A. This is useful when one deals with
+low-rank matrices, which is common in machine learning problems.
+Theorem 2. 3 (Rank-based circulant decomposition) Let A ∈ Cn×n
+be a matrix of rank at most k . Assume that n can be divided by k . For
+any  > 0, there exists a sequence of 4k + 1 matrices B1 , . . . , B4k+1 ,
+where Bi is a circulant matrix if i is odd, and a diagonal matrix
+otherwise, such that (cid:107)B1B2 . . . B4k+1 − A(cid:107) < 
+A direct consequence of Theorem 2, is that if the number of
+diagonal-circulant factors is set to a value K , we can represent all
+linear transform A whose rank is K−1
+.
+Compared to [14], this result shows that structured matrices with
+fewer than 2n diagonal-circulant matrices (as it is the case in practice)
+can still represent a large class of matrices. As we will show in the
+following section, this result will be useful to analyze the expressivity
+of neural networks based on diagonal and circulant matrices.
+
+4
+
+4 Analysis of Diagonal Circulant Neural Networks
+(DCNNs)
+
+Zhao et al. [32] have shown that circulant networks with 2 layers
+and unbounded width are universal approximators. However, results
+on unbounded networks offer weak guarantees and two important
+questions have remained open until now: 1) Can we approximate any
+function with a bounded-width circulant networks? 2) What function
+can we approximate with a circulant network that has a bounded
+width and a small depth? We answer these two questions in this
+section.
+
+3 All proofs are in the arxiv version of the paper.
+
+https://arxiv.org/abs/1901.10255
+
+fWL ,bL : Cn → Cn such that fW,b (x) = (fWL ,bL ◦ . . . ◦ fW1 ,b1 )(x)
+
+First, we introduce some necessary deﬁnitions regarding neural
+networks and we provide a theoretical analysis of their approximation
+capabilities.
+Deﬁnition 1 (Deep ReLU network). Given L weight matrices
+W = (W1 , . . . , WL ) with Wi ∈ Cn×n and L bias vectors b =
+(b1 , . . . , bL ) with bi ∈ Cn , a deep ReLU network is a function
+where fWi ,bi (x) = φ(Wix + bi ) and φ(.) is a ReLU non-linearity 4
+the ranks of the matrices W1 . . . WL . i.e. k = (cid:80)L
+In the rest of this paper, we call L and n respectively the depth and
+the width of the network. Moreover, we call total rank k , the sum of
+We also need to introduce DCNNs, similarly to Moczulski et al. [21].
+Deﬁnition 2 (Diagonal Circulant Neural Networks). Given L di-
+agonal matrices D = (D1 , . . . , DL ) with Di ∈ Cn×n , L circu-
+lant matrices C = (C1 , . . . , CL ) with Ci ∈ Cn×n and L bias
+vectors b = (b1 , . . . , bL ) with bi ∈ Cn , a Diagonal Circulant
+Neural Networks (DCNN) is a function fWL ,bL : Cn → Cn
+
+such that fD,C,b (x) = (fDL ,CL ,bL ◦ . . . ◦ fD1 ,C1 ,b1 )(x) where
+fDi ,Ci ,bi (x) = φi (DiCix + bi ) and where φi (.) is a ReLU non-
+
+i=1 rank(Wi ).
+
+linearity or the identity function.
+
+width n + 3 such that ∀x ∈ [0, 1]n+3 , (cid:12)(cid:12)f (x1 . . . xn ) − (N (x))1
+
+We can now show that bounded-width DCNNs can approximate any
+Deep ReLU Network, and as a corollary, that they are universal ap-
+proximators.
+Lemma 1. Let N be a deep ReLU network of width n and depth L,
+and let X ⊂ Cn be a bounded set. For any  > 0, there exists a DCNN
+N (cid:48) of width n and of depth (2n−1)L such that (cid:107)N (x)−N (cid:48) (x)(cid:107) < 
+for all x ∈ X .
+We can now state the universal approximation corollary:
+Corollary 1. Bounded width DCNNs are universal approximators in
+the following sense: for any continuous function f : [0, 1]n → R+ of
+bounded supremum norm, for any  > 0, there exists a DCNN N of
+, where (·)i represents the ith component of a vector.
+This is a ﬁrst result, however (2n + 5)L is not a small depth (in our
+experiments, n can be over 300 000), and a number of work provided
+empirical evidences that DCNN with small depth can offer good
+performances (e.g. [3, 7]). To improve our result, we introduce our
+main theorem which studies the approximation properties of these
+small depth networks.
+Theorem 3. (Rank-based expressive power of DCNNs) Let N be
+a deep ReLU network of width n, depth L and a total rank k and
+assume n is a power of 2. Let X ⊂ Cn be a bounded set. Then, for
+any  > 0, there exists a DCNN with ReLU activation N (cid:48) of width n
+such that (cid:107)N (x) − N (cid:48) (x)(cid:107) <  for all x ∈ X and the depth of N (cid:48)
+is bounded by 9k .
+
+(cid:12)(cid:12) <
+
+Remark that in the theorem, we require that n is a power of 2. We
+conjecture that the result still holds even without this condition. This
+result reﬁnes Lemma 1, and answer our second question: a DCNN
+of bounded width and small depth can approximate a Deep ReLU
+network of low total rank. Note that the converse is not true: because
+n-by-n circulant matrix can be of rank n, approximating a DCNN of
+depth 1 can require a deep ReLU network of total rank equals to n.
+
+4 Because our networks deal with complex numbers, we use an extension of the
+ReLU function to the complex domain. The most straightforward extension
+
+deﬁned in [29] is as follows: ReLU(z ) = ReLU (R(z )) + iReLU (I(z )),
+
+where R and I refer to the real and imaginary parts of z .
+
+Expressivity of DCNNs For the sake of clarity, we highlight the
+signiﬁcance of these results with the two following properties.
+Properties. Given an arbitrary ﬁxed integer n, let Rk be the set of
+all functions f : Rn → Rn representable by a deep ReLU network of
+total rank at most k and let Cl the set of all functions f : Rn → Rn
+representable by deep diagonal-circulant networks of depth at most l,
+then:
+
+∀k , ∃l Rk (cid:40) Cl
+
+∀l, (cid:64)k
+
+Cl ⊆ Rk
+
+(1)
+(2)
+
+We illustrate the meaning of this properties using Figure 1. As we
+can see, the set Rk of all the functions representable by a deep ReLU
+network of total rank k is strictly included in the set C9k of all DCNN
+of depth 9k (as by Theorem 3).
+
+C1,n. . .C9,n. . .C18,n
+R1,n
+R2,n
+
+Figure 1.
+
+Illustration of Properties (1) and (2).
+
+These properties are interesting for many reasons. First, Property (2)
+shows that diagonal-circulant networks are strictly more expressive
+than networks with low total rank. Second and most importantly, in
+standard deep neural networks, it is known that the most of the singu-
+lar values are close to zero (see e.g. [27, 4]). Property (1) shows that
+these networks can efﬁciently be approximated by diagonal-circulant
+networks. Finally, several publications have shown that neural net-
+works can be trained explicitly to have low-rank weight matrices
+[18, 10]. This opens the possibility of learning compact and accurate
+diagonal-circulant networks.
+
+5 How to train very deep DCNNs
+
+(cid:113) 2
+
+Training DCNNs has revealed to be a challenging problem. We de-
+vise two techniques to facilitate the training of deep DCNNs. First,
+we propose an initialization procedure which guarantee the signal is
+propagated across the network without vanishing nor exploding. Sec-
+ondly, we study the behavior of DCNNs with different non-linearity
+functions and determine the best parameters for different settings.
+C = circ(c1 . . . cn ), each ci is randomly drawn from N (cid:0)0, σ2 (cid:1),
+Initialization scheme The following initialization procedure which
+is a variant of Xavier initialization. First, for each circulant matrix
+Finally, all biases in the network are randomly drawn from N (cid:0)0, σ (cid:48)2 (cid:1),
+with σ =
+n . Next, for each diagonal matrix D = diag(d1 . . . dn ),
+each di is drawn randomly and uniformly from {−1, 1} for all i.
+for some small value of σ (cid:48) . The following proposition states that the
+covariance matrix at the output of any layer in a DCNN, independent
+of the depth, is constant.
+Proposition 4. Let N be a DCNN of depth L initialized according
+to our procedure, with σ (cid:48) = 0. Assume that all layers 1 to L − 1 have
+ReLU activation functions, and that the last layer has the identity
+
+3
+
+10
+
+20
+
+30
+
+40
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+#layers
+
+T
+
+t
+s
+e
+
+A
+
+u
+c
+c
+
+y
+c
+a
+r
+
+ReLU(DC)
+ReLU(DCDC)
+ReLU(DCDCDC)
+
+(a)
+
+10
+
+20
+
+30
+
+40
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+#layers
+
+T
+
+t
+s
+e
+
+A
+
+u
+c
+c
+
+y
+c
+a
+r
+
+Leaky ReLU 0.2
+Leaky ReLU 0.3
+Leaky ReLU 0.5
+
+(b)
+
+Figure 2. Experiments on training DCNNs and other structured neural networks on CIFAR-10. Figure 2(a): impact of increasing the number of ReLU activations
+in a DCNN. Deep DCNNs with fewer ReLUs are easier to train. Figure 2(b): impact of increasing the slope of a Leaky-ReLU in DCNNs. Deep DCNNs with a
+larger slope are easier to train.
+
+activation function. Then, for any x ∈ Rn , the covariance matrix
+2 . Moreover, note that this covariance does not
+depend on the depth of the network.
+
+of N (x) is 2.I d
+n (cid:107)x(cid:107)2
+
+Proof. (Proposition 4) Let N = fDL ,CL ◦ . . . ◦ fD1 ,C1 be a L layer
+DCNN. All matrices are initialized as described in the statement of the
+proposition. Let y = D1C1x. Lemma 2 shows that cov(yi , yi(cid:48) ) = 0
+2 . For any j ≤ L, deﬁne z j =
+fDj ,Cj ◦ . . . ◦ fD1 ,C1 (x). By a recursive application of lemma 2, we
+get that then cov(z j
+2 .
+
+for i (cid:54)= i(cid:48) and var(yi ) = 2
+n (cid:107)x(cid:107)2
+
+n (cid:107)x(cid:107)2
+i , z j
+i(cid:48) ) = 0 and var(z j
+i ) = 2
+
+Lemma 2. Let c1 . . . cn , d1 . . . dn , b1 . . . bn be random variables in
+R such that ci ∼ N (0, σ2 ), bi ∼ N (0, σ (cid:48)2 ) and di ∼ {−1, 1}
+Deﬁne y = DC u and z = CDu for some vector u in Rn . Also
+deﬁne ¯y = y + b and ¯z = z + b. Then, for all i, the p.d.f. of yi , ¯yi , zi
+and ¯zi are symmetric. Also:
+
+uniformly. Deﬁne C = circ(c1 . . . cn ) and D = diag(d1 . . . dn ).
+
+• Assume u1 . . . un is ﬁxed. Then, we have for i (cid:54)= i(cid:48) :
+
+cov(yi , yi(cid:48) ) = cov(zi , zi(cid:48) ) = cov( ¯yi , ¯yi(cid:48) ) = cov( ¯zi , ¯zi(cid:48) ) = 0
+u2
+
+var(yi ) = var(zi ) =
+
+(cid:88)
+
+j
+
+j σ2
+
+var( ¯yi ) = var( ¯zi ) = σ
+
+(cid:48)2 +
+
+(cid:88)
+
+j
+
+u2
+
+j σ2
+
+• Let x1 . . . xn be random variables in R such that the p.d.f. of xi is
+symmetric for all i, and let ui = ReLU (xi ). We have for i (cid:54)= i(cid:48) :
+
+cov(yi , yi(cid:48) ) = cov(zi , zi(cid:48) ) = cov( ¯yi , ¯yi(cid:48) ) = cov( ¯zi , ¯zi(cid:48) ) = 0
+1
+2
+(cid:48)2 +
+
+var(yi ) = var(zi ) =
+
+(cid:88)
+
+j
+
+var(xi ).σ2
+
+var( ¯yi ) = var( ¯zi ) = σ
+
+1
+2
+
+(cid:88)
+
+j
+
+var(xi ).σ2
+
+cn−1 and so on. First, note that: yi = (cid:80)n
+Proof. (Lemma 2) By an abuse of notation, we write c0 = cn , c−1 =
+j=1 cj−iuj di . Observe that each term cj−iuj dj and cj−iuj di have
+symmetric p.d.f. because of di and dj . Thus, yi and zi have symmetric
+p.d.f. Now let us compute the covariance.
+
+j=1 cj−iuj dj and zi =
+
+(cid:80)n
+
+cov(yi , yi(cid:48) ) =
+
+n(cid:88)
+n(cid:88)
+
+j,j (cid:48)=1
+
+cov (cj−iuj dj , cj (cid:48)−i(cid:48) uj (cid:48) dj (cid:48) )
+
+=
+
+j,j (cid:48)=1
+
+E [cj−iuj dj cj (cid:48)−i(cid:48) uj (cid:48) dj (cid:48) ]
+
+− E [cj−iuj dj ] E [cj (cid:48)−i(cid:48) uj (cid:48) dj (cid:48) ]
+
+Observe that E [cj−iuj dj ] = E [cj−iuj ] E [dj ] = 0 because
+is independent from cj−iuj . Also, observe that
+if j
+
+dj
+
+(cid:54)=
+
+j (cid:48)
+E [dj dj (cid:48) ] E [cj−iuj cj (cid:48)−i(cid:48) uj (cid:48) ] = 0. Thus, the only non null terms
+are those for which j = j (cid:48) . We get:
+
+then E [dj dj (cid:48) ] = 0 and thus E [cj−iuj dj cj (cid:48)−i(cid:48) uj (cid:48) dj (cid:48) ] =
+
+cov(yi , yi(cid:48) ) =
+
+n(cid:88)
+n(cid:88)
+
+j=1
+
+E [cj−iuj dj cj−i(cid:48) uj dj ]
+E (cid:2)cj−i cj−i(cid:48) u2
+
+=
+
+j=1
+
+j
+
+(cid:3)
+
+Assume u is a ﬁxed vector. Then, var(yi ) = (cid:80)n
+j σ2 and
+cov(yi , yi(cid:48) ) = 0 for i (cid:54)= i(cid:48) because cj−i is independent from cj−i(cid:48) .
+Now assume that uj = ReLU (xj ) where xj is a r.v. Clearly, u2
+j is
+independent from cj−i and cj−i(cid:48) . Thus:
+
+j=1 u2
+
+cov(yi , yi(cid:48) ) =
+
+n(cid:88)
+
+j=1
+
+E [cj−i cj−i(cid:48) ] E (cid:2)u2
+
+j
+
+(cid:3)
+
+(cid:54)= i(cid:48) ,
+For i
+then cj−i and cj−i(cid:48) are independent, and thus
+(cid:3). Because the p.d.f. of xj
+(cid:54)= i(cid:48) . Let us compute the variance. We get var(yi ) =
+0 if i
+ric, E (cid:2)x2
+is symmet-
+
+E [cj−i cj−i(cid:48) ] = E [cj−i ] E [cj−i(cid:48) ] = 0. Therefore, cov(yi , yi(cid:48) ) =
+j=1 var(cj−i ).E (cid:2)u2
+(cid:3) = 2E (cid:2)u2
+(cid:3) and E [xj ] = 0. Thus, var(yi ) =
+j=1 var(cj−i ).E (cid:2)x2
+(cid:3) = 1
+j=1 var(cj−i ).var(xj ).
+Finally, note that cov( ¯yi , ¯yi(cid:48) ) = cov(yi , yi(cid:48) ) + cov(bi , bi(cid:48) ). This
+
+(cid:80)n
+(cid:80)n
+
+j
+
+j
+
+j
+
+1
+2
+
+j
+
+2
+
+(cid:80)n
+
+yields the covariances of ¯y .
+To derive cov(zi , zi(cid:48) ) and cov( ¯zi , ¯zi(cid:48) ) , the required calculus is
+nearly identical. We let the reader check by himself/herself.
+
+Non-linearity function We empirically found that reducing the
+number of non-linearities in the networks simpliﬁes the training of
+deep neural networks. To support this claim, we conduct a series
+of experiments on various DCNNs with a varying number of ReLU
+activations (to reduce the number of non-linearities, we replace some
+ReLU activations with the identity function). In a second experiment,
+
+4
+
+we replace the ReLU activations with Leaky-ReLU activations and
+vary the slope of the Leaky ReLU (a higher slope means an activa-
+tion function that is closer to a linear function). The results of this
+experiment are presented in Figure 2(a) and 2(b). In 2(a), “ReLU(DC)”
+means that we interleave on ReLU activation functions between every
+diagonal-circulant matrix, whereas ReLU(DCDC) means we inter-
+leave a ReLU activation every other block etc. In both Figure 2(a)
+and Figure 2(b), we observe that reducing the non-linearity of the
+networks can be used to train deeper networks. This is an interesting
+result, since we can use this technique to adjust the number of param-
+eters in the network, without facing training difﬁculties. We obtain
+a maximum accuracy of 0.56 with one ReLU every three layers and
+leaky-ReLUs with a slope of 0.5. We hence rely on this setting in the
+experimental section.
+
+6 Empirical evaluation
+
+This experimental section aims at answering the following questions:
+
+Q6.1 – How do DCNNs compare to other approaches such as
+ACDC, LDR or other structured approaches?
+Q6.2 – How do DCNNs compare to other compression based
+techniques?
+Q6.3 – How do DCNNs perform in the context of large scale
+real-world machine learning applications?
+
+6.1 Comparison with other structured approaches
+(Q6.1)
+
+Comparison with ACDC [21]. In Section 2, we have discussed the
+differences between the ACDC framework and our approach from
+a theoretical perspective. In this section, we conduct experiments
+to compare the performance of DCNNs with neural networks based
+on ACDC layers. We ﬁrst reproduce the experimental setting from
+[21], and compare both approaches using only linear networks (i.e.
+networks without any ReLU activations). The results are presented
+in Figure 3(a). On this simple setting, both architectures demonstrate
+good performance, however, DCNNs offer better convergence rate.
+In Figure 3(b), we compare neural networks with ReLU activations
+on CIFAR-10. The synthetic dataset has been created in order to
+reproduce the experiment on the regression linear problem proposed
+by [21]. We draw X , Y and W from a uniform distribution between
+[-1, +1] and  from a normal distribution with mean 0 and variance
+0.01. The relationship between X and Y is deﬁne by Y = XW + .
+We found that networks which are based only on ACDC layers are
+difﬁcult to train and offer poor accuracy on CIFAR. (We have tried
+different initialization schemes including the one from the original
+paper, and the one we propose in this paper.) Moczulski et al. [21]
+manage to train a large VGG network however these networks are
+generally highly redundant, the contribution of the structured layer
+is difﬁcult to quantify. We also observe that adding a single dense
+layer improves the convergence rate of ACDC in the linear case
+networks, which explain the good results of [21]. However, it is
+difﬁcult to characterize the true contribution of the ACDC layers
+when the network involved a large number of other expressive layers.
+In contrast, deep DCNNs can be trained and offer good perfor-
+mance without additional dense layers (these results are in line with
+our experiments on the YouTube-8M dataset). We can conclude that
+DCNNs are able to model complex relations at a low cost.
+
+Comparison with Dense networks, Toeplitz networks and Low
+
+Rank networks. We now compare DCNNs with other state-of-the-art
+
+structured networks by measuring the accuracy on a ﬂattened ver-
+sion of the CIFAR-10 dataset. Our baseline is a dense feed-forward
+network with a ﬁxed number of weights (9 million weights). We com-
+pare with DCNNs and with DTNNs (see below), Toeplitz networks,
+and Low-Rank networks [31]. We ﬁrst consider Toeplitz networks
+which are stacked Toeplitz matrices interleaved with ReLU activa-
+tions since Toeplitz matrices are closely related to circulant matrices.
+Since Toeplitz networks have a different structure (they do not in-
+clude diagonal matrices), we also experiment using DTNNs, a variant
+of DCNNs where all the circulant matrices have been replaced by
+Toeplitz matrices. Finally we conduct experiments using networks
+based on low-rank matrices as they are also closely related to our work.
+For each approach, we report the accuracy of several networks with
+a varying depth ranging from 1 to 40 (DCNNs, Toeplitz networks)
+and from 1 to 30 (from DTNNs). For low-rank networks, we used
+a ﬁxed depth network and increased the rank of each matrix from 7
+to 40. We also tried to increase the depth of low rank matrices, but
+we found that deep low-rank networks are difﬁcult to train so we
+do not report the results here. We compare all the networks based
+on the number of weights from 21K (0.2% of the dense network) to
+370K weights (4% of the dense network) and we report the results in
+Figure 4(a). First we can see that the size of the networks correlates
+positively with their accuracy which demonstrate successful training
+in all cases. We can also see that the DCNNs achieves the maximum
+accuracy of 56% with 20 layers (∼ 200K weights) which as as good
+as the dense networks with only 2% of the number of weights. Other
+approaches also offer good performance but they are not able to reach
+the accuracy of a dense network.
+
+Table 1. LDR networks compared with DCNNs on a ﬂattend version
+of CIFAR-10. DCNNs outperform all LDR conﬁgurations with fewer
+weights.2
+
+Architectures
+
+#Params
+
+Acc.
+
+Dense
+
+DCNN (5 layers)
+DCNN (2 layers)
+
+LDR–TD (r = 2)
+LDR–TD (r = 3)
+Toeplitz-like (r = 2)
+Toeplitz-like (r = 3)
+
+9.4M
+
+49K
+21K
+
+64K
+70K
+46K
+52K
+
+0.562
+
+0.543
+0.536
+
+0.511
+0.473
+0.483
+0.496
+
+Table 2. Two depths scattering on CIFAR-10 followed by LDR or DC
+layer. Networks with DC layers outperform all LDR conﬁgurations
+with fewer weights.
+
+Architectures
+
+DC (1 layers)
+DC (3 layers)
+
+Ensemble x5 DC (3 layers)
+
+LDR-SD (r = 1)
+LDR-SD (r = 10)
+Toeplitz-like (r = 1)
+Toeplitz-like (r = 10)
+
+#Params
+Acc.
+124K
+0.757
+217K
+0.785
+1.08M 0.811
+
+140K
+420K
+110K
+388K
+
+0.701
+0.728
+0.711
+0.720
+
+Comparison with LDR networks [28]. We now compare DCNNs
+
+with the LDR framework using the network conﬁguration experi-
+mented in the original paper: a single LDR structured layer followed
+
+2 Remark: the numbers may differ from the original experiments by [28]
+because we use the original dataset instead of a monochrome version)
+
+5
+
+Figure 3. Comparison of DCNNs and ACDC networks on two different tasks. Figure 3(a) shows the evolution of the training loss on a regression task with
+synthetic data. Figure 3(b) shows the test accuracy on the CIFAR-10 dataset.
+
+(a)
+
+(b)
+
+y
+c
+a
+r
+
+u
+c
+c
+
+A
+
+t
+s
+e
+
+T
+
+0.6
+
+0.5
+
+0.4
+
+0.3
+
+0.2
+
+y
+c
+a
+r
+
+u
+c
+c
+
+A
+
+t
+s
+e
+
+T
+
+0.78
+
+0.76
+
+0.74
+
+0.72
+
+0.7
+
+Dense (9M weights)
+DCNN
+DTNN
+Toeplitz network
+Low Rank network
+
+50
+
+100
+
+150
+
+200
+
+250
+
+300
+
+350
+
+#weights (x1000)
+
+100
+
+200
+
+300
+
+#weights (x1000)
+
+400
+
+(a)
+
+(b)
+
+Scattering + LDR-SD (r=1)
+Scattering + LDR-SD (r=10)
+Scattering + Toeplitz-like (r=1)
+Scattering + Toeplitz-like (r=10)
+Scattering + 1 DC
+Scattering + 3 DC
+Scattering Avg pooling + 3 DC
+Scattering by channel + 4 DC
+
+Figure 4. Figure 4(a): network size vs. accuracy compared on Dense networks, DCNNs (our approach), DTNNs (our approach), neural networks based on
+Toeplitz matrices and neural networks based on Low Rank-based matrices. DCNNs outperforms alternatives structured approaches. Figure 4(b) shows the accuracy
+of different structured architecture given the number of trainable parameters.
+
+by a dense layer. In the LDR framework, we can change the size of
+a network by adjusting the rank of the residual matrix, effectively
+capturing matrices with a structure that is close to a known structure
+but not exactly (e.g. in the LDR framework, Toeplitz matrices can
+be encoded with a residual matrix with rank=2, so a matrix that can
+be encoded with a residual of rank=3 can be seen as Toeplitz-like.).
+The results are presented in Table 1 and demonstrate that DCNNs
+outperforms all LDR networks both in terms in size and accuracy.
+Exploiting image features. Dense layers and DCNNs are not de-
+signed to capture task-speciﬁc features such as the translation invari-
+ance inherently useful in image classiﬁcation. We can further improve
+the accuracy of such general purpose architectures on image classiﬁca-
+tion without dramatically increasing the number of trained parameters
+by stacking them on top of ﬁxed (i.e. non-trained) transforms such
+as the scattering transform [19]. In this section we compare the ac-
+curacy of various structured networks, enhanced with the scattering
+transform, on an image classiﬁcation task, and run comparative exper-
+iments on CIFAR-10.
+Our test architecture consists of 2 depth scattering on the RGB
+images followed by a batch norm and LDR or DC layer. To vary the
+number of parameters of Scattering+LDR architecture, we increase
+the rank of the matrix (stacking several LDR matrices quickly ex-
+hausted the memory). The Figure 4(b) and 2 shows the accuracy of
+these architectures given the number of trainable parameters.
+First, we can see that the DCNN architecture very much beneﬁts
+from the scattering transform and is able to reach a competitive ac-
+curacy over 78%. We can also see that scattering followed by a DC
+layer systematically outperforms scattering + LDR or scattering +
+Toeplitz-like with less parameters.
+
+6.2 Comparison with other compression based
+approaches (Q6.2)
+
+Table 3. Comparison with compression based approaches
+
+Architecture
+
+#Params
+
+Error (%)
+
+LeNet [17]
+
+DCNN
+
+HashNet [6]
+
+Dark Knowledge [13]
+
+4 257 674
+
+25 620
+31 764
+
+46 875
+78 125
+46 875
+78 125
+
+0.61
+
+1.74
+1.60
+
+2.79
+1.99
+6.32
+2.16
+
+We provide a comparison with other compression based approaches
+such as HashNet [6], Dark Knowledge [13] and Fast Food Transform
+(FF) [30]. Table 3 shows the test error of DCNN against other know
+compression techniques on the MNIST datasets. We can observe that
+DCNN outperform easily HashNet [6] and Dark Knowledge [13] with
+fewer number of parameters. The architecture with Fast Food (FF)
+[30] achieves better performance but with convolutional layers and
+only 1 Fast Food Layer as the last Softmax layer.
+
+6.3 DCNNs for large-scale video classiﬁcation on
+the YouTube-8M dataset (Q6.3)
+
+To understand the performance of deep DCNNs on large scale appli-
+cations, we conducted experiments on the YouTube-8M video classiﬁ-
+cation with 3.8 training examples introduced by [2]. Notice that we
+favour this experiment over ImageNet applications because modern
+
+6
+
+010002000300040005000Steps1.01.52.02.53.03.54.0LossEvolution of the Train Loss on a Syntetic DatasetACDC network - 2 LayersACDC network - 4 LayersDCNN - 2 Layers0255075100125150175200Epochs0.10.20.30.40.50.6Test AccuracyTest Accuracy On the CIFAR10 DatasetDCNN - 2 LayersACDC network - 2 LayersACDC network - 5 Layersimage classiﬁcation architectures involve a large number of convo-
+lutional layers, and compressing convolutional layers is out of our
+scope. Also, as mentioned earlier, testing the performance of DCNN
+architectures mixed with a large number of expressive layers makes
+little sense. The YouTube-8M includes two datasets describing 8 mil-
+lion labeled videos. Both datasets contain audio and video features for
+each video. In the ﬁrst dataset (aggregated) all audio and video fea-
+tures have been aggregated every 300 frames. The second dataset (full)
+contains the descriptors for all the frames. To compare the models we
+use the GAP metric (Global Average Precision) proposed by [2]. On
+the simpler aggregated dataset we compared off-the-shelf DCNNs
+with a dense baseline with 5.7M weights. On the full dataset, we de-
+signed three new compact architectures based on the state-of-the-art
+architecture introduced by [2].
+
+Experiments on the aggregated dataset with DCNNs: We com-
+
+pared DCNNs with a dense baseline with 5.7 millions weights. The
+goal of this experiment is to discover a good trade-off between depth
+and model accuracy. To compare the models we use the GAP metric
+(Global Average Precision) following the experimental protocol in [2],
+to compare our experiments.
+Table 4 shows the results of our experiments on the aggrgated
+YouTube-8M dataset in terms of number of weights, compression
+rate and GAP. We can see that the compression ratio offered by
+the circulant architectures is high. This comes at the cost of a little
+decrease of GAP measure. The 32 layers DCNN is 46 times smaller
+than the original model in terms of number of parameters while having
+a close performance.
+
+Table 4. This table shows the GAP score for the YouTube-8M dataset
+with DCNNs. We can see a large increase in the score with deeper
+networks.
+
+Architecture
+
+#Weights
+
+GAP@20
+
+original
+4 DC
+32 DC
+4 DC + 1 FC
+
+5.7M
+25 410 (0.44)
+122 178 (2.11)
+4.46M (77)
+
+0.773
+0.599
+0.685
+
+0.747
+
+accuracy. We obtain the best compression ratio by replacing the MoE
+block with DCNNs (26%) of the size of the original dataset with a
+GAP score of 0.805 (95% of the score obtained with the original
+architecture). We conclude that DCNN are both theoretically sound
+and of practical interest in real, large scale applications.
+
+Embedding
+
+Dim Reduction
+
+Classiﬁcation
+
+Video
+
+Audio
+
+FC
+
+FC
+
+concat
+
+MoE
+
+Context
+Gating
+
+Figure 5. This ﬁgure shows the state-of-the-art neural network architecture,
+initially proposed by [2] and later improved by [20], used in our experiment.
+
+Architectures & Hyper-Parameters: For the ﬁrst set of our ex-
+
+periments (e.g. experiments on CIFAR-10), we train all networks for
+200 epochs, a batch size of 200, Leaky ReLU activation with a differ-
+ent slope. We minimize the Cross Entropy Loss with Adam optimizer
+and use a piecewise constant learning rate of 5 × 10−5 , 2.5 × 10−5 ,
+5 × 10−6 and 1 × 10−6 after respectively 40K, 60K and 80K steps.
+For the YouTube-8M dataset experiments, we built a neural network
+based on the SOTA architecture initially proposed by [2] and later
+improved by [20]. Remark that no convolution layer is involved in this
+application since the input vectors are embeddings of video frames
+processed using state-of-the-art convolutional neural networks trained
+on ImageNet. We trained our models with the CrossEntropy loss and
+used Adam optimizer with a 0.0002 learning rate and a 0.8 exponen-
+tial decay every 4 million examples. All fully connected layers are
+composed of 512 units. DBoF, NetVLAD and NetFV are respectively
+8192, 64 and 64 of cluster size for video frames and 4096, 32, 32 for
+audio frames. We used 4 mixtures for the MoE Layer. We used all the
+available 300 frames for the DBoF embedding. In order to stabilize
+and accelerate the training, we used batch normalization before each
+non linear activation and gradient clipping.
+
+Table 5. This table shows the GAP score for the YouTube-8M dataset
+with different layer represented with our DC decomposition.
+
+7 Conclusion
+
+Architecture
+
+#Weights GAP@20
+
+original
+DBoF with DC
+FC with DC
+MoE with DC
+
+45M
+36M (80)
+41M (91)
+12M (26)
+
+0.846
+0.838
+
+0.845
+
+0.805
+
+Experiments with DCNNs Deep Bag-of-Frames Architecture:
+
+The Deep Bag-of-Frames architecture can be decomposed into three
+blocks of layers, as illustrated in Figure 5. The ﬁrst block of layers,
+composed of the Deep Bag-of-Frames embedding (DBoF), is meant
+to model an embedding of these frames in order to make a simple
+representation of each video. A second block of fully connected layers
+(FC) reduces the dimensionality of the output of the embedding and
+merges the resulting output with a concatenation operation. Finally,
+the classiﬁcation block uses a combination of Mixtures-of-Experts
+(MoE) [15, 1] and Context Gating [20] to calculate the ﬁnal class
+probabilities. Table 5 shows the results in terms of number of weights,
+size of the model (MB) and GAP on the full dataset, replacing the
+DBoF block reduces the size of the network without impacting the
+
+7
+
+This paper deals with the training of diagonal circulant neural net-
+works. To the best of our knowledge, training such networks with a
+large number of layers had not been done before. We also endowed
+this kind of models with theoretical guarantees, hence enriching and
+reﬁning previous theoretical work from the literature. More impor-
+tantly, we showed that DCNNs outperform their competing structured
+alternatives, including the very recent general approach based on LDR
+networks. Our results suggest that stacking diagonal circulant layers
+with non linearities improves the convergence rate and the ﬁnal accu-
+racy of the network. Formally proving these statements constitutes the
+future directions of this work. As future work, we would like to gen-
+eralize the good results of DCNNs to convolutions neural networks.
+We also believe that circulant matrices deserve a particular attention
+in deep learning because of their strong ties with convolutions: a cir-
+culant matrix operator is equivalent to the convolution operator with
+circular paddings (as shown in [5]). This fact makes any contribution
+to the area of circulant matrices particularly relevant to the ﬁeld of
+deep learning with impacts beyond the problem of designing compact
+models. As future work, we would like to generalize our results to
+deep convolutional neural networks.
+
+References
+
+[5]
+
+[1] Sami Abu-El-Haija, Nisarg Kothari, Joonseok Lee, Apostol (Paul) Nat-
+sev, George Toderici, Balakrishnan Varadarajan, and Sudheendra Vi-
+jayanarasimhan, ‘Youtube-8m: A large-scale video classiﬁcation bench-
+mark’, in arXiv:1609.08675, (2016).
+[2] Sami Abu-El-Haija, Nisarg Kothari, Joonseok Lee, Paul Natsev, George
+Toderici, Balakrishnan Varadarajan, and Sudheendra Vijayanarasimhan,
+‘Youtube-8m: A large-scale video classiﬁcation benchmark’, arXiv
+preprint arXiv:1609.08675, (2016).
+[3] Alexandre Araujo, Benjamin Negrevergne, Yann Chevaleyre, and Jamal
+Atif, ‘Training compact deep learning models for video classiﬁcation
+using circulant matrices’, in The 2nd Workshop on YouTube-8M Large-
+Scale Video Understanding at ECCV 2018, (2018).
+[4] Sanjeev Arora, Nadav Cohen, Wei Hu, and Yuping Luo, ‘Implicit regu-
+larization in deep matrix factorization’, in Neurips, (05 2019).
+Jimmy Ba and Rich Caruana, ‘Do deep nets really need to be deep?’,
+in Advances in neural information processing systems, pp. 2654–2662,
+(2014).
+[6] Wenlin Chen, James T. Wilson, Stephen Tyree, Kilian Q. Weinberger,
+and Yixin Chen, ‘Compressing neural networks with the hashing trick’,
+in Proceedings of the 32Nd International Conference on International
+Conference on Machine Learning - Volume 37, ICML’15, pp. 2285–2294.
+JMLR.org, (2015).
+[7] Y. Cheng, F. X. Yu, R. S. Feris, S. Kumar, A. Choudhary, and S. F. Chang,
+‘An exploration of parameter redundancy in deep networks with circulant
+projections’, in 2015 IEEE International Conference on Computer Vision
+(ICCV), pp. 2857–2865, (Dec 2015).
+[8] Krzysztof Choromanski, Mark Rowland, Vikas Sindhwani, Richard E.
+Turner, and Adrian Weller, ‘Structured evolution with compact architec-
+tures for scalable policy optimization’, in ICML, (2018).
+[9] Misha Denil, Babak Shakibi, Laurent Dinh, Marc' Aurelio Ranzato, and
+Nando de Freitas, ‘Predicting parameters in deep learning’, in Advances
+in Neural Information Processing Systems 26, eds., C. J. C. Burges,
+L. Bottou, M. Welling, Z. Ghahramani, and K. Q. Weinberger, 2148–
+2156, Curran Associates, Inc., (2013).
+[10] S. Goyal, A. Roy Choudhury, and V. Sharma, ‘Compression of deep
+neural networks by combining pruning and low rank decomposition’, in
+2019 IEEE International Parallel and Distributed Processing Sympo-
+sium Workshops (IPDPSW), pp. 952–958, (2019).
+[11] B. Hanin, ‘Universal Function Approximation by Deep Neural Nets with
+Bounded Width and ReLU Activations’, ArXiv e-prints, (August 2017).
+[12] Aicke Hinrichs and Jan Vyb´ıral, ‘Johnson-lindenstrauss lemma for cir-
+culant matrices’, Random Structures & Algorithms, 39(3), 391–398,
+(2011).
+[13] Geoffrey Hinton, Oriol Vinyals, and Jeffrey Dean, ‘Distilling the knowl-
+edge in a neural network’, in NIPS Deep Learning and Representation
+Learning Workshop, (2015).
+[14] Marko Huhtanen and Allan Per ¨am ¨aki, ‘Factoring matrices into the prod-
+uct of circulant and diagonal matrices’, Journal of Fourier Analysis and
+Applications, 21(5), 1018–1033, (Oct 2015).
+[15] M. I. Jordan and R. A. Jacobs, ‘Hierarchical mixtures of experts and
+the em algorithm’, in Proceedings of 1993 International Conference on
+Neural Networks (IJCNN-93-Nagoya, Japan), volume 2, pp. 1339–1344
+vol.2, (Oct 1993).
+Jakub Kone ˇcn ´y, H. Brendan McMahan, Felix X. Yu, Peter Richtarik,
+Ananda Theertha Suresh, and Dave Bacon, ‘Federated learning: Strate-
+gies for improving communication efﬁciency’, in NIPS Workshop on
+Private Multi-Party Machine Learning, (2016).
+[17] Yann Lecun, L ´eon Bottou, Yoshua Bengio, and Patrick Haffner,
+‘Gradient-based learning applied to document recognition’, in Proceed-
+ings of the IEEE, pp. 2278–2324, (1998).
+[18] Chong Li and C. J. Richard Shi, ‘Constrained optimization based low-
+rank approximation of deep neural networks’, in Computer Vision –
+ECCV 2018, eds., Vittorio Ferrari, Martial Hebert, Cristian Sminchis-
+escu, and Yair Weiss, pp. 746–761, Cham, (2018). Springer International
+Publishing.
+[19] St ´ephane Mallat, ‘Recursive interferometric representation’, in Proc. of
+EUSICO conference, Danemark, (2010).
+[20] Antoine Miech, Ivan Laptev, and Josef Sivic, ‘Learnable pooling with
+context gating for video classiﬁcation’, CoRR, abs/1706.06905, (2017).
+[21] Marcin Moczulski, Misha Denil, Jeremy Appleyard, and Nando
+de Freitas, ‘Acdc: A structured efﬁcient linear layer’, arXiv preprint
+arXiv:1511.05946, (2015).
+
+[16]
+
+[22]
+
+J ¨orn M ¨uller-Quade, Harald Aagedal, Th Beth, and Michael Schmid,
+‘Algorithmic design of diffractive optical systems for information pro-
+cessing’, Physica D: Nonlinear Phenomena, 120(1-2), 196–205, (1998).
+[23] Alexander Novikov, Dmitrii Podoprikhin, Anton Osokin, and Dmitry P
+Vetrov, ‘Tensorizing neural networks’, in Advances in Neural Informa-
+tion Processing Systems, pp. 442–450, (2015).
+[24] Tara Sainath and Carolina Parada, ‘Convolutional neural networks for
+small-footprint keyword spotting’, in Interspeech, (2015).
+[25] Victoria Sanchez, Pedro Garcia, Antonio M Peinado, Jos ´e C Segura,
+and Antonio J Rubio, ‘Diagonalizing properties of the discrete cosine
+transforms’, IEEE transactions on Signal Processing, 43(11), 2631–
+2641, (1995).
+[26] Michael Schmid, Rainer Steinwandt, J ¨orn M ¨uller-Quade, Martin
+R ¨otteler, and Thomas Beth, ‘Decomposing a matrix into circulant and di-
+agonal factors’, Linear Algebra and its Applications, 306(1-3), 131–143,
+(2000).
+[27] Hanie Sedghi, Vineet Gupta, and Philip Long, ‘The singular values of
+convolutional layers’, in ICLR, (2018).
+[28] Anna Thomas, Albert Gu, Tri Dao, Atri Rudra, and Christopher R ´e,
+‘Learning compressed transforms with low displacement rank’, in Ad-
+vances in Neural Information Processing Systems 31, eds., S. Bengio,
+H. Wallach, H. Larochelle, K. Grauman, N. Cesa-Bianchi, and R. Gar-
+nett, 9066–9078, Curran Associates, Inc., (2018).
+[29] Chiheb Trabelsi, Olexa Bilaniuk, Ying Zhang, Dmitriy Serdyuk, Sandeep
+Subramanian, Jo ˜ao Felipe Santos, Soroush Mehri, Negar Rostamzadeh,
+Yoshua Bengio, and Christopher J. Pal, ‘Deep complex networks’, in
+6th International Conference on Learning Representations, ICLR 2018,
+Vancouver, BC, Canada, April 30 - May 3, 2018, Conference Track
+Proceedings, (2018).
+[30] Z. Yang, M. Moczulski, M. Denil, N. d. Freitas, A. Smola, L. Song, and
+Z. Wang, ‘Deep fried convnets’, in 2015 IEEE International Conference
+on Computer Vision (ICCV), pp. 1476–1483, (Dec 2015).
+[31] X. Yu, T. Liu, X. Wang, and D. Tao, ‘On compressing deep models
+by low rank and sparse decomposition’, in 2017 IEEE Conference on
+Computer Vision and Pattern Recognition (CVPR), pp. 67–76, (July
+2017).
+[32] Liang Zhao, Siyu Liao, Yanzhi Wang, Zhe Li, Jian Tang, and Bo Yuan,
+‘Theoretical properties for neural networks with weight matrices of low
+displacement rank’, in Proceedings of the 34th International Confer-
+ence on Machine Learning, eds., Doina Precup and Yee Whye Teh,
+volume 70 of Proceedings of Machine Learning Research, pp. 4082–
+4090, International Convention Centre, Sydney, Australia, (06–11 Aug
+2017). PMLR.
+
+8
+
+Supplemental Material – Understanding and
+Training Deep Diagonal Circulant Neural
+Networks
+
+1 Notations & Deﬁnition
+
+We note R(z ) and I(z ) the real and imaginary parts the complex number z . We note (·)t is the tth component of a vector. Let i
+be the imaginary number deﬁned by i2 = −1. Deﬁne 1n as the n-vector of ones. Also, we note [n] = {1, . . . , n}. The rectiﬁed
+linear unit on the complex domain is deﬁned by ReLU (z ) = max (0, R(z )) + i max (0, I(z )). The notation |·| refers to the
+complex modulus. Finally, deﬁne the cyclic shift matrix S ∈ Rn×n as follows:
+
+
+
+S =
+
+
+
+0
+1
+
+0
+
+1
+
+1
+
+0
+
+. . .
+. . .
+
+0
+1
+
+We introduce some necessary deﬁnitions regarding neural networks.
+Deﬁnition 1 (Deep ReLU network). Given L weight matrices W = (W1 , . . . , WL ) with Wi ∈ Cn×n and L bias vectors
+b = (b1 , . . . , bL ) with bi ∈ Cn , a deep ReLU network is a function fWL ,bL : Cn → Cn such that fW,b (x) = (fWL ,bL ◦
+. . . ◦ fW1 ,b1 )(x) where fWi ,bi (x) = φ(Wix + bi ) and φ(.) is a ReLU non-linearity 5 In the rest of this paper, we call L and
+n respectively the depth and the width of the network. Moreover, we call total rank k , the sum of the ranks of the matrices
+the sum of the ranks of the matrices W1 . . . WL . i.e. k = (cid:80)L
+In the rest of this paper, we call L and n respectively the depth and the width of the network. Moreover, we call total rank k ,
+
+W1 . . . WL . i.e. k = (cid:80)L
+i=1 rank(Wi ).
+
+i=1 rank(Wi ).
+
+2 Proofs of Section 3
+
+Theorem 1. (Reformulation from Huhtanen et al. [14]) For any given matrix A ∈ Cn×n , for any  > 0, there exists a
+(cid:107)B1B2 . . . B2n−1 − A(cid:107) < . Moreover, if A can be decomposed as A = (cid:80)k
+sequence of matrices B1 . . . B2n−1 where Bi is a circulant matrix if i is odd, and a diagonal matrix otherwise, such that
+i=1 DiS i−1 where S is the cyclic-shift matrix
+and D1 . . . Dk are diagonal matrices, then A can be written as a product B1B2 . . . B2k−1 where Bi is a circulant matrix if i
+is odd, and a diagonal matrix otherwise.
+Theorem 2. (Rank-based circulant decomposition) Let A ∈ Cn×n be a matrix of rank at most k . Assume that n can be divided
+by k . For any  > 0, there exists a sequence of 4k + 1 matrices B1 , . . . , B4k+1 , where Bi is a circulant matrix if i is odd, and
+a diagonal matrix otherwise, such that (cid:107)B1B2 . . . B4k+1 − A(cid:107) < 
+Proof. (Theorem 2) Let U ΣV T be the SVD decomposition of M where U, V and Σ are n × n matrices. Because M is of
+rank k , the last n − k columns of U and V are null. In the following, we will ﬁrst decompose U into a product of matrices
+W RO , where R and O are respectively circulant and diagonal matrices, and W is a matrix which will be further decomposed
+into a product of diagonal and circulant matrices. Then, we will apply the same decomposition technique to V . Ultimately, we
+will get a product of 4k + 2 matrices alternatively diagonal and circulant.
+Let R = circ(r1 . . . rn ). Let O be a n × n diagonal matrix where Oi,i = 1 if i ≤ k and 0 otherwise. The k ﬁrst columns of
+the product RO will be equal to that of R, and the n − k last colomns of RO will be zeros. For example, if k = 2, we have:
+
+
+
+RO =
+
+r1
+r2
+
+r3
+...
+rn
+
+rn
+r1
+
+r2
+...
+rn−1
+
+0
+
+...
+
+0
+
+· · ·
+
+· · ·
+
+0
+
+...
+
+0
+
+
+
+5 Because our networks deal with complex numbers, we use an extension of the ReLU function to the complex domain. The most straightforward extension
+deﬁned in [29] is as follows: ReLU(z ) = ReLU (R(z )) + iReLU (I(z )), where R and I refer to the real and imaginary parts of z .
+
+9
+
+
+
+d2,1
+
+d1,1
+d2,2
+
+d1,2
+
+d2,3
+
+. . .
+. . .
+
+W =
+
+d2,n
+
+d1,n
+
+r1 d11 + rn d21
+r2 d12 + r1 d22
+
+rn d11 + rn−1 d21
+r1 d12 + rn d22
+
+0
+
+...
+
+...
+
+rn d1n + rn−1 d2n
+
+rn−1 d1n + rn−2 d2n
+
+0
+
+
+
+W RO =
+
+
+
+rn
+rn−1
+
+r1
+rn
+
+r1
+rn
+
+r2
+r1
+
+r2
+r1
+
+r3
+r2
+
+. . .
+
+. . .
+
+
+
+
+
+0
+
+...
+
+0
+
+· · ·
+
+· · ·
+
+...
+
+
+
+
+
+d2,1
+d1,1
+d2,2
+d1,2
+d2,3
+d1,3
+
+...
+...
+
+
+
+×
+
+=
+
+
+
+U1,1
+U1,2
+U2,1
+U2,2
+
+...
+
+
+
+show how to compute them. Let W = (cid:80)k
+Let us deﬁne k diagonal matrices Di = diag(di1 . . . din ) for i ∈ [k ]. For now, the values of dij are unknown, but we will
+i=1 DiS i−1 . Note that the n − k last columns of the product W RO will be zeros.
+For example, with k = 2, we have:
+
+We want to ﬁnd the values of dij such that W RO = U . We can formulate this as linear equation system. In case k = 2, we get:
+
+The ith bloc of the bloc-diagonal matrix is a Toeplitz matrix induced by a subsequence of length k of (r1 , . . . rn , r1 . . . rn ).
+Set rj = 1 for all j ∈ {k , 2k , 3k , . . . n} and set rj = 0 for all other values of j . Then it is easy to see that each bloc is a
+permutation of the identity matrix. Thus, all blocs are invertible. This entails that the block diagonal matrix above is also
+invertible. So by solving this set of linear equations, we ﬁnd d1,1 . . . dk,n such that W RO = U . We can apply the same idea to
+factorize V = W (cid:48) .R.O for some matrix W (cid:48) . Finally, we get
+
+A = U ΣV T = W ROΣOT RT W
+
+(cid:48) T
+
+Thanks to Theorem 1, W and W (cid:48) can both be factorized in a product of 2k − 1 circulant and diagonal matrices. Note
+that OΣOT is diagonal, because all three are diagonal. Overall, A can be represented with a product of 4k + 2 matrices,
+alternatively diagonal and circulant.
+
+3 Proofs of Section 4
+
+Lemma 1. Let WL , . . . W1 ∈ Cn×n , b ∈ Cn and let X ⊂ Cn be a bounded set. There exists βL . . . β1 ∈ Cn such that for
+
+all x ∈ X we have fWL ,βL ◦ . . . ◦ fW1 ,β1 (x) = ReLU (WLWL−1 . . . W1x + b).
+: x ∈ X , t ∈ [n], j ∈ [L]
+
+x
+
+(cid:110)(cid:16)(cid:16)(cid:81)j
+
+k=1 Wk
+
+Proof. (Lemma 1) Deﬁne S =
+i max {I(v) : v ∈ S }. Intuitively, the real and imaginary parts of Ω are the largest any activation in the network can have.
+Deﬁne hj (x) = Wj x + βj . Let β1 = Ω1n . Clearly, for all x ∈ X we have h1 (x) ≥ 0, so ReLU ◦ h1 (x) = h1 (x). More
+generally, for all j < n − 1 deﬁne βj+1 = 1nΩ − Wj+1βj . It is easy to see that for all j < n we have hj ◦ . . . ◦ h1 (x) =
+
+WjWj−1 . . . W1x + 1nΩ. This guarantees that for all j < n, hj ◦ . . . ◦ h1 (x) = ReLU ◦ hj ◦ . . . ◦ ReLU ◦ h1 (x). Finally,
+deﬁne βL = b − ALβL−1 . We have, ReLU ◦ hL ◦ . . . ◦ ReLU ◦ h1 (x) = ReLU (Wj . . . W1x + b).
+
+. Let Ω = max {R(v) : v ∈ S } +
+
+t
+
+(cid:111)
+
+(cid:17)
+
+(cid:17)
+
+of 2n − 1 matrices Ci,nDi,n−1Ci,n−1 . . . Di,1Ci,1 such that
+
+Lemma 2. Let N be a deep ReLU network of width n and depth L, and let X ⊂ Cn be a bounded set. For any  > 0, there
+exists a DCNN N (cid:48) of width n and of depth (2n − 1)L such that (cid:107)N (x) − N (cid:48) (x)(cid:107) <  for all x ∈ X .
+(cid:13)(cid:13)(cid:13) < (cid:48) , where Di,1 is the identity
+Proof. (Lemma 2) Assume N = fWL ,bL ◦ . . . ◦ fW1 ,b1 . By theorem 1, for any (cid:48) > 0, any matrix Wi , there exists a sequence
+matrix. By lemma 1, we know that there exists {βij }i∈[L],j∈[n] such that for all i ∈ [L], fDinCin ,βin ◦ . . . ◦ fDi1Ci1 ,βi1 (x) =
+Now if (cid:48) tends to zero, (cid:107)fDinCin ,βin ◦ . . . ◦ fDi1Ci1 ,βi1 − ReLU (Wix + bi )(cid:107) will also tend to zero for any x ∈ X ,
+because the ReLU function is continuous and X is bounded. Let N (cid:48) = fD1nC1n ,β1n ◦ . . . ◦ fDi1Ci1 ,βi1 . Again, because all
+functions are continuous, for all x ∈ X , (cid:107)N (x) − N (cid:48) (x)(cid:107) tends to zero as (cid:48) tends to zero.
+
+j=0 Di,n−j Ci,n−j − Wi
+
+ReLU (DinCin . . . Ci1x + bi ).
+
+(cid:13)(cid:13)(cid:13)(cid:81)n−1
+
+10
+
+(cid:12)(cid:12)f (x1 . . . xn ) − (N (x))1
+
+Corollary 1. Bounded width DCNNs are universal approximators in the following sense: for any continuous function
+(cid:12)(cid:12) < , where (·)i represents the ith component of a vector.
+f : [0, 1]n → R+ of bounded supremum norm, for any  > 0, there exists a DCNN N of width n + 3 such that ∀x ∈ [0, 1]n+3 ,
+Proof. (Corollary 1) It has been shown recently in [11] that for any continuous function f : [0, 1]n → R+ of bounded
+build a deep ReLU network N (cid:48) of width exactly n + 3, such that ∀x ∈ [0, 1]n+3 , (cid:12)(cid:12)f (x1 . . . xn ) − (N (cid:48) (x))1
+supremum norm, for any  > 0, there exists a dense neural network N with an input layer of width n, an output layer of width
+(cid:12)(cid:12) < . Thanks to
+1, hidden layers of width n + 3 and ReLU activations such that ∀x ∈ [0, 1]n , |f (x) − N (x)| < . From N , we can easily
+lemma 2, this last network can be approximated arbitrarily well by a DCNN of width n + 3.
+Theorem 3. (Rank-based expressive power of diagonal circulant neural networks)
+Let N : fWL ,bL ◦ . . . ◦ fW1 ,b1 be a deep ReLU network of width n, depth L and a total rank k . Assume n is a power of 2.
+Let X ⊂ Cn be a bounded set. For any  > 0, there exists a DCNN N (cid:48) of width n such that (cid:107)N (x) − N (cid:48) (x)(cid:107) <  for all
+x ∈ X . In addition, the depth of N (cid:48) is bounded by 9k . Moreover, if the rank of each matrix Ai divides n, then the depth of N (cid:48)
+is bounded by L + 4k .
+
+Proof. (Theorem 3) Let k1 . . . kL be the ranks of matrices W1 . . . WL , which are n-by-n matrices. For all i, there exists
+k (cid:48)
+i ∈ {ki . . . 2ki } such that k (cid:48)
+i is a power of 2. Due to the fact that n is also a power of 2, k (cid:48)
+(cid:13)(cid:13)(cid:13) < . Using the exact same technique as in lemma 2, we can build a DCNN
+i divides n. By theorem
+2, for all i each matrix Wi can be decomposed as an alternating product of diagonal-circulant matrices Bi,1 . . . Bi,4k(cid:48)
+such that
+N (cid:48) using matrices B1,1 . . . BL,4k(cid:48)
+L+1 , such that (cid:107)N (x) − N (cid:48) (x)(cid:107) <  for all x ∈ X . The total number of layers is
+i ki ≤ L + 8.total rank ≤ 9.total rank.
+
+(cid:13)(cid:13)(cid:13)Wi − Bi,1 × . . . × Bi,4k(cid:48)
+i + 1) ≤ L + 8 (cid:80)
+i (4k (cid:48)
+
+(cid:80)
+
+i+1
+
+i+1
+
+Finally, what if we choose to use small depth networks to approximate deep ReLU networks where matrices are not of low
+rank? To answer this question, we ﬁrst need to show the negative impact of replacing matrices by their low rank approximators
+in neural networks:
+Proposition 4. Let N = fWL ,bL ◦ . . . ◦ fW1 ,b1 be a Deep ReLU network, where Wi ∈ Cn×n , bi ∈ Cn for all i ∈ [L]. Let
+˜Wi be the matrix obtained by an SVD approximation of rank k of matrix Wi . Let σi,j be the j th singular value of Wi . Deﬁne
+. Then, for any x ∈ Cn , we have:
+
+˜N = f ˜WL ,bL
+
+◦ . . . ◦ f ˜W1 ,b1
+
+(cid:13)(cid:13)(cid:13)N (x) − ˜N (x)
+
+(cid:13)(cid:13)(cid:13) ≤
+
+(cid:0)σL
+
+max,1 − 1(cid:1) Rσmax,k
+σmax,1 − 1
+
+where R is an upper bound on norm of the output of any layer in N , and σmax,j = maxi σi,j .
+Proof. (Proposition 4) Let x0 ∈ Cn and ˜x0 = x0 . For all i ∈ [L], deﬁne xi = ReLU (Wixi−1 + b) and ˜xi =
+. By lemma 3, we have
+
+(cid:16) ˜Wi ˜xi−1 + b
+
+ReLU
+
+(cid:17)
+
+Observe that for any sequence a0 , a1 . . . deﬁned recurrently by a0 = 0 and ai = rai−1 + s, the recurrence relation can be
+unfold as follows: ai =
+. We can apply this formula to bound our error as follows:
+
+s(ri−1)
+r−1
+
+(cid:107)xi − ˜xi (cid:107) ≤ σi,k+1 (cid:107)xi−1 (cid:107) + σi,1 (cid:107)xi−1 − ˜xi−1 (cid:107)
+(cid:0)σ l
+
+max,1 − 1(cid:1) σmax,k maxi (cid:107)xi (cid:107)
+σmax,1 − 1
+
+(cid:107)xl − ˜xl (cid:107) ≤
+
+Lemma 3. Let W ∈ Cn×n with singular values σ1 . . . σn , and let x, ˜x ∈ Cn . Let ˜W be the matrix obtained by a SVD
+approximation of rank k of matrix W . Then we have:
+
+, because σ1 is the greatest singular value of both W and
+
+Proof. (Lemma 3) Recall that (cid:107)W (cid:107)2 = supz
+(cid:107)z(cid:107)2
+˜W . Also, note that
+= σk+1 . Let us bound the formula without ReLUs:
+
+(cid:107)W z(cid:107)2
+
+(cid:13)(cid:13)(cid:13)W − ˜W
+
+(cid:17)(cid:13)(cid:13)(cid:13) ≤ σk+1 (cid:107)x(cid:107) + σ1 (cid:107) ˜x − x(cid:107)
+
+(cid:13)(cid:13)(cid:13)2
+
+(cid:13)(cid:13)(cid:13)2
+
+(cid:13)(cid:13)(cid:13) ˜W
+
+(cid:13)(cid:13)(cid:13)ReLU (W x + b) − ReLU
+(cid:16) ˜W ˜x + b
+= σ1 =
+(cid:13)(cid:13)(cid:13)(W x + b) − (cid:16) ˜W ˜x + b
+(cid:13)(cid:13)(cid:13)(W x + b) − (cid:16) ˜W ˜x + b
+(cid:13)(cid:13)(cid:13)W x − ˜W x − ˜W ( ˜x − x)
+W − ˜W
+x
+≤ (cid:107)x(cid:107) σk+1 + σ1 (cid:107) ˜x − x(cid:107)
+
+(cid:17)(cid:13)(cid:13)(cid:13) =
+≤ (cid:13)(cid:13)(cid:13)(cid:16)
+
+(cid:17)(cid:13)(cid:13)(cid:13)
+(cid:13)(cid:13)(cid:13)
+(cid:13)(cid:13)(cid:13)2
+
+(cid:13)(cid:13)(cid:13) +
+
+(cid:13)(cid:13)(cid:13) ˜W
+
+(cid:17)
+
+=
+
+(cid:107) ˜x − x(cid:107)
+
+11
+
+Finally, it is easy to see that for any pair of vectors a, b ∈ Cn , we have (cid:107)ReLU (a) − ReLU (b)(cid:107) ≤ (cid:107)a − b(cid:107). This concludes
+the proof.
+Corollary 2. Consider any deep ReLU network N = fWL ,bL ◦ . . . ◦ fW1 ,b1 of depth L and width n. Let σmax,j = maxi σi,j
+where σi,j is the j th singular value of Wi . Let X ⊂ Cn be a bounded set. Let k be an integer dividing n. There exists a DCNN
+of width n and of depth m = L(4k + 1), such that for any x ∈ X :
+
+N (cid:48) = fDmCm ,b(cid:48)
+
+◦ . . . ◦ fD1C1 ,b(cid:48)
+
+m
+
+(cid:0)σL
+
+max,1 − 1(cid:1) Rσmax,k
+σmax,1 − 1
+
+1
+
+(cid:13)(cid:13)N (x) − N (cid:48)
+
+(x)(cid:13)(cid:13) <
+
+where R is an upper bound on the norm of the outputs of each layer in N .
+Proof. (Corollary 2) Let ˜N = f ˜WL ,bL
+, where each ˜Wi is the matrix obtained by an SVD approximation of
+rank k of matrix Wi . With Proposition 4, we have an error bound on (cid:107)N (x) − ˜N (x) (cid:107). Now each matrix ˜Wi can be replaced
+by a product of k diagonal-circulant matrices. By theorem 3, this product yields a DCNN of depth m = L(4k + 1), strictly
+equivalent to ˜N on X . The result follows.
+
+◦ . . . ◦ f ˜W1 ,b1
+
+12
+
+

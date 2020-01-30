@@ -1,0 +1,1807 @@
+Scalable methods for computing state similarity in
+deterministic Markov Decision Processes
+
+Pablo Samuel Castro
+
+Google Brain
+
+psc@google.com
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+1
+9
+2
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+We present new algorithms for computing and approximating
+bisimulation metrics in Markov Decision Processes (MDPs).
+Bisimulation metrics are an elegant formalism that capture
+behavioral equivalence between states and provide strong the-
+oretical guarantees on differences in optimal behaviour. Unfor-
+tunately, their computation is expensive and requires a tabular
+representation of the states, which has thus far rendered them
+impractical for large problems. In this paper we present a new
+version of the metric that is tied to a behavior policy in an
+MDP, along with an analysis of its theoretical properties. We
+then present two new algorithms for approximating bisimula-
+tion metrics in large, deterministic MDPs. The ﬁrst does so
+via sampling and is guaranteed to converge to the true metric.
+The second is a differentiable loss which allows us to learn an
+approximation even for continuous state MDPs, which prior
+to this work had not been possible.
+
+Introduction
+
+A ﬁnite Markov Decision Process (MDP) is deﬁned as a
+
+5-tuple M = (cid:104)S , A, P , R, γ (cid:105), where S is a ﬁnite set of
+states, A is a ﬁnite set of actions, P : S × A → ∆(S ) is the
+next state transition function (where ∆(X ) is the probability
+simplex over the set X ), R : S × A → R is the reward
+function (assumed to be bounded by Rmax ), and γ ∈ [0, 1)
+is a discount factor. An MDP is the standard formalism for
+expressing sequential decision problems, typically in the con-
+text of planning or reinforcement learning (RL). The set of
+states S is one of the central components of this formalism,
+where each state s ∈ S is meant to encode sufﬁcient infor-
+mation about the environment such that an agent can learn
+how to behave in a consistent manner. Figure 1 illustrates a
+simple MDP where each cell represents a state.
+There is no canonical way of deﬁning the set of states for a
+problem. Indeed, improperly designed state spaces can have
+drastic effects on the algorithm used. Consider the grid MDP
+in the bottom of Figure 1, where an agent must learn how to
+navigate to the green cells, and imagine we create an exact
+replica of the MDP such that the agent randomly transitions
+between the two layers for each move. By doing so we have
+
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+Figure 1: A grid MDP (bottom) with a copy of itself (top).
+The goal of an agent is to ﬁnd the shortest path to the green
+cells. At each iteration, the agent has a 50% chance of jump-
+ing to the other level.
+
+doubled the number of states and the complexity of the prob-
+lem. However, from a planning perspective the two copies of
+each state should be indistinguishable. A stronger notion of
+state identity is needed that goes beyond the labeling of states
+and which is able to capture behavioral indistinguishability.
+In this paper we explore notions of behavioral similarity
+via state pseudometrics1 d : S × S → R, and in particular
+those which assign a distance of 0 to states that are behav-
+iorally indistinguishable. Pseudometrics further allow us to
+reason about states based on what we may know about other
+similar states. This is a common use-case in ﬁelds such as for-
+mal veriﬁcation, concurrency theory, and in safe RL, where
+one may want to provide (non-)reachability guarantees. In
+the context of planning and reinforcement learning, these can
+be useful for state aggregation and abstraction.
+Our work builds on bisimulation metrics (Ferns, Panan-
+gaden, and Precup 2004) which provide us with theoretical
+guarantees such as states that are close to each other (with
+respect to the metric) will have similar optimal value func-
+tions. These theoretical properties render them appealing for
+planning and learning, and they have previously been used
+for state aggregation (Ferns, Panangaden, and Precup 2004;
+Ferns et al. 2006), policy transfer (Castro and Precup 2010),
+representation discovery (Ruan et al. 2015), and exploration
+(Santara et al. 2019).
+Unfortunately, these metrics are expensive to compute
+(Chen, van Breugel, and Worrell 2012) and require fully enu-
+
+1A pseudometric is a metric d where ∀s, t ∈ S .
+d(s, t) = 0, but not the converse.
+
+s = t =⇒
+
+OriginalCopy 
+ 
+ 
+ 
+ 
+ 
+merating the states, even when using sampling-based approxi-
+mants (Ferns et al. 2006), on-the-ﬂy approximants (Comanici,
+Panangaden, and Precup 2012; Bacci et al. 2013b), or approx-
+imants which exploit structure in the state space (Bacci et
+al. 2013a). The full-state enumeration requirement has thus
+far rendered bisimulation metrics impractical in problems
+with large state spaces, and completely incompatible with
+continuous state spaces. Additionally, bisimulation metrics
+can be overly pessimistic in the sense that they consider
+worst-case differences between states. Although desirable for
+certain applications, such as in guaranteeing safe behaviors,
+it can prove overly restrictive for many practical problems of
+interest.
+In this paper we address these impracticalities with the
+following key contributions:
+1. An on-policy variant of bisimulation which focuses only on
+the behavior of interest, rather than worst-case scenarios,
+along with an analysis of its theoretical properties.
+2. A new sampling-based online algorithm for exact compu-
+tation of the original and on-policy bisimulation metrics
+with guaranteed convergence.
+3. A differentiable loss function for learning an approxima-
+tion of the two bisimulation metrics using neural networks.
+We provide empirical evidence of this learning algorithm
+on MDPs with large and continuous state spaces. To the
+best of the author’s knowledge, this is the ﬁrst work propos-
+ing a mechanism for approximating bisimulation metrics
+with neural networks.
+
+Background
+
+Given an MDP M, a policy π : S → ∆(A) induces a corre-
+sponding state-value function V π : S → R (Puterman 1994):
+
+(cid:2)R(s, a) + γEs(cid:48)∼P (s,a)V π (s(cid:48) )(cid:3). In the
+V ∗ (s) = maxa∈A (cid:2)R(s, a) + γEs(cid:48)∼P (s,a)V ∗ (s(cid:48) )(cid:3).
+V π (s) = Ea∼π(s)
+
+control setting, we are typically in search of the optimal
+value function (Bellman 1957):
+
+Bisimulation relations, originally introduced in the ﬁeld
+of concurrency theory, were adapted for MDPs by Givan,
+Dean, and Greig (2003), capture a strong form of behavioral
+equivalence: if s, t ∈ S are bisimilar, then V ∗ (s) = V ∗ (t).
+Deﬁnition 1. Given an MDP M, an equivalence relation
+the following properties hold, where SE is the state space S
+partitioned into equivalence classes deﬁned by E :
+
+E ⊆ S ×S is a bisimulation relation if whenever (s, t) ∈ E
+
+1. ∀a ∈ A, R(s, a) = R(t, a)
+P (s, a)(c) = (cid:80)
+2. ∀a ∈ A, ∀c ∈ SE , P (s, a)(c) = P (t, a)(c), where
+s(cid:48)∈c P (s, a)(s(cid:48) ),
+
+Two states s, t ∈ S are bisimilar if there exists a bisimula-
+tion relation E such that (s, t) ∈ E . We denote the largest2
+bisimulation relation as ∼.
+Equivalence relations can be brittle: they require exact
+equivalence under probabilistic transitions. This can be espe-
+
+2Note that there can be a number of equivalence relations satis-
+fying these properties. The smallest is the identity relation, which is
+vacuously a bisimulation relation.
+
+cially problematic if we are estimating transition probabilities
+from data, as it is highly unlikely they will match exactly.
+Extending the work of Desharnais et al. (1999) for labeled
+Markov processes, Ferns, Panangaden, and Precup (2004)
+generalized the notion of MDP bisimulation relations to met-
+rics, yielding a smoother notion of similarity than equiva-
+lence relations. Let M be the set of all pseudometrics on
+S . A pseudometric d ∈ M induces an equivalence relation
+Ed := {(s, t)|d(s, t) = 0}. That is, any two states with
+distance 0 will be collapsed onto the same equivalence class.
+Deﬁnition 2. (Ferns, Panangaden, and Precup 2004) A pseu-
+Bisimulation metrics use the 1-Wasserstein metric W1 :
+M → P, where P is the set of all metrics between prob-
+ability distributions over S . Given two state distributions
+X, Y ∈ ∆(S ) and a pseudometric d ∈ M, the Wasserstein
+W1 (d)(X, Y ) can be expressed by the following (primal)
+linear program (LP), which “lifts” a pseudometric d ∈ M
+onto one in P (Villani 2008):
+
+dometric d ∈ M is a bisimulation metric if Ed is ∼.
+
+(1)
+
+∈ R|S | (cid:88)
+
+u
+
+(X (s) − Y (s)) us
+max
+∀s, s(cid:48) ∈ S , us − us(cid:48) ≤ d(s, s(cid:48) )
+
+s∈S
+
+0 ≤ u ≤ 1
+
+Theorem 1. (Ferns, Panangaden, and Precup 2004): Deﬁne
+
+F : M → M by
+
+F (d)(s, t) =
+a∈A (|R(s, a) − R(t, a)| + γW1 (d)(P (s, a), P (t, a)))
+max
+
+(2)
+
+then F has a unique ﬁxed point, d∼ , and d∼ is a bisimulation
+metric.
+The operator F can be used to iteratively compute a
+bisimulation metric as follows. Starting from an initial es-
+timate d0 , we can compute dn+1 = F (dn ) = F n+1 (d0 ).
+By iteratively applying F (cid:100) ln δ
+ln γ (cid:101) times, one can compute
+d∼ up to an accuracy δ , with an overall complexity of
+.
+
+(cid:16)|A||S |4 log |S | ln δ
+
+(cid:17)
+
+O
+
+ln γ
+
+On-policy bisimulation
+
+The strong theoretical guarantees of bisimulation relations
+and metrics are largely due to their inherent “pessimism”:
+they consider equivalence under all actions, even patholog-
+ically bad ones (i.e. actions that never lead to positive out-
+comes for the agent). Indeed, there exist systems where
+V ∗ (s) = V ∗ (t), but d∼ (s, t) can be arbitrarily large, pro-
+viding no useful bounds on the optimal behaviour from s
+and t (see Figure 2). Castro and Precup (2010) also demon-
+strated that this pessimism yields poor results when using
+bisimulation metrics for policy transfer.
+Another disadvantage of bisimulation relations and metrics
+is that they are computed via exact action matching between
+states; however, actions with the same label may induce very
+different behaviours from different states, resulting in an
+improper behavioral comparison when using bisimulation. In
+
+a, [K]
+
+b, [K]
+
+u
+
+s
+
+b
+
+t
+
+a
+
+Figure 2: Edge labels indicate action ({a, b}) and non-zero
+
+rewards ([K ]). When γ = 0.9, V ∗ (s) = V ∗ (t) = 10K ,
+
+while d∼ (s, t) = 10K . Lax bisimulation assigns distance 0
+between s and t (action a from s would be matched with
+action b from t).
+
+the system in Figure 2, s and t have equal optimal values,
+but their optimal action is different (a from s, b from t).
+Taylor, Precup, and Panagaden (2009) overcame this problem
+by the introduction of lax-bisimulation metrics (deﬁnition
+and theoretical results provided in the supplemental). We
+note, however, that their method is still susceptible to the
+pessimism discussed above.
+It is often the case that one is interested in behaviours
+relative to a particular policy π . In reinforcement learning,
+for example, many algorithms maintain a behaviour policy
+which is improved iteratively as the agent interacts with the
+environment. In these situations the pessimism of bisimula-
+tion can become a hindrance: if the action maximizing the
+distance between two states is never chosen by π , we should
+not include it in the computation!
+We introduce a new notion of bisimulation, on-policy
+bisimulation, deﬁned relative to a policy π . This new no-
+tion also removes the requirement of matching on action
+labels by considering the dynamics induced by π , rather than
+the dynamics induced by each action. We ﬁrst deﬁne:
+
+s = Rπ
+
+E π ⊆ S × S is a π -bisimulation relation if whenever
+
+Deﬁnition 3. Given an MDP M, an equivalence relation
+(s, t) ∈ E π the following properties hold:
+1. Rπ
+2. ∀C ∈ SEπ , P π
+Two states s, t ∈ S are π -bisimilar if there exists a π -
+bisimulation relation E π such that (s, t) ∈ E π . Denot-
+ing the largest bisimulation relation as ∼π , d ∈ M is a
+
+s (C ) = P π
+t (C )
+
+t
+
+π -bisimulation metric if Ed is ∼π .
+
+Rπ
+
+t | + γW1 (d)(P π
+s , P π
+
+Theorem 2. Deﬁne F π : M → M by F π (d)(s, t) = |Rπ
+t ), then F π has a least ﬁxed point dπ∼ ,
+and dπ∼ is a π -bisimulation metric.
+Proof. (Sketch) This proof mimics the proof of Theorem 4.5
+from (Ferns, Panangaden, and Precup 2004). All complete
+proofs are provided in the supplemental material.
+
+s −
+
+Rπ
+
+s :=
+
+∀C ∈ SEπ , P π
+s (C ) :=
+
+(cid:88)
+(cid:88)
+
+a
+
+a
+
+π(a|s)R(s, a)
+
+(cid:88)
+
+s(cid:48)∈C
+
+π(a|s)
+
+P (s, a)(s(cid:48) )
+
+The following result demonstrates that π -bisimulation met-
+rics provide similar theoretical guarantees as regular bisimu-
+lation metrics, but with respect to the value function induced
+by π .
+Theorem 3. Given any two states s, t ∈ S in an MDP M,
+
+|V π (s) − V π (t)| ≤ dπ∼ (s, t).
+
+Proof. (Sketch) This is proved by induction. The result fol-
+lows by expanding V π , taking the absolute value of each
+term separately, and noticing that V π is a feasible solution
+to the primal LP in Equation 1, so is upper-bounded by
+
+W1 (dπ
+n ).
+
+Under a ﬁxed policy π , an MDP reduces to a Markov chain.
+Bisimulation relations for Markov chains have previously
+been studied in concurrency theory (Baier et al. 2006; Katoen
+et al. 2007). Further, π -bisimulation can be used to deﬁne
+a notion of weak-bisimulation for MDPs (Baier et al. 2006;
+Ferrer Fioriti et al. 2016).
+
+Bisimulation metrics for deterministic MDPs
+
+In this section we investigate the properties of deterministic
+MDPs, which in concurrency theory are known as transition
+systems (Sangiorgi 2011).
+Deﬁnition 4. A deterministic MDP M is one where for all
+s ∈ S , a ∈ A, there exists a unique N (s, a) ∈ S such that
+
+P (s, a)(N (s, a)) = 1.
+
+As the next lemma shows, under a system with determin-
+istic transitions, computing the Wasserstein metric (and ap-
+proximants) is no longer necessary.
+Lemma 1. Given a deterministic MDP M, for any two
+states s, t ∈ S , action a ∈ A, and pseudometric d ∈ M,
+
+W1 (d)(P (s, a), P (t, a)) = d(N (s, a), N (t, a)).
+
+Proof. (Sketch) The result follows by considering the dual
+formulation of the primal LP in Equation 1, which implies
+the dual variables λs,t must all be either 1 or 0, by virtue of
+determinism.
+
+By considering only deterministic policies (e.g. policies
+that assign probability 1 to a single action) in the on-policy
+case, Lemma 1 allows us to rewrite the operator F (d)(s, t)
+in Theorem 1 and F π (d)(s, t) in Theorem 2 as:
+
+maxa∈A (|R(s, a) − R(t, a)| + γ d(N (s, a), N (t, a)))
+and|R(s, π(s)) − R(t, π(t))| + γ d(N (s, π(s)), N (t, π(t))),
+
+respectively. Note the close resemblance to value functions,
+there is in fact a strong connection between the two: Ferns
+and Precup (2014) proved that d∼ is the optimal value
+function of an optimal coupling of two copies of the original
+MDP.
+Even in the deterministic setting, the computation of bisim-
+ulation metrics can be intractable in MDPs with very large or
+continuous state spaces. In the next sections we will leverage
+the results just presented to introduce new algorithms that are
+able to scale to large state spaces and learn an approximant
+for continuous state spaces.
+
+Computing bisimulation metrics with sampled
+transitions
+
+We present the algorithm and results in this section for the
+original bisimulation metric, d∼ , but all the results presented
+here hold for the on-policy variant dπ∼ ; the main difference
+is that actions in the trajectory are given by π and thus, may
+differ between states being compared.
+The update operator F is generally applied in a dynamic-
+programming fashion: all state-pairs are updated in each
+iteration by considering all possible actions. However, re-
+quiring access to all state-pairs and actions in each iteration
+is often not possible, especially when data is concurrently
+being collected by an agent interacting with an environment.
+In this section we present an algorithm for computing the
+bisimulation metric via access to transition samples. Specif-
+ically, assume we are able to sample pairs of transitions
+underlying distribution D (note the action is the same for
+both). This can be, for instance, a uniform distribution over
+other sampling procedure. Let T be the set of all pairs of valid
+all transitions in a replay memory (Mnih et al. 2015) or some
+transitions; for legibility we will use the shorthand τs,t,a ∈ T
+to denote a pair of transitions from states s, t ∈ S under
+action a ∈ A. We assume that D(τ ) > 0 for all τ ∈ T .
+We ﬁrst deﬁne an iterative procedure for computing d∼ by
+sampling from D . Let d0 ≡ 0 be the everywhere-zero metric.
+At step n, let τsn ,tn ,an ∈ T be a sample from D and deﬁne
+dn as:
+
+{(cid:104)s, a, R(s, a), N (s, a)(cid:105), (cid:104)t, a, R(t, a), N (t, a)(cid:105)} from an
+
+∀s (cid:54)= sn , t (cid:54)= tn
+dn (s, t) = dn−1 (s, t),
+dn−1 (sn , tn ),
+|R(sn , an ) − R(tn , an )|+
+γ dn−1 (N (sn , an ), N (tn , an ))
+
+dn (sn , tn ) = max
+
+(cid:34)
+
+(cid:35)
+
+(3)
+
+In words, when we sample a pair of states, we only update
+the distance estimate for these two states if applying the F
+operator gives us a larger estimate. Otherwise, our estimate
+remains unchanged.
+Theorem 4. If dn is updated as in Equation 3 and d0 ≡ 0,
+limn→∞ dn = d∼ almost surely.
+
+Proof. (Sketch) We ﬁrst show that since we are sampling
+state pairs and actions inﬁnitely often, all state pairs will re-
+ceive a non-vacuous update at least once (Maximizing action
+lemma); then show that dn ≤ d∼ for all n ∈ N (Monotonic-
+ity lemma). We then use these two results to show that the
+difference (cid:107)d∼ − dn(cid:107)∞ is a contraction and the result follows
+by the Banach ﬁxed-point theorem. Note that the maximizing
+action lemma as presented here is for the original bisimula-
+tion metric; for the on-policy variant, the equivalent result is
+that all states in the Markov chain induced by π are updated
+inﬁnitely often.
+
+Learning an approximation
+
+We leverage the sampling approach from the previous section
+to devise a learning algorithm for approximating d∼ and
+
+dπ∼ for MDPs with large (or continuous) state spaces, using
+function approximators in the form of neural networks. Let φ :
+S → Rk be a k-dimensional representation of the state space
+and let ψθ : R2k → R be a neural network parameterized by
+θ , that receives a concatenation of two state representations
+such that ψθ ([φ(s), φ(t)]) ≈ d∼ (s, t) (see Figure 3).
+Following the practice introduced by (Mnih et al. 2015)
+we make use of online parameters θ and target parameters
+θ− , where the online parameters are updated at each iteration
+while the target parameters are updated every C iterations.
+Given a pair of states s (cid:54)= t and action a ∈ A, at iteration i
+we deﬁne the target objective Tθ
+
+(cid:34)|R(s, a) − R(t, a)| + γψθ
+−
+([φ(N (s, a)), φ(N (t, a))]),
+ψθ
+−
+([φ(s), φ(t)])
+
+(s, t, a) for d∼ as:
+
+max
+
+(cid:35)
+
+−
+
+i
+
+i
+
+i
+
+and equal to 0 whenever s = t. The target objective Tπ
+for dπ∼ is:
+
+θ
+
+|R(s, π(s)) − R(t, π(t))|+
+γψπ
+([φ(N (s, π(s))), φ(N (t, π(t)))])
+
+−
+
+−
+
+i
+
+(s, t)
+
+θ
+
+i
+
+can
+
+then
+
+deﬁne
+
+our
+
+loss
+
+L(π)
+s,t,a
+
+as:
+
+(cid:16)
+
+We
+
+(cid:17)2
+
+ED
+
+(s, t, a) − ψ (π)
+
+i
+
+−
+
+θi
+
+T(π)
+θ
+
+([φ(s), φ(t)])
+
+. This
+loss
+is
+speciﬁed for a single pair of transitions, but we can deﬁne an
+analogous target and loss with mini-batches, which allows us
+to train our approximant more efﬁciently using specialized
+hardware such as GPUs:
+
+(cid:16)
+
+(cid:17)
+
+−
+
+(N2 ), βψθ
+
+−
+
+i
+
+(S2 )
+
+T = (1 − I) ⊗ max
+W ⊗ (cid:0)ψθi (S2 ) − T(cid:1)2 (cid:105)
+R2 + γβψθ
+Li (θi ) = ED
+Tπ = (1 − I)
+(S2 ) − T(cid:1)2 (cid:105)
+R2 + γβψπ
+(N2 )
+i (θi ) = ED
+
+(cid:104)
+(cid:16)
+(cid:104)(cid:0)ψπ
+
+−
+
+θ
+
+i
+
+Lπ
+
+i
+
+(cid:17)
+
+θi
+
+R2 , S2 , and N2 are batches of rewards, states, and next-
+states, respectively, W is a mask used to enforce action
+matching when approximating d∼ , and I is the identity ma-
+trix. ψ(X) indicates applying ψ to a matrix X elementwise,
+and ⊗ stands for the Hadamard product. We multiply by
+(1 − I) to zero out the diagonals, since those represent ap-
+proximations to d(π)∼ (s, s) ≡ 0. The parameter β is a stability
+
+Figure 3: Using a neural network for learning ψ as an approx-
+imant to d∼ or dπ∼ .
+
+h hidden unitsφ(s)1ψ(x1, y1, x2, y2)L hidden layersφ(s)kφ(t)1φ(t)kφ(s)φ(t)bisimulation distances between all states in the supplemental,
+computed using the sampling approach.
+We represent each state by its coordinates (x, y) ∈ R2 , as
+illustrated in Figure 4. To estimate d∼ we use a network with
+an input layer of dimension 4, one fully connected hidden
+layer with 729 hidden units, and an output of length 1. The in-
+put is the concatenation of two state representations, normal-
+ized to be in [−1, 1], while the output value is the estimate to
+d∼ . We sampled state pairs and actions uniformly randomly,
+and ran our experiments with γ = 0.99, C = 500, b = 256,
+and increased β from 0 to 1 by a factor of 0.9 every time the
+target network was updated; we used the Adam optimizer
+(Kingma and Ba 2015) with a learning rate of 0.01. Because
+of the maximization term in the target, these networks can
+have a tendency to overshoot (although the combination of
+target networks and the β term helps stabilize this); we ran
+the training process for 2500 steps, which, for this problem,
+was long enough to converge to a reasonable solution before
+overshooting. The full hyperparameter settings are provided
+in the supplemental.
+error: (cid:107)d∼ − ψ(cid:107)∞ using the true underlying state space for
+To evaluate the learning process, we measure the absolute
+which we know the value of d∼ . Note that because there is
+no ﬁxed learning target, absolute errors are not guaranteed
+to be bounded. For this reason we also report the normalized
+error: (cid:107) d∼(cid:107)d∼ (cid:107)2
+− ψ(cid:107)ψ(cid:107)2
+(cid:107)∞ as in practice one is mostly inter-
+ested in relative, rather than absolute, distances. Figure 5a
+and Figure 5b display the results of our experiments over
+10 independent runs; the shaded areas represent the 95%
+conﬁdence interval.
+In addition to training on the 31 state-MDP, we constructed
+a continuous variant by adding Gaussian noise to the state
+representations; this noise is centered at (0, 0) with standard
+deviation 0.1, and clipped to be in [−0.3, 0.3]. The per-cell
+noise is illustrated by the black gradients in Figure 4. As
+Figure 5 shows, there is little difference between learning
+the metric for the 31-state MDP versus learning it for its
+continuous variant. Adding noise does not seem to hurt per-
+formance, and in fact seems to be helpful. We hypotheisze
+that noise may be acting as a form of regularization, but this
+requires further investigation. In the supplemental material
+we include a ﬁgure exploring using the metric approximant
+for aggregating states in the continuous MDP setting with
+promising results.
+
+Atari 2600
+
+To evaluate the performance of our learning algorithm on
+an existing large problem, we take a set of reinforcement
+learning (RL) agents trained on three Atari 2600 games from
+the Arcade Learning Environment (Bellemare et al. 2013).
+The RL agents were obtained from the set of trained agents
+provided with the Dopamine library (Castro et al. 2018).
+Because our methods are designed for deterministic MDPs,
+we only used those trained without sticky actions4 (Machado
+et al. 2018) (evaluated in Section 4.3 in (Castro et al. 2018));
+the trained checkpoints were provided for only three games:
+Space Invaders, Pong, and Asterix. We used the Rainbow
+
+4Sticky actions add stochasticity to action outcomes.
+
+Figure 4: GridWorld and its (x, y) representation. Black den-
+sities illustrate the sampled states when adding noise.
+
+parameter that begins at 0 and is incremented towards 1 every
+C iterations. Its purpose is to gradually “grow” the effective
+horizon of the bisimulation backup and maximization. This
+is helpful since the approximant ψθ can have some variance
+initially, depending on how θ is initialized. Further, Jiang
+et al. (2015) demonstrate that using shorter horizons dur-
+ing planning can often be better than using the true horizon,
+especially when using a model estimated from data. Note
+that, in general, the approximant ψ is not guaranteed to be a
+proper pseudometric. A lengthier discussion, including the
+derivation of these matrices, is provided in the supplemental
+material.
+
+Empirical evaluation
+
+In this section we provide empirical evidence for the effec-
+tiveness of our bisimulation approximants3 . We begin with
+a simple 31-state GridWorld, on which we can compute the
+bisimulation metric exactly, and use a “noisy” representation
+which yields a continuous-state MDP. Having the exact met-
+ric for the 31-state MDP allows us to quantitatively measure
+the quality of our learned approximant.
+We then learn a π -bisimulation approximant over poli-
+cies generated by reinforcement learning agents trained on
+Atari 2600 games. In the supplemental material we provide
+an extensive discussion of the hyperparameter search we
+performed to ﬁnd the settings used for both experiments.
+Training was done on a Tesla P100 GPU.
+
+GridWorld
+
+We ﬁrst evaluate our learning algorithms on the 31-state
+GridWorld environment illustrated in Figure 4. There are 4
+actions (up, down, left, right) with deterministic transitions,
+and where an action driving the agent towards a wall keeps
+the agent in the same cell. There is a single reward of +1.0
+received upon entering either of the green cells, and a reward
+of −1.0 for taking an action towards a wall. We display the
+
+3Code available at https://github.com/google-research/google-
+research/tree/master/bisimulation aaai2020
+
+012345102345x67y(1.5, 5.5)(2.5, 3.5)(a) Absolute metric errors on the GridWorld.
+
+(b) Normalized metric errors.
+
+Figure 5: Metric errors for the learned metric on the GridWorld as training progresses.
+
+agent (Hessel et al. 2018) as it is the best performing of the
+provided Dopamine agents. We used the penultimate layer of
+the trained Rainbow agent as the representation φ.
+
+ψπ
+
+To approximate the on-policy bisimulation metric dπ∼ we
+loaded a trained agent and ran it in evaluation mode for each
+respective game, ﬁlling up the replay buffer while doing so.
+Once 10,000 transitions have been stored in the replay buffer,
+we begin sampling mini-batches and update our approximant
+θ using the target and loss deﬁned previously. (note that we
+still continue populating our replay buffer). We ran our ex-
+periments using a network of two hidden layers of dimension
+16, with γ = 0.99, C = 500, b = 128, and increased the
+β term from 0 to 1 by a factor of 0.99 every time the target
+network was updated. We used the Adam optimizer (Kingma
+and Ba 2015) with a learning rate of 7.5e−5 (except for Pong
+where we found 0.001 yielded better results). We trained the
+networks for around 600K steps, although in practice we
+found that about half that many steps were needed to reach
+a stable approximant. The conﬁguration ﬁle specifying the
+full hyperparameter settings as well as the learning curves
+are provided in the supplemental.
+
+ψπ
+
+After
+training we
+evaluated
+our
+approximant
+θ ([φ(s), φ(t)]) by ﬁxing s to be the ﬁrst state in the
+game and varying t throughout the episode; that is, we
+evaluate how similar the other states of the game are to
+the initial state w.r.t. our metric approximant. In Figure 6
+we display the ﬁrst 500 steps of one evaluation run on
+Space Invaders; as can be seen, the learned metric captures
+more meaningful differences between frames (start of
+episodes, enemy alien destroyed) that go beyond simple
+pixel differences. Interestingly, when sorting the frames
+by distance, the frames furthest away from s are typically
+those where the agent is about to be killed. It is worth
+noting that the way states are encoded in Dopamine is by
+stacking the last four frames; in our visualization we are
+only displaying the top frame in this stack. We observed
+similar results for Asterix and Pong; we include these and
+more extensive results, as well as videos for the three games,
+in the supplemental material.
+
+Related work
+
+There are a number of different notions of state similarity
+that have been studied over the years. Li, Walsh, and Littman
+(2006) provide a uniﬁed characterization and analysis of
+many of them. MDP-homomorphisms (Ravindran and Barto
+2003) do not require behavioral equivalence under the same
+action labels, and this idea was extended to a metric by Taylor,
+Precup, and Panagaden (2009).
+Ferns et al. (2006) introduced a sampling-based approxima-
+tion to d∼ which exchanges the computation of the Wasser-
+stein with an instance of the assignment problem from net-
+work optimization; although Castro (2011) derived a PAC-
+bound for this approximant, the number of samples required
+is still prohibitive. Bacci et al. (2013a) exploit the underlying
+structure in S to compute d∼ .
+Although there has been some work in concurrency theory
+to approximate large systems via ‘polynomially accurate’
+simulations (Segala and Turrini 2007), they make no use of
+function approximators in the form of neural networks. We
+believe our use of neural networks may grant our approach
+greater generalizability.
+Deterministic on-policy systems can be reduced to a graph.
+As such, our notion of π -bisimulation metrics bears a close
+relationship to graph similarity measures (Zager and Vergh-
+ese 2008). However, graph similarity notions compare two
+full systems (graphs), as opposed to two nodes within a single
+graph, as we evaluate here. Nonetheless, the relationship war-
+rants further investigation, which we leave for future work.
+Perhaps most related to our sampling method is the on-
+the-ﬂy methods introduced by Comanici, Panangaden, and
+Precup (2012). The authors replace the use of standard dy-
+namic programming in their computation with something
+akin to asynchronous dynamic programming (Sutton and
+Barto 1998), where not all state-pairs are updated at each
+iteration, but rather S is split into disjoint sets that are up-
+dated at different intervals. A few strategies for sampling
+state-pairs are discussed, of which the most similar to ours is
+the “uniform asynchronous update”.
+Gelada et al. (2019) introduced DeepMDP latent models
+and established a close relationship with bisimulation metrics
+(speciﬁcally, Theorem 4 in their paper). Although closely re-
+lated, there are some important differences. Their work deals
+
+0500100015002000Step20406080100120140160Absolute metric errorsAbsolute metric errorsWith noiseWithout noise0500100015002000Step10-310-210-1Normalized metric errorsNormalized metric errorsWith noiseWithout noiseFigure 6: Evaluating the approximant to dπ∼ with an eval run on Space Invaders. We plot the distance between the source state s
+(pictured in the bottom left) and every other state, highlighting the relatively low distances in game or level starts (green shading
+pointing to left and right side of the plot), as well as the peaks occuring when an enemy alien is destroyed (blue shading pointing
+to the distance peaks). On the bottom right we display the distribution of distances and the four furthest states for this run.
+
+with state representations, where the distance between states
+is their distance in the representation space; by contrast, our
+proposed neural networks approximate the bisimulation met-
+ric between two states, independent of their representation.
+Further, the authors use the DeepMDP losses as an auxil-
+iary task without a guarantee that their representations are
+consistent with their theoretical results. In our work we are
+able to show that our approximant is valid both quantitatively
+(GridWorld) and qualitatively (Atari 2600). Nonetheless, a
+natural extension of our work is to use the bisimulation losses
+we introduced as a means to learn better representations.
+
+Conclusion
+
+We introduced new methods for computing and approximat-
+ing bisimulation metrics in large deterministic MDPs. The
+ﬁrst is an exact method that converges to the true metric
+asymptotically, and the second is a differentiable method for
+approximating the metric which we demonstrated can learn
+a good approximant even in continuous state spaces. Since
+their introduction, bisimulation metrics have been used for
+theoretical analysis or in MDPs of small-to-moderate size,
+but they have scarcely been used in larger problems. Our
+results open the doors for their application in systems with a
+large, and even continuous, state space.
+One important avenue for research is to extend these results
+to stochastic systems. Computing the Wasserstein metric
+without access to a generative model is challenging for deep
+RL environments, as the next-state samples typically come
+from single trajectories in replay buffers. One possibility is to
+build a model of the transition dynamics from the transitions
+in the replay buffer and compute the Wasserstein metrics
+from this estimate.
+Although the network architecture and hyperparameters
+used to train dπ∼ are by no means optimal, the results we
+presented for the Atari 2600 domain are very promising and
+
+suggest that bisimulation metrics can be used effectively for
+deep reinforcement learning. Some promising areas we are
+currently exploring are using bisimulation metrics as an aux-
+iliary task for improved state representation, as a mechanism
+for compressing replay buffers, and as a tool for more efﬁ-
+cient exploration.
+
+Acknowledgements
+
+The author would like to thank Marc G. Bellemare, Gheorghe
+Comanici, Marlos C. Machado, Doina Precup, Carles Gelada,
+as well as the rest of the Google Brain team in Montreal
+for helpful discussions. The author would also like to thank
+the anonymous reviewers for their useful feedback while
+reviewing this work.
+
+References
+
+[2015] Abadi, M.; Agarwal, A.; Barham, P.; Brevdo, E.; Chen,
+Z.; Citro, C.; Corrado, G. S.; Davis, A.; Dean, J.; Devin, M.;
+Ghemawat, S.; Goodfellow, I.; Harp, A.; Irving, G.; Isard, M.;
+Jia, Y.; Jozefowicz, R.; Kaiser, L.; Kudlur, M.; Levenberg,
+J.; Man ´e, D.; Monga, R.; Moore, S.; Murray, D.; Olah, C.;
+Schuster, M.; Shlens, J.; Steiner, B.; Sutskever, I.; Talwar,
+K.; Tucker, P.; Vanhoucke, V.; Vasudevan, V.; Vi ´egas, F.;
+Vinyals, O.; Warden, P.; Wattenberg, M.; Wicke, M.; Yu, Y.;
+and Zheng, X. 2015. TensorFlow: Large-scale machine
+learning on heterogeneous systems.
+[2013a] Bacci, G.; Bacci, G.; Larsen, K. G.; and Mardare, R.
+2013a. Computing Behavioral Distances, Compositionally.
+In Mathematical Foundations of Computer Science 2013.
+[2013b] Bacci, G.; Bacci, G.; Larsen, K. G.; and Mardare,
+R. 2013b. On-the-Fly Exact Computation of Bisimilarity
+Distances. In Proceedings of the 19th Int. Conf. on Tools and
+Algorithms for the Construction and Analysis of Systems.
+
+Game or level startEnemy alien destroyedDistribution of distancesDistanceFrequencySource state (s)DistanceTimestepFurthest statesDistances during episode[2006] Baier, C.; Hermanns, H.; Katoen, J.; and Wolf, V. 2006.
+Bisimulation and simulation relations for markov chains. In
+Essays on Algebraic Process Calculi, number 10 in Electronic
+Notes in Theoretical Computer Science, 73–78. Elsevier.
+[2013] Bellemare, M. G.; Naddaf, Y.; Veness, J.; and Bowling,
+M. 2013. The Arcade Learning Environment: An evaluation
+platform for general agents. Jour. of AI Research 47:253–279.
+[1957] Bellman, R. 1957. Dynamic Programming. Princeton,
+NJ, USA: University Press.
+[2010] Castro, P. S., and Precup, D. 2010. Using bisimulation
+for policy transfer in MDPs. In Proceedings of the 9th Inter-
+national Conference on Autonomous Agents and Multiagent
+Systems (AAMAS-2010).
+[2018] Castro, P. S.; Moitra, S.; Gelada, C.; Kumar, S.;
+and Bellemare, M. G.
+2018.
+Dopamine: A Re-
+search Framework for Deep Reinforcement Learning
+(arxiv.org/abs/1812.06110).
+[2011] Castro, P. S. 2011. On planning, prediction and knowl-
+edge transfer in Fully and Partially Observable Markov De-
+cision Processes. Ph.D. Dissertation, McGill University.
+[2012] Chen, D.; van Breugel, F.; and Worrell, J. 2012. On
+the Complexity of Computing Probabilistic Bisimilarity. In
+Found. of Software Science and Computational Structures.
+[2012] Comanici, G.; Panangaden, P.; and Precup, D. 2012.
+On-the-Fly Algorithms for Bisimulation Metrics. In Proc. of
+the 9th Int. Conf. on Quantitative Evaluation of Systems.
+[1999] Desharnais, J.; Gupta, V.; Jagadeesan, R.; and Panan-
+gaden, P. 1999. Metrics for Labeled Markov Systems. In
+CONCUR’99 Concurrency Theory, 258–273.
+[2014] Ferns, N., and Precup, D. 2014. Bisimulation Metrics
+are Optimal Value Functions. In Proceedings of the 30th
+Conference on Uncertainty in Artiﬁcial Intelligence.
+[2006] Ferns, N.; Castro, P. S.; Precup, D.; and Panangaden,
+P. 2006. Methods for computing state similarity in Markov
+decision processes. In Proceedings of the 22nd Conference
+on Uncertainty in Artiﬁcial Intelligence, UAI ’06.
+[2004] Ferns, N.; Panangaden, P.; and Precup, D. 2004. Met-
+rics for Finite Markov Decision Processes. In Proceedings of
+the 20th Conference on Uncertainty in Artiﬁcial Intelligence.
+[2016] Ferrer Fioriti, L. M.; Hashemi, V.; Hermanns, H.; and
+Turrini, A. 2016. Deciding probabilistic automata weak
+bisimulation: Theory and practice. Form. Asp. Comput.
+28(1):109–143.
+[2019] Gelada, C.; Kumar, S.; Buckman, J.; Nachum, O.; and
+Bellemare, M. G. 2019. DeepMDP: Learning Continuous
+Latent Space Models for Representation Learning. In Pro-
+ceedings of the 36th International Conference on Machine
+Learning.
+[2003] Givan, R.; Dean, T.; and Greig, M. 2003. Equiva-
+lence notions and model minimization in Markov decision
+processes. Artiﬁcial Intelligence 147:163–223.
+[2018] Hessel, M.; Modayil, J.; van Hasselt, H.; Schaul, T.;
+Ostrovski, G.; Dabney, W.; Horgan, D.; Piot, B.; Azar, M.;
+and Silver, D. 2018. Rainbow: Combining Improvements in
+Deep Reinforcement learning. In Proceedings of the AAAI
+Conference on Artiﬁcial Intelligence.
+
+[2015] Jiang, N.; Kulesza, A.; Singh, S.; and Lewis, R. 2015.
+The Dependence of Effective Planning Horizon on Model Ac-
+curacy. In Proceedings of the 14th International Conference
+on Autonomous Agents and Multiagent Systems (AAMAS-15).
+[2007] Katoen, J.-P.; Kemna, T.; Zapreev, I.; and Jansen, D. N.
+2007. Bisimulation minimisation mostly speeds up prob-
+abilistic model checking. In Tools and Algorithms for the
+Construction and Analysis of Systems, 87–101.
+[2015] Kingma, D. P., and Ba, J. 2015. Adam: A method for
+stochastic optimization. In Proceedings of the International
+Conference on Learning Representations.
+[2006] Li, L.; Walsh, T. J.; and Littman, M. L. 2006. Towards
+a uniﬁed theory of state abstraction for mdps. In Proceedings
+of the Ninth International Symposium on Artiﬁcial Intelli-
+gence and Mathematics, 531–539.
+[2018] Machado, M. C.; Bellemare, M. G.; Talvitie, E.; Ve-
+ness, J.; Hausknecht, M.; and Bowling, M. 2018. Revisiting
+the Arcade Learning Environment: Evaluation protocols and
+open problems for general agents. Journal of AI Research.
+[2015] Mnih, V.; Kavukcuoglu, K.; Silver, D.; Rusu, A. A.;
+Veness, J.; Bellemare, M. G.; Graves, A.; Riedmiller, M.;
+Fidjeland, A. K.; Ostrovski, G.; Petersen, S.; Beattie, C.;
+Sadik, A.; Antonoglou, I.; King, H.; Kumaran, D.; Wierstra,
+D.; Legg, S.; and Hassabis, D. 2015. Human-level control
+through deep reinforcement learning. Nature.
+[1994] Puterman, M. L. 1994. Markov Decision Processes:
+Discrete Stochastic Dynamic Programming. New York, NY,
+USA: John Wiley & Sons, Inc., 1st edition.
+[2003] Ravindran, B., and Barto, A. G. 2003. Relativized
+Options: Choosing the Right Transformation. In Proceedings
+of the 20th International Conference on Machine Learning.
+[2015] Ruan, S.; Comanici, G.; Panangaden, P.; and Precup, D.
+2015. Representation discovery for mdps using bisimulation
+metrics. In AAAI Conference on Artiﬁcial Intelligence.
+[2011] Sangiorgi, D. 2011. Introduction to Bisimulation and
+Coinduction. Cambridge University Press.
+[2019] Santara, A.; Madan, R.; Ravindran, B.; and Mitra,
+P.
+2019. Extra: Transfer-guided exploration. CoRR
+abs/1906.11785.
+[2007] Segala, R., and Turrini, A. 2007. Approximated com-
+putationally bounded simulation relations for probabilistic
+automata. In Proceedings of the 20th IEEE Computer Secu-
+rity Foundations Symposium (CSF’07).
+[1998] Sutton, R. S., and Barto, A. G. 1998. Introduction to
+Reinforcement Learning. Cambridge, MA, USA: MIT Press.
+[2009] Taylor, J.; Precup, D.; and Panagaden, P. 2009. Bound-
+ing Performance Loss in Approximate MDP Homomor-
+phisms. In Advances in Neural Information Processing Sys-
+tems 21. 1649–1656.
+[2008] Villani, C. 2008. Optimal Transport. Springer-Verlag
+Berlin Heidelberg.
+[2008] Zager, L. A., and Verghese, G. C. 2008. Graph sim-
+ilarity scoring and matching. Applied Mathematics Letters
+21(1):86 – 94.
+
+Proofs of the theoretical results
+
+Theorem 2. Deﬁne F π : M → M by F π (d)(s, t) = |Rπ
+dπ∼ is a π -bisimulation metric.
+Proof. This proof mimics the proof of Theorem 4.5 from (Ferns, Panangaden, and Precup 2004) (included as Theorem 1 in this
+paper). Lemma 4.1 from that paper holds under Deﬁnition 3 by deﬁnition. We make use of the same pointwise ordering on M:
+d ≤ d(cid:48) iff d(s, t) ≤ d(cid:48) (s, t) for all s, t ∈ S , which gives us an ω -cpo with bottom ⊥, which is the everywhere-zero metric. Since
+Lemma 4.4 from (Ferns, Panangaden, and Precup 2004) (W is continuous) also applies in our deﬁnition, it only remains to show
+that F π is continuous:
+
+t ), then F π has a least ﬁxed point dπ∼ , and
+
+t | + γW1 (d)(P π
+s , P π
+
+s − Rπ
+
+(cid:71)
+
+n∈N
+
+F π (
+
+{xn})(s, t) = |Rπ
+
+(cid:32) (cid:71)
+
+(cid:33)
+
+n∈N
+
+{xn}
+
+s − Rπ
+= |Rπ
+s − Rπ
+(|Rπ
+s − Rπ
+
+t | + γW
+(P π
+s , P π
+t )
+t | + γ sup
+W (xn )(P π
+s , P π
+t | + γW (xn )(P π
+s , P π
+t ))
+{F π (xn )(s, t)}
+
+= sup
+
+= sup
+
+n∈N
+
+n∈N
+
+(cid:33)
+
+=
+
+{F π (xn )}
+
+(s, t)
+
+t ) by continuity of W
+
+n∈N
+
+(cid:32) (cid:71)
+
+n∈N
+
+(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)Rπ
+
+The rest of the proof follows in the same way as in (Ferns, Panangaden, and Precup 2004).
+Theorem 3. Given any two states s, t ∈ S in an MDP M, |V π (s) − V π (t)| ≤ dπ∼ (s, t).
+s(cid:48)∈S P π
+0 ≡ 0 and our update
+Proof. We will use the standard value function update: V π
+operator from Theorem 2: dπ
+0 ≡ 0, and prove this by induction, showing that for all n ∈ N and
+0 (s, t) = 0, so assume true up to n.
+
+s + γ (cid:80)
+n (s) = Rπ
+n (s, t) = F π (dπ
+n−1 )(s, t) with dπ
+s, t ∈ S , |V π
+n (s) − V π
+n (t)| ≤ dπ
+n (s, t).
+0 (s, t) ≤ dπ
+|V π
+n+1 (s) − V π
+n+1 (t)| =
+
+The base case holds vacuously: 0 = V π
+
+s (s(cid:48) )V π
+n−1 (s(cid:48) ) with V π
+
+s (s(cid:48) )V π
+n (s(cid:48) ) −
+
+t (s(cid:48) )V π
+n (s(cid:48) )
+
+(cid:88)
+
+(cid:88)
+
+(cid:32)
+
+s + γ
+
+t + γ
+
+Rπ
+
+P π
+
+P π
+
+(cid:33)(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)
+
+s(cid:48)∈S
+
+(cid:88)
+
+(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)γ
+
+s(cid:48)∈S
+
+(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)
+
+s(cid:48)∈S
+
+≤ |Rπ
+s − Rπ
+≤ |Rπ
+s − Rπ
+= |Rπ
+s − Rπ
+
+t | +
+n (s(cid:48) )(P π
+s (s(cid:48) ) − P π
+t (s(cid:48) ))
+V π
+t | + |γW (dπ
+n )(P π
+s , P π
+t )|
+t | + γW (dπ
+n )(P π
+s , P π
+= F π (dπ
+t )
+n )(s, t)
+= dπ
+n+1 (s, t)
+
+since W (dπ
+n ) is a metric
+
+where the second inequality follows from noticing that, by induction, for all s, t ∈ S , V π
+V π is a feasible solution to the primal LP objective of W (dπ
+t ) (see Equation 1).
+Lemma 1. Given a deterministic MDP M, for any two states s, t ∈ S , action a ∈ A, and pseudometric d ∈ M,
+
+n (t) ≤ dn (s, t), which means
+
+n (s) − V π
+
+n )(P π
+s , P π
+
+W1 (d)(P (s, a), P (t, a)) = d(N (s, a), N (t, a)).
+
+Proof. The primal LP deﬁned in Equation 1 can be expressed in its dual form (which, incidentally, is a minimum-cost ﬂow
+problem):
+
+(cid:88)
+
+min
+
+λ
+
+s(cid:48) ,t(cid:48)∈S
+
+s.t. ∀s(cid:48) ∈ S ,
+
+∀t(cid:48) ∈ S ,
+
+λ ≥ 0
+
+(cid:88)
+(cid:88)
+
+t(cid:48)
+
+s(cid:48)
+
+λs(cid:48) ,t(cid:48) d(s(cid:48) , t(cid:48) )
+
+λs(cid:48) ,t(cid:48) = P (s, a)(s(cid:48) )
+
+λs(cid:48) ,t(cid:48) = P (t, a)(t(cid:48) )
+
+By the deterministic assumption it follows that λs(cid:48) ,t(cid:48) = 0 whenever s(cid:48) (cid:54)= N (s, a) or t(cid:48) (cid:54)= N (t, a) (since otherwise one of the
+ﬁrst two constraints will be violated). This means that only λN (s,a),N (t,a) is positive. By the equality constraints it then follows
+that λN (s,a),N (t,a) = 1, resulting in d(N (s, a), N (t, a)) as the minimal objective value.
+Lemma 2. (Maximizing action) If d0 ≡ 0 and subsequent dn are udpated as in Equation 3, then for all s, t ∈ S and δ ∈ R
+there exists an n < ∞ and a ∈ A such that
+
+P r(dn (s, t) = |R(s, a) − R(t, a)| + γ dn−1 (N (s, a), N (t, a))) > 1 − δ .
+
+ln(1−D(τs,t,a )) .
+ln δ
+
+Proof. Since we start at d0 ≡ 0, the result will hold as long as we can guarantee that τs,t,a for some a ∈ A will be sampled at
+least once. By assumption D(τs,t,a ) > 0, which means that the probability that τs,t,a is not sampled by step n is (1 − D(τs,t,a ))n .
+We obtain our result by taking n >
+Lemma 3. (Monotonicity) If d0 ≡ 0 and subsequent dn are udpated as in Equation 3, then dn ≤ d∼ for all n ∈ N.
+Proof. Obviously dn−1 ≤ dn for all n. We will show by induction that dn ≤ d∼ for all n. The base case d0 ≡ 0 ≤ d∼ follows
+by deﬁnition, so assume true up to n and consider any s, t ∈ S , where n is large enough so that we have a high likelihood of
+sampling τs,t,a for some a ∈ A (from Lemma 2). First note that this implies that for all n(cid:48) > n there exists an a∗
+n(cid:48) ∈ A such that
+Deﬁne a∗
+
+dn(cid:48) (s, t) = |R(s, a∗
+n(cid:48) ) − R(t, a∗
+n(cid:48) )| + γ dn(cid:48)−1 (N (s, a∗
+n(cid:48) ), N (t, a∗
+∼ = arg maxa∈A (|R(s, a) − R(t, a)| + γ d∼ (N (s, a), N (t, a))). We then have:
+n(cid:48) )).
+d∼ (s, t) = |R(s, a∗
+∼ ) − R(t, a∗
+∼ )| + γ d∼ (N (s, a∗
+∼ ), N (t, a∗
+∼ ))
+n ) − R(t, a∗
+n )| + γ d∼ (N (s, a∗
+n ), N (t, a∗
+n ))
+n ) − R(t, a∗
+n )| + γ dn (N (s, a∗
+n ), N (t, a∗
+n ))
+= dn+1 (s, t)
+
+≥ |R(s, a∗
+≥ |R(s, a∗
+
+where the second line follows from the fact that a∗
+∼ is the action that maximizes the bisimulation distance, and the third line
+follows from the inductive hypothesis.
+Theorem 4. If dn is updated as in Equation 3 and d0 ≡ 0, limn→∞ dn = d∼ almost surely.
+Proof. To prove this we will look at the difference
+
+(cid:16)
+
+(cid:17)
+
+(cid:107)d∼ − dn(cid:107)∞ = maxs,t∈S |d∼ (s, t) − dn (s, t)|. For any δ ∈ R deﬁne n∗ = maxs,t∈S ,a∈A
+
+let s, t be the state-pair that maximizes (cid:107)d∼ − dn(cid:107)∞ at time n.
+
+ln(1−D(τs,t,a ))
+ln δ
+
+. For some n > n∗ ,
+
+(cid:107)d∼ − dn (cid:107)∞ =|d∼ (s, t) − dn (s, t)|
+= d∼ (s, t) − dn (s, t)
+= |R(s, a
+∼ ) − R(t, a
+∼ )| + γ d∼ (N (s, a
+∼ ), N (t, a
+(|R(s, a
+n ) − R(t, a
+n )| + γ dn−1 (N (s, a
+n ), N (t, a
+n )))
+≤ |R(s, a
+∼ ) − R(t, a
+∼ )| + γ d∼ (N (s, a
+∼ ), N (t, a
+∼ ))
+− (|R(s, a
+∼ ) − R(t, a
+∼ )| + γ dn−1 (N (s, a
+∼ ), N (t, a
+∼ )))
+= γ (d∼ (N (s, a
+∼ ), N (t, a
+∼ )) − dn−1 (N (s, a
+∼ ), N (t, a
+∼ )))
+
+by Lemma 3
+∗
+
+∼ ))−
+∗
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+
+∗
+≤ γ (cid:107)d∼ − dn−1 (cid:107)∞
+
+w.p. at least 1 − δ by Lemma 2
+
+Where the ﬁrst inequality follows from the fact that a∗
+{(cid:107)d∼ − dn(cid:107)∞ } is a contraction. By the Banach ﬁxed-point theorem, the result follows.
+n is the action that maximizes dn (s, t). Thus we have that the sequence
+We note that the last two results are related to Lemma 3 and Theorem 2 by (Comanici, Panangaden, and Precup 2012), but
+there are some important differences worth highlighting, notably in their use of the approximate update function ˆhk , which is not
+required in our method. Indeed, Lemma 3 in (Comanici, Panangaden, and Precup 2012) is more a statement on what’s required
+of ˆhk to guarantee hk ≤ d∗ for all k ; speciﬁcally, that in order for hk ≤ d∗ , it is required that ˆhk ≤ d∗ for all k (cid:48) ≤ k . In contrast,
+on Lemma 2 to guarantee that we can rewrite dn as an F update for a sufﬁciently large n. Note that this is rather different than
+our Lemma 3 does not need this requirement as we make no use of an approximate udpate. Further, our proof of Lemma 3 relies
+the use of a similar idea with ν (k) by (Comanici, Panangaden, and Precup 2012), as they use it in their proof of Lemma 4, which
+lower-bounds hkm with F m (0).
+Although the statements of both Theorem 2 by (Comanici, Panangaden, and Precup 2012) and our Theorem 4 are similar
+(both methods converge to the true metric), the approach we take is quite different. (Comanici, Panangaden, and Precup 2012)
+construct their update via a partition of the state space into 3 sets (αk , βk , δk ) at each step. The proper handling of these 3 sets,
+and in particular of δk , makes the proof of Lemma 4 rather involved, which the authors require to obtain the lower-bound which
+is then used for the proof of Theorem 2. This extra complication is somewhat unfortunate, as the authors do not use δk sets in any
+
+of their empirical evaluations, nor do they provide any indication as to what a good choice of the approximate update function ˆhk
+would be.
+In contrast, the proof of our Theorem 4 requires only Lemma 2 and Lemma 3. We believe our proof is much simpler to follow
+and makes use of fewer techniques.
+
+Mini-batch target and loss
+
+We specify a set of matrix operations for computing them on a batch of transitions. This allows us to efﬁciently train this
+approximant using specialized hardware like GPUs. The discussion in this section is speciﬁc to approximating d∼ , but it is
+straightforward to adapt it to approximating dπ∼ . We provide code for both approximants in the supplemental material with
+their implementation in TensorFlow (Abadi et al. 2015), as well as implementations of the algorithms discussed in the previous
+section.
+At each step we assume access to a batch of b samples of states, actions, rewards, and next states:
+
+Letting [X, Y ] stand for the concatenation of two vectors X and Y , from S we construct a new square matrix of dimension
+b × b as follows:
+
+φ(s1 )
+φ(s2 )
+φ(sb )
+
+· · ·
+
+S =
+
+S2 =
+
+
+
+· · ·
+
+a2· · ·
+
+ a1
+
+ , A =
+
+ , R =
+
+ , N =
+
+R(s1 , a1 )
+φ(N (s1 , a1 ))
+R(s2 , a2 )
+φ(N (s2 , a2 ))
+ab
+R(sb , ab )
+φ(N (sb , ab ))
+[φ(s1 ), φ(s1 )], [φ(s1 ), φ(s2 )], · · · , [φ(s1 ), φ(sb )]
+[φ(s2 ), φ(s1 )], [φ(s2 ), φ(s2 )], · · · , [φ(s2 ), φ(sb )]
+[φ(sb ), φ(s1 )], [φ(sb ), φ(s2 )], · · · , [φ(sb ), φ(sb )]
+
+
+
+· · ·
+
+· · ·
+
+Each element in this matrix is a vector of dimension 2k . We reshape this matrix to be a “single-column” tensor of length b2 .
+We can perform a similar exercise on the reward and next-state batches:
+
+[φ(N (s1 , a1 )), φ(N (s1 , a1 ))],
+[φ(N (s1 , a1 )), φ(N (s2 , a2 ))],
+
+· · · ,
+
+[φ(N (sb , ab )), φ(N (sb−1 , ab−1 ))]
+[φ(N (sb , ab )), φ(N (sb , ab ))]
+
+
+
+
+
+R2 =
+
+· · · ,
+
+|R(s1 , a1 ) − R(s1 , a1 )|(= 0)
+|R(s1 , a1 ) − R(s2 , a2 )|
+|R(s1 , a1 ) − R(sb , ab )|
+|R(s2 , a2 ) − R(s1 , a1 )|
+|R(sb , ab ) − R(sb−1 , ab−1 )|
+|R(sb , ab ) − R(sb , ab )|(= 0)
+
+· · ·
+
+
+
+ N2 =
+
+
+
+
+W =
+
+a1 == a1
+a1 == a2
+
+· · ·
+
+ab == ab−1
+ab == ab
+
+Finally, we deﬁne a mask which enforces that we only consider pairs of samples that have matching actions:
+
+In batch-form, the target deﬁned above becomes:
+
+T = (1 − I) ∗ max
+
+(cid:16)
+
+R2 + γβψθ
+
+−
+
+i
+
+(N2 ),
+
+βψθ
+
+−
+
+i
+
+(cid:17)
+
+(S2 )
+
+(4)
+
+where ψ(X) indicates applying ψ to a matrix X elementwise. We multiply by (1 − I) to zero out the diagonals, since those
+represent approximations to d∼ (s, s) ≡ 0. The parameter β is a stability parameter that begins at 0 and is incremented every
+C iterations. Its purpose is to gradually “grow” the effective horizon of the bisimulation backup and maximization. This is
+necessary since the approximant ψθ can have some variance initially, depending on how θ is initialized. Further, (Jiang et al.
+2015) demonstrate that using shorter horizons during planning can often be better than using the true horizon, especially when
+using a model estimated from data.
+Finally, our loss Li at iteration i is deﬁned as Li (θi ) = ED
+, where ⊗ stands for the Hadamard
+product. Note that, in general, the approximant ψ is not a metric: it can violate the identity of indiscernibles, symmetry, and
+subadditivity conditions.
+
+W ⊗ (cid:0)ψθi (S2 ) − T(cid:1)2 (cid:105)
+
+(cid:104)
+
+Bisimulation distances between all states in the GridWorld
+
+In Figure 7 we display the bisimulation distances from all states in the GridWorld MDP illustrated in Figure 4 in the main paper.
+These were computed using the sampling approach of section 5. Note how d∼ is able to capture similarities that go beyond
+simple physical proximity. This is most evident when examining the distance from the “hallway” state to all other states: even
+though it neighbours the bottom row in the top room, that row is furthest according to d∼ .
+
+Figure 7: Bisimulation distances from all states.
+
+0.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.0000.9440.9520.9600.9680.9760.9840.9921.000The following conﬁguration ﬁle describes the hyperparameters used in subsection 7.1.
+
+Conﬁguration ﬁle for GridWorld
+
+1 GridWorld.gamma = 0.99
+2 GridWorld.batch_size = 256
+3 GridWorld.representation_dimension = 729
+4 GridWorld.num_iterations = 240000
+5 GridWorld.target_update_period = 500
+6 GridWorld.starting_learning_rate = 0.01
+7 GridWorld.use_decayed_learning_rate = False
+8 GridWorld.learning_rate_decay = 0.9
+9 GridWorld.epsilon = 1e-8
+10 GridWorld.staircase = False
+11 GridWorld.add_noise = True
+12 GridWorld.bisim_horizon_discount = 0.9
+13 GridWorld.double_period_halfway = False
+14 GridWorld.debug = False
+
+Aggregating states
+
+In Figure 8 we explore aggregating a set of states sampled from the continuous variant of the 31-state MDP. We sampled 100
+independent samples for each underlying cell, computed the distances between each pair of sampled states, and then aggregated
+them by incrementally growing “clusters” of states while ensuring that all states in a cluster are within a certain distance of each
+other. As can be seen, our learned distance is able to capture many of the symmetries present in the environment: the orange
+cluster tends to gather near-goal states, the dark-brown and dark-blue clusters seems to gather states further away from goals,
+while the bright red states properly capture the unique “hallway” cell. This experiment highlights the potential for successfully
+approximating bisimulation metrics in continuous state MDPs, which can render continuous environments more manageable.
+
+Figure 8: Aggregating samples drawn from a continuous MDP using the learned bisimulation metric approximant.
+
+The code for the clustering is displayed below:
+
+1 import matplotlib.pyplot as plt
+2 from matplotlib import cm
+3 from matplotlib.colors import ListedColormap, LinearSegmentedColormap, BoundaryNorm
+4 import numpy as np
+
+5
+
+6 clusters = []
+7 threshold = 0.86
+8 for i in range(len(normalized_distances)):
+present = False
+include = False
+for c in clusters:
+if np.any(np.isin(i, c)):
+present = True
+break
+present = True
+for j in c[0]:
+if normalized_distances[j, i] >= threshold:
+present = False
+break
+if present:
+np.append(c, i)
+break
+if present:
+continue
+indices = np.nonzero(normalized_distances[i] < threshold)
+clusters.append(indices)
+
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+
+31
+32
+33
+
+28 labels = np.zeros(len(normalized_distances))
+29 label = 0
+30 for c in clusters:
+for i in c[0]:
+labels[i] = label
+label += 1
+34 cmap = plt.cm.jet
+35 cmaplist = [cmap(i) for i in range(cmap.N)]
+36 cmap = cmap.from_list(’Custom cmap’, cmaplist, cmap.N)
+37 bounds = np.linspace(0,label, label+1)
+38 norm = BoundaryNorm(bounds, cmap.N)
+39 fig, ax = plt.subplots(figsize=(16, 16))
+40 ax.patch.set_facecolor(’white’)
+41 ax.grid(color=’black’)
+42 plt.scatter(sampled_distances[’samples’][:, 1],
+sampled_distances[’samples’][:, 0],
+c=labels, cmap=cmap, norm=norm)
+45 plt.xlim(0, 7)
+46 plt.ylim(0, 9)
+47 plt.colorbar()
+
+43
+44
+
+Distance plots for all games
+
+For each game we display four panels:
+• Bottom left: Source frame (state s)
+• Bottom right: Closest frame so far
+• Top left: Current frame (state t)
+• Top right: Plot of distances from source frame to every other frame (ψπ
+function, according to the trained Rainbow network (| ˆV π (φ(s)) − ˆV π (φ(t))|, in blue)
+θ ([φ(s), φ(t)]), in black) and the difference in value
+
+To pick the hyperparameters, we did a sweep over the following values, performing 3 independent runs for each setting. We
+picked a setting which gave the best overall performance across all games (ﬁnal values speciﬁed in the rainbow.g in ﬁle provided
+with the source code, except for Pong where we used a learning rate of 0.001, as speciﬁed in the paper):
+
+• Learning rates: [0.00005, 0.000075, 0.0001, 0.00025, 0.0005, 0.00075, 0.001]
+• Batch size: [4, 8, 16, 32, 64, 128]
+• Target update period: [10, 50, 100, 250, 500, 1000, 2000]
+
+• Number of hidden layers: [1, 2, 3]
+• Number of hidden units per layer: [16, 32, 64, 128]
+
+Figure 9: Space Invaders: evaluation at frame 500.
+
+Figure 10: Pong: evaluation at frame 500, peaks are when the agent scores.
+
+We provide the training curves for the bisimulation metric dπ∼ learned on the trained reinforcement learning agents.
+
+Training curves for dπ∼
+
+Lax bisimulation metrics
+
+For completeness, in this section we include the main deﬁnitions and theoretical results of lax-bisimulation metrics introduced in
+(Taylor, Precup, and Panagaden 2009), modiﬁed to match the notation used in this paper.
+Deﬁnition 5. A relation E ⊆ S × S is a lax (probabilistic) bisimulation relation if whenever (s, t) ∈ E we have that:
+1. ∀a ∈ A∃b ∈ A such that R(s, a) = R(t, b)
+
+where P (x, y)(c) = (cid:80)
+2. ∀a ∈ A∃b ∈ A. ∀c ∈ SE .P (s, a)(c) = P (t, b)(c),
+z∈c P (x, y)(z ),
+
+The lax bisimulation ∼lax is the union of all lax bisimulation relations.
+Deﬁnition 6. Given a 1-bounded pseudometric d ∈ M, the metric δ(d) : S × A → [0, 1] is deﬁned as follows:
+
+δ(d)((s, a), (t, b)) = |R(s, a) − R(t, b)| + γW (d)(P (s, a), P (t, b))
+
+Deﬁnition 7. Given a ﬁnite 1-bounded metric space (M, d) let C (M) be the set of compact spaces (e.g. closed and bounded in
+R). The Hausdorff metric H (d) : C (M) × C (M) → [0, 1] is deﬁned as:
+
+(cid:18)
+
+(cid:19)
+
+Deﬁnition 8. Denote Xs = {(s, a)|a ∈ A}. We deﬁne the operator F : M → M as:
+
+H (d)(X, Y ) = max
+
+sup
+
+x∈X
+
+inf
+
+y∈Y
+
+d(x, y), sup
+
+y∈Y
+
+inf
+
+x∈X
+
+d(x, y)
+
+Theorem 5. F is monotonic and has a least ﬁxed point dlax in which dlax (s, t) = 0 iff s ∼lax t.
+
+Theorem 6. |V ∗ (s) − V ∗ (t)| ≤ dlax (s, t) ≤ d∼ (s, t).
+
+F (d)(s, t) = H (δ(d))(Xs , Xt )
+
+Figure 11: Asterix: evaluation at frame 500. Plateaus are when the agent is not moving.
+
+Figure 12: Training curves for Space Invaders.
+
+Figure 13: Training curves for Asterix.
+
+Figure 14: Training curves for Pong.
+
+

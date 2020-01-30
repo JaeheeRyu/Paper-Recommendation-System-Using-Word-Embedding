@@ -1,0 +1,1809 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+2
+3
+5
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+A Cluster Ranking Model for Full Anaphora Resolution
+
+Juntao Yu, Alexandra Uma, Massimo Poesio
+
+Queen Mary University of London
+{juntao.yu, a.n.uma, m.poesio}@qmul.ac.uk
+
+Abstract
+
+Anaphora resolution (coreference) systems designed for the CON L L 2012 dataset typically cannot handle key aspects of the full anaphora
+resolution task such as the identiﬁcation of singletons and of certain types of non-referring expressions (e.g., expletives), as these aspects
+are not annotated in that corpus. However, the recently released dataset for the C RAC 2018 Shared Task can now be used for that purpose.
+In this paper, we introduce an architecture to simultaneously identify non-referring expressions (including expletives, predicative N Ps, and
+other types) and build coreference chains, including singletons. Our cluster-ranking system uses an attention mechanism to determine the
+relative importance of the mentions in the same cluster. Additional classiﬁers are used to identify singletons and non-referring markables.
+Our contributions are as follows. First all, we report the ﬁrst result on the C RAC data using system mentions; our result is 5.8% better
+than the shared task baseline system, which used gold mentions. Second, we demonstrate that the availability of singleton clusters and
+non-referring expressions can lead to substantially improved performance on non-singleton clusters as well. Third, we show that despite
+our model not being designed speciﬁcally for the CON L L data, it achieves a score equivalent to that of the state-of-the-art system by
+Kantor and Globerson (2019) on that dataset.
+Keywords: Anaphora Resolution, Cluster ranking model, Non-referring detection, Deep Neural Network
+
+1.
+
+Introduction
+
+the ONTONOT E S
+
+Anaphora resolution is
+the task of
+identifying and
+resolving
+anaphoric
+reference
+to
+discourse
+enti-
+ties (Poesio et al., 2016b).1
+It
+is an important as-
+pect
+of
+natural
+language
+processing
+and
+has
+a
+substantial
+impact
+on
+downstream applications
+such
+as
+summarization
+(Steinberger et al., 2007;
+Steinberger et al., 2016).
+Since
+the CONL L 2012
+shared task (Pradhan et al., 2012),
+corpus has been the dominant resource in research on
+anaphora resolution / coreference (Fernandes et al., 2014;
+Bj ¨orkelund and Kuhn, 2014; Martschat and Strube, 2015;
+Clark and Manning, 2015;
+Clark and Manning, 2016a;
+Clark and Manning, 2016b;
+Lee et al., 2017;
+Lee et al., 2018; Kantor and Globerson, 2019).
+But
+ONTONOT E S has a number of limitations. An often
+mentioned limitation is that singletons are not annotated
+(De Marneffe et al., 2015; Chen et al., 2018).
+A less
+discussed, but still crucial,
+limitation is that although
+some types of non-referring expressions are marked in
+ONTONOT E S, in particular predicative ones (a policeman
+in John is a policeman), other types are not, such as
+expletives, meaning that in It rained, It is not considered
+a markable. As a consequence, systems optimized for
+ONTONOT E S are only evaluated on non-singleton corefer-
+ence chains; their performance at identifying singletons,
+and distinguishing them from expletives, is not evaluated.
+But
+the decision to interpret
+it as referring or non-
+referring
+(Uryupina et al., 2016;
+Versley et al., 2008;
+Bergsma et al., 2008;
+Bergsma and Yarowsky, 2011;
+Hardmeier et al., 2015)
+is a key aspect of pronoun
+interpretation–for instance, for the purposes of machine
+translation
+(Guillou and Hardmeier, 2016)–so
+systems
+trained on ONTONOT E S have had to adopt a variety of
+workarounds.
+These limitation of ONTONOT E S have
+however been corrected in a number of corpora, including
+
+ANCORA for Spanish (Taul ´e et al., 2008), TUBA -D /Z for
+German (Telljohann et al., ), and,
+for English, ARRAU
+(Uryupina et al., 2019), which was used as dataset for the
+CRAC 2018 shared task (Poesio et al., 2018).
+The ﬁrst contribution of this paper is the development of
+a system able to perform both coreference resolution and
+identiﬁcation of non-referring markables and singletons,
+using the CRAC 2018 shared task dataset. Our model
+achieves a CONL L score of 77.9% on coreference chains,
+and an F1 score of 76.3% on non-referring expressions
+identiﬁcation. This is, to the best of our knowledge, the
+ﬁrst modern result on the CRAC data using system men-
+tions. Our CONL L score is even 5.8% higher than the base-
+line result on this dataset (Poesio et al., 2018) (72.1%), ob-
+tained using gold mentions.
+Our second contribution is a novel and competitive cluster
+ranking architecture for anaphora resolution2. Current
+coreference models can be classiﬁed either as mention
+pair models (Soon et al., 2001), in which connections are
+established between mentions, or entity mention models, in
+which mentions are directly linked to entities / coreference
+chains (Luo et al., 2004; Rahman and Ng, 2011).
+The
+mention pair models are simpler in concept and easier to
+implement, so many state-of-the-art systems are exclu-
+sively based on mention ranking (Wiseman et al., 2015;
+Clark and Manning, 2016a; Lee et al., 2017). But it has
+long been known that entity-level information is important
+for coreference (Luo et al., 2004; Poesio et al., 2016b)
+so many systems attempted to explore features beyond
+those of mention pairs
+(Bj ¨orkelund and Kuhn, 2014;
+Clark and Manning, 2015;
+Clark and Manning, 2016b;
+Lee et al., 2018;
+Kantor and Globerson, 2019;
+Joshi et al., 2019). However, those systems are usually
+much more complex than their mention ranking counter-
+part, since entity features are introduced in addition to
+their mention ranking part. Consider the Lee et al. (2018)
+
+1A simpliﬁed version of this task is also known in N L P as
+coreference resolution.
+
+2The code is available at https://github.com/juntaoy/dali-full-
+anaphora
+
+ 
+ 
+ 
+ 
+ 
+ 
+system, for instance: the full system has 9.6 million train-
+able parameters in total, which is double the number of
+the mention ranking part of the system (4.8M parameters).
+In this work, we demonstrate that it is possible to achieve
+state-of-the-art results by cluster ranking alone, i.e. by
+linking mentions directly to the entities. As a result,
+our model is less complex than the existing entity-level
+models
+(Lee et al., 2018; Kantor and Globerson, 2019)
+using similar mention representations. Our model uses
+only 4.8M trainable parameters without increasing the
+complexity of a mention ranking model. Furthermore, our
+model is fast to train; we show that a cluster ranking model
+can be signiﬁcantly sped up by training on oracle clusters3 .
+The key intuitions behind the proposed approach are (i) that
+cluster representations are crucial to the success of a cluster
+ranking system, and (ii) that a key property of these rep-
+resentations is that they should capture the fact that men-
+tions in a cluster are not equally important. In particular,
+it is well-known that the mentions introducing an entity
+are much more informative (e.g., the president of ACME,
+John Smith) whereas subsequent mentions tend to employ
+reduced forms (e.g., Mr. Smith, he) (Ariel, 1990). This
+motivates the use of cluster representations capable of pre-
+serving the greater salience of earlier mentions. Our ap-
+proach captures this mention salience by using attention
+scores for the mentions in a cluster and combines the men-
+tion representations according to their attention scores. We
+then investigate the effect of the cluster histories by includ-
+ing all the history of the clusters as candidate assignments
+to the mentions. The resulting system, besides achieving
+the new state-of-the-art on the CRAC dataset (whether in-
+cluding and excluding non-referring expressions and sin-
+gletons), achieves CONL L scores equivalent to the cur-
+rent state-of-the-art system (Kantor and Globerson, 2019)
+on CONL L data as well (in which non-referring expressions
+and singletons are not annotated).
+Our third and ﬁnal contribution is the ﬁnding that train-
+ing our system on annotations of singleton mentions and
+non-referring expressions enhance its performance on non-
+singleton coreference chains. By evaluating our system on
+the CRAC data we show that gains of up to 1.4 percentage
+points on non-singleton coreference chains can be achieved
+by training the model with additional singleton mentions
+and non-referring expressions.
+
+2. System architecture
+
+Anaphora resolution is the task of identifying the re-
+ferring mentions in a text and assigning those mentions
+to disjoint clusters such that mentions in the same
+cluster refer to the same entity. The ﬁrst subtask of
+anaphora resolution is mention detection,
+i.e., extract-
+ing candidate mentions from the document.
+Until
+recently, most coreference systems selected mentions
+prior
+to coreference resolution via heuristic methods
+often based on parse trees (Bj ¨orkelund and Kuhn, 2014;
+Clark and Manning, 2015;
+Clark and Manning, 2016a;
+Clark and Manning, 2016b;
+Wiseman et al., 2015;
+
+3The oracle clusters are created from system mention using
+gold cluster information.
+
+Algorithm 1: Cluster ranking algorithm.
+Input: ( ˆN ∗
+i , sm(i), sǫ (i), β (i))λT
+Output: CλT
+
+i=1
+
+1 m = 0; C0 = {}; sc0 = {};
+
+3
+
+2 for i : 1..λT do
+TM P ← sǫ (i);
+for j : 1..m do
+TM P ← sm (i) + sc (j ) + smc (i, j )
+
+5
+
+4
+
+6
+
+7
+
+8
+
+9
+
+10
+
+11
+
+end
+
+b ← arg max TM P;
+
+if b = ǫ then
+Ci ← Ci−1 ∪ { ˆN ∗
+i };
+sci ← sci−1 ∪ sm (i);
+
+m ← m + 1;
+
+12
+
+13
+
+else
+C b
+sci (b) ← Pm∈C b
+end
+16 end
+
+i ← Pm∈C b
+
+14
+
+15
+
+i−1∪ ˆNi
+
+ab
+i−1 (m) · ˆN ∗
+m ;
+ab
+i−1 (m) · sm (m);
+
+∪ ˆNi
+
+i−1
+
+Wiseman et al., 2016). Lee et al. (2017) ﬁrst introduced
+a neural network approach for joint mention detection
+and coreference resolution, obtaining the best performing
+system at the time. The system was further extended by
+Lee et al. (2018) and Kantor and Globerson (2019),
+the
+current state-of-the-art on the CONL L data set.
+Our model is also a joint system that predicts mentions and
+assigns them to the clusters jointly. For a given document
+D with T tokens, we deﬁne all possible spans in D as N I
+where I = T (T +1)
+, si , ei are the start and the end indices of
+Ni where 1 ≤ i ≤ I . The task for a joint system is to parti-
+tion all the spans (N ) into a sequence of clusters (Cm ) M
+such that every mention in a speciﬁc cluster Cm refers to
+the same entity. Let Ci be the partially completed clusters
+up to span Ni . The set of possible assignments for Ni is
+deﬁned as all the clusters up to the previous span (Ci−1 )
+and a special label ǫ. The ǫ is used for three situations: a
+span is not a mention, or is a non-referring expression, or is
+the ﬁrst mention of a cluster.
+
+m=1
+
+i=1
+
+2
+
+2.1. Mention Representation
+
+In this work, we use a mention representation based on
+those in (Lee et al., 2018; Kantor and Globerson, 2019).
+Our system represents a candidate span with the outputs
+of a bi-directional LSTM. The sentences of a document are
+encoded from both directions to obtain a representation for
+each token in the sentence. The bi-directional LSTM takes
+as input the concatenated embeddings ((xt )T
+t=1 ) of both
+word and character levels. For word embeddings, GloVe
+(Pennington et al., 2014) and BERT (Devlin et al., 2019)
+embeddings are used. Character embeddings are learned
+from a convolution neural networks (CNN) during training.
+The tokens are represented by concatenated outputs from
+the forward and the backward LSTMs. The token represen-
+tations (x∗
+t=1 are used together with head representations
+(h∗
+i ) to represent candidate spans (N ∗
+i ). The h∗
+i of a span is
+obtained by applying an attention over its token represen-
+
+t )T
+
+si
+
+tations ({x∗
+, ..., x∗
+ei }), where si and ei are the indices of
+the start and the end of the span respectively. Formally, we
+compute h∗
+i , N ∗
+i as follows:
+
+αt = FFNNα ([x∗
+
+t , φ(t)])
+
+ai,t =
+
+h∗
+
+i =
+
+exp(αt )
+exp(αk )
+
+Pei
+k=si
+ei
+Xt=si
+ai,t · xt
+si
+
+, x∗
+
+ei
+
+N ∗
+i = [x∗
+
+, h∗
+i , φ(i)]
+
+where φ(t), φ(i) are the cluster position and span width fea-
+ture embeddings respectively.
+To make the task computationally tractable, our model only
+considers the spans up to a maximum length of l , i.e. ei −
+si < l, (si , ei ) ∈ N . Further pruning is applied before
+feeding the candidate mentions to the coreference resolver.
+The top ranked λT spans are selected from lT candidate
+spans (λ < l) by a scoring function sm . where:
+
+sm (i) = FFNNm (N ∗
+
+i )
+
+The top λT selected spans are required not to be partially
+overlap, i.e. there is no such cases that si < sj ≤ ei < ej
+or sj < si ≤ ej < ei . The nested spans are not affected by
+this constrains since they are not partially overlap.
+
+2.2. The Cluster Ranking Model
+
+Let ( ˆNi )λT
+i=1 denote the top ranked λT candidate mentions
+selected by the mention detector after pruning. The model
+builds the clusters (Cm )M
+m=1 by visiting ˆNi in text order
+and assigning them a cluster in the case i 6= ǫ, or creating a
+new cluster if i = ǫ. Let Ci be the partial clusters consisting
+of up to ith mentions, and ci the cluster assigned to ˆNi .
+The task of our cluster ranking model is to output ˆC that
+maximises the score of the ﬁnal clusters:
+
+λT
+
+ˆC = arg max
+
+c1 ,...,cλT
+
+s(i, ci )
+
+Xi=1
+
+where s(i, j )4 is a scoring function between a mention Ni
+and a set of possible assignments j ∈ {ǫ, Cm
+
+i−1}:
+
+j = ǫ
+
+j 6= ǫ
+
+s(i, j ) = ( sǫ (i)
+sm (i) + sc (j ) + smc (i, j )
+and sǫ (i) is the probability that ˆNi does not belongs to any
+of the previous clusters Cm
+i−1 . To use a scoring function for
+ǫ instead of a constant 0 (used by Lee et al. (2018)) gives us
+the ﬂexibility to extend the function for handing more de-
+tailed types of ǫ, such as non-referring. sm (i) is the men-
+tion score that has been used to rank the candidate men-
+tions. sc (j ) is the cluster score computed from the men-
+tion scores that belongs to the cluster. smc (i, j ) is a pair-
+wise score between ith mention ˆNi and jth partial cluster
+of C j
+i−1 . To implement the cluster ranking model we use
+
+4We follow Lee et al. (2018) and use i to indicate the anaphor
+and j for the antecedent.
+
+an attention mechanism (Bahdanau et al., 2014) to assign a
+salience to each of the mentions. We compute the cluster
+score sc (j ) and the cluster representation (C j∗
+i−1 ) (for com-
+puting smc (i, j )), by mention scores/representations and
+with consideration of the mention salience. More precisely,
+we compute the scores as follows:
+
+i )
+i )
+
+sǫ (i) = FFNNǫ ( ˆN ∗
+sm (i) = FFNNm ( ˆN ∗
+β (i) = FFNNβ ([ ˆN ∗
+i , φ(iβ )])
+exp(β (m))
+exp(β (k))
+
+aj
+i−1 (m) =
+
+i−1
+
+Pk∈C j
+sci−1 (j ) = Xm∈C j
+C j∗
+i−1 = Xm∈C j
+i , C j∗
+
+(i,j) = [ ˆN ∗
+
+F ∗
+
+i−1
+
+i−1
+
+aj
+i−1 (m) · sm (m)
+
+aj
+i−1 (m) · ˆN ∗
+
+m
+
+smc (i, j ) = FFNNmc (F ∗
+
+i ◦ C j∗
+
+i−1 , φ(i, ˆj ), φ(j )]
+
+i−1 , ˆN ∗
+(i,j) )
+
+Both sc (j ) and C j∗
+i−1 are updated each time a cluster is ex-
+panded. φ(iβ ) is the position embeddings that indicates the
+position of a mention in the cluster. φ(i, ˆj ) is a small set
+of features between the ˆNi and the newest mention ˆNˆj of
+the cluster. We used the same features as Lee et al. (2018):
+these include genre, speaker (boolean, same or not) and dis-
+tance (between i and ˆj ) features. φ(j ) is cluster size, a
+common entity-level feature (Bj ¨orkelund and Kuhn, 2014).
+The size is assigned into buckets according to its value. We
+use the buckets of Bj ¨orkelund and Kuhn (2014), assigning
+the values in 8 buckets ([1,2,3,4,5-7,8-11,12-19,20+]). The
+pseudo-code of our model is shown in Algorithm 1.5 6
+
+2.3. Cluster History
+
+One of the advantages of the mention ranking model is that
+the correct cluster can be built by attaching the active men-
+tion to any of the antecedents in the correct cluster. This
+reduces the complexity of the task as there are multiple
+correct links. By contrast, in a standard cluster ranking
+model, only one correct cluster can be chosen. In order to
+make multiple links possible in our cluster ranking system,
+we extended our model by including all cluster histories
+(CH); this maximises the chance of choosing the correct
+clusters. (We make sure a mention is always attached to
+the latest version of the cluster by including an additional
+pointer linking every cluster history to the latest version of
+the cluster.) This makes the model slightly more similar to a
+
+5We also evaluated an alternative approach, in which the clus-
+ters are encoded by a LSTM. However the LSTM approach re-
+sulted in a lower accuracy than the attention approach in this eval-
+uation.
+6We do not use course-to-ﬁne pruning or higher-order infer-
+ence, unlike Lee et al. (2018) and Kantor and Globerson (2019).
+We found course-to-ﬁne pruning does not improve our model
+when compared with simpler distance pruning. As for higher-
+order inference, our system already has access to the entity-level
+information by default, hence it is not necessary.
+
+mention ranking model; however, there is still a fundamen-
+tal difference, as we use cluster representations instead of
+mention representations. We replace the line 13 and 14 of
+Algorithm 1 to get the model that includes cluster histories:
+
+b ← LAT E S T(b)
+
+Ci ← Ci−1 ∪ Xm∈C b
+
+i−1
+
+∪ ˆNi
+
+ab
+i−1 (m) · ˆN ∗
+
+m
+
+sci ← sci−1 ∪ Xm∈C b
+
+i−1∪ ˆNi
+
+m ← m + 1
+
+ab
+i−1 (m) · sm (m)
+
+where LAT E S T(b) is a function to ﬁnd the latest version of
+the cluster b.
+
+2.4.
+
+Identifying Non-Referring Expressions
+
+NR
+
+DN
+
+NO
+
+To add non-referring expressions identiﬁcation, we extend
+ǫ into multiple classes: NO for non-mention, NR for non-
+referring and DN for discourse new, including singletons
+sǫ (i) = ( sno (i)
+snr (i) + sm (i)
+sdn(i) + sm (i)
+Several non-referring types are annotated in the ARRAU
+corpus:
+in addition to expletives, there are also predica-
+tive N Ps (e.g., a policeman in John is a policeman), non-
+referring quantiﬁers (e.g.,nobody in I see nobody here )
+(Karttunen, 1976), idioms (e.g., her hand in He asked her
+for her hand), etc. As we will see, the basic NR classiﬁer
+can be extended to do a ﬁne-grained classiﬁcation of non-
+referring expressions.
+By
+distinguishing
+‘non-mentionhood’
+from non-
+anaphoricity the system naturally resolves singletons
+(i.e. the clusters with a size of one). Non-referring expres-
+sions are usually ﬁltered before building the coreference
+chains, e.g.
+in MAR S (Mitkov et al., 2002); we will call
+this PRE FILT ER ING approach.
+approach, the system removes the markables identiﬁed as
+non-referring expressions from further processing once
+they have been identiﬁed. To be more speciﬁc, we replace
+line 8 of algorithm 1 with:
+
+In the PRE FILT ER ING
+
+if b =NO or b = NR then
+Ci ← Ci−1 ; sci ← sci−1 ; m ← m;
+else if b = DN then
+
+The PRE FILT ER ING approach is aggressive, which might
+have a negative effect on results if referring expressions
+have been ﬁltered incorrectly. We also tried therefore a sec-
+ond approach: only do preﬁltering when the non-referring
+expressions classiﬁer has high conﬁdence (when the classi-
+ﬁer has a softmax score above a heuristic threshold t (0 ≤
+t ≤ 1)). The softmax score is calculated between previ-
+ous clusters and classes in ǫ (i.e. TM P in algorithm 1).
+If the score is below this threshold, non-referring expres-
+sions are identiﬁed after (postﬁltering) forming the clusters
+
+Parameter
+
+BiLSTM layers
+BiLSTM size
+BiLSTM dropout
+FFNN layers
+FFNN size
+FFNN dropout
+CNN ﬁlter widths
+CNN ﬁlter size
+Char embedding size
+GloVe embedding size
+BERT embedding size
+BERT embedding layer
+Feature embedding size
+Embedding dropout
+Max span width (l)
+Max num of clusters
+Mention/token ratio (λ)
+Optimiser
+Learning rate
+Decay rate
+Decay frequency
+Training step
+
+Value
+
+3
+200
+0.4
+2
+150
+0.2
+3,4,5
+50
+8
+300
+1024
+Last 4
+20
+0.5
+30
+250
+0.4
+Adam
+1e-3
+0.999
+100
+200K
+
+Table 1: Hyperparameters for our models.
+
+(we call this HYBR ID approach). During postﬁltering, can-
+didates that are classiﬁed as non-referring markables with
+lower conﬁdence and are not part of clusters are included
+as additional non-referring markables.
+
+2.5. Learning
+
+To train a cluster ranking model on system clusters is chal-
+lenging, as we need to ﬁnd a way to learn from the partially
+correct clusters. It is also slow, as the system processes one
+mention at a time, hence cannot beneﬁt largely from par-
+allel computing. The solution we adopted was training the
+model on oracle clusters. This is simpler and faster, since
+the clusters for one training document can be created before
+computing more heavy stuff, e.g. the cluster scores sc (j )
+and pairwise scores smc (i, j ). More precisely, we create
+the oracle clusters during the training using gold cluster
+ids; system mentions belonging to the same gold clusters
+are grouped. This is much faster than training the model
+on the system mentions directly, since training on the sys-
+tem mentions requires computing scores for each mention
+separately. In a preliminary experiment, we discovered that
+by training on oracle clusters we obtain not only a better
+CONL L score, but also a ﬁvefold speedup compared with
+the model trained on the system mentions directly.7
+As a loss function, we optimize on the marginal log-
+likelihood of all the clusters that contain mentions from the
+same gold cluster GOLD(i) of ˆNi . Formally,
+
+7We train both approaches on the CON L L data for 200K steps
+on a GTX 1080Ti GPU. It takes 16 and 80 hours to train a model
+on oracle and system mentions respectively.
+
+Models
+
+PRE FILT ER ING
+
+Singletons
+included
+
+HYBR ID
+
+FINE NR
+
+MUC
+
+P
+
+R
+
+75.5
+77.9
+76.7
+
+79.0
+78.5
+77.3
+
+F1
+
+77.2
+78.2
+77.0
+
+B3
+
+P
+
+75.9
+77.4
+76.8
+
+CEAFφ4
+
+R
+
+F1
+
+P
+
+R
+
+80.7
+80.3
+79.7
+
+78.2
+78.8
+78.2
+
+75.2
+75.4
+74.9
+
+77.3
+78.1
+78.0
+
+F1
+
+76.2
+76.8
+76.4
+
+Avg.
+F1
+
+77.2
+77.9
+77.2
+
+Lee et al. (2013)*
+
+72.1
+
+58.9
+
+64.8
+
+77.5
+
+77.1
+
+77.3
+
+64.2
+
+88.1
+
+74.3
+
+72.1
+
+PRE FILT ER ING
+
+Singletons
+excluded
+
+HYBR ID
+
+FINE NR
+
+NO NR
+
+75.5
+77.9
+76.7
+76.7
+
+79.0
+78.5
+77.3
+77.0
+
+77.2
+78.2
+77.0
+76.8
+
+67.0
+69.2
+68.0
+68.7
+
+73.0
+71.8
+70.7
+69.7
+
+69.9
+70.4
+69.3
+69.2
+
+67.1
+69.5
+66.6
+66.1
+
+65.1
+63.8
+64.2
+63.8
+
+66.1
+66.5
+65.4
+64.9
+
+71.1
+71.7
+70.6
+70.3
+
+Lee et al. (2013)*
+
+72.3
+
+58.9
+
+64.9
+
+67.9
+
+48.5
+
+56.5
+
+54.2
+
+53.0
+
+53.6
+
+58.3
+
+Table 2: The comparison between our models and the state-of-the-art system on the CRAC test set. * indicates systems
+evaluated on the gold mentions.
+
+ˆN
+
+log
+
+Yi=1 Xˆc∈Ci−1
+
+Models
+
+P
+
+R
+
+PRE FILT ER ING
+
+HYBR ID
+
+FINE NR
+
+76.6
+78.0
+77.0
+
+74.5
+72.4
+75.5
+
+F1
+
+75.5
+75.1
+76.3
+
+Table 3: The scores for non-referring expressions of our
+models on the CRAC test set.
+
+NR types
+
+P
+
+R
+
+Expletive
+Predicate
+Quantiﬁer
+Coordination
+Idiom
+
+93.8
+77.6
+65.0
+77.5
+77.0
+
+100.0
+75.2
+64.7
+82.0
+55.9
+
+F1
+
+96.8
+76.4
+64.9
+79.7
+64.8
+
+Table 4: The scores of our models on the ﬁne-grained non-
+referring types.
+
+compared this model with the other models to dealing with
+non-referring expressions by collapsing the classiﬁcations
+it produces (Table 3). As we can see from that Table, al-
+though the task is harder, using the ﬁne-grained types for
+training results in slightly better performance on identify-
+ing non-referring markables in general than models trained
+on a single NR class. In term of the performance on corefer-
+ence chains, the FINE NR approach achieved the same score
+as the PRE FILT ER ING approach and slightly lower than the
+HYBR ID approach (see Table 2).
+Training without Singletons and Non-referring
+Finally, we trained our model without singletons and non-
+referring expressions (NO NR) to assess their effects on
+non-singleton clusters (i.e.
+the standard CONL L setting).
+Since here we evaluate in a singleton excluded setting,
+we report for our models trained with singletons and non-
+referring expressions the standard CONL L scores with sin-
+gletons and non-referring markables excluded. As shown
+in Table 2, all three models trained with additional sin-
+gleton and non-referring markables achieved better CONL L
+scores when compared with the newly trained model. The
+system achieves substantial gains of up to 1.4 percentage
+points (HYBR ID) by training with the additional singletons
+and non-referring expressions. This suggests that the avail-
+ability of singletons and non-referring markables can help
+the decisions made for non-singleton clusters.
+State-of-the-art Comparison Since the CRAC corpus was
+released recently, the only published results are those by
+the baseline system (Lee et al., 2013) on the shared task
+(Poesio et al., 2018). Our best system (HYBR ID) outper-
+forms this baseline by large margins (5.8% and 13.4% when
+evaluated with or without singletons respectively) (see Ta-
+ble 2) even though that system was evaluated on gold men-
+tions.
+
+4.2. Evaluation on the CONLL data set
+
+Next, we tested our models on the CONL L data to assess
+the performance of our system on the standard data set. Ta-
+ble 5 compares our results with those of the top-performing
+systems on CONL L at the present time. We report pre-
+
+cision, recall and F1 scores for all three major metrics
+(MUC, B3 and CEAFφ4 ) and mainly focus on the average
+CONL L F1 scores presented in the last column. As showed
+in Table 5, our model achieved a CONL L score of 76.4%,
+which is only 0.2% lower than the best-reported result at
+present, achieved by (Kantor and Globerson, 2019) that use
+a similar mention representations as our system. Although
+the current state-of-the-art system (Joshi et al., 2019) has a
+slightly better result than the Kantor and Globerson (2019)
+system,
+it
+is not directly comparable with our sys-
+tem, as their system is ﬁne-tuned on BERT. Also,
+the
+Joshi et al. (2019) systems need to be trained on GPUs with
+32GB memory, which is not available to our group. By con-
+trast, our system was trained with a GTX 1080Ti GPU that
+has an 11GB memory.
+
+4.3. Discussion
+
+We further analyze our model on the CONL L data to give
+a more detailed study on different aspects of our model.
+(We use the standard CONL L data instead of the CRAC data
+because the CONL L corpus is larger than the CRAC corpus
+and is widely used. As a result, the analysis on CONL L data
+might also be beneﬁcial for other researchers focusing on
+CONL L only.)
+Mention Salience We ﬁrst assess our hypothesis that our
+attention scores can capture mention salience–i.e., the ﬁnd-
+ing from the linguistic and psychological literature on
+anaphora that the initial mentions of an entity are those tend
+to include more information (whereas the following men-
+tions are generally reduced). Table 6 shows an analysis of
+the attention scores that supports this hypothesis. We com-
+puted the average attention scores for mentions in a cluster
+in order of mention. Clusters that have different size are
+analysed separately, as scores from different-sized clusters
+are not directly comparable. As we can see from the Table,
+after analysis the attention scores assigned to the mentions
+at different positions in the cluster, we ﬁnd that the attention
+scores assigned to the ﬁrst mention in a cluster are always
+higher than others, which is in line with linguistic ﬁndings
+that mentions introducing an entity are more informative.
+This suggests that our attention model does capture some-
+thing like mention salience.
+Why Cluster Ranking? The reason why we use a clus-
+ter ranking approach instead of mention ranking is not only
+because it is linguistically more appealing, but also due to
+several practical restrictions of the mention ranking models.
+First all, the current state-of-the-art mention-ranking sys-
+tems tend to be hybrids, using entity-level features along-
+side mention-pair features. Thus, such models are usually
+more complex than pure mention ranking models, and sub-
+stantially increase the number of trainable parameters. Take
+Lee et al. (2018) system as an example. The mention rank-
+ing part of the system contains 4.8M parameters, but the
+full system has double the number of parameters (9.6M) to
+access entity-level features. Our system, on the other hand,
+links the mentions directly to the entity and uses only 4.8M
+parameters, which is much simpler than such hybrid mod-
+els. Second, we hope that using a cluster ranking model
+will allow us to explore rich cluster level features and ad-
+vanced search algorithms (such as beam search) in future
+
+Models
+
+MUC
+
+P
+
+R
+
+F1
+
+B3
+
+P
+
+CEAFφ4
+
+R
+
+F1
+
+P
+
+R
+
+F1
+
+Avg.
+F1
+
+Models use Context Independent Embeddings
+
+Clark and Manning (2016b)
+Clark and Manning (2016a)
+Lee et al. (2017)
+Zhang et al. (2018)
+
+79.9
+79.2
+78.4
+79.4
+
+69.3
+70.4
+73.4
+73.8
+
+74.2
+74.6
+75.8
+76.5
+
+71.0
+69.9
+68.6
+69.0
+
+56.5
+58.0
+61.8
+62.3
+
+63.0
+63.4
+65.0
+65.5
+
+63.8
+63.5
+62.7
+64.9
+
+54.3
+55.5
+59.0
+58.3
+
+58.7
+59.2
+60.8
+61.4
+
+65.3
+65.7
+67.2
+67.8
+
+Models use Pre-trained Context Dependent Embeddings
+
+Lee et al. (2018)
+Kantor and Globerson (2019)
+Our model
+
+81.4
+82.6
+82.7
+
+79.5
+84.1
+83.3
+
+80.4
+83.4
+83.0
+
+72.2
+73.3
+73.8
+
+69.5
+76.2
+75.6
+
+70.8
+74.7
+74.7
+
+68.2
+72.4
+72.2
+
+67.1
+71.1
+71.0
+
+67.6
+71.8
+71.6
+
+73.0
+76.6
+76.4
+
+Models Fine-tuned on BERT
+
+Joshi et al. (2019)
+
+84.7
+
+82.4
+
+83.5
+
+76.5
+
+74.0
+
+75.3
+
+74.1
+
+69.8
+
+71.9
+
+76.9
+
+Table 5: Comparison between our models and the top performing systems on the CONL L test set.
+
+Positions
+
+Size
+
+1
+
+2
+
+3
+
+4
+
+5-7
+
+2
+3
+4
+5
+6
+7
+
+0.55
+0.38
+0.29
+0.24
+0.19
+0.18
+
+0.45
+0.32
+0.24
+0.20
+0.17
+0.14
+
+0.29
+0.23
+0.19
+0.16
+0.14
+
+0.22
+0.19
+0.17
+0.14
+
+0.19
+0.15
+0.13
+
+Table 6: The average mention salience attention scores in
+the CONL L development set, grouped by mentions position
+and cluster size in the ﬁnal clusters.
+
+Avg. F1 ∆
+
+Our model
+- Position emb
+- Width emb
+- Cluster history
+- Oracle cluster
+
+76.9
+76.2
+76.5
+75.9
+76.3
+
+0.7
+0.4
+1.0
+0.6
+
+Table 7: The comparison between our best model and dif-
+ferent ablated models on CONL L development set.
+
+work.
+The Effect of Oracle Clusters on Training Time Train-
+ing cluster ranking systems using system clusters is time-
+consuming: Our model trained on system clusters takes 80
+hours to train for 200K steps, which is much more than
+the 48 hours training time of the Lee et al. (2018) system
+(400K steps). The main reason the cluster ranking system is
+slower than its mention ranking counterpart is that the clus-
+ter ranking model processes one mention at a time, hence
+does not beneﬁt from parallelization. To solve this prob-
+lem, we trained the system on oracle clusters instead. The
+oracle clusters are created by using the system mentions
+with the gold cluster ids. By doing so all the clusters can
+be created before resolving the mentions into the entities.
+As a result, the training (200K steps) can be ﬁnished in as
+
+little as 16 hours, which is 5x faster than training the model
+on system clusters, and 3x faster than training the mention
+ranking model.
+
+4.4. Ablation study
+
+We removed different part of our model to show the impor-
+tance of the individual part of our system (see Table 7).
+Position Embeddings We ﬁrst removed the position em-
+beddings, used in the self-attention to determine the relative
+importance of the mentions in the cluster. By removing the
+position embeddings, the relative importance of a mention
+becomes independent of its position in the cluster. As a
+result, the performance of the model drops by 0.7%.
+Width Embeddings We then removed the cluster width
+embeddings from our features. The cluster width embed-
+ding is a feature used in computing the pairwise scores,
+which allows mentions to known the size of individual
+candidate clusters.
+(Cluster size can be used as an indi-
+cator of the cluster salience, as the larger the size is, the
+more frequently an entity is mentioned, hence have a higher
+salience.) The cluster width feature contributes 0.4% to-
+wards our model.
+Cluster History We trained a model that keeps exactly one
+cluster per entity, and the history clusters are excluded from
+the candidate lists. This removing of history clusters re-
+duces the chance of linking the mentions to the correct en-
+tity; as a consequence, the performance drops by 1 percent-
+age point.
+Oracle Clusters Finally, we trained a model using the sys-
+tem clusters directly instead of the oracle clusters. As we
+mentioned in the previous section, training on the system
+clusters is more time consuming than training on the oracle
+clusters. And replaceing these clusters suggests that train-
+ing on the oracle clusters is not only faster, but also results
+in better performance (0.6%).
+
+5. Related Work
+
+Pure Mention Ranking Models Most
+recent coref-
+erence systems are highly reliant on mention rank-
+ing, which is effective and generally faster
+to train
+
+compared with the cluster
+ranking system.
+Sys-
+tems based only on the mention ranking model
+in-
+clude (Wiseman et al., 2015; Clark and Manning, 2016b;
+Lee et al., 2017). Wiseman et al. (2015) introduced a neu-
+ral network based approach to solve the task in a non-
+linear way.
+In their system,
+the heuristic features
+commonly used in linear models are transformed by a
+tanh function to be used as the mention representa-
+tions. Clark and Manning (2016b) integrated reinforce-
+ment learning to let the model optimize directly on the B3
+scores. Lee et al. (2017) ﬁrst presented a neural joint ap-
+proach for mention detection and coreference resolution.
+Their model does not rely on parse trees; instead, the sys-
+tem learns to detect mentions by exploring the outputs of a
+bi-directional LSTM.
+
+Models using Entity Level Features Researchers have
+been aware of
+the importance of entity level
+infor-
+mation at least since Luo et al. (2004), and many sys-
+tems
+trying to exploit cluster based features have
+been proposed since.
+Among neural network mod-
+els, Bj ¨orkelund and Kuhn (2014) built a latent tree sys-
+tem that explores non-local features through beam search.
+The global
+feature-aided model showed clear gains
+when compared with the model based only on pair-
+wise features. Clark and Manning (2015) introduced a
+entity-centric coreference system by manipulating the
+scores of a mention pair model.
+The system ﬁrst
+runs a mention pair model on the document and then
+uses an agglomerative clustering algorithm to build the
+clusters in an easy-ﬁrst
+fashion.
+This system was
+later extended by Clark and Manning (2016b) to make
+it run on neural networks. Wiseman et al. (2016) add
+to the Wiseman et al. (2015) system an LSTM to en-
+code the partial clusters.
+The outputs of the LSTM
+are used as additional features for the mention rank-
+ing model. Lee et al. (2018) is an extended version of
+Lee et al. (2017) mainly enhanced by using ELMo em-
+beddings (Peters et al., 2018), but the use of second-order
+inference enabled the system explore partial entity level
+features and further improved the system by 0.4 percent-
+age points. Later the model was further improved by
+Kantor and Globerson (2019) who use BERT embeddings
+(Devlin et al., 2019) instead of ELMo embeddings. At this
+stage, both BERT and ELMo embeddings are used in a pre-
+trained fashion. Recently, Joshi et al. (2019) ﬁne-tunes the
+BERT model for coreference task, result in again a small
+improvement.
+
+Cluster Ranking Models To the best of our knowledge,
+our system is the only recent system that does not rely on
+a mention ranking model. However, there are a number
+of early studies that laid a solid foundation for the clus-
+ter ranking models (see (Poesio et al., 2016a) for a survey).
+The best known ‘modern’ examples are the systems pro-
+posed by Luo et al. (2004) and by Rahman and Ng (2011),
+but this approach was the dominant model for anaphora res-
+olution at least until the paper by Soon et al. (2001), as it
+directly implements the linguistically and psychologically
+motivated view that anaphora resolution involves the cre-
+ation of a discourse model articulated around discourse
+entities (Karttunen, 1976). The entity mention model of
+
+Luo et al. (2004) introduced the notion that a training in-
+stance consists of a mention and an active cluster, and there-
+fore allowed for cluster-level features encoding informa-
+tion about multiple entities in the cluster. Luo et al. (2004)
+also proposed a clustering algorithm in which the cluster-
+ing options are encoded in a Bell tree that also speciﬁes the
+coreference decisions resulting in a cluster–an idea related
+to our idea of cluster history. Rahman and Ng (2011) in-
+troduced the term ‘cluster ranking’ and greatly developed
+the approach, e.g., by introducing a rich set of cluster-level
+features. Their model was the ﬁrst cluster-ranking model to
+signiﬁcantly outperform mention pair models.
+Singletons and Non-referring Expressions Again, to the
+best of our knowledge, ours is the only modern neural
+network-based, full coreference system that attempts to
+output singletons and non-referring markables. The Stan-
+ford Deterministic Coreference Resolver (Lee et al., 2013)
+uses a number of ﬁlters to exclude expletives as well as
+quasi-referring mentions such as percentages (e.g., 9%)
+and measure N Ps (e.g., a liter of milk) and its exten-
+sion proposed by De Marneffe et al. (2015) includes more
+ﬁters to exclude singletons, but these aspects of the sys-
+tem are not evaluated. The best-known systems also at-
+tempting to annotate non-referring markables date back
+to the pre-ONTONOT E S era.
+The pronoun resolution
+algorithm proposed by Lappin and Leass (1994) includes
+a series of hand-crafted heuristics to detect expletives.
+The statistical classiﬁer proposed by Evans (2001) clas-
+siﬁes pronouns in several categories which, apart from
+nominal anaphoric,
+include cataphoric, pleonastic, and
+clause-anaphoric. Versley et al. (2008) used the BBN pro-
+noun corpus to conﬁrm the hypothesis that
+tree ker-
+nels would be well-suited to identify expletive pronouns.
+Boyd et al. (2005) develop a set of hand-crafted heuris-
+tics to identify non-referring nominals in the sense of
+Karttunen (1976). The systems developed by Bergsma
+and colleagues to identify pronominal it with a classiﬁer
+using a combination of lexical features and web counts
+(Bergsma et al., 2008; Bergsma and Yarowsky, 2011). A
+lot of work on identifying expletives was carried out in
+the context of the DiscoMT evaluation campaigns, but this
+work was typically only focused on disambiguating pro-
+noun it (Lo ´aiciga et al., 2017). For more discussion of
+these and other systems, see (Uryupina et al., 2016).
+
+6. Conclusions
+
+In this work, we presented the ﬁrst neural network based
+system for full coreference resolution also covering single-
+tons and non-referring markables. Our system uses an at-
+tention mechanism to form the cluster representations us-
+ing mention salience scores from the mentions belonging
+to the cluster. By training the system on oracle clusters
+we show that a cluster ranking system can be trained 5x
+faster, and faster than a mention-ranking system with a sim-
+ilar architecture. Evaluation on the CRAC corpus shows that
+our system is 5.8% better than the only existing compara-
+ble system, the Shared Task baseline system that used the
+gold mentions. Further evaluation on the CONL L corpus
+shows our system achieves on that corpus, for the subtask
+in which singleton and non-referring expression detection
+
+are excluded, a performance equivalent to that of the state-
+of-the-art Kantor and Globerson (2019) system. We also
+demonstrated that a large improvement on non-singleton
+coreference chains can be made by training the system with
+additional singletons and non-referring expressions.
+
+7. Bibliographical References
+
+Ariel, M.
+(1990). Accessing Noun-Phrase Antecedents.
+Croom Helm Linguistics Series. Routledge.
+Bahdanau, D., Cho, K., and Bengio, Y. (2014). Neural ma-
+chine translation by jointly learning to align and trans-
+late. arXiv preprint arXiv:1409.0473.
+Bergsma, S. and Yarowsky, D. (2011). Nada: A robust sys-
+tem for non-referential pronoun detection. In Iris Hen-
+drickx, et al., editors, Anaphora Processing and Applica-
+tions, pages 12–23, Berlin, Heidelberg. Springer Berlin
+Heidelberg.
+Bergsma, S., Lin, D., and Goebel, R.
+(2008). Distri-
+butional identiﬁcation of non-referential pronouns. In
+Proceedings of ACL-08: HLT, pages 10–18, Columbus,
+Ohio, June. Association for Computational Linguistics.
+Bj ¨orkelund, A. and Kuhn, J. (2014). Learning structured
+perceptrons for coreference resolution with latent an-
+tecedents and non-local features. In Proceedings of the
+52nd Annual Meeting of the Association for Computa-
+tional Linguistics (Volume 1: Long Papers), volume 1,
+pages 47–57.
+Boyd, A., Gegg-Harrison, W., and Byron, D. (2005). Iden-
+tifying non-referential it: a machine learning approach
+incorporating linguistically motivated patterns.
+In In
+Proceedings of the ACL Workshop on Feature Selection
+for Machine Learning in NLP, pages 40–47, Ann Arbor.
+Chen, H., Fan, Z., Lu, H., Yuille, A., and Rong, S. (2018).
+Preco: A large-scale dataset in preschool vocabulary for
+coreference resolution. In Proceedings of the 2018 Con-
+ference on Empirical Methods in Natural Language Pro-
+cessing, pages 172–181, Brussels, Belgium, October-
+November. Association for Computational Linguistics.
+Clark, K. and Manning, C. D. (2015). Entity-centric coref-
+erence resolution with model stacking. In Association
+for Computational Linguistics (ACL).
+Clark, K. and Manning, C. D. (2016a). Deep reinforce-
+ment learning for mention-ranking coreference models.
+In Empirical Methods on Natural Language Processing
+(EMNLP).
+Clark, K. and Manning, C. D. (2016b). Improving corefer-
+ence resolution by learning entity-level distributed repre-
+sentations. In Association for Computational Linguistics
+(ACL).
+De Marneffe, M.-C., Recasens, M., and Potts, C. (2015).
+Modeling the lifespan of discourse entities with ap-
+plication to coreference resolution. J. Artif. Int. Res.,
+52(1):445–475, January.
+Devlin, J., Chang, M.-W., Lee, K., and Toutanova, K.
+(2019). Bert: Pre-training of deep bidirectional trans-
+formers for language understanding. In NAACL.
+Evans, R. (2001). Applying machine learning toward an
+automatic classiﬁcation of it. Literary and linguistic
+computing, 16(1):45–58.
+Fernandes, E. R., dos Santos, C. N., and Milidi ´u, R. L.
+(2014). Latent trees for coreference resolution. Compu-
+tational Linguistics, 40(4):801–835, December.
+Guillou, L. and Hardmeier, C. (2016). Protest: A test suite
+for evaluating pronouns in machine translation. In Nico-
+letta Calzolari (Conference Chair), et al., editors, Pro-
+
+ceedings of the Tenth International Conference on Lan-
+guage Resources and Evaluation (LREC 2016), Paris,
+France, may. European Language Resources Association
+(ELRA).
+Hardmeier, C., Nakov, P., Stymne, S., Tiedemann, J., Vers-
+ley, Y., and Cettolo, M. (2015). Pronoun-focused mt and
+cross-lingual pronoun prediction: Findings of the 2015
+discomt shared task on pronoun translation. In Proceed-
+ings of the Second Workshop on Discourse in Machine
+Translation, pages 1–16, Lisbon, Portugal, September.
+Association for Computational Linguistics.
+Joshi, M., Levy, O., Weld, D. S., and Zettlemoyer, L.
+(2019). Bert for coreference resolution: Baselines and
+analysis. arXiv preprint arXiv:1908.09091.
+Kantor, B. and Globerson, A. (2019). Coreference reso-
+lution with entity equalization. In Proceedings of the
+57th Annual Meeting of the Association for Computa-
+tional Linguistics, pages 673–677, Florence, Italy, July.
+Association for Computational Linguistics.
+Karttunen, L. (1976). Discourse referents. In Syntax and
+Semantics 7 - Notes from the Linguistic Underground.
+Academic Press.
+Lappin, S. and Leass, H. J.
+(1994). An algorithm for
+pronominal anaphora resolution. Computational Lin-
+guistics, 20(4):535–562.
+Lee, H., Chang, A., Peirsman, Y., Chambers, N., Surdeanu,
+M., and Jurafsky, D.
+(2013). Deterministic corefer-
+ence resolution based on entity-centric, precision-ranked
+rules. Computational Linguistics, 39(4):885–916.
+Lee, K., He, L., Lewis, M., and Zettlemoyer, L. (2017).
+End-to-end neural coreference resolution. In Proceed-
+ings of the 2017 Conference on Empirical Methods in
+Natural Language Processing.
+Lee, K., He, L., and Zettlemoyer, L. S. (2018). Higher-
+order coreference resolution with coarse-to-ﬁne infer-
+ence. In Proceedings of the 2018 Annual Conference of
+the North American Chapter of the Association for Com-
+putational Linguistics.
+Lo ´aiciga, S., Guillou, L., and Hardmeier, C. (2017). What
+is it? disambiguating the different readings of the pro-
+noun it. In Proc. of EMNLP.
+Luo, X., Ittycheriah, A., Jing, H., Kambhatla, N., and
+Roukos, S. (2004). A mention-synchronous coreference
+resolution algorithm based on the bell tree. In Proc. of
+the ACL.
+Martschat, S. and Strube, M. (2015). Latent structures for
+coreference resolution. Transactions of the Association
+for Computational Linguistics, 3:405–418.
+Mitkov, R., Evans, R., and Orasan, C. (2002). A new, fully
+automatic version of mitkovs knowledge-poor pronoun
+resolution method. In International Conference on In-
+telligent Text Processing and Computational Linguistics,
+pages 168–186. Springer.
+Pennington, J., Socher, R., and Manning, C.
+(2014).
+Glove: Global vectors for word representation. In Pro-
+ceedings of the 2014 conference on empirical methods
+in natural language processing (EMNLP), pages 1532–
+1543.
+Peters, M. E., Neumann, M., Iyyer, M., Gardner, M., Clark,
+
+C., Lee, K., and Zettlemoyer, L. S. (2018). Deep con-
+textualized word representations. In Proceedings of the
+2018 Annual Conference of the North American Chapter
+of the Association for Computational Linguistics.
+Poesio, M., Stuckardt, R., Versley, Y., and Vieira, R.
+(2016a). Early approaches to anaphora resolution: The-
+oretically inspired and heuristic-based. In M. Poesio,
+et al., editors, Anaphora Resolution: Algorithms, Re-
+sources and Applications, chapter 3. Springer.
+Poesio, M., Stuckardt, R., and Versley, Y.
+(2016b).
+Anaphora Resolution: Algorithms, Resources and Appli-
+cations. Springer, Berlin.
+Poesio, M., Grishina, Y., Kolhatkar, V., Moosavi, N.,
+Roesiger, I., Roussel, A., Simonjetz, F., Uma, A.,
+Uryupina, O., Yu, J., and Zinsmeister, H.
+(2018).
+Anaphora resolution with the arrau corpus. In Proc. of
+the NAACL Worskhop on Computational Models of Ref-
+erence, Anaphora and Coreference (CRAC), pages 11–
+22, New Orleans, June.
+Pradhan, S., Moschitti, A., Xue, N., Uryupina, O., and
+Zhang, Y. (2012). CoNLL-2012 shared task: Model-
+ing multilingual unrestricted coreference in OntoNotes.
+In Proceedings of the Sixteenth Conference on Computa-
+tional Natural Language Learning (CoNLL 2012), Jeju,
+Korea.
+Rahman, A. and Ng, V. (2011). Narrowing the modeling
+gap: a cluster-ranking approach to coreference resolu-
+tion. Journal of Artiﬁcial Intelligence Research, 40:469–
+521.
+Soon, W. M., Lim, D. C. Y., and Ng, H. T. (2001). A
+machine learning approach to coreference resolution of
+noun phrases. Computational Linguistics, 27(4), De-
+cember.
+Steinberger, J., Poesio, M., Kabadjov, M., and Jezek,
+K.
+(2007). Two uses of anaphora resolution in sum-
+marization. Information Processing and Management,
+43(6):1663–1680. Special issue on Summarization.
+Steinberger, J., Kabadjov, M., and Poesio, M.
+(2016).
+Coreference
+applications
+to
+summarization.
+In
+Anaphora Resolution:
+Algorithms, Resources and
+Applications, chapter 15. Springer.
+Taul ´e, M., Mart´ı, M. A., and Recasens, M. (2008). Ancora:
+Multilevel annotated corpora for catalan and spanish. In
+LREC 2008.
+Telljohann, H., Hinrichs, E. W., K ¨ubler, S., Zinsmeister, H.,
+and Beck, K. ). Stylebook for the t ¨ubingen treebank of
+written german (t ¨uba-d/z).
+Uryupina, O., Kabadjov, M., and Poesio, M.
+(2016).
+Detecting non-reference and non-anaphoricity.
+In
+Anaphora Resolution: Algorithms, Resources, and Ap-
+plications, pages 369–392. Springer, Berlin.
+Uryupina, O., Artstein, R., Bristot, A., Cavicchio, F., De-
+logu, F., Rodriguez, K. J., and Poesio, M. (2019). An-
+notating a broad range of anaphoric phenomena, in a va-
+riety of genres: the ARRAU corpus. Journal of Natural
+Language Engineering.
+Versley, Y., Moschitti, A., Poesio, M., and Yang, X. (2008).
+Coreference systems based on kernels methods. In Pro-
+ceedings of the 22nd International Conference on Com-
+
+putational Linguistics (Coling 2008), pages 961–968,
+Manchester, UK, August. Coling 2008 Organizing Com-
+mittee.
+Wiseman, S., Rush, A. M., Shieber, S., and Weston, J.
+(2015). Learning anaphoricity and antecedent ranking
+features for coreference resolution. In Proceedings of the
+53rd Annual Meeting of the Association for Computa-
+tional Linguistics and the 7th International Joint Confer-
+ence on Natural Language Processing (Volume 1: Long
+Papers), volume 1, pages 1416–1426.
+Wiseman, S., Rush, A. M., and Shieber, S. M. (2016).
+Learning global features for coreference resolution. In
+Proceedings of the 2016 Conference of the North Ameri-
+can Chapter of the Association for Computational Lin-
+guistics: Human Language Technologies, pages 994–
+1004.
+Zhang, R., Nogueira dos Santos, C., Yasunaga, M., Xiang,
+B., and Radev, D. (2018). Neural coreference resolution
+with deep biafﬁne attention by joint mention detection
+and mention clustering. In Proceedings of the 56th An-
+nual Meeting of the Association for Computational Lin-
+guistics (Volume 2: Short Papers), pages 102–107. As-
+sociation for Computational Linguistics.
+
+

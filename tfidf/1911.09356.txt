@@ -1,0 +1,1453 @@
+Schemaless Queries over Document Tables with Dependencies
+
+Mustafa Canim
+
+IBM Research
+
+Cristina Cornelio
+
+IBM Research
+
+Arun Iyengar
+
+IBM Research
+
+Ryan Musa
+
+Google, Inc.∗
+
+Mariano Rodrigez Muro
+
+Google, Inc.∗
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+B
+
+D
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+6
+5
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Unstructured enterprise data such as reports, manuals and
+guidelines often contain tables. The traditional way of inte-
+grating data from these tables is through a two-step process
+of table detection/extraction and mapping the table layouts to
+an appropriate schema. This can be an expensive process. In
+this paper we show that by using semantic technologies (RD-
+F/SPARQL and database dependencies) paired with a sim-
+ple but powerful way to transform tables with non-relational
+layouts, it is possible to offer query answering services over
+these tables with minimal manual work or domain-speciﬁc
+mappings. Our method enables users to exploit data in tables
+embedded in documents with little effort, not only for simple
+retrieval queries, but also for structured queries that require
+joining multiple interrelated tables.
+
+1
+
+Introduction
+
+Enterprise data includes large volumes of unstructured doc-
+uments in the form of reports, manuals, guidelines, etc. Ta-
+bles are of major importance within these documents. Often,
+these tables contain reference data that are required by en-
+terprise personnel (e.g., help-desk operators, technicians in
+assembly lines, etc.) and difﬁcult to access and query given
+that they are buried within documents.
+The traditional way of extracting data from these tables
+is through table extraction and mapping (Liu et al. 2007;
+Liu et al. 2006; Lipinski et al. 2013; Pinto et al. 2003;
+Tengli, Yang, and Ma 2004; Ramel et al. 2003; Cafarella,
+Madhavan, and Halevy 2009; Wang et al. 2012), that is,
+components dedicated to detect the presence of tables in
+documents, extract them in a structured format, and use
+methods for mapping tables and table content into global
+schemas (Hassanzadeh et al. 2015). While there has been
+success in domain-speciﬁc methods to create these map-
+pings in several areas (Burdick et al. 2011; Balakrishnan
+et al. 2010; Burdick et al. 2014; Xu, Burdick, and Raschid
+2016), general techniques are not available. Today, it is com-
+mon that people interested in data within tables have to re-
+sort to manual mapping techniques, an expensive and in-
+tractable process.
+In this paper we take a different approach to the problem
+of accessing data in these tables. Here we show that by using
+
+∗work conducted while at IBM Research
+
+semantic technologies (RDF/SPARQL and database depen-
+dencies) paired with a simple but powerful way to transform
+tables with non-relational layouts, it is possible to do query
+answering over these tables with minimal manual work, do-
+main adaptation/mapping, or even full knowledge of the ar-
+rangement of the tables by the user formulating the query.
+In particular we focus on types of queries in which the in-
+put data is not sufﬁcient to deﬁne a single answer and/or
+involves the contents of multiple tables. This last case is es-
+pecially difﬁcult since is not possible to provide an answer
+simply joining tables columns because to complete the keys
+it is necessary to recover values that are not directly speciﬁed
+in the input.
+Our key contributions are as follows: (a) We describe a
+classiﬁcation based method to transform tables with com-
+plex layouts into “ﬂat” layouts that are closer to a relational
+form (e.g., SQL-like) and allow the use of relational the-
+ory to discover structural meta-data about the tables (e.g.
+keys and inclusion dependencies) to enable complex query
+answering. (b) We propose a method to execute conjunc-
+tive queries on collections of tables with unknown schema.
+In particular, we use an RDF graph implementing a uni-
+versal schema to store and index all rows for all tables
+and enable structured queries using search and features of
+SPARQL. (c) We use relational dependencies to understand
+when a query requires JOIN-ing multiple tables and use a
+query-rewriting style approach to execute such queries (that
+allows to ﬁnd the missing components of the input).
+Our method enables users to exploit data in tables with
+minimal effort, not only for simple retrieval queries, but also
+for complex structured queries. The methods described here
+have been tested and validated in the context of collaboration
+with a large industrial partner.
+For the rest of the paper we proceed as follows: In Sec-
+tion 2 we introduce some background deﬁnitions; in Sec-
+tion 3 we brieﬂy summarize all the steps of our method;
+in Section 4 we describe our approach to transform tables
+with non-relational layouts to relational-like layouts; in Sec-
+tion 5 we describe the RDF schema we use to store the data
+and meta-data for all tables in the corpus in a triple store;
+in Section 6 we introduce our query answering approach;
+in Section 7 we describe the application of these techniques
+in a project with an industrial partner; ﬁnally, in Section 9
+we describe how the techniques presented here could be fur-
+
+ 
+ 
+ 
+ 
+ 
+ 
+ther extended to support more complex queries or stronger
+semantic integration/understanding of tables.
+
+2 Preliminaries
+
+Now we present a few deﬁnitions that we use throughout the
+paper, in particular, the notions of relations and dependen-
+cies.
+Intuitively, a relation corresponds to a “ﬂat table” or an
+SQL table, with a list of column names and rows (formally
+tuples). Each row in a relation holds the values for all the at-
+tributes of an object of interest, e.g., something concrete like
+a screw and its features (e.g., length, weight, identiﬁcation
+code) or something abstract such as the time and place for
+an event. Formally, we deﬁne a relation R (Abiteboul, Hull,
+and Vianu 1995) as an ordered list of attributes U . A tuple
+(i.e. row) over R is a mapping from each attribute Ui ∈ U
+to a value. An instance of a relation R, is a set of tuples over
+U . The projection of a relation R over a subset of attributes
+U (cid:48) is written as πU (cid:48) (R).
+Intuitively, a dependency is a logical implication between
+columns of one or more relations (ﬂat tables). More for-
+mally, dependencies describe the ways in which data is ar-
+ranged in relations. Dependencies are used for many pur-
+poses, one of the most common ones is consistency check-
+ing of tables in databases. The two types of dependencies
+that we use in this work are functional dependencies and in-
+clusion dependencies.
+A functional dependency from a set of columns U (cid:48) in a re-
+lation R to a second set of columns V (cid:48) in a relation S (writ-
+ten as R : U (cid:48) → S : V (cid:48) ) means that for any set of unique
+values for U (cid:48) , there is a unique set of values for V (cid:48) , i.e., U (cid:48)
+functionally determines V (cid:48) . We might omit writing R and
+S when they are unambiguous from the context. One of the
+most common forms of functional dependencies are keys; a
+key over a relation R is a functional dependency U (cid:48) → U ;
+the attributes in U (cid:48) ⊆ U uniquely determines the rest of the
+attributes of R. For simplicity we may write Key(R, U (cid:48) ).
+When U (cid:48) is a single attribute, we simply call it a key; when
+U (cid:48) comprises 2 or more attributes, we call it a composite
+key. Instead, an inclusion dependency is an implication of
+the form R : U (cid:48) ⊆ S : V (cid:48) , indicating that the values for
+attributes U (cid:48) in relation R are a subset or equal to the val-
+ues for the attributes V (cid:48) over the relation S . Intuitively, this
+indicates that the attributes U (cid:48) and V (cid:48) share data and hence,
+are “joinable”. A special case for inclusion dependencies are
+foreign keys, where V (cid:48) is also a key for S .
+
+3 System Overview
+
+The system is deployed as two services, an ingestion service
+and a schemaless query API, both depicted in Figure 1. The
+system’s ingestion ﬂow starts by transforming PDF docu-
+ments into HTML. We use IBM’s document conversion ser-
+vices (under Watson Discovery1 ) for this purpose. From the
+HTML we extract the tables and generate a JSON repre-
+sentation in which we do some minor normalization of the
+data (i.e., remove spanning cells). The features of the tables
+
+1<https://www.ibm.com/watson/services/
+discovery/>
+
+such as headers are ﬁrst extracted and then tables are labeled
+with a table family using a supervised classiﬁer. The tables
+are then ﬂattened w.r.t. the family’s layout and dependen-
+cies are computed for the ﬂat table. Finally, the ﬂat table
+is stored as an ABox using a universal schema approach,
+together with its corresponding dependencies and some ad-
+ditional meta-data (e.g., captions if available, header names,
+etc.). The RDF data is stored in a triple-store with support
+for search over triples (i.e., using search indexes). Last, the
+schemaless query API is deployed over the triple store.
+After this overview, we now proceed to describe in detail
+the main parts of the system.
+
+4 Compact Tables and Table Expansion
+
+Tables within documents can be arbitrarily complex due to
+the free nature of publication layouts. The work we present
+in this section aims at taming some of this complexity, par-
+ticularly that arising from compact table layouts.
+For this work, we make the following observations:
+(a) Many tables that seem complex are in fact compact rep-
+resentations of much simpler and larger tables. (b) Compact-
+ing a simple (ﬂat) but large table into a compact print-layout
+can be done by grouping repeated values together and using
+a combination of matrix layouts, spanning cells and nested
+horizontal or vertical headers for these grouped values. For
+example, Figure 3 shows a matrix layout that groups data by
+year and country and uses spanning cells to group quantity
+and value by year. In Table 2, we see a grouping by internal
+and external thread fastener arranged as a matrix. (c) Some
+of these compact tables also include names for the values,
+which sometimes do not have an obvious correspondence
+to the values in the table. (d) The layout of compact tables
+is fairly regular. Within same-domain corpora, authors tend
+to compact their reference data in the same way. Moreover,
+some of these forms of compacting tables can be seen across
+corpora of different domains. (e) When people access com-
+pact tables, they unconsciously identify the keys for the ta-
+ble. However, identifying keys in compact layouts automati-
+cally is complicated due to the common practice of introduc-
+ing column/row names in compact tables to provide hints of
+their semantics.
+With these observations in mind, our ﬁrst objectives are
+1) to be able to detect that a table has a compact layout and
+2) to expand the compact table. Doing so facilitates the anal-
+ysis of the table using traditional database analysis of the ta-
+bles. Identifying keys and other dependencies, which com-
+prise key steps in enabling query answering, are described
+in Section 6 We now describe both processes, starting with
+table expansion, to lay down some of the notions involved
+in detecting compact tables which is described in the next
+subsection.
+
+4.1 Table Expansion (Flattening)
+
+The objective of this step is to transform a compact layout
+(matrix, nested headers, etc.), into an expanded represen-
+tation that is closer to the relation (in the relational theory
+sense of the word) that the compact table represents. The
+expansion algorithm is based on the assumption that every
+
+Figure 1: Ingestion and query answering system ﬂow
+
+and a plain data area, which holds the non-grouping values
+of table.
+
+Intuitively, the algorithm slides a window called pivot
+window over the main plain area of the table. At each step,
+we produce an expanded row by merging the values in the
+pivot window with the values in the horizontal-axis window
+(the ﬁrst grouping set of values) and the vertical-axis win-
+dow (the second grouping set of values). The pivot window
+slides one step at a time, together with the vertical-axis win-
+dow. At each step, a new expanded row is generated. When
+the end of the current compact row has been reached, the
+horizontal location of the pivot and vertical windows is re-
+set, and the vertical location of the pivot window goes down
+by one step. The process is repeated until all of the table
+has been scanned. A table expansion example is provided in
+Figure 4. Note that non-matrix, horizontal tables are just a
+case of the more general matrix-layout in which there is no
+horizontal-axis window.
+
+Note that expanding in this way, we may generate row
+values which are not actual values. For example, in Figure 4
+values of columns 3 and 6 are actually names for some of
+the values of the original table. However (as we will see in
+Section 6 , this noise is not problematic during query an-
+swering. While the name of the expanded columns is not
+critical for our query answering approach, we try to keep the
+corresponding names when possible. For hints on where to
+ﬁnd the name of columns as well as the parameters of the
+expansion algorithm (i.e. window locations and sizes), we
+use the notion of table families, described in the following.
+
+Also note that the size of the pivot window deﬁnes the lo-
+cation each sliding step of such window. Parameters such as
+location of the horizontal and vertical windows are conﬁg-
+urable too, e.g., the former may be on the left or right side
+of the matrix, and the latter may be at the top or bottom of
+the matrix.
+
+Note that the ﬂat rows may contain some ﬁelds not actual
+values for the relation described by the original table. For
+example, each ﬂat row contains a Min value. While this is
+strictly an error (i.e., Min is column name for the ﬁrst col-
+umn of each pivot window.
+
+Figure 2: Compact table layouts that group values around
+keys located vertically and horizontally: Combination codes
+for Nut and Bolt pairs.
+
+Figure 3: Compact table layouts that group values around
+keys located vertically and horizontally: Coffee quantity/-
+value by year and country.
+
+compact layout can be seen as a matrix layout with three
+main areas, i.e,. a pair of top and left areas that group values,
+
+Internal threaded fastenerMaterialCRESFinishPASSCADSILWLubricationWCADFLCAWCADFLMaterialFinishLubrication(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:20)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:21)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:22)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:23)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:24)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:25)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:26)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:27)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:28)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:20)(cid:19)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:20)(cid:20)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:20)(cid:21)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:20)(cid:22)(cid:3)(cid:3)(cid:3)(cid:3)(cid:3)(cid:44)(cid:55)(cid:41)(cid:20)(cid:23)TIRBCW(cid:3)(cid:40)(cid:55)(cid:41)(cid:20)C2C1C3C4C1(cid:3340)C3C4C1(cid:40)(cid:55)(cid:41)(cid:21)(cid:40)(cid:55)(cid:41)(cid:22)(cid:40)(cid:55)(cid:41)(cid:23)C3(cid:3340)C3(cid:40)(cid:55)(cid:41)(cid:24)C2C1C3C4C1(cid:3340)C3C4C1CA(cid:40)(cid:55)(cid:41)(cid:25)IVD(cid:40)(cid:55)(cid:41)(cid:26)(cid:40)(cid:55)(cid:41)(cid:27)(cid:3340)(cid:3340)(cid:3340)C1(cid:40)(cid:55)(cid:41)(cid:28)C3C4(cid:3340)C3C4C1(cid:40)(cid:55)(cid:41)(cid:20)(cid:19)(cid:40)(cid:55)(cid:41)(cid:20)(cid:20)(cid:40)(cid:55)(cid:41)(cid:20)(cid:21)C5(cid:3340)C5(cid:3340)ANOD(cid:40)(cid:55)(cid:41)(cid:20)(cid:22)C2C1C3C4C1C1C3C4C1(cid:3)(cid:40)(cid:55)(cid:41)(cid:20)(cid:23)DFL(cid:40)(cid:55)(cid:41)(cid:20)(cid:24)(cid:3340)(cid:40)(cid:55)(cid:41)(cid:20)(cid:25)C5(cid:3340)C5(cid:3340)C5(cid:3340)ExternalthreadedfastenerW(cid:40)(cid:55)(cid:41)(cid:20)(cid:26)C2C1C3C4C1(cid:3340)C3C4C1(cid:40)(cid:55)(cid:41)(cid:20)(cid:27)(cid:40)(cid:55)(cid:41)(cid:20)(cid:28)(cid:40)(cid:55)(cid:41)(cid:21)(cid:19)C3(cid:40)(cid:55)(cid:41)(cid:21)(cid:20)Figure 4: Expansion algorithm example. Horizontal, Vertical and Pivot windows shown in blue, red and dark red, respectively.
+
+column 1
+
+06
+06
+06
+06
+06
+08
+...
+
+column 2
+
+3,5
+3,5
+3,5
+3,5
+3,5
+4,16
+...
+
+column 3
+
+Torq...
+Torq...
+Torq...
+Torq...
+Torq...
+Torq...
+...
+
+column 4
+
+STEE...
+STEE...
+STEE...
+STEE...
+STEE...
+STEE...
+...
+
+column 5
+
+C1
+C2
+C3
+C4
+C5
+C1
+...
+
+column 6
+
+Min
+Min
+Min
+Min
+Min
+Min
+...
+
+column 7
+
+1,3
+n/a
+n/a
+n/a
+1,3
+2,2
+...
+
+column 8
+
+1,5
+n/a
+n/a
+n/a
+1,5
+2,5
+...
+
+column 9
+
+1,7
+n/a
+n/a
+n/a
+1,7
+2,8
+...
+
+Figure 5: Expansion of table in Figure 4
+
+4.2 Table Families and Family Classiﬁcation:
+
+As previously mentioned, a key to table expansion is under-
+standing the layout of the table. In particular, understand-
+ing which areas of the table are grouping values for expan-
+sion, which ones are plain values, etc. Obtaining this infor-
+mation, however, is a challenging task. As we previously
+mentioned, table layouts in documents can vary wildly. Ta-
+bles in documents may contain nested tables, images, etc.
+This complexity is the reason why so many domain-speciﬁc
+table-mapping approaches exist. While a general approach
+to understand exactly the table layouts seems out of reach at
+the moment, we opted for an in-between, practical solution
+which we now describe.
+We noted before that corpora on the same domain tend
+to organize tables in similar ways. While the tables may not
+have exactly the same form, similar patterns appear. For ex-
+ample, the table in Figure 2 is a table from our patterns cor-
+pus. These tables contain combinations of values for nuts
+and bolts (external and internal fasteners). While these tables
+are individually different, they fall in the same pattern. All
+are matrix tables, with 4-6 header rows that we can consider
+horizontal header rows and 4-6 vertical header columns,
+and where the Nut/Bolt IDs determine the combination val-
+ues (i.e., C codes), as well as the rest of the features of the
+nut and bolt. Other tables of the same type may vary in the
+number of horizontal and vertical header elements, but they
+all determine one single C code. We call this grouping of
+tables a table family.
+Our approach to determine expansion values involves 1)
+identifying general table families that are of interest to the
+user, 2) setting the expansion parameters for each family and
+3) providing a simple mechanism to identify a table family.
+Steps 1 and 2 are done on a per corpus basis, although, it
+is possible to deﬁne corpus independent families (more on
+
+this in Section 9). For step 3, we propose a machine learning
+approach that doesn’t require manual annotation of tables,
+i.e., one of the most cumbersome tasks in traditional table-
+mapping approaches.
+To classify tables into families, we leverage a supervised
+approach to train a classiﬁer that can help identify the table
+families. The features we use are domain independent, e.g.,
+number of row headers, number of column headers, number
+of repeated column header groups, header contains span-
+ning headers and number of empty cells on upper left corner
+of the headers.
+While reading a document humans can distinguish the ta-
+ble headers from the data part using two heuristics. Head-
+ers typically contain descriptive words as opposed to the
+data part and therefore they can semantically understand the
+header content. The second method is to identify the patterns
+in the table without considering the semantic aspect. For in-
+stance header rows typically contain long sequences of al-
+phabetic characters whereas the rest of the columns contain
+numeric values with similar numbers of digits. Computers
+can leverage these two approaches to identify the headers.
+In public domains such as news articles, the semantic un-
+derstanding approach can be used effectively. However we
+realized that in complex domains the table headers contain
+values that are not easily mapped to entity names. Therefore
+semantic identiﬁcation methods are not effective on special-
+ized domains. Based on this observation we decided to im-
+plement a pattern based approach to identify the headers.
+For the purposes of identifying the headers areas, we ﬁrst
+apply a masking methodology to convert the cell values into
+masked form. In this masked form continuous sets of digits
+are denoted as ‘D’, continuous sets of alphabetic characters
+are represented with the character ‘A’ and continuous sets
+of non alphanumeric chars are represented with ‘N’. For in-
+
+stance a header string “Eng FNU-52X” is converted into a
+masked form of “ANDA”. Once the masking is applied on
+each column based on these rules, distinguishing patterns
+appear in each column. Typically in at least one column we
+observe this kind of pattern changes from the header part
+to the data part. In the data part of each column we check if
+there are some repeated patterns. If there is such a pattern we
+conclude that the data part of the table starts at that particu-
+lar row, and we are able to determine the features mentioned
+above. In total we used nine table features to classify table
+families.
+In the experiments with our industrial partner, we had 7
+table families. For example, the table in Figure 2 belongs to
+the family identiﬁed as matrix-5-by-5-by-1, that is., a fam-
+ily of matrix tables with a pivot window of width 1 located
+in cell (5,5). We used about 130 tables from our corpus for
+the training purposes. 85% of them were used for train-
+ing the models and 15% were used for evaluation. From
+the Scikit library we used the following classiﬁcation al-
+gorithms to train the models: “Logistic Regression”, “Lin-
+ear Discriminant Analysis”, “KNeighbors Classiﬁer”, “De-
+cision Tree Classiﬁer”, “Gaussian NB”, “SVC”, “MLP Clas-
+siﬁer”, “Random Forest Classiﬁer”. As a result of k-fold
+cross validation results, we observed that “Linear Discrimi-
+nant Analysis”, “Decision Tree Classiﬁer”, “Gaussian NB”
+and “Random Forest Classiﬁer” classiﬁers perform quite
+well on the given training data set, very close to 1. Among
+these algorithms we decided to go with a naive Bayes clas-
+siﬁer since it performed slightly better than the other three
+classiﬁers.
+
+5 Schema description
+
+Once the tables are extracted and expanded, we merge data
+and meta-data for all tables, into a single graph schema that
+enables structured query answering and indexing of all rows.
+The use of this schema for query answering is described in
+the next section. Now we proceed to describe the schema.
+We divide the elements of this schema in two categories:
+the ﬁrst one about the components that are given in the ex-
+panded tables (e. g. rows and columns) and the second one
+about the elements that are retrieved afterwards (e.g. depen-
+dencies and keys). An overview of the RDF types and prop-
+erties we used is presented in the the following two sections
+and summarized in Figure 6. In Figure 7 we present instead
+an example of ABoxes generated using our system, for one
+row of a expanded table.
+
+5.1 Schema for table data
+
+The following are the classes (i.e., types) and properties for
+the objects that represent tables and their rows in our graphs:
+• Document identiﬁes objects that are documents, i.e., PDF
+source ﬁles that were previously ingested. They may be
+connected to one or more Table objects.
+• Table identiﬁes objects that are expanded tables, i.e., re-
+lational structures with attributes, rows and dependen-
+cies. Table objects are always associated with a Docu-
+ment object, one or more Attribute objects, one or more
+
+Dependency objects, and one or more Row objects. us-
+ing the properties hasTable, hasAttribute, hasDependency,
+and hasRow. Tables may include a caption, an ID, and
+page numbers using the properties hasCaption, hasID, pa-
+geNumBegin, pageNumEnd.
+• Attribute identiﬁes object
+that are attributes, e.g.
+columns of tables. Attribute objects may or may not have
+a label (usually obtained from the header of the attribute);
+• Row identiﬁes objects that are rows of a table and which
+will be associated to literals containing the values for each
+cell of the row in the expanded table.
+The following are the properties we use to describe docu-
+ments, tables and rows in our schema:
+• hasTable connects a Document with zero or more Table
+objects;
+• hasAttribute connects a Table object with one or more
+Attribute objects;
+• hasRow connects a Table object with one or more Row
+objects;
+• hasCaption connects a Table object with a xsd:string
+value;
+• hasID connects a Table object with a xsd:string value;
+a Table object with a
+xsd:integer value;
+• pageNumEnd connects a Table object with a xsd:integer
+value; and
+• hasParentLabel connects a Attribute object with a
+xsd:string value.
+
+• pageNumBegin connects
+
+5.2 Schema for dependencies
+
+For each table, we extract the set of all minimal keys us-
+ing existing techniques (Ramakrishnan and Gehrke 2003).
+For all tables within a document, we are interested in inclu-
+sion dependencies to determine the relations between pairs
+of tables an enable multi-table queries (see Section 6). The
+following are the classes that we use to deﬁne dependencies
+over a table object:
+• Dependency identiﬁes an object as a dependency;
+• Key and CompositeKey are placeholders for a set of
+columns (attributes) that functionally determine the val-
+ues of the rows in a table (Key has exactly one Attribute
+and CompositeKey has more than one Attribute);
+• InclusionDependency is a placeholder for a set of pairs
+of columns. Each list contains a column in the current ta-
+ble and a column of another table (if the columns for the
+second table are part of a Key, then the inclusion depen-
+dency is also a foreign key); and
+• AttributePair is a placeholder for a pair of Attribute ob-
+jects, used to form foreign keys.
+In the ABoxes we assume the rdfs:subClassOff hierarchy,
+regarding dependencies and keys, described in Figure 8
+We use the following properties we used to describe de-
+pendencies in our schema:
+
+Dependency
+
+subClassOf
+
+b
+
+su
+Class
+Of
+
+hasDependency
+
+InclusionDependency
+
+Key
+
+Document
+
+hasTable
+
+Table
+
+hasAttributePair
+
+subClassOf
+
+hasComponent
+
+AttributePair
+
+CompositeKey
+
+hasComponenta
+
+secondComponent
+ﬁrstComponent
+
+h
+a
+s
+
+A
+
+t
+t
+r
+i
+
+b
+u
+
+t
+
+e
+
+Attributeb
+
+xsd:string (label)
+
+xsd:string (ID)
+
+r d fs:la b el
+a
+s
+
+I D
+
+h
+
+pageNumEnd
+
+pageNumBegin
+
+h
+a
+s
+
+R
+
+o
+
+w
+
+hasCaption
+
+xsd:integer (pageEnd)
+
+xsd:integer (pageBegin)
+
+xsd:string (caption)
+
+Row
+
+A
+
+t
+t
+r
+i
+
+b
+u
+
+t
+
+e
+
+b
+
+Figure 6: T-boxes of our system. aCompositeKey has at least two instances of hasComponent, while Key has only one.
+b Instances of Attribute are both properties and instances of classes (common practice in the RDF community).
+
+xsd:string (cellValue)
+
+Table
+
+table1
+
+hasAttribute
+
+h
+a
+s
+
+R
+
+o
+
+w
+
+table1-column1
+
+Attribute
+
+table1-row1
+
+Row
+
+n 1
+u m n
+
+l
+
+m
+
+o
+
+c
+
+2
+
+ta b le 1 - c o l u
+e
+1
+-
+t
+a
+b
+l
+
+table1-columnN
+
+xsd:string
+
+cell value(1,1)
+
+xsd:string
+
+cell value(1,2)
+...
+cell value(1,N)
+
+xsd:string
+
+Figure 7: ABoxes generated via our system for one row of a ﬂattened table. (Note that table columns are instances of the class
+Attribute and properties at the same time)
+
+• hasDependency connects a Table object with one or more
+Dependency objects;
+• hasComponent connects a Key object or CompositeKey
+object with Attribute objects;
+• hasAttributePair connects a InclusionDependency ob-
+jects with one or more AttributePair objects; and
+
+• ﬁrstComponent and secondComponent connect a At-
+
+tributePair object with a Attribute object.
+
+6 Query Answering
+
+The kind of queries we envision are queries where the user
+does not need to know the underlying schema – she only
+needs to specify some features of the data that she is looking
+for, such as values for some of the properties or the name/la-
+bel of an object. Our techniques ﬁnd the relevant table or
+tables and provide a list of rows that best satisfy the query.
+We provide a simple query language illustrated in Figure 9.
+
+The ﬁelds in the input query are:
+• table caption, a list of topics used to identify relevant ta-
+bles based on their captions;
+• projection, a list of string descriptors of the attribute(s)
+the user seeks a value for; and
+• conditions, a list of (attr, val) pairs that indicate describe
+the selection criteria of a result in terms of an attribute
+name and a value.
+Almost all parameters are optional, except values for condi-
+tions. As the user may not know the structure of the original
+tables, our search algorithm attempts to align query input to
+values in the tables using exact/fuzzy match and leverages
+table metadata to further reﬁne the search (Section 5).
+For simple queries that can be answered using a single ta-
+ble we rank the results using the contents and metadata of
+the table while tolerating under-speciﬁed queries (see Sec-
+tion 6.1). Answering complex queries may require inferring
+
+Dependency
+
+InclusionDependency
+
+Key
+
+CompositeKey
+
+Figure 8: Hierarchy between classes: Dependency, Key,
+CompositeKey and InclusionDependency
+
+{ table_caption:"Torque values",
+projection:["Max"],
+conditions:[{attribute_name:"Dia. Code", value:"3A"},
+{value:"C2"}]}
+
+Figure 9: Sample query in our structured format which re-
+trieves answer from Table 5
+
+missing inputs and/or joining rows across multiple tables
+(see Section 6.2).
+
+6.1 Single-table query answering
+
+When answering queries we translate the input query into a
+SPARQL query that searches (available in most triple-store
+today) for the provided conditions over the rows and meta-
+data of all expanded tables in our graph. The results are
+ranked according to a scoring function based on the triple
+store’s built-in search capabilities. The scoring function
+is constrained so that fuzzy matches are preferred over
+unmatched ﬁelds. The best method of composing a score
+for each row may depend on the application; we chose a
+weighted sum over the matching score for each ﬁeld query.
+Our WHERE clause speciﬁes the type constraints on the
+?row variable along with a ?table :hasRow ?row re-
+lation. If table topics is non-empty, we add an OPTIONAL
+construct attempting to match each aspect of the input query.
+For each attribute descriptor in the projection list we create
+a variable ?proj i constrained to be an attribute in the ta-
+ble and attempt to match on its label. Finally, attr i and
+val i variables are created for each of the condition pairs
+by an OPTIONAL construct that constrains them to appear
+in the same row: ?row ?attr i ?val i. The matching
+score on their labels is computed in the same way as before.
+Figure 10 illustrates the translation of the query in Fig-
+ure 9 in which a user is attempting to learn the maximum
+torque value for a screw with diameter code 3A and combi-
+nation code C2 for some unknown attribute in some table in
+the corpus.
+
+SELECT ?row ?proj_val_1 WHERE {
+?row rdf:type :Row .
+?table :hasRow ?row .
+OPTIONAL { ?table :hasCaption ?cap_1 .
+?cap_1 search "Torque values" }
+
+...
+OPTIONAL { ?table :hasAttribute ?proj_1 .
+?proj_1 search "Max" .
+?row ?proj_1 ?proj_val_1 }
+
+...
+OPTIONAL { ?row ?attr_1 ?val_1 .
+?attr_1 search "Dia. Code" .
+?val_1 search "3A" }
+OPTIONAL { ?row ?attr_2 ?val_2 .
+?val_2 search "C2" }
+
+}
+
+Figure 10: Sample QueryS ing leT able output for a query
+on the table shown in Figure 4.
+
+6.2 Using dependencies for query answering
+
+In this section we explore the problem of answering a user’s
+query using dependency information across a set of tables.
+Our method can be used in several contexts and is partic-
+ularly useful in scenarios in which we don’t have explicit
+information about the structure of the schema that is un-
+derneath the given data and we want to enable answers to
+queries that require joining multiple tables.
+After the tables have been expanded and indexed, depen-
+dencies in the form of keys or inclusion dependencies allow
+the system to provide schema-less query methods that facil-
+itate access to the data.
+The main use case for our approach is for processing
+queries on documents that include tables (such as PDF cor-
+pora), which, by their nature, don’t contain ﬁxed schemas;
+another use case is the exploration of large datasets such as
+those crawled from the web.
+The method Our input is a set of expanded tables, for ex-
+ample the ones we saw in Section 4 , onto which has been
+added information about dependencies (see Section 5.2 ).
+In this context, dependencies and keys allow us to resolve
+complex queries on the data. This scenario occurs when the
+input provided by the user’s query is not sufﬁcient to deﬁne
+a single answer and/or the query involves the contents of
+multiple tables. We use dependencies to complete keys by
+recovering values that are not directly speciﬁed in the input
+but which can be retrieved using the values that are. We can
+use foreign dependencies (which deﬁne the relationship of a
+table column with respect to the columns of other tables) to
+connect data stored across multiple tables. Moreover, in the
+event where the initial query produces more than one unique
+solution, our system can suggest the minimal set of param-
+eters for which specifying a value would obtain a unique
+answer.
+This method is applicable to tables and queries that in-
+volve answers from single tables or multi-tables (i.e. queries
+that require joining two or more tables to compute an an-
+swer). The algorithm takes as input a collection of A-box
+triples regarding tables and their information regarding de-
+
+Algorithm 1: QueryM ultiT able
+
+Input: goal labels, input values
+1 results= QueryS ing leT able( , input values);
+2 if results (cid:54)= null then
+return results
+4 else results == null
+
+3
+
+tables=Search all the tables containing goals labels;
+Reorder tables following the number of known
+elements in the table;
+for table in tables do [following the new order]
+keys = Find the primary keys for table;
+for key in keys do
+
+key components = Retrieve key
+
+components;
+known components= Identify the known
+elements of the key;
+
+unknown components=
+(key components) \
+(known components);
+instantiate retrieved values;
+for unknown component in
+unknown components do
+retrieved values+=
+RetrieveV alues(table,
+unknown component,
+(input values\known components))
+
+[see Algorithm 2];
+
+results+=QueryS ing leT able(table,
+(input values, retrieved values));
+
+return results;
+
+5
+6
+
+7
+8
+9
+10
+
+11
+
+12
+
+13
+14
+
+15
+
+16
+
+17
+
+SELECT ?row WHERE {
+?v1+ search* value1.
+?row ?property1 ?v1.
+?v2+ search* value2.
+?row ?property2 ?v2.
+...
+<table_URI> krt:hasRow ?row. or ?table krt:Row ?row.
+?row rdf:type krt:Row
+
+}
+
+Figure 11: QuerySingleTable *where search is the in-
+dexed search function embedded in the third-party RDF
+store.
+
+pendencies and keys. The idea behind our system is to pre-
+compute (ofﬂine) all the possible keys and foreign keys for
+each table. At run time, given an input query the system uses
+these keys and dependencies to search for the possible an-
+swer(s) to the query.
+
+The system uses the following steps: 1) It checks if there
+exists at least one table that contains values that match the
+user query. In this case, the system returns the corresponding
+row(s) to the user as its answer. 2) If there does not exist
+any table that contains all the input values, then the system
+will: 2a) identify the tables of interest and 2b) iterate over
+these tables, using both foreign dependencies and functional
+dependencies to try to recover the values of each key (in
+order) of the current table. This corresponds to the inference
+step; we use dependencies as logical rules trying to retrieve
+the key values. 2c) If it is possible to recover at least one key,
+then we have found a solution and return the corresponding
+row(s) to the user. 2d) If there is no solution, then all the
+rows containing the input data are returned to the user (an
+incomplete solution).
+
+A more detailed description of the used algorithm is
+presented in Algorithm 1, QueryMultiTable, which uses
+QueryS ing leT able from Section 6 to perform a SPARQL
+query (possibly on a particular table) for a row given a set of
+values.
+
+A more detailed description of the used algorithm is
+presented in Algorithm 1 QueryMultiTable, which uses
+
+QueryS ing leT able(table, values list) to perform a sin-
+
+gle SPARQL query on a table for a row with values in
+
+values list and QueryS ing leT able( , values list) per-
+
+form a single SPARQL query for a row with values in
+values list in any table as follows: We note that this method
+is also applicable to object graphs and knowledge graphs,
+performing a projection of the data to a database (for ex-
+ample if we see each object as a “row” and the values for
+its properties as “row cells” or “row values”). Using our
+techniques, we may be able to develop more efﬁcient meth-
+ods for ﬁnding “long range” dependencies between objects
+in the graph and leveraging those dependencies to answer
+queries.
+
+7 Evaluation
+
+The approach presented here has been developed in the con-
+text of a project with a large industrial partner. We used their
+use-case and data to show the feasibility and beneﬁts of our
+approach. We now proceed to describe this use-case.
+Our industrial partner uses thousands of tables embed-
+ded within PDF documents. These tables are used as ref-
+erence material by technicians in assembly lines and equip-
+ment maintenance locations. During their activities, techni-
+cians use these tables to look up information for their tasks.
+Given that these look-ups require either a physical search
+on a printed PDF document or a plain keyword search over
+the PDFs, ﬁnding the right information often requires min-
+utes. Look-ups of this form are a routine operation, which
+summed up across all technicians in all locations of our
+client, amounts to thousands of hours per year for our part-
+ner. Our objective is to reduce the cost of each of these indi-
+vidual look-ups by offering a structured query language that
+would allow users to query these documents similarly to the
+way they would query regular databases, but with very little
+knowledge of the schema.
+Our partner focused on two tasks, single-table retrieval,
+that is, retrieving information that lives in a single table;
+and multi-table retrieval, that is, retrieving information that
+requires consulting multiple tables. An example of single-
+table query is, given an internal and external thread fastener
+such as ITF14 and ETF2, retrieve the corresponding combi-
+
+Algorithm 2: RetrieveV alues
+
+Input: table, unknown component, values
+1 retrieved values=null;
+
+2 inclusion dep=Find all the inclusion dependencies for the
+
+unknown component;
+3 for (dependency table,dependency column) in
+inclusion dep do
+result row=
+QueryS ing leT able(dependency table, column, values)
+
+4
+
+= rows with the remaining not used input data;
+
+5
+
+retrieved value=projection of result row on
+dependency column;
+retrieved values+ = retrieved value;
+7 return retrieved values;
+
+6
+
+{conditions:[
+{value:"ITF14"},
+{value:"ITF2"}]}
+{conditions:[
+{value:"8"},
+{value:"C2"}]}
+
+{targets:[
+"min","nom","max"],
+conditions:[
+{value:"8"},
+{value:"ITF14"},
+{value:"ITF2"}]}
+
+Figure 12: Sample single and multi-table queries
+
+nation code. This kind of query returns answers from tables
+similar to the one shown in Figure 2. There are hundreds of
+these tables within multiple documents. A second example
+of single-table queries is given a diameter code of 8, and
+a combination value of C2, retrieve the minimum, nominal
+and maximum torque tolerance values. This kind of query
+has answers from tables similar to the one shown in Figure 4.
+Similarly, there are hundreds of these tables, in multiple doc-
+uments. Finally, multi-table queries are of a form which is a
+combination of the previous queries, for example, given the
+codes for an internal and external thread fastener, ITF14
+and ETF2, and a diameter code of 08, retrieve the minimum,
+nominal and maximum torque tolerance values. This kind of
+query requires the system to discover the need for joining
+two tables of the kind presented in Figures 2 and 4.
+
+8 Related Work
+
+The problem of query answering over tables can be parti-
+tioned into two dimensions; ﬁrst extracting and understand-
+ing the semantics of the tables data, and second, offering
+ﬂexible ways to query the data without having the knowl-
+edge of the table schema. Below we provide an overview of
+past work on these two angles.
+
+8.1 Extracting and understanding the semantics
+of the tables data.
+
+There are many studies in the literature as well as products
+targeting the problem of table extraction from digital docu-
+ments. However, in our experiments, we observed that while
+these methodologies are quite effective on general domain
+articles they perform quite poorly when it comes to extrac-
+tion of tables from complex domain speciﬁc documents. Liu
+
+et al. (2007) and Liu et al. (2006) introduce a new tool called
+TableSeer for automatic metadata extraction from digital
+documents. TableSeer crawls digital libraries, detects tables
+from documents, extracts metadata, indexes and ranks ta-
+bles, and provides a user-friendly search interface. TableSeer
+extracts the data from tables using predetermined heuristics
+which limit the information extraction capabilities for do-
+main speciﬁc complex tables. Our machine learning based
+learning approach enables custom training for speciﬁc doc-
+ument corpora and provides much higher precision when it
+comes to extraction of table content. Lipinski et al. (2013)
+focus on the problem of metadata extraction from scientiﬁc
+articles and evaluate the performance of existing tools. They
+mention that some of these tools use heuristics while oth-
+ers leverage machine learning algorithms such as support
+vector machines (SVM), hidden Markov models (HMM), or
+conditional random ﬁelds (CRF). However, none of these
+approaches leverage these ML methods for table classiﬁca-
+tion and ﬂattening these table structures. Ramakrishnan et
+al. (2012) propose a layout aware text extraction method
+from PDF documents which doesn’t have a particular fo-
+cus on table content extraction. Pinto et al. (2003) propose a
+method for identifying header separators and columns sep-
+arated with white spaces. Our work is different from this
+work as we particularly focus on extraction of hierarchical
+headers and ﬂattening them using a pivot-based approach.
+There have been several papers on extracting tabular data
+from web tables. Google has done a considerable amount
+of work in this area (Balakrishnan et al. 2015). WebTables
+is a system to extract and leverage the relational informa-
+tion embedded in HTML tables on the web (Cafarella et al.
+2008). The paper describes how to use the attribute corre-
+lation statistics database which is a set of statistics about
+schemas in the corpus. Tengli, Yang, and Ma (2004) propose
+algorithms to extract information from HTML-based web
+tables. The algorithms leverage the HTML tags to identify
+spanning headers and rows. But the proposed approaches do
+not leverage any machine learning based table classiﬁcation
+for table ﬂattening. Cafarella, Madhavan, and Halevy (2009)
+propose three extraction systems that can be operated on the
+entire Web. The TextRunner system focuses on raw natu-
+ral language text, the WebTables system focuses on HTML-
+embedded tables, and the deep-web surfacing system fo-
+cuses on “hidden” databases. In the work by Pimplikar and
+Sarawagi (2012), the problem of extracting relevant columns
+from several matching web tables and consolidating them
+into a single structured table is addressed. The system re-
+turns a multi-column table in response to a query specify-
+ing a set of column keywords. Wang et al. (2012) focus on
+the problem of understanding the concepts in HTML-based
+web tables and connecting them to larger taxonomies. Our
+work is different from Wang et al. (2012) in multiple aspects.
+First and foremost we particularly focus on domain speciﬁc
+complex tables where extraction of knowledge is not triv-
+ial. Once the information is extracted, we also ﬁnd depen-
+dencies among tables in the same corpus and support multi-
+table queries without having schema information about the
+tables. In the work by Nishida et al. (2017), a table classiﬁ-
+cation method is proposed using deep neural network tech-
+
+niques. However the classiﬁcation method is not used for
+ﬂattening complex tables which makes it different from our
+focus. Ramel et al. (2003) focus on table identiﬁcation and
+extraction where cell lines are not clear. Their work is or-
+thogonal to what we are aiming in our work. Extracting in-
+formation from tables for answering questions is addressed
+in Wei, Croft, and McCallum (2006). First, tables are ex-
+tracted and then speciﬁc cells of tables related to answer-
+ing the questions are retrieved. Information is extracted us-
+ing conditional random ﬁelds. In the works of Burdick et
+al. (2011), Balakrishnan et al. (2010), Burdick et al. (2014)
+an information extraction system has been proposed.
+
+8.2 Querying tables without schema information.
+
+A schemaless query support for graph databases is proposed
+by Yang et al. (2014). Our work is different since we dis-
+cover the dependencies to support multi-table join based
+queries on the produced graph. Similar to Yang et al. (2014)
+a schema-free query methodology is proposed in Zheng et
+al. (2016). In Zheng et al. (2017), a natural language ques-
+tion answering system is proposed. In Yuan et al. (2016), a
+pattern search mechanism is studied in knowledge graphs.
+None of these studies focuses on discovering the relation-
+ship among tables to leverage that information for query an-
+swering. Hassanzadeh et al. (2015) focus on the problem of
+entity linking between web tables and existing public knowl-
+edge graphs like DBpedia Ontology, Schema.org, YAGO,
+Wikidata, and Freebase. Entity linking with external ontolo-
+gies is orthogonal to our work and will improve our system
+as well. Embley, Tao, and Liddle (2005) study instead the
+problem of querying HTML tables without the knowledge
+of their schemas. The authors try to map existing tables into
+a targeted schema which makes it different from our work
+since we do not make an assumption that we have schema
+information known in advance. Chen, Tsai, and Tsai (2000)
+is similar to Embley, Tao, and Liddle (2005) since the work
+involves extracting HTML tables but without leveraging ML
+based extraction methodologies.
+
+9 Conclusions and Future Work
+
+In this paper we introduce new methods for users to query
+data stored in tables within documents. Our methods require
+minimal effort and are able to handle tables that are of con-
+siderable complexity. The techniques presented here exploit
+the ﬂexibility of the RDF data model, the features of the
+SPARQL query language and dependency theory. The meth-
+ods described here have been tested and validated in the con-
+text of collaboration with a large industrial partner.
+The ﬁrst major directions for follow ups of this work are
+those in the area of data integration. In particular, we fore-
+see that the use of ontology-mapping techniques to integrate
+the schemas of the ﬂat tables we produce. In the area of ta-
+ble extraction and transformation, future work includes the
+use of deep learning to further generalize the methods for
+family detection and/or discovery of the parameters for the
+ﬂattening algorithms. In the context of schemaless query an-
+swering with dependencies, we believe that the use of prob-
+abilistic dependencies would allow our methods to deal with
+
+noisy data, e.g., tables in which there are errors in the extrac-
+tion process.
+
+References
+
+[1995] Abiteboul, S.; Hull, R.; and Vianu, V. 1995. Founda-
+tions of Databases. AW.
+[2010] Balakrishnan, S.; Chu, V.; Hern ´andez, M. A.; Ho, H.;
+Krishnamurthy, R.; Liu, S.; Pieper, J.; Pierce, J. S.; Popa, L.;
+Robson, C.; Shi, L.; Stanoi, I. R.; Ting, E. L.; Vaithyanathan,
+S.; and Yang, H. 2010. Midas: integrating public ﬁnancial
+data.
+In Proceedings of the ACM SIGMOD International
+Conference on Management of Data, SIGMOD 2010, Indi-
+anapolis, Indiana, USA, June 6-10, 2010, 1187–1190.
+[2015] Balakrishnan, S.; Halevy, A. Y.; Harb, B.; Lee, H.;
+Madhavan, J.; Rostamizadeh, A.; Shen, W.; Wilder, K.; Wu,
+F.; and Yu, C. 2015. Applying webtables in practice.
+In
+CIDR.
+[2011] Burdick, D.; Hern ´andez, M. A.; Ho, H.; Koutrika, G.;
+Krishnamurthy, R.; Popa, L.; Stanoi, I.; Vaithyanathan, S.;
+and Das, S. R. 2011. Extracting, linking and integrating
+data from public sources: A ﬁnancial case study. IEEE Data
+Eng. Bull. 34(3):60–67.
+[2014] Burdick, D.; Evﬁmievski, A. V.; Krishnamurthy, R.;
+Lewis, N.; Popa, L.; Rickards, S.; and Williams, P. 2014. Fi-
+nancial analytics from public data. In Proceedings of the In-
+ternational Workshop on Data Science for Macro-Modeling,
+DSMM’14, Snowbird, UT, USA, June 22-27, 2014, 4:1–4:6.
+[2008] Cafarella, M. J.; Halevy, A.; Wang, D. Z.; Wu, E.; and
+Zhang, Y. 2008. Webtables: exploring the power of tables
+on the web. Proceedings of the VLDB Endowment 1(1):538–
+549.
+[2009] Cafarella, M. J.; Madhavan, J.; and Halevy, A. 2009.
+Web-scale extraction of structured data.
+SIGMOD Rec.
+37(4):55–61.
+[2000] Chen, H.-H.; Tsai, S.-C.; and Tsai, J.-H. 2000. Min-
+ing tables from large scale html texts. In Proceedings of the
+18th Conference on Computational Linguistics - Volume 1,
+COLING ’00, 166–172. Stroudsburg, PA, USA: Association
+for Computational Linguistics.
+[2005] Embley, D. W.; Tao, C.; and Liddle, S. W. 2005. Au-
+tomating the extraction of data from html tables with un-
+known structure. Data Knowl. Eng. 54(1):3–28.
+[2015] Hassanzadeh, O.; Ward, M. J.; Rodriguez-Muro, M.;
+and Srinivas, K. 2015. Understanding a large corpus of web
+tables through matching with knowledge bases: an empirical
+study.
+In Proceedings of the 10th International Workshop
+on Ontology Matching (collocated with ISWC2015), Bethle-
+hem, PA, USA, October 12, 2015., 25–34.
+[2013] Lipinski, M.; Yao, K.; Breitinger, C.; Beel, J.; and
+Gipp, B. 2013. Evaluation of header metadata extraction ap-
+proaches and tools for scientiﬁc pdf documents. In Proceed-
+ings of the 13th ACM/IEEE-CS Joint Conference on Digital
+Libraries, JCDL ’13, 385–386. New York, NY, USA: ACM.
+[2006] Liu, Y.; Mitra, P.; Giles, C. L.; and Bai, K. 2006. Au-
+tomatic extraction of table metadata from digital documents.
+In Proceedings of the 6th ACM/IEEE-CS Joint Conference
+
+[2016] Zheng, W.; Zou, L.; Peng, W.; Yan, X.; Song, S.; and
+Zhao, D. 2016. Semantic sparql similarity search over rdf
+knowledge graphs. Proc. VLDB Endow. 9(11):840–851.
+[2017] Zheng, W.; Cheng, H.; Zou, L.; Yu, J. X.; and Zhao,
+K. 2017. Natural language question/answering: Let users
+talk with the knowledge graph. In Proceedings of the 2017
+ACM on Conference on Information and Knowledge Man-
+agement, CIKM ’17, 217–226. New York, NY, USA: ACM.
+
+on Digital Libraries, JCDL ’06, 339–340. New York, NY,
+USA: ACM.
+[2007] Liu, Y.; Bai, K.; Mitra, P.; and Giles, C. L. 2007. Ta-
+bleseer: Automatic table metadata extraction and searching
+in digital libraries. In Proceedings of the 7th ACM/IEEE-CS
+Joint Conference on Digital Libraries, JCDL ’07, 91–100.
+New York, NY, USA: ACM.
+[2017] Nishida, K.; Sadamitsu, K.; Higashinaka, R.; and
+Matsuo, Y. 2017. Understanding the semantic structures
+of tables with a hybrid deep neural network architecture. In
+Proceedings of the Thirty-First AAAI Conference on Artiﬁ-
+cial Intelligence, February 4-9, 2017, San Francisco, Cali-
+fornia, USA., 168–174.
+[2012] Pimplikar, R., and Sarawagi, S. 2012. Answering ta-
+ble queries on the web using column keywords. Proceedings
+of the VLDB Endowment 5(10):908–919.
+[2003] Pinto, D.; McCallum, A.; Wei, X.; and Croft, W. B.
+2003. Table extraction using conditional random ﬁelds. In
+Proceedings of the 26th Annual International ACM SIGIR
+Conference on Research and Development in Informaion
+Retrieval, SIGIR ’03, 235–242. New York, NY, USA: ACM.
+[2003] Ramakrishnan, R., and Gehrke, J. 2003. Database
+Management Systems. New York, NY, USA: McGraw-Hill,
+Inc., 3 edition.
+[2012] Ramakrishnan, C.; Patnia, A.; Hovy, E.; and Burns,
+G. A. 2012. Layout-aware text extraction from full-text pdf
+of scientiﬁc articles. Source Code for Biology and Medicine
+7(1):7.
+[2003] Ramel, J.-Y.; Crucianu, M.; Vincent, N.; and Faure,
+C. 2003. Detection, extraction and representation of ta-
+bles.
+In Proceedings of the Seventh International Confer-
+ence on Document Analysis and Recognition - Volume 1,
+ICDAR ’03, 374–. Washington, DC, USA: IEEE Computer
+Society.
+[2004] Tengli, A.; Yang, Y.; and Ma, N. L. 2004. Learn-
+ing table extraction from examples. In Proceedings of the
+20th International Conference on Computational Linguis-
+tics, COLING ’04. Stroudsburg, PA, USA: Association for
+Computational Linguistics.
+[2012] Wang, J.; Wang, H.; Wang, Z.; and Zhu, K. Q. 2012.
+Understanding tables on the web. In Proceedings of the 31st
+International Conference on Conceptual Modeling, ER’12,
+141–155. Berlin, Heidelberg: Springer-Verlag.
+[2006] Wei, X.; Croft, B.; and McCallum, A. 2006. Table ex-
+traction for answer retrieval. Information retrieval 9(5):589–
+611.
+[2016] Xu, Z.; Burdick, D.; and Raschid, L. 2016. Ex-
+ploiting lists of names for named entity identiﬁcation of
+ﬁnancial institutions from unstructured documents. CoRR
+abs/1602.04427.
+[2014] Yang, S.; Wu, Y.; Sun, H.; and Yan, X. 2014. Schema-
+less and structureless graph querying. Proc. VLDB Endow.
+7(7):565–576.
+[2016] Yuan, Y.; Wang, G.; Chen, L.; and Ning, B. 2016.
+Efﬁcient pattern matching on big uncertain graphs. Inf. Sci.
+339(C):369–394.
+
+

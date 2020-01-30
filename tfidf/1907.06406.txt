@@ -1,0 +1,1482 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+6
+0
+4
+6
+0
+
+.
+
+7
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+1
+
+Improving the Harmony of the Composite Image
+by Spatial-Separated Attention Module
+
+Xiaodong Cun and Chi-Man Pun
+
+Abstract—Image composition is one of the most impor tant applications in image processing. However, the inharmonious appearance
+between the spliced region and background degrade the quality of image. Thus, we address the problem of Image Harmonization:
+Given a spliced image and the mask of the spliced region, we try to harmonize the “style” of the pasted region with the background
+(non-spliced region). Previous approaches have been focusing on learning directly by the neural network. In this work, we star t from an
+empirical observation: the differences can only be found in the spliced region between the spliced image and the harmonized result
+while they share the same semantic information and the appearance in the non-spliced region. Thus, in order to learn the feature map
+in the masked region and the others individually, we propose a novel attention module named Spatial-Separated Attention Module
+(S2AM). Fur thermore, we design a novel image harmonization framework by inser ting the S2AM in the coarser low level features of the
+Unet structure by two different ways. Besides image harmonization, we make a big step for harmonizing the composite image without
+the speciﬁc mask under previous observation. The experiments show that the proposed S2AM performs better than other
+state-of-the-ar t attention modules in our task. Moreover, we demonstrate the advantages of our model against other state-of-the-ar t
+image harmonization methods via criteria from multiple points of view.
+
+Index Terms—Image Harmonization, Image Synthesis, Attention Mechanism
+
+!
+
+1 IN TRODUC T ION
+P HOTO S play a more important role in daily life nowadays.
+The popularization of the smartphone and the advance of
+image processing applications also make image editing easily.
+Thus, any ordinary person, who have little knowledge of image
+editing, can synthesize two images together by photo manipulation
+software (Such as Photoshop) automatically under several easy
+steps [1]: The composite image is synthesized by cutting region of
+the donor image and then paste it to the host image with several
+post-processing technique, such as Gaussian Smoothing. However,
+human eyes can easily identify the images are composited or not
+according to the color, texture or luminance differences between
+the splicing region and background. Meanwhile, these artifacts
+in the images degrade the visual quality of the whole image and
+make the image unrealistic. For these reasons, automatically image
+harmonization is an essential task in digital image processing
+community. To address these problems, some previous works
+increase the quality of the synthesized image by hand-crafted
+features, such as color [2] and texture [3]. Nonetheless, these
+methods only focus on one particular kind of feature, causing
+unreliable results when the appearances are vastly different [4].
+Recently, driven by deep learning based techniques, Zhu et al.[5]
+train a neural network to predict the realism of the composite
+image and optimize the color of the input image by freezing the
+parameters of the neural network, [4] harmonize the images by
+an end-to-end neural network with semantic guidance. However,
+their image harmonization method solve the non-convex model by
+multiple running [5] or rely on the power of learning directly [4].
+Different from the previous methods, our key observation
+is: For image harmonization task,
+the model needs to learn
+the dissimilarity in the appearance of the spliced region and
+ensure the consistency in the non-spliced regions and high-level
+features. As shown in the Fig.1, the spliced image and harmonized
+result only have differences in the appearance of the spliced
+region. This is because, from the viewpoint of image forgery
+
+Fig. 1: The basic idea of our method. In the task of image
+harmonization, we argue that the spliced image (left) and the
+harmonized image (right) share the same appearances in the non-
+spliced region as well as the high-level features. The difference
+mainly comes from the appearance in the spliced region. So we
+design the S2AM module to learn the difference in the spliced
+region and make sure the consistency in the non-spliced region
+in low-level features. This module is inserted in the low levels
+features of the encoder-decoder structure since the main network
+ensures the consistency in high-level features.
+
+detection, the artifacts in the composite images mainly come
+from the differences between various low-level features, such as
+camera internal features [6], different compression levels in JPEG
+compression [7] and noise levels [8]. Consequently, we need to
+design an algorithm which pays closer attention to learning the
+appearance differences in certain region. Meanwhile, the spliced
+
+ 
+ 
+ 
+ 
+ 
+ 
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+image and the harmonized result describe the same story by
+analyzing the semantic information and the sense category. So, in
+our proposed method, the input spliced image and the harmonized
+result need to share the same high-level information.
+To ﬁt previous analysis, we proposed a novel framework for
+image harmonization task. Firstly, following the previous work on
+this task [4], we regard the image harmonization as a supervised
+learning problem by synthesizing the composite images from some
+region of the natural image rather than the real copy-and-paste
+image. This alternative approach allows us to train the neural
+network in a supervised manner by considering the composite
+image and mask as input and natural image as the target. Then,
+we propose a novel attention module named Spatial-Separated
+Attention Module (S2AM) to learn the feature changes in the
+masked region and the others separately. Our S2AM module uses
+several channel attention gates to weight features for different
+purposes with the help of the hard-coded mask and learns the
+changes in the speciﬁc masked region by a learning-able block.
+Moreover, we design the new framework of image harmonization
+task. Our network base on the encoder-decoder [9] by inserting
+the S2AM module to low-level features by two different ways.
+Thus, the proposed S2AM module learns the regional appearance
+changes in low-level features, and the encoder-decoder structure
+will ensure the consistency in high-level features as well. Finally,
+we make a big step for image harmonization without giving mask
+as well. As far as we known, our method is the ﬁrst approach for
+harmonizing the composite image without mask by deep learning.
+This goal is achieved by replacing the hard-coded mask in S2AM
+with the spatial attention block and we also use the additional
+supervision by measuring the loss between the spatial attention
+map and the ground truth mask.
+We summarize the contributions as follows:
+* We propose a novel attentive module named Spatial-
+Separated Attention Module (S2AM) to learn the features
+in the foreground and background area by hard-coded
+masks individuality.
+* We design two variants of the proposed S2AM in Unet
+structure for image harmonization task. Our network ﬁts
+the intention of the difference in the spliced area and
+the similarities between high-level features and the non-
+spliced region. Besides, our network is fully-convolutional
+which is suitable for real world image harmonization task.
+* We generalize our method to the image harmonization task
+without ground truth mask by the spatial attention module,
+attention loss and generative adversarial network.
+* Experiments show that the proposed S2AM module gain
+better results than other attention mechanisms and our
+image harmonization method shows better performance
+than the state-of-the-art methods.
+
+2 RE LATED WORKS
+We do a brief review on the recent development of image har-
+monization and image-to-image transformation task. Importantly,
+we review the recent proposed attention mechanisms for the
+comparison of the proposed S2AM.
+Image Harmonization Recently, because of the efﬁcient and
+impressive results, the neural network based methods have drawn
+much attention in image editing. However, in image harmonization
+ﬁeld, there are still limited research works to solve this problem.
+Zhu et al. [5] propose a ﬁne-tuned model for predicting the realism
+
+2
+
+of the composite images. They also ﬁx the parameters of the model
+and adjust the color of the masked region of the input image by
+optimizing the predicted realism score. It can also be regarded as
+an image harmonization task. [10] propose a method for exchange
+the sky of images while this method only works for the sky. An
+end-to-end learning based approach of image harmonization has
+been proposed by [4], they trained an end-to-end neural network
+with the ground truth image and segmentation mask. However,
+their method just learn everything from the power of the neural
+network. Another related work is GP-GAN [11]. It utilizes the
+generator in GAN to synthesize the low-resolution images, and
+then, the high-resolution output is synthesized by the input image
+and the low-resolution outputs using traditional Gaussian-Poisson
+Equation. Their method focus more on blending the edge of the
+two different image rather than the style transform in the images.
+Thus, this method also changes the appearance of the background
+while the image harmonization only focus on the spliced region.
+More recently, video harmonization methods have been proposed
+by [12] and [13]. Their methods harmonize the video and insert
+the video to another video using spatial and temporal information
+respectively.
+Attention Mechanisms Attention mechanisms draw the atten-
+tion of researchers because these modules allocate the most infor-
+mative components according to analysis the features themselives.
+Squeeze-and-Excitation Network [14] insert a channel attention
+module in the network to make the network itself more focus on
+the essential features by weighting the channels with global feature
+analysis and Convolutional Block Attention Module [15] extend
+this method by adding a spatial attention module for weighting
+the features in spatial space. For choosing the feature kernel with
+different size, Selective Kernel Networks [16] is proposed. As for
+learning the speciﬁc region in spatial space, [17] propose Partial
+Convolution for focusing on the masked region and [18] use Gated
+Convolution, which can also be regarded as the spatial attention
+mechanism, to update the parameters of the network and mask (or
+attention map ) softly. However, these methods are designed for
+image in-painting task speciﬁcally. Another noticeable direction
+of attention mechanism is self-attention. Self-Attention aims to
+capture the long-range dependencies in the image context. Non-
+local Network [19] extend the self-attention [20] as a form of non-
+local means [21] to capture long-range dependencies for video
+classiﬁcation and [22] extends this method in GAN-based struc-
+ture for generating divergence samples. Most recently, [23] model
+the Non-Local Network and Squeeze-and-Excitation Network in
+a new form called Global Content Network for various computer
+vision tasks. However, these attention mechanisms are focus to
+learning the representation on the high level computer vision task
+other than digital image processing with low-level features change.
+
+Image-to-Image Transformation Image harmonization can
+
+also be regarded as an image-to-image transformation task which
+focusing on the changes the appearance between the input and
+target. Chen et al. [24] propose a neural network for fast image
+processing with the Dilated Convolution [25] to capture larger
+reception ﬁeld without reducing the feature map. By the excellent
+performance of guided ﬁlter [26] in edge preserving, [27] and
+[28] model this ﬁlter by the neural network. Taking the beneﬁt of
+[24] and [26], [29] propose the deep guided ﬁlter for fast image
+processing. When the content of the image changes signiﬁcantly,
+pix2pix [9] train the network for alignment datasets by GAN [30]
+while CycleGAN [31] is proposed for unsupervised learning.
+By combining the image-to-image transformation task with the
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+3
+
+Fig. 2: The main framework of our network.
+
+attention network, Another noticeable direction of unsupervised
+image-to-image transformation is attention-based methods. [32],
+[33] extend CycleGAN with the attention network as an additional
+block and learning the foreground speciﬁcally. These methods
+generate a global attention mask for image-to-image transforma-
+tion for speciﬁc object only.
+
+3 ME THODS
+Following the previous work [4] on image harmonization, we
+create synthesized image harmonization datasets by modifying the
+appearance of the speciﬁc region of the original natural image.
+Thus, image harmonization task can be modeled as a supervised
+learning task by feeding the synthesized composite image and the
+corresponding mask to the network and learning to harmonize
+the natural image. Fig. 2 shows an overview of our method for
+image harmonization. In detail, we use an encoder-decoder with
+skip-connection (Unet in [9]) as the backbone structure for our
+task. Then, with the interpolating of the proposed attention block,
+our network can learn the spliced region and background region
+separately, causing better results than previous works. In this
+section, we introduce the proposed Spatial-Separated Attention
+Module (S2AM) in Section. 3.1 ﬁrstly. Then, for our method can
+learn the speciﬁc region automatically, we generalize our S2AM
+module to image harmonization task without mask in Section. 3.2.
+Next, we discuss the backbone network and the post-processing
+technique for image harmonization in Section. 3.3. Finally, we
+discuss the loss functions in both tasks and synthesized datasets
+used in our framework in Section 3.4 and Section 3.5, respectively.
+
+3.1 Spatial-Separated Attention Module (S2AM)
+The basic idea behind our S2AM module is straightforward:
+traditional convolution ﬁlter in convolution neural network learns
+the weight from the whole image without spatial differences.
+It satisﬁed the high-level computer vision tasks for the abstract
+features are more important. However, for the image-to-image
+transformation in the certain region, the traditional convolution
+ﬁlter shows poor performance [17]. Thus, with the help of the
+hard-coded mask, we design the attention module attempting to
+learn the features individually in spatial space.
+As illustrated in Fig. 3(a), given an intermediate feature map
+x ∈ RC×H×W and the binary mask M ∈ R1×H×W of the
+spliced region as the inputs ( C is the feature channel, H and W is
+
+(a) S2AM
+
+(b) S2AM w/o hard-coded Mask
+
+Fig. 3: The difference between the S2AM and S2AM without the
+hard-coded mask. We replace the original hard-coded mask by
+spatial attention block and attention loss from ground truth mask.
+
+the height and width of the feature map respectively ), our attention
+module utilizes three 1D channel attention gates Gbg , Gmix , Gf g
+to weight the input features for different purposes with the help of
+hard-coded spliced region mask M and non-spliced region mask
+M (cid:48) . In detail, Gbg aims to select the features which are necessary
+for image rebuild in the non-spliced region. Gf g intends to weight
+the input features which have differences between the input and
+target. Moreover, we design the third channel attention module
+Gmix to weight features which is unnecessary to change in the
+spliced region. Additionally, for the output features of Gf g , we
+add a learning-able block L to learn the style transfer. So our
+RAB module between input features x and output features y can
+be formalized as:
+
+y = M × [L(Gf g (x)) + Gmix (x)] + (1 − M ) × Gbg (x) (1)
+
+Our S2AM module is a general form on separated-learning
+the appearance changes in the speciﬁc region and others. So it
+is possible to design different structures of Channel Attention
+Modules Gbg , Gmix , Gf g and learning-able block L for the
+particular computer vision tasks. Here, inspired by the state-of-
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+4
+
+the-art attention modules, we design one instance of S2AM for
+image harmonization as follows.
+
+Channel Attention Modules (Gbg , Gmix , Gf g ). With the
+
+x ∈ RC×H×W to xmaxpooling ∈ RC×1×1 and xavgpooling ∈
+
+help of hard-coded mask,
+the goal of the Channel Attention
+Module is to select the related features channels from the input
+by applying 1D channel weighting for input features. Here, we
+modify the state-of-the-art channel attention module in Squeeze-
+and-Excitation Network [15] by adding a MaxPooling layer.
+This channel gate is also a part of the structure in [14]. As
+shown in Fig. 4(a), we start from squeezing the input features
+RC×1×1 by the Global Max Pooling and Global Average Pool-
+ing operators, separately. Then, we concatenate xavgpooling and
+xmaxpooling in channel axis and learn the channel weighting
+by two fully-connected layers and a Sigmoid layer. Following
+previous work [15], [14], we reduce the size of the input feature
+to C
+16 in the ﬁrst Linear layer and increase the length to C in
+the second and a Sigmoid layer is added at the end of Linear
+Layer to ensure the range of scale factor under [0, 1]. The attentive
+modules show great success in image classiﬁcation [15] and
+object detection tasks [14] with the structure of ResNet [34] or
+Inception [35]. As far as we know, we are the ﬁrst to insert the
+attentive structure for the module with hard-coded mask.
+Learning-able Block (L) As shown in Fig. 3(a), we aim to
+learn the appearance changes in the spliced regions by Learning-
+able Block additionally. We use 3 × 3 convolutional layers with
+two CONV-BN-ELU blocks. Similar to channel attention module,
+we double the channel size in the ﬁrst CONV-BN-ELU block
+and reduce the channel size in the second to expend the learning
+capacity. Notice that, we do not reduce the feature size in the
+learning-able blocks for preserving the feature details.
+Mask (M , M (cid:48) ) Spliced region mask M and non-spliced
+region mask M (cid:48) are the necessary parts for our S2AM module
+because the channel attention modules are guided by these hard-
+coded masks. Furthermore, they provide a strong prior knowledge
+to the neural network. We also multiply a uniform 7 × 7 Gaussian
+Kernel to the mask M and the reverse mask M (cid:48) respectively.
+This simple operation allows the neural network to generate the
+boundary by the closest object for the hard-coded masks are not
+always accurate. We discuss the effect of Gaussian Kernel in our
+attention module in the Section. 4.5.2
+
+3.2 Generalize S2AM to Image Harmonization without
+Mask
+We generalize the S2AM module for image harmonization without
+the hard-coded mask as input. Thus, we ﬁrst replace the original
+hard-coded mask with the spatial attention block. We design
+the spatial attention module with the similar structure of the
+previous introduced Channel Attention Modules. For the Spatial
+Attention Module aims to learn the spatial position separately, we
+use the Max Channel Pooling and Average Channel Pooling to
+extract the maximum responses and medium responses from all
+feature channels for each pixels. Then, unlike the channel attention
+module which used fully-connected layer for channel weighting.
+It is memory-consuming for capture the global features. Thus,
+we use two Convolutional layers with the kernel size 7 × 7 as
+alternative. The ﬁrst Convolutional layer broadcast the features to
+16 layers while the second squeeze the channel map to ﬁt the
+output of Sigmoid. Then, a Sigmoid layer is added at the end
+of the module for restrict the response of features weighting in
+
+(a) Channel Attention Module
+
+(b) Spatial Attention Module
+
+Fig. 4: The detail of Channel Attention Module and Spatial
+Attention Module in the proposed S2AM.
+
+[0, 1]. Notice that, there is only one Spatial Attention Module
+in our S2AM module because we attempt to force the spatial
+attention map in two folds without overlap. The reverse mask M (cid:48)
+is calculated by M (cid:48) = 1 − M . We show the structure of spatial
+attention module in Fig. 4(b).
+Moreover, we add a loss between the output of the sigmoid
+layer and the ground truth mask. This attention loss guide the
+focus of spatial attention module for the features from 7 × 7
+Convolutional layer is not always accurate. We review the choice
+of attention loss and the inﬂuence of attention loss in Section.3.4
+and Section. 4.4.
+
+3.3 Network Structure
+As the previous analysis, we model the image harmonization task
+as an image-to-image transformation task. Differently, our task
+need to: (1) ensuring the consistence in high level features. (2)
+taking more attention to the low-level appearance changes. Thus,
+we use the encoder-decoder structure as the backbone network
+to ensure the consistency in high-level features and S2AM for
+learning appearance changes carefully. We introduce the network
+structure in our approach below.
+Network Backbone Different from the encoder-decoder struc-
+ture in Deep Image Harmonization (DIH) [4], the state-of-the-
+art work on image harmonization, we use Unet [9], [36] as the
+backbone network for many reasons. Unet owns more high-level
+ﬁlters and treats the global features in the fully convolutional
+manner while DIH uses Linear Layer which will hugely increase
+the parameters of networks and limit the input size. Another
+difference between these two backbones is that DIH use ELU
+for non-linear activation while Unet chooses RELU/Leaky RELU
+for better representation. As for the operation between the skipped
+encoder features and decoder features, we concatenate the features
+from encoder rather than add or mix them. The experiment
+shows that the new baseline network improves the results of
+harmonization task to a large extent.
+The Role of S2AM The ﬁrst choice of interpolating S2AM
+to Unet is based on a general observation: The original skip-
+connections preserve the encoded low-level features in the original
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+image and these features are concatenated to the low-level features
+of the decoder. The concatenation of the low-level features from
+different appearances will mislead the learning process to make
+a good choice. Thus, we replace the original skip-connection
+in the encoder-decoder by the proposed attention module. Our
+attention module will ﬁlter the features in the encoder and learn the
+appearance changes in the spliced region and non-spliced region
+individually. We call this type of connection Spatial-Separated
+Attentive Skip-Connection (S2ASC). Moreover, we also interpo-
+late the proposed module after the concatenation of the shadow
+features from the encoder and the decoded features from high-
+level network (as the network structure in Fig. 2). This kind of
+choice will use more features (features from encoder and decoded
+features from high-level) for learning a better channel attention
+decision to learn separately. Thus, the appearance changes will
+also contains the inﬂuence from the global features. We name this
+type of structure Spatial-Separated Attentive Decoder (S2AD). We
+show the differences between S2ASC and S2AD in Fig. 5.
+Notice that, the proposed S2ASC and S2AD module only
+replace the original three levels of the structure in the unet for
+ensuring the similar high-level feature (as in Fig. 2). We also verify
+this assumption in Section. 4.5.2.
+
+5
+
+3.4.1 Loss Function for Image Harmonization
+Following our baseline method [4], we use the L2 -norm criterion
+as the main criterion in the pixel domain. Besides, Perception
+Loss [37] and Adversarial Loss [30] ( pix2pix method in Sec-
+tion. 4 ) are added individuality as the additional loss to constrict
+the accuracy of results in the feature domain and distribution.
+These two criteria have shown great success in various image
+generation tasks. However, we do not observe a signiﬁcant im-
+provement in our task. Not surprisingly, similar experiment results
+have been observed in the fast image processing task [24]. We
+think it is because the changes in appearance ( pixel domain )
+are more important than the content changes ( feature domain or
+distribution ) for digital image processing tasks because the spliced
+and harmonized image have the similar high-level features.
+
+3.4.2 Loss Function for Image Harmonization w/o Mask
+Different from pervious image harmonization task, we use mul-
+tiple criteria for Image harmonization without mask. Firstly, as
+the same loss function in image harmonization, we set the pixel-
+level criterion by L2 norm for the harmonized image should have
+the same pixel values with the target in the corresponding spatial
+position. We mark the output image as Ipredict and the target
+image as I . The pixel level loss function can be written as:
+
+Lpixel = ||Ipredict − I ||2
+
+(3)
+
+(a) S2ASC
+
+(b) S2AD
+
+Fig. 5: The positions of the proposed module.
+
+Post-Processing (pp) As for image harmonization task, the
+background region should stay unchanged when we generate the
+ﬁnal output. Thus, in the inference stage, we mask the harmonized
+region by the original ground truth mask and replace the others
+with the original image. For image harmonization without mask,
+we train the post-processing altogether. The ﬁnal output If inal is
+calculated by the coarser attention mask M2s and input image I
+of our network as:
+
+If inal = Ig ⊗ U p(M2s ) + I ⊗ (1 − U p(M2s ))
+
+(2)
+where ⊗ represent the pixel-wise multiplication and Ig is the
+output of the network. U p(·) means the Upsample layer for the
+attention mask 2s is the 1/2 size of the original image. Notice
+that we learn the whole network in image harmonization without
+mask task while we use this technique as post-processing in image
+harmonization task. This is because the predicted mask is not
+always accurate and the additional loss in image harmonization
+without mask will learn to make the overall image look realistic
+rather than the attention mask region only.
+
+Although our spatial attention module can learn the foreground
+features and background features individually, it is still a challenge
+task when there is no ground truth mask as input. However, for
+the ground truth spliced mask is easy to get by the synthesized
+dataset, we add the attention loss in the spatial attention module
+of the S2AM module for guiding the image synthesis. In speciﬁc,
+we resize the original ground truth mask to constrict the output
+of the sigmoid in every levels of spatial attention mask. It is
+obviously that the gated attention can be consider as a supervised
+binary classiﬁcation task, we use the Binary Cross Entropy as
+the criterion ﬁrstly. Then, every pixels in the image have spatial
+connections. Thus, L2 Loss is also a satisﬁed options. We evaluate
+all the choices of the loss function in Section 4.4. Finally, we
+choice L2 loss as the attention loss in each spatial attention block:
+
+3(cid:88)
+
+Latt =
+
+||M
+
+(cid:48)
+
+i − Mi ||2
+
+(4)
+
+i=1
+
+(cid:48)
+
+M
+
+i is the i-th level attention mask of S2AM while Mi is the
+corresponding ground truth spliced mask.
+Moreover, we use the adversarial loss [9] for removing the
+artifacts in the predicted image. Adversarial loss has show many
+success in many image-to-image transformation tasks and image
+generation tasks. Different from original works in Pix2pix [9],
+we use the Least-Square GAN as the adversarial loss following
+the work of CycleGAN [31]. For image harmonization task, we
+regard the Unet with S2AD is the generator of GAN and we use
+the same Patch-based discriminator structure of pix2pix [9].
+Then, the total loss for image harmonization without mask can
+be written as:
+
+3.4 Loss Function
+We design different loss functions for image harmonization and
+image harmonization without mask since the latter task have the
+the weaker prior information.
+
+L = αLattention + βLpixel + Lgan
+
+(5)
+
+We experimentally set the α = 90 and β = 100 in all experi-
+ments. We also evaluate the different setting of hyper-parameters
+α, β in Section. 4.4.
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+3.5 Data Acquisition
+
+Since there is no public available dataset for image harmonization,
+we build the below two datasets to compare for different reasons.
+
+Synthesized COCO (S-COCO) To test the robustness of
+
+approaches over the tampered images with ground truth instance
+mask, we build S-COCO dataset. COCO [38] contains various
+natural images with ground truth instance mask annotated by the
+human. Different from DIH [4], we tamper the images by the
+state-of-the-art style transfer methods [29]. As shown in Fig. 6,
+ﬁrstly, we temper the original natural image by the pre-trained
+auto-ps model. Then, for further simulating the copy-and-paste
+image in the real world, we randomly enhance the appearance of
+the transformed region with brightness, color and contrast. Finally,
+we crop the tampered image by the ground truth instance mask
+and paste the cropped region to the corresponding position of the
+natural image. We use the Train2017 and Val2017 split in COCO
+for training and testing, respectively. We only select the tamper
+image with spliced region larger than 15 % of the whole image
+since smaller regions may harm the consistency of the prediction.
+Overall, there are about 43k and 1.7k images for training and
+testing respectively.
+
+Synthesized Adobe5K (S-Adobe5K) We evaluate the ro-
+
+bustness of the image harmonization methods on inaccurate
+ground truth mask and manually copy-and-paste under Adobe5K
+dataset [39]. Adobe5K contains 5k raw photos, and each image
+is dedicated to photo adjustment by ﬁve experts using Adobe
+Lightroom software. So each image has ﬁve different natural
+styles. To get the ground truth image spliced binary mask, we
+segment image from one speciﬁc style by the pre-trained state-
+of-the-art semantic segmentation model, DeepLab-V3 [40]. We
+generate the binary mask by each class of segmentation results.
+Finally, the samples are created by pasting the mask region from
+other different styles to the original image. We split the original
+dataset for learning randomly and ﬁlter out the smaller region as
+S-COCO. There are 36k images for training and 2k images for
+testing in S-Adobe5K.
+The overall progress is shown in Fig 6. We will public these
+two synthesized datasets for further research.
+
+Fig. 6: The workﬂow of building synthesized datasets.
+
+6
+
+4 EXPER IMENTS
+In this section, we conduct
+the experiments on our methods
+with the state-of-the-art methods on image harmonization. Firstly,
+we illustrate all the training/testing details of our methods and
+the baselines for comparisons in Section. 4.1 and Section. 4.2
+respectively. Then, for the comparison, we evaluate our method
+for image harmonization and image harmonization without the
+mask on several datasets in Section. 4.3 and Section. 4.4. Finally, a
+detailed analysis of the proposed S2AM is reported in Section. 4.5.
+
+4.1 Implementation detail
+All the models are trained with PyTorch [41] v1.0 and CUDA
+v9.0. We train the image with the resolution of 256 × 256 and
+run the model 80 and 60 epochs for converging on S-COCO
+and S-Adobe5K, respectively. All the optimizers are Adam [42]
+with the learning rate of 0.001 , and there is no learning rate
+adjustment schedule for fair comparison. For testing, our model
+runs at 0.012 seconds pre-image on a single NVIDIA 1080 GPU
+with the resolution of 256 × 256. Since the synthesized datasets
+have the ground truth target, we evaluate our approach with
+other methods on multiple popular numerical criteria, such as
+Mean Square Error (MSE), Structural Similarity (SSIM) and Peak
+Signal-to-Noise Ratio (PSNR). All the results in the synthesized
+datasets are the mean of the 1.7k and 2.4k test images in S-
+COCO and S-Adobe5K, separately. Moreover, We also evaluate all
+the methods on the recently proposed Learned Perceptual Image
+Patch Similarity (LPIPS [43]) and a pre-trained realism prediction
+model [5] from the viewpoint of the perceptual metrics. Finally,
+We evaluate the state-of-the-art methods on the real composite
+images which are collected from the real world with user study.
+
+4.2 Baselines
+We list all the image harmonization baselines for comparison on
+the synthesized datasets as follows:
+
+Deep Image Harmonization (DIH) [4] DIH harmonizes
+
+images in a supervised manner with an encoder-decoder structure.
+Additionally, they use the ground truth segmentation mask as a
+redundant decoder since the harmonized images should also share
+the same segmentation results with the target. We train the DIH on
+the same synthesized datasets for fair comparison. As our S2AM
+can be plugged into DIH easily by replacing the original skip-
+connections in color and semantic branch, we modify the original
+model for comparison on S-COCO and S-Adobe5K. Notice that,
+because S-Adobe5K have no ground truth segmentation mask, we
+only evaluate the color branch.
+RealismCNN (R-CNN) [5] RealismCNN use the pre-trained
+VGG16 network as the basic feature extractor and ﬁne-tune the
+model in the fully-connection layer for classifying the realism
+of the input image. Additionally, they freeze the parameters in
+the realism model and optimize the color of the input image
+by a novel loss function. However, this method tries to solve a
+non-convex function by selecting the minimal cost from multiple
+running. We compare the results on our datasets with the ofﬁcial
+implementation1 .
+pix2pix [9] Pix2pix use GAN in the image-to-image trans-
+formation task ﬁrstly. GAN has signiﬁcant beneﬁts synthesizing
+the meaningful photo-realistic images because the discriminator in
+GAN distinguishes the real or fake image by the neural network
+
+1. https://github.com/junyanz/RealismCNN
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+7
+
+(a) Input/Mask (b) R-CNN[24]
+
+(c) DIH[4]
+
+(d) DIH+
+
+(e) pix2pix
+
+(f) pix2pix+
+
+(g) UNET[9]
+
+(h) UNET+
+
+(i) Target
+
+Fig. 7: Comparison on synthesized datasets. The two top samples are selected from S-COCO while the two bottom images come from S-
+Adobe5K. The methods with + represent we replace the original coarser skip-connection with our S2ASC. To visualize the differences
+better, we plot the absolute differences colormap between the harmonized image and target under each result. It is apparent that our
+method shows better results in both image quality and difference colormap. We enlarge the colormap 10× for better visualization.
+itself. However, it fails to get the accurate numerical results. Since
+Unet+S2ASC. Additionally, we compare the Unet+S2ASC with
+we use unet as our backbone network, we compare the unet,
+Unet+S2AD individually.
+unet with S2AM as Skip-connection (Unet+S2ASC) and unet
+In S-COCO, we train all the learning-based methods under
+with S2AM as Decoder (Unet+S2AD). Furthermore, we compare
+the same framework except the model structure. As shown in
+pix2pix by considering Unet and Unet+S2ASC as the generators
+Table. 1, RASC module get better numerical results when it is
+of GAN respectively. Notice that, we train the GAN framework
+plugged into three baseline structures: DIH, unet and pix2pix.
+under the default conﬁguration by the author’s implementation2 .
+Moreover, our full method (Unet+S2ASC) show the best results.
+These experiments conﬁrm that our method is more suitable
+for image harmonization task comparing with others because
+their approaches only gain the results relying on larger datasets.
+Additionally, our method achieves better visual effects. We plot
+the harmonized results in Figure. 7 and calculate the absolute
+difference colormap between the target and result for better visual-
+ization. It is clear that our method outperforms other methods to a
+large extent. Figure. 7, our method shows better results in various
+
+4.3 Comparisions
+4.3.1 Comparison on Synthesized Datasets.
+For fair compare the effect of backbone network and our atten-
+tion module, we mainly compare the state-of-the-art methods on
+
+2. https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+8
+
+Fig. 8: The predicted score on the pre-trained model of R-
+CNN [5]. The methods with + represent we replace the original
+coarser skip-connection with our S2ASC. The higher score means
+a more realistic result.
+
+image content and color form. It is obvious that our approach gain
+better results when the bed or person is the spliced region and
+performs well in both gray images and color images.
+The similar improvements are also observed in S-Adobe5K.
+This dataset is more complicated than S-COCO for the data is
+limited, and the mask is inaccurate. We show the visual compar-
+isons in Figure. 7 and report the numerical results in Table. 1.
+Both results indicate that our methods gain better performances
+than others. As shown in the third example in Figure. 7, the
+three baseline methods with S2AM perform better with inaccurate
+ground truth mask because our S2AM ﬁlter the regional features
+separately in the skip-connection.
+Besides the numerical and visual comparison, we also evaluate
+all the methods on the pre-trained composite realism model in R-
+
+Method
+
+Original Copy-and-Paste
+R-CNN [5]
+DIH [4]
+
+DIH + S2ASC
+
+pix2pix [9]
+
+pix2pix [9] + S2ASC
+
+Unet [9]
+
+Unet + S2ASC
+Unet + S2AD
+Unet + S2AD + pp
+
+Original Copy-and-Paste
+R-CNN [5]
+DIH[4]
+
+DIH + S2ASC
+
+pix2pix [9]
+
+pix2pix [9] + S2ASC
+
+Unet [9]
+
+Unet + S2ASC
+Unet + S2AD
+Unet + S2AD + pp
+
+MSE↓
+SSIM↑
+S-COCO dataset
+25.94
+0.9469
+31.21
+0.9509
+20.88
+0.9662
+18.09
+0.9734
+21.24
+0.9633
+17.67
+0.9707
+17.28
+0.9757
+15.59
+0.9784
+14.88
+0.9790
+
+14.26
+
+0.9811
+
+S-Adobe5K dataset
+37.43
+0.9401
+41.29
+0.9338
+34.71
+0.9243
+26.96
+0.9586
+32.26
+0.9560
+22.67
+0.9702
+23.18
+0.9693
+21.83
+0.9711
+21.52
+0.9743
+
+20.47
+
+0.9757
+
+PSNR↑
+
+LPIPS [43]↓
+
+26.62
+27.17
+31.73
+33.55
+32.13
+33.32
+33.55
+34.74
+35.23
+
+35.38
+
+26.60
+26.11
+27.94
+31.45
+30.01
+32.59
+32.46
+33.31
+33.67
+
+33.94
+
+0.0507
+0.0458
+0.0308
+0.0174
+0.0237
+0.0154
+0.0162
+0.0144
+
+0.0128
+0.0128
+
+0.0501
+0.0568
+0.0506
+0.0282
+0.0365
+0.0220
+0.0232
+0.0210
+
+0.0186
+
+0.0195
+
+TABLE 1: The numerical comparison on synthesized datasets.
+Here, S2ASC and S2AD are the different interpolate method of
+our S2AM. pp represent the post-processing in Section. 3.3
+
+.
+
+(a) Input
+
+(b) S2ASC
+
+(c) S2AD
+
+(d) Target
+
+Fig. 9: Comparison between the S2ASC and S2AD. Although
+S2ASC harmonize the tampered region, there are still some fake
+details while S2AD show realistic global results.
+
+CNN [5]. Notice that, the pre-trained model has not been trained
+on any images in our dataset before. The predicted score in
+Figure. 8 shows the predicted score of the composite images. It
+is clear that our S2AM improve the predicted scores from the
+viewpoint of the pre-trained model in most cases. Meanwhile, our
+Unet+S2AM method shows best performance results comparing
+with others. However, it is not surprising that R-CNN performed
+better when the experiment is performed on its own pre-trained
+model. Interestingly, for R-CNN, we do not observe a similar
+phenomenon in S-Adobe5K. It is probably because the pre-trained
+model optimizes the difference in color by semantic while the
+mask is not always meaningful in S-Adobe5K.
+We compare the results of S2ASC and S2AD on two syn-
+thesized datasets. We argue that, in Unet+S2AD, our S2AM
+learns from the high-level information and low-level information
+altogether. Besides the numerical analysis in Table. 1, S2AD show
+better global consistence that S2ASC as shown in Fig. 9. It is
+clear that S2AD get the beneﬁts from the upsampled high-level
+features and generate more realistic results from global context.
+For example, the shoulder of the human in the third example and
+the hat of the child in the last sample are not synthesized well
+in S2ASC while we get the better results from the interpolate of
+high-level features and low-level information from encoder.
+
+4.3.2 Comparison on Real Dataset with User Study.
+Although we train the model on synthesized dataset, our method
+can also harmonize the real samples of spliced image. We compare
+our method with two most relevant states-of-the-art methods on
+the real composite images with provided spliced mask. This
+dataset contains 99 images with various different scenes and it
+is collected by DIH [4]. As shown in Figure. 10, our method out-
+perfumes other states-of-the-art methods with a larger margin on
+this dataset. For there is no available ground truth target image for
+
+Predicted Score-0.8-0.6-0.4-0.200.20.4MethodsInputDIHDIH+pix2pixpix2pix+Unet(Ours)Unet+R-CNN S-Adobe5K  S-COCOJOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+9
+
+our methods in Fig. 12. The mask predicted by our method is
+reasonable. We also report the numerical results under the this task
+in Table. 3, surprisedly, our full method get comparable results
+with the DIH methods (which need the mask as input) under the
+same datasets. Table. 3 also report the intermediate results of our
+methods. Each experiment show the necessity in the network.
+
+Method
+Original Copy-and-Paste
+Unet (w/o mask) [9]
+Ours w/o Attention Loss
+Ours w/o GAN Loss
+Ours w/o post-processing
+Ours (Unet+S2AD)
+
+MSE↓
+25.94
+29.86
+26.08
+23.93
+23.86
+
+20.73
+
+SSIM↑
+0.9469
+0.9518
+0.9608
+0.9622
+0.9590
+
+0.9657
+
+PSNR↑
+26.62
+28.96
+30.10
+30.89
+30.61
+
+31.15
+
+TABLE 3: We evaluate the proposed method for image harmo-
+nization without the ground truth mask as input on the S-COCO
+datasets.
+
+4.4.2 Evaluation of Attention Loss
+The key component of our method for image harmonization
+without mask is attention loss. We tuning the choice of attention
+loss of L2 , Binary Cross Entropy under a subset of S-COCO
+dataset. This subset contains 10k training images and we test it
+on the same test dataset as the full S-COCO dataset. We choose
+this subset S-COCO for evaluating the attention loss because it
+trains 4× faster than the original dataset. As shown in the red
+line and blue line in Fig. 11, L2 loss is a more suitable choice
+for attention loss than Binary Cross Entropy under the same ratio
+between the pixel loss. We also try to ﬁnd the best proportion by
+rescale the percentage of the attention loss to 0.1×, 0.01×,10×.
+From the Figure. 11, it is clear that the best proportion between
+attention loss and pixel-level loss is 1 : 10.
+
+Fig. 11: The Evaluations of the attention loss on the Subset of S-
+COCO. We plot the PSNR on the full test set in each epoch when
+we train the network with different attention loss. We also tune the
+hyper-parameters α, β in Equation.5. X × means the proportion
+between the pixel level loss parameters α and our attention loss
+β . This ﬁgure is best view in color.
+
+4.5 Attention Mechanisms Analysis
+We ﬁrst evaluate the proposed S2AM against other state-of-the-
+art attention mechanisms: Squeeze-and-Excitation Network (SE-
+Block) [15] and Convolution Block Attention Module (CBAM) [14]
+for image harmonization task in Section. 4.5.1. Their methods
+
+() Original
+
+(a) DIH [4]
+
+(b) Zhu [5]
+
+(c) Ours
+
+Fig. 10: Comparison on the real dataset. As shown in the ﬁgure,
+our method gain better results than DIH [4] and Zhu [5] with the
+pre-trained model provided by author.
+
+the harmonized version of these images, we conduct user study to
+evaluate our method on real dataset and synthesized datasets by
+Amazon Mechanical Turk. Our user study template derivates from
+the web page in [11]. Speciﬁcally, for each task, giving the original
+copy-and-paste image and corresponding mask, the users need to
+choose the best realistic image from all the harmonized results
+created by different algorithms. In user study, we use the structure
+of Unet+S2AD structure and train our model on two synthesized
+datasets with 30 epochs from scratch. As for the comparison, we
+compare our method with the pre-trained DIH model provided by
+author3 . This model pre-trained on the semantic segmentation task
+and ﬁne-tune the network on three datasets synthesized by their
+own. As shown in the Table. 2, our method gain much more votes
+than others with a larger margin.
+
+Method
+Zhu [5]
+DIH [10]
+Ours
+
+Total votes
+120
+212
+263
+
+Average votes
+21%
+35%
+44%
+
+TABLE 2: The comparison between our method and other states-
+of-the-art methods under user study.
+
+4.4 Image Harmonization without mask
+4.4.1 Comparsion on Synthesized Dataset
+As describe in Section. 3.3, our method can be adapted to the
+image harmonization task without the ground truth as input. So in
+this task, we regard the previous Unet as the baseline network
+structure by feeding the color image to the network only. We
+evaluate our method on the S-COCO dataset for comparison. As
+shown in Fig. 12, even without the feeding of the tampered mask,
+our method can still predict the realistic harmonized image and
+achieve much more better performance than the baseline unet [9]
+both visual and numerical quality. We also plot the intermediate
+attention map (coarser level of the attention loss) created by
+
+3. https://github.com/wasidennis/DeepHarmonization
+
+Evaluation of the PSNR on Subset of S-COCOPSNR18202224262830Epochs01020304050607080L2 Loss (0.01x)L2 Loss (0.1x)L2 Loss (1x)L2 Loss (10x)BCE Loss(1x)JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+10
+
+(a) Input
+
+(b) Tampered Mask
+
+(c) Unet [9]
+
+(d) Zhu [5]
+
+(e) Ours
+
+(f) Attention Map
+
+(g) Target
+
+Fig. 12: The Comparison results of our methods and other baseline methods on the S-COCO datasets without the ground truth mask as
+input. We also plot the attention map created by our method and the ground truth map here for comparison.
+
+are proposed for image classiﬁcation tasks, so we replace the
+original skip-connection in Unet for comparison with the proposed
+S2ASC. Moreover, we compare the attention modules with the
+basic CONV-Block. Each CONV-Block block has the structure
+of CONV (3 × 3)-ELU-BN-CONV (3 × 3)-ELU-BN, which is
+the same as the learning-able block in S2AM. Then, we conduct
+a detailed ablation study of our module in Section. 4.5.2 and
+Section. 4.5.3. All the methods are experimented on S-COCO
+dataset in the same framework with default conﬁgurations.
+
+4.5.1 Evaluation of Attention Modules
+As illustrated in Table. 4, Unet+CONV-Block and Unet+SE-Block
+show poor performance than the baseline method for similar
+reasons. In these methods, the Convolution operator is performed
+on the whole image and their method cannot learn the disparities
+in the spliced region and preserve the features in the non-spliced
+region simultaneously. SE-Block shows better results than CONV-
+Block because SE-Block learns the channel attention additionally
+in the skip-connection. Moreover, it is not surprising that CBAM
+gets better results than baseline since the spatial attention part in
+CBAM can learn speciﬁc region automatically, and the input mask
+of our network make it easy. However, our unet+S2ASC method
+gets a better result than other attention modules with a large
+margin. This is because, with the help of the hard-coded mask, we
+can design more channel attention modules for different purposes
+and learning speciﬁcally while the SE-Block and CBAM can only
+focus on certain channels or certain regions by learning from data.
+The beneﬁts of our attention module are obvious. From Figure.13,
+our method get a cleaner difference colormap in background than
+other attention modules for their methods only consider soft atten-
+
+tion. Another improvement between Figure.13(e) to Figure.13(f)
+is the boundary of the spliced mask. From the ﬁgure, we can ﬁnd
+our method get better harmonized edges while the ground mask is
+not always true while other methods fail. It is probably because the
+soft spatial attentions in CBAM can not always get the accurate
+attention map even with the input ground truth mask while we use
+the hard-coded mask and Gaussian Filter in the module.
+
+Method
+baseline unet[9]
++ CONV-Block
++ SE-Block [15]
++ CBAM [14]
+
+unet with S2ASC (Ours)
+
+− Gbg , Gmix , Gf g
+− Gmix
+
+− Gaussian Mask
++ 6 layers S2ASC
+− Learning block(L)
+
+MSE↓
+17.28
+17.85
+17.45
+16.50
+15.59
+17.93
+15.80
+15.67
+15.66
+
+15.49
+
+SSIM↑
+0.9757
+0.9757
+0.9762
+0.9768
+
+0.9790
+
+0.9758
+0.9779
+0.9788
+0.9787
+0.9781
+
+PSNR↑
+33.55
+33.34
+33.42
+34.32
+
+34.74
+
+33.32
+34.49
+34.72
+34.73
+34.73
+
+TABLE 4: The evaluation of S2AM with the different attention
+modules and the ablation study of S2AM on S-COCO dataset.
+4.5.2 Ablation Study
+We conduct ablation experiments on the inner structure of the
+proposed S2AM model under S2ASC. All the experiments are
+performed on the S-COCO dataset with the same conﬁguration.
+We illustrate all the numerical results in Table. 4.
+Without Gbg , Gmix , Gf g . By comparison with the baseline,
+Unet w/o Gbg , Gmix , Gf g gets slightly worse results because the
+hard-coded mask will force the learning-able block L to learn
+the necessary and unnecessary features altogether without any
+identiﬁcation.
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+11
+
+(a) Input
+
+(b) Mask
+
+(c) Target
+
+(a) w/o Gaussian Filter
+
+(b) w/ Gaussian Filter
+
+Fig. 14: Gaussian Filter smooth the binary mask to ﬁt object.
+For example, the little girl in the image is the tampered region
+with inaccuracy spliced mask. From two zoom-in regions in the
+image, the method with Gaussian Filter show better harmonization
+boundaries.
+
+4.5.3 Attention Analysis
+We also analyze the detail responses of all three Channel Attention
+Modules in our S2AM modules. We use S2ASC in unet structure
+for evaluating for the features used in S2ASC all comes from
+encoder. As shown in Figure. 15, we visualize the weighting of
+Gf g , Gmix , Gbg in the three layers of S2ASC modules at the
+bottom of each sample. Particularly, the blacker block indicates
+the channel weighting is low while the whiter block means it is
+important for ﬁltered features. So our ﬁrst observation is that our
+S2ASC module allocates and weights the features according to
+the input images by comparing the response maps between two
+images. Moreover, Another interesting observation is that there are
+more white blocks in Gf g than Gmix and Gbg in the S 2ASC1
+module while the opposite phenomenon is shown in S 2ASC3 .
+This fact perfectly explains our assumption: the coarser features
+in the spliced region need to learn speciﬁcally while the high-level
+features are almost the same.
+
+Fig. 15: From coarse-to-ﬁne, we plot the ﬁrst 1
+8 attention channels
+response on three different levels of S2ASC in network structure
+named S 2ASC1 , S 2ASC2 and S 2ASC3 , respectively. For each
+level of attention, we visualize the Channel Attention Module with
+the order Gbg , Gmix and Gf g from the top to the bottom.
+
+5 CONCLUS ION
+In this paper, we propose a novel method for image harmonization.
+Speciﬁcally, we design a new attention module called S2AM to ﬁt
+the image harmonization task with Unet backbone network. Ad-
+ditionally, we harmonize the image without mask by interpolating
+
+(d) SE-Block[15]
+
+(e) CBAM[14]
+
+(f) S2AM (Ours)
+
+Fig. 13: Comparisons on different attention modules. We plot the
+results of Unet+SE-Block, Unet+CBAM and Unet+S2AM (Ours)
+for comparison. For each method, we show the harmonized results
+of the red region and the absolute difference colormap between the
+result and target image. It is clear that our Unet + S2AM method
+gains better results than others in the boundary of arms (best view
+with zoom in) and the absolute difference colormaps. Moreover,
+our method also shows a better prediction in the non-spliced
+region. The colormaps are enlarged 30× for better visualize the
+differences in the non-spliced region.
+
+Without Gmix . We remove the Gmix in S2ASC module
+for necessity. As shown in Table. 4, compared with S2ASC, the
+method without Gmix perform slightly worse because Gmix se-
+lect the original features in the spliced region which is unnecessary
+to transfer.
+Without Gaussian Filter. A detailed explanation on Gaussian
+Filter has been introduced in the Section.3.1. Here, we report the
+results of experiments. As shown in Figure. 14, the Gaussian Filter
+show better performance in the boundary of spliced edges. We
+also report the numerical results in Table. 4, it is obvious that the
+Gaussian Filter improves the performance of our module.
+With 6 layers S2ASC. The model gets a slightly worse
+performance when we replace all the skip-connection with S2ASC
+in Unet (Unet + 6 layers S2ASC in Table. 4). This experiment also
+ﬁt our assumption: the style is much more related to low-level
+features, and the high-level features should be the same. However,
+in all 6 layers S2ASC, our method still gains much better results
+than the baseline.
+
+Without learning-able Block. We evaluate the importance of
+
+our learning-able block. As shown in Table.4, the methods without
+learning-able block L show worse results than our full method,
+especially in SSIM. This is because SSIM measures the image
+quality from the luminance, contrast, and structure while the small
+convolutions in the learning-able block will learn more detail.
+
+12
+
+[27] M. Gharbi, J. Chen, J. T. Barron, S. W. Hasinoff, and F. Durand, “Deep
+bilateral learning for real-time image enhancement.” ACM Trans. Graph.,
+vol. 36, no. 4, pp. 1–12, 2017.
+[28] J. Chen, A. Adams, N. Wadhwa, and S. W. Hasinoff, “Bilateral guided
+upsampling,” ACM Trans. Graph., vol. 35, no. 6, pp. 1–8, Nov. 2016.
+[29] H. Wu, S. Zheng, J. Zhang, and K. Huang, “Fast End-to-End Trainable
+Guided Filter,” CVPR, Mar. 2018.
+[30] I. J. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley,
+S. Ozair, A. Courville, and Y. Bengio, “Generative Adversarial Net-
+works,” NIPS, Jun. 2014.
+[31] J.-Y. Zhu, T. Park, P. Isola, and A. A. Efros, “Unpaired Image-to-Image
+Translation using Cycle-Consistent Adversarial Networks,” ICCV, Mar.
+2017.
+[32] X. Chen, C. Xu, X. Yang, and D. Tao, “Attention-GAN for Object
+Transﬁguration in Wild Images,” NeurIPS, 2018.
+[33] Y. A. Mejjati, C. Richardt, J. Tompkin, D. Cosker, and K. I. Kim,
+“Unsupervised Attention-guided Image-to-Image Translation.” NeurIPS,
+2018.
+[34] K. He, X. Zhang, S. Ren, and J. Sun, “Deep Residual Learning for Image
+Recognition,” CVPR, Dec. 2015.
+[35] C. Szegedy, W. Liu, Y. Jia, P. Sermanet, S. Reed, D. Anguelov, D. Erhan,
+V. Vanhoucke, and A. Rabinovich, “Going Deeper with Convolutions,”
+arXiv.org, Sep. 2014.
+[36] O. Ronneberger, P. Fischer, and T. Brox, “U-Net: Convolutional Net-
+works for Biomedical Image Segmentation,” May 2015.
+[37] J. Johnson, A. Alahi, and L. Fei-Fei, “Perceptual Losses for Real-Time
+Style Transfer and Super-Resolution,” ECCV, Mar. 2016.
+[38] T.-Y. Lin, M. Maire, S. Belongie, L. Bourdev, R. Girshick, J. Hays,
+P. Perona, D. Ramanan, C. L. Zitnick, and P. Doll ´ar, “Microsoft COCO:
+Common Objects in Context,” arXiv.org, May 2014.
+[39] V. Bychkovsky, S. Paris, E. Chan, and F. Durand, “Learning photographic
+global tonal adjustment with a database of input / output image pairs.”
+2011.
+[40] L.-C. Chen, G. Papandreou, F. Schroff, and H. Adam, “Rethinking Atrous
+Convolution for Semantic Image Segmentation,” arXiv.org, Jun. 2017.
+[41] A. Paszke, S. Gross, S. Chintala, G. Chanan, E. Yang, Z. DeVito, Z. Lin,
+A. Desmaison, L. Antiga, and A. Lerer, “Automatic differentiation in
+pytorch,” in NIPS-W, 2017.
+[42] D. P. Kingma and J. Ba, “Adam: A Method for Stochastic Optimization,”
+ICLR, Dec. 2014.
+[43] R. Zhang, P. Isola, A. A. Efros, E. Shechtman, and O. Wang, “The
+unreasonable effectiveness of deep features as a perceptual metric,” in
+Proceedings of the IEEE Conference on Computer Vision and Pattern
+Recognition, 2018, pp. 586–595.
+[44] T. Park, M.-Y. Liu, T.-C. Wang, and J.-Y. Zhu, “Semantic Image Synthe-
+sis with Spatially-Adaptive Normalization,” CVPR, Mar. 2019.
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2015
+
+spatial attention module and the attention loss to S2AM module.
+This idea comes from the original intention of the similarity in
+content and difference in the spliced region between the spliced
+image and harmonized target. The experiments show that our
+proposed method achieves better results than others both in quality
+and quantity.
+Besides image harmonization, the proposed attention module
+can also be adapted to other computer vision tasks easily with
+regional differences, such as Free-Form Image Inpainting [18]
+and Semantic Image Synthesis [44]. We believe it is a promising
+direction for our future work.
+
+RE FERENCES
+
+[5]
+
+[2]
+
+[1] X. Cun and C.-M. Pun, “Image Splicing Localization via Semi-global
+Network and Fully Connected Conditional Random Fields.” ECCV
+Workshops, 2018.
+J.-F. Lalonde and A. A. Efros, “Using Color Compatibility for Assessing
+Image Realism.” ICCV, 2007.
+[3] K. Sunkavalli, M. K. Johnson, W. Matusik, and H. Pﬁster, “Multi-scale
+image harmonization,” ACM Trans. Graph., vol. 29, no. 4, p. 1, Jul. 2010.
+[4] Y.-H. Tsai, X. Shen, Z. L. 0001, K. Sunkavalli, X. Lu, and M.-H. Y.
+0001, “Deep Image Harmonization.” CVPR, 2017.
+J.-Y. Zhu, P. Kr ¨ahenb ¨uhl, E. Shechtman, and A. A. Efros, “Learning
+a Discriminative Model for the Perception of Realism in Composite
+Images.” ICCV, 2015.
+[6] L. Bondi, S. Lameri, D. Guera, P. Bestagini, E. J. Delp, and S. Tubaro,
+“Tampering Detection and Localization Through Clustering of Camera-
+Based CNN Features,” in 2017 IEEE Conference on Computer Vision and
+Pattern Recognition Workshops (CVPRW).
+IEEE, 2017, pp. 1855–1864.
+[7] S. Ye, Q. Sun, and E.-C. Chang, “Detecting Digital Image Forgeries by
+Measuring Inconsistencies of Blocking Artifact.” ICME, 2007.
+[8] C.-M. Pun, B. Liu, and X. Yuan, “Multi-scale noise estimation for
+image splicing forgery detection.” J. Visual Communication and Image
+Representation, vol. 38, pp. 195–206, 2016.
+[9] P. Isola, J.-Y. Zhu, T. Zhou, and A. A. Efros, “Image-to-Image Translation
+with Conditional Adversarial Networks,” CVPR, Nov. 2017.
+[10] Y.-H. Tsai, X. Shen, Z. L. 0001, K. Sunkavalli, and M.-H. Y. 0001, “Sky
+is not the limit - semantic-aware sky replacement.” ACM Trans. Graph.,
+vol. 35, no. 4, pp. 1–11, 2016.
+[11] H. Wu, S. Zheng, J. Zhang, and K. Huang, “GP-GAN: Towards Realistic
+High-Resolution Image Blending,” Mar. 2017.
+[12] H. Huang, S. Xu, J. Cai, W. Liu, and S. Hu, “Temporally Coherent Video
+Harmonization Using Adversarial Networks.” CoRR, 2018.
+[13] D. Lee, T. Pﬁster, and M.-H. Yang, “Inserting Videos into Videos,”
+CVPR, Mar. 2019.
+[14] S. Woo, J. Park, J.-Y. Lee, and I. S. Kweon, “CBAM: Convolutional
+Block Attention Module,” ECCV, 2018.
+[15] J. Hu, L. Shen, S. Albanie, G. Sun, and E. Wu, “Squeeze-and-Excitation
+Networks,” CVPR, Sep. 2018.
+[16] X. Li, W. Wang, X. Hu, and J. Yang, “Selective Kernel Networks,” CVPR,
+Mar. 2019.
+[17] Liu, Guilin, Reda, Fitsum A, Shih, Kevin J, Wang, Ting-Chun, Tao,
+Andrew, and Catanzaro, Bryan, “Image Inpainting for Irregular Holes
+Using Partial Convolutions,” ECCV, Apr. 2018.
+[18] J. Yu, Z. Lin, J. Yang, X. Shen, X. Lu, and T. S. Huang, “Free-Form
+Image Inpainting with Gated Convolution,” arXiv.org, Jun. 2018.
+[19] X. Wang, R. Girshick, A. Gupta, and K. He, “Non-local Neural Net-
+works,” CVPR, 2018.
+[20] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez,
+L. Kaiser, and I. Polosukhin, “Attention is All you Need.” NIPS, 2017.
+[21] A. Buades, B. Coll, and J.-M. Morel, “A Non-Local Algorithm for Image
+Denoising.” vol. 2, pp. 60–65, 2005.
+[22] T. Chen, X. Zhai, M. Ritter, M. Lucic, and N. Houlsby, “Self-Supervised
+Generative Adversarial Networks,” arXiv.org, Nov. 2018.
+[23] Y. Cao, J. Xu, S. Lin, F. Wei, and H. Hu, “GCNet: Non-local Networks
+Meet Squeeze-Excitation Networks and Beyond,” arXiv.org, Apr. 2019.
+[24] Q. Chen, J. Xu, and V. Koltun, “Fast Image Processing with Fully-
+Convolutional Networks,” ICCV, Sep. 2017.
+[25] F. Yu and V. Koltun, “Multi-Scale Context Aggregation by Dilated
+Convolutions.” ICLR, 2016.
+[26] He, Kaiming, Sun, Jian, and Tang, Xiaoou, “Guided Image Filtering,”
+IEEE Transactions on Pattern Analysis and Machine Intelligence, vol. 35,
+no. 6, pp. 1397–1409, 2013.
+
+

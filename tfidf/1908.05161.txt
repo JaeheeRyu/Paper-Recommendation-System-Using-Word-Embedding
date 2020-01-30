@@ -1,0 +1,1176 @@
+Scalable Attentive Sentence-Pair Modeling via 
+
+Distilled Sentence Embedding 
+
+Oren Barkan*1, Noam Razin*12, Itzik Malkiel12, Ori Katz13, Avi Caciularu14, Noam Koenigstein12 
+
+1Microsoft, 2Tel Aviv University, 3Technion, 4Bar-Ilan University 
+
+Abstract 
+
+Recent state-of-the-art natural language understanding mod-
+els, such as BERT and XLNet, score a pair of sentences (𝐴 
+and 𝐵) using multiple cross-attention operations – a process 
+in which each word in sentence 𝐴 attends to all words in sen-
+tence 𝐵 and vice versa. As a result, computing the similarity 
+between a query sentence and a set of candidate sentences, 
+requires the propagation of all query-candidate sentence-
+pairs throughout a stack of cross-attention layers. This ex-
+haustive process becomes computationally prohibitive when 
+the number of candidate sentences is large. In contrast, sen-
+tence embedding techniques learn a sentence-to-vector map-
+ping and compute the similarity between the sentence vectors 
+via simple elementary operations. In this paper, we introduce 
+Distilled Sentence Embedding (DSE) – a model that is based 
+on knowledge distillation from cross-attentive models, focus-
+ing on sentence-pair tasks. The outline of DSE is as follows: 
+Given a cross-attentive teacher model (e.g. a fine-tuned 
+BERT), we train a sentence embedding based student model 
+to reconstruct the sentence-pair scores obtained by the 
+teacher model. We empirically demonstrate the effectiveness 
+of DSE on five GLUE sentence-pair tasks. DSE significantly 
+outperforms several ELMO variants and other sentence em-
+bedding methods, while accelerating computation of the 
+query-candidate sentence-pairs similarities by several orders 
+of magnitude, with an average relative degradation of 4.6% 
+compared to BERT. Furthermore, we show that DSE pro-
+duces sentence embeddings that reach state-of-the-art perfor-
+mance on universal sentence representation benchmarks. Our 
+code is made publicly available at https://github.com/mi-
+crosoft/Distilled-Sentence-Embedding. 
+
+ 1. Introduction  
+
+The emergence of self-attentive models such as the Trans-
+former (Vaswani et al. 2017), GPT (Radford et al. 2018), 
+BERT (Devlin et al. 2019) and XLNet (Yang et al. 2019) 
+significantly advanced the state-of-the-art in various linguis-
+tic tasks such as machine translation (Vaswani et al. 2017), 
+sentiment analysis (Socher et al. 2013), question answering 
+
+*Equal contribution 
+
+(Rajpurkar et al. 2016) and sentence similarity (Dolan and 
+Brockett 2005; Cer et al. 2017). These models are built upon 
+a stack of self-attention layers that enable each word to at-
+tend other words in a sentence. 
+In the latest models such as BERT and XLNet, self-atten-
+tion is applied in a bidirectional manner. This is different 
+from conventional language models (Collobert et al. 2011), 
+in which each word in a sentence is conditioned solely on its 
+preceding words. In addition, the architectures in (Devlin et 
+al. 2019; Yang et al. 2019) support sentence-pair input, en-
+dowing these models with the ability to infer sentence simi-
+larity. However, this capability entails a non-negligible 
+computational cost. In these models, scoring sentence-pairs 
+involves a cross-attention (CA) operation in which each 
+word in a sentence 𝐴 attends to all words in a sentence 𝐵 
+and vice versa (excluding the fact that each word attends to 
+all other words in the same sentence as well). Moreover, CA 
+is repeatedly applied in a cascade throughout a stack o f 
+multi-head attention layers (Vaswani et al. 2017). This CA 
+entanglement is a double-edged sword. On the one hand, it 
+is allegedly a key property that pushes forward the state -of-
+the-art, computing similarity between sentences by analyz-
+ing the relations between individual words 𝑎 ∈ 𝐴 and 𝑏 ∈
+𝐵 . On the other hand, it entails an excessively demanding 
+inference phase in terms of time and computational power. 
+    The computational bottleneck that is imposed by CA se-
+verely affects the inference phase in ranking and retrieval 
+tasks. Assume a CA model 𝑇 and a set of candidates 𝑋 that 
+contains 𝑁 sentences. The task is to retrieve the topmost 
+similar sentences in 𝑋 w.r.t. a new query sentence 𝑞 . A naïve 
+solution is to compute the similarity between each sentence 
+𝑥 ∈ 𝑋 and 𝑞 , which amounts to 𝑁 applications of 𝑇 (scoring 
+each sentence-pair (𝑞 , 𝑥) using 𝑇). In other words, the prop-
+agation of the entire candidates set 𝑋 through 𝑇 is necessary 
+to produce the similarity scores w.r.t. a single query 𝑞 . 
+    A second problem with CA models is the fact that they 
+are not trained to produce sentence embeddings w.r.t. the 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+task at hand. While several types of heuristics can be em-
+ployed to produce sentence embedding (e.g., summing the 
+several last hidden token representations, using the CLS hid-
+den token (Devlin et al. 2019) as a sentence representation, 
+etc.), none of them are truly justified . These operations are 
+employed after the training phase is over and are not directly 
+related to the original training objective. This problem is a 
+key differentiator between CA models and other models 
+(Conneau et al. 2017; Subramanian et al. 2018) that inher-
+ently support sentence embedding. 
+    In this paper, we present Distilled Sentence Embedding 
+(DSE), a model for learning a sentence embedding via 
+Knowledge Distillation (Hinton et al. 2014) from CA mod-
+els. The essence of DSE is as follows: Given a trained CA 
+teacher model and a student model. We train the student 
+model to map sentences to vectors in a latent space, in which 
+the application of a low-cost similarity function approxi-
+mates the similarity score obtained by the teacher model for 
+the corresponding sentence-pair. Specifically, DSE employs 
+a pairwise training procedure in which each pair of sen-
+tences (𝐴, 𝐵) and score 𝑇𝐴𝐵 (that is obtained by the teacher 
+model for the specific sentence-pair) is treated as a training 
+example. The student model consists of parametric embed-
+ding and similarity functions. The embedding function maps 
+the sentences 𝐴 and 𝐵 to vectors, on which the similarity 
+function is applied to produce a similarity score 𝑆𝐴𝐵 . Finally, 
+using a loss function, we compare between 𝑆𝐴𝐵 and 𝑇𝐴𝐵 . 
+    During the training phase, the student model parameters 
+(that includes both the embedding and similarity functions) 
+are learned via stochastic gradient descent w.r.t. a loss func-
+tion that compares the student output score 𝑆𝐴𝐵 to the 
+teacher model score 𝑇𝐴𝐵 . In the inference phase, the student 
+model maps an input sentence-pair to a vector-pair using the 
+embedding function and then computes the vector-pair sim-
+ilarity score using the similarity function. DSE essentially 
+performs a disentanglement that enables the precomputation 
+of the candidate sentence embeddings in advance. As a re-
+sult, for ranking and retrieval tasks, the computational com-
+plexity of a query reduces to a single application of the stu-
+dent model to the query sentence 𝑞 , followed by 𝑁 applica-
+tions of the low-cost similarity function (for each vector-
+pair). 
+ We evaluate DSE on five sentence-pair tasks from the 
+GLUE benchmark (Wang et al. 2018). Empirical results 
+show that DSE significantly outperforms other sentence em-
+bedding methods as well as several attentive ELMO (Peters 
+et al. 2018) variants, while providing average relative deg-
+radations of 4.6% and 3.1% compared to BERT-Large and 
+BERT-Base, respectively. We further analyze the quality of 
+sentence embeddings produced by DSE on standard univer-
+sal sentence representation benchmarks (Conneau and Kiela 
+2018). In this setting, DSE is initially pre-trained on a sur-
+rogate task. Then, general purpose sentence representations 
+are extracted from the model and evaluated on downstream 
+tasks. The obtained embeddings are competitive with cur-
+rent top performing approaches. 
+
+    Our main contributions are as follows: 1) We present 
+DSE, a novel sentence embedding model that is supervised 
+by the original sentence-pair similarity scores of state-of-
+the-art CA models. 2) We show that DSE, as a general pur-
+pose sentence embedding method, reaches state-of-the-art 
+performance on standard universal sentence representation 
+benchmarks. 3) DSE significantly speeds-up the computa-
+tion of online and offline query-candidate similarities, pos-
+ing a practical solution for mass production systems at the 
+cost of a relatively small degradation in performance. 
+
+2. Related Work 
+
+There have recently appeared an increasing number of stud-
+ies suggesting usage of general language representation 
+models for natural language understanding tasks. Among 
+the most promising techniques, the unsupervised fine-tuning 
+approach has been shown to be effective on many sentence-
+level tasks (Dai and Le 2015; Howard and Ruder 2018; Rad-
+ford et al. 2018). This technique uses a sentence encoder to 
+produce contextual token representations. The encoder 
+training procedure is composed of two phases: (1) unsuper-
+vised training on unlabeled text, and (2) fine-tuning for su-
+pervised downstream tasks. The unsupervised training al-
+lows the model to learn most of the parameters in advance, 
+leaving only few parameters to be learned from scratch dur-
+ing fine-tuning. 
+    More recently, BERT (Devlin et al. 2019) has emerged as 
+a powerful method that has achieved state-of-the-art results 
+in various sentence or sentence-pair language understanding 
+tasks from the GLUE benchmark (Wang et al. 2018), includ-
+ing sentiment analysis (Socher et al. 2013), paraphrase iden-
+tification (Williams et al. 2017) and semantic text similarity 
+(Cer et al. 2017). Liu et al. (Liu et al. 2019), introduce Multi-
+Task Deep Neural Network (MT-DNN), which extends 
+BERT by learning text representations across multiple nat-
+ural language understanding tasks. In sentence-pair tasks, 
+both BERT and MT-DNN require feeding both sentences 
+together as a single input sequence. While other techniques, 
+such as (Conneau et al. 2017; Subramanian et al. 2018), sug-
+gest extracting a feature vector for each sentence separately 
+via an embedding function, followed by a relatively low cost 
+similarity function which produces a similarity score for the 
+vector-pair. 
+    The problem of reducing the computational burden of 
+neural networks at inference time has attracted considerable 
+attention in the literature. Hinton et al. (Hinton et al. 2014), 
+introduced Knowledge Distillation (KD) as a framework for 
+model compression, where knowledge from a large model 
+is used for training a simple model, by following a teacher -
+student paradigm. Specifically, the method leverages the 
+probabilities produced by a teacher model for training a sim-
+ple student model, by teaching the student to predict both 
+the true labels and the output probabilities of the teacher. 
+    In the context of natural language understanding, Liu et 
+al. (Liu et al. 2019) propose to distill knowledge from an 
+
+ 
+ 
+ensemble of MT-DNN models (teachers), into a single MT-
+DNN model (a student). The authors show that by leverag-
+ing KD, a student MT-DNN model significantly outper-
+forms the original MT-DNN (Liu et al. 2019) on various lin-
+guistic tasks. 
+    Different from other KD studies, our method focuses on 
+distilling knowledge from a CA model (the teacher), into a 
+sentence embedding model that solely relies on self-atten-
+tion (the student). Specifically, we leverage KD for training 
+a student BERT model to bypass BERT's requirement of 
+feeding sentence-pairs as a unified sequence.  
+    Excluding such an intrinsic operation from the student 
+might hinder its ability to perfectly reconstruct its teacher’s 
+knowledge. However, such a property would ease the adop-
+tion of BERT in other tasks, such as ranking and information 
+retrieval, which require exhaustive computations across 
+many documents or paragraphs in a given dataset. 
+
+3. Distilled Sentence Embedding (DSE) 
+
+In this section, we present the problem setup and describe 
+the DSE model in detail. 
+
+3.1   Problem Setup 
+
+Let 𝒲 = {𝑤𝑖 }𝑖=1
+𝓌 be the vocabulary of all supported tokens. 
+We define 𝑌 to be the set of all possible sentences that can 
+be generated using the vocabulary 𝒲 . 
+ Let 𝑇 : 𝑌 × 𝑌 → ℝ be the teacher model (e.g., a fine-tuned 
+BERT model). 𝑇 receives a sentence-pair (𝑦, 𝑧) ∈ 𝑌 × 𝑌 
+and outputs a similarity score 𝑇𝑦𝑧 ≜ 𝑇(𝑦 , 𝑧). Note that 𝑇 is 
+not necessarily a symmetric function. 
+ Let 𝜓, 𝜙 : 𝑌 → ℝ𝑑 be sentence embedding functions that 
+embed a sentence 𝑦 ∈ 𝑌 in a 𝑑 -dimensional latent vector 
+space. The usage of different sentence embedding func-
+tions, 𝜓 and 𝜙 , is due to the fact that 𝑇 is not necessarily a 
+symmetric function. For example, in BERT, the sentences 𝐴 
+and 𝐵 are associated with different segment embeddings. 
+Therefore, 𝜓 and 𝜙 play a similar role as the common con-
+text and target representations that appear in many neural 
+embedding methods (Barkan 2017; Barkan and Koenigstein 
+2016; Mikolov et al. 2013; Mnih and Hinton 2009). 
+    Let 𝑓 : ℝ𝑑 × ℝ𝑑 → ℝ be a (parametric) similarity func-
+tion. 𝑓 scores the similarity between sentence embeddings 
+that are produced by 𝜓 and 𝜙 . Then, the student model 
+𝑆: 𝑌 × 𝑌 → ℝ is defined as 
+                           𝑆𝑦𝑧 ≜ 𝑓(𝜓(𝑦), 𝜙(𝑧)).                          (1)    
+    Given a set of paired training sentences 𝑋 = {(𝑦𝑖 , 𝑧𝑖 )}𝑖=1
+𝑁 , 
+our goal is to train the student model 𝑆 such that for all 
+(𝑦 , 𝑧) ∈ 𝑋 , its similarity score 𝑆𝑦𝑧 approximates the teacher 
+model’s score 𝑇𝑦𝑧 with a high accuracy. To this end, we pro-
+pose to learn the student model parameters via a pairwise 
+training procedure, which is explained in Section 3.2.  
+    Note that in some sentence-pair tasks the teacher model’s 
+codomain is multidimensional. For example, the MNLI 
+
+(Williams et al. 2017) task is to predict whether the relation 
+between two sentences is neutral, contradictory or entail-
+ment. In this case, the codomain of the teacher model 𝑇 is 
+ℝ3  and hence the codomain of the similarity function 𝑓 (and 
+the student model 𝑆) is ℝ3 as well. 
+
+3.2   Pairwise Training 
+
+In pairwise training, we define a loss function ℒ : ℝ × ℝ →
+ℝ and train 𝑆 to minimize ℒ(𝑆𝑦𝑧 , 𝑇𝑦𝑧 ) in an end-to-end fash-
+ion. Specifically, given a sentence-pair (𝑦, 𝑧) ∈ 𝑋 × 𝑋 , we 
+compute the embeddings 𝜓(𝑦) and 𝜙(𝑧) for the sentences 𝑦 
+and 𝑧, respectively. Then, the similarity score 𝑆𝑦𝑧 is com-
+puted using the similarity function 𝑓 according to Eq. (1).  
+    Note that ℒ can be either a regression or classification loss 
+depending on the task at hand. Moreover, ℒ can be trivially 
+extended to support multiple teacher models. In (Hinton et 
+al. 2014) the authors suggest using two teacher models 𝑇 
+and 𝑅 , where 𝑅 is simply the ground truth labels as follows  
+       ℒ𝑦𝑧 = 𝛼 𝑙𝑑𝑠𝑡𝑙 (𝑆𝑦𝑧 , 𝑇𝑦𝑧 ) + (1 − 𝛼)𝑙𝑙𝑏𝑙 (𝑆𝑦𝑧 , 𝑅𝑦𝑧 )      (2)                               
+where 𝛼 ∈ [0,1] is a hyperparameter that controls the rela-
+tive amount of supervision that is induced by 𝑇 and 𝑅 . In 
+this case, the student model is simultaneously supervised by 
+𝑇 and 𝑅 . Note that in general, the distillation loss 𝑙𝑑𝑠𝑡𝑙 and 
+the ground truth label loss 𝑙𝑙𝑏𝑙 are not restricted to be the 
+same loss function (as shown in Section 3.5). The DSE 
+model is illustrated in Fig. 1. 
+
+3.3   The Teacher Model  
+
+The teacher model 𝑇 is implemented as a BERT-Large 
+model from (Devlin et al. 2019), consisting of 24 encoder 
+layers that each employ a self-attention mechanism. For a 
+sentence-pair input, 𝑇 employs CA between the two sen-
+tences. The teacher model is initialized to the pre-trained 
+version from (Devlin et al. 2019) and then fine-tuned ac-
+cording to each specific sentence-pair task. 
+    After the fine-tuning phase, we compute the score 𝑇𝑦𝑧 for 
+a sentence-pair (𝑦, 𝑧) by propagating a unified representa-
+tion of the sentence-pair throughout 𝑇, as done in (Devlin et 
+al. 2019). The score is then extracted from the output layer, 
+which is placed on top of the last hidden representation of 
+the CLS token. Note that 𝑇𝑦𝑧 is set to the logit value (before 
+the softmax / sigmoid activation). 
+    It is important to emphasize that DSE is not limited to 
+BERT as a teacher model. For example, we could use the 
+exact same method with an XLNet (Yang et al. 2019) 
+teacher. The choice of BERT is mainly due to its prevalence 
+in the natural language understanding community. 
+
+3.4   The Student Model  
+
+The teacher model is based on BERT, which is not symmet-
+ric due to its use of different segment embeddings for input 
+sentences. Yet, to refrain from doubling the number of pa-
+rameters, we decide to implement a symmetric (Siamese) 
+
+ 
+ 
+we could initialize 𝜓 to the fine-tuned teacher model, how-
+ever in our initial experiments we found it to perform worse. 
+
+3.5   The Loss Function  
+
+We implement a loss function according to Eq. (2) - a linear 
+combination of the distillation and label losses. The distilla-
+tion loss term is set to the L2 loss 
+
+          𝑙𝑑𝑠𝑡𝑙 (𝑆𝑦𝑧 , 𝑇𝑦𝑧 ) = 𝑙𝐿2(𝑆𝑦𝑧 , 𝑇𝑦𝑧 ) = ‖𝑆𝑦𝑧 − 𝑇𝑦𝑧 ‖
+
+2
+
+2
+
+.  
+
+The motivation behind this choice is the analysis from (Hin-
+ton et al. 2014), where it is shown that for high temperature 
+values, minimization of the cross-entropy loss over the soft-
+max outputs, is equivalent to minimizing L2 loss over the 
+logits (before applying softmax). Indeed, our initial experi-
+ments revealed that using the L2 loss on the logits produces 
+superior distillation results. 
+    The label loss is set according to the task at hand: For a 
+multiclass classification task we set 
+
+                     𝑙𝑙𝑏𝑙 (𝑆𝑦𝑧 , 𝑅𝑦𝑧 ) = 𝑙𝑐𝑐𝑒 (𝜌(𝑆𝑦𝑧 ), 𝑅𝑦𝑧 )  
+where 𝑅𝑦𝑧 ∈ {0,1}𝑛 is a one-hot vector, 𝜌(𝑆𝑦𝑧 ) ∈ [0,1]𝑛 is 
+a discrete probability distribution obtained by applying the 
+softmax function 𝜌, and 𝑙𝑐𝑐𝑒 (𝑎 , 𝑏) = − ∑ 𝑏𝑖 log 𝑎𝑖
+ is the 
+categorical cross entropy loss. For a binary classification 
+task, we use the same loss with 𝑛 = 2. For a regression task 
+we set 𝑙𝑙𝑏𝑙 (𝑆𝑦𝑧 , 𝑅𝑦𝑧 ) = 𝑙𝐿2(𝑆𝑦𝑧 , 𝑅𝑦𝑧 ), where 𝑅𝑦𝑧 ∈ ℝ. 
+
+𝑛
+𝑖=1
+
+4. Experimental Setup and Results 
+
+We evaluate DSE in two different settings: First, task spe-
+cific embeddings for sentence-pair tasks, where the whole 
+model is trained in an end-to-end fashion and evaluated on 
+a specific dataset. Second, universal sentence representa-
+tions generation, in which the model is pre-trained to pro-
+duce general purpose sentence embeddings. In addition, we 
+report empirical results that showcase the efficiency of DSE 
+in computing sentence-pair similarities compared to BERT.   
+
+4.1   Sentence-Pair Modeling 
+
+For sentence-pair tasks, our evaluation includes several da-
+tasets from the GLUE benchmark: MRPC (Dolan and 
+Brockett, 2005), MNLI (Williams et al., 2018), QQP, QNLI 
+(Wang et al., 2018), and STS-B (Cer et al., 2017). These da-
+tasets represent different tasks that revolve around modeling 
+and scoring sentence-pairs. MRPC, STS-B, and QQP focus 
+on semantic similarity of phrases or questions, MNLI is a 
+natural language inference (NLI) benchmark, and lastly, 
+QNLI is a question answering dataset. We refer to (Wang et 
+al. 2018) for a detailed description of these datasets. 
+
+4.1.1   Models and Hyperparameter Configuration 
+
+The models that participate in the evaluation are as follows: 
+
+Figure 1. A schematic illustration of the DSE model. 
+
+student model by learning a single mutual embedding func-
+tion 𝜓 (= 𝜙). The embedding function 𝜓 is implemented 
+using a BERT-Large model that operates on a single sen-
+tence (using only the segment embedding A) and outputs a 
+vector representation. Specifically, given a sentence 𝑦, we 
+first add the CLS token to the beginning of 𝑦 and a SEP to-
+ken to the end, before feeding 𝜓 with the resulted represen-
+tation. Then, we compute the average poo ling operation 
+across the hidden tokens for each of the last four encoder 
+layers’ outputs. Experimentally, we observed degradations 
+in performance when including the CLS token in the pooling 
+of hidden tokens, thus, it is excluded from it. We attribute 
+this to the fact that during pre-training the CLS token repre-
+sentation is used for encoding information across two sen-
+tences for the Next Sentence Prediction task (Devlin et al. 
+2019), and is therefore not well suited for representing a sin-
+gle sentence. The pooling operation produces four 1024-di-
+mensional vectors (one for each encoder layer) that are then 
+concatenated to form a 4096-dimensional representation as 
+the final sentence embedding (hence 𝑑 = 4096).  
+    Inspired by (Wang et al. 2018), we use the similarity func-
+tion  
+                        𝑓(𝑢 , 𝑣) = 𝑤 𝑇 𝑅𝑒𝐿𝑈(𝑊ℎ)                        (3) 
+where ℎ = [𝑢 , 𝑣 , 𝑢 ∘ 𝑣 , |𝑢 − 𝑣|] ∈ ℝ16384 (∘ stands for the 
+Hadamard product), 𝑊 ∈ ℝ512×16384 and  𝑤 ∈ ℝ512 . Both 
+𝑊 and 𝑤 are learnable parameters. Note that 𝑢 , 𝑣 ∈ ℝ4096 
+are the sentences’ representations that are produced by the 
+embedding function 𝜓. 
+    Like the teacher model, 𝜓 is initialized to the pre-trained 
+version of BERT-Large from (Devlin et al. 2019). Note that 
+
+                𝑓    𝜓 ( ) 𝜙 ( )                        Task training data              ,           ,    −      
+ 
+ 
+Model 
+
+MNLI 
+
+QQP 
+
+QNLI MRPC 
+
+STS-B 
+
+AVG Degradation 
+compared to 
+BERT-Large 
+
+Improvement 
+obtained by 
+DSE ( = 𝟎. 𝟓) 
+
+Cross Attentive Models 
+
+BERT-Large 
+
+BERT-Base 
+
+86.7/85.9 72.1/89.3 
+
+84.6/83.4 71.2/89.2 
+
+ELMO + Attn (MT) 
+
+74.1/74.5 63.1/84.3 
+
+ELMO + Attn (ST) 
+
+76.9/76.7 66.1/86.5 
+
+92.7 
+
+90.2 
+
+79.8 
+
+76.7 
+
+89.3/85.4 87.6/86.5 86.82 
+
+88.9/84.8 87.1/85.8 85.54 
+
+84.4/78.0 74.2/72.3 76.45 
+
+80.2/68.8 55.5/52.5 71.66 
+
+0% 
+
+0.9% 
+
+11.9% 
+
+17.4% 
+
+71.4/71.3 59.8/82.9 
+
+GenSen 
+DSE (𝛼 = 1) 
+DSE (𝛼 = 0.5) 
+DSE (𝛼 = 0) 
+79.7/79.0 67.0/86.8 
+DSE (Frozen 𝜓, 𝛼 = 1) 69.3/69.9 62.5/81.4 
+
+80.3/79.4 68.4/86.8 
+
+80.9/80.4 68.5/86.9 
+
+Sentence Embedding Models 
+
+78.6 
+
+86.1 
+
+86.0 
+
+84.8 
+
+76.9 
+
+83.0/76.6 79.3/79.2 76.07 
+
+12.3% 
+
+86.8/80.8 86.8/86.1 82.76 
+
+86.7/80.7 86.4/85.8 82.83 
+
+86.5/79.9 87.0/86.5 
+
+82.2 
+
+4.7% 
+
+4.6% 
+
+5.3% 
+
+86.5/79.9 73.3/73.0 74.96 
+
+13.6% 
+
+-4.6% 
+
+-3.1% 
+
+8.3% 
+
+15.6% 
+
+8.9% 
+
+0.1% 
+
+0% 
+
+0.8% 
+
+10.5% 
+
+Table 1: A comparison between DSE to other models across different test sets. For MNLI, accuracy is reported for matched / mis-
+matched test sets. For QQP and MRPC, F1/accuracy scores are reported. For QNLI, accuracy is reported. For STS -B, Pearson / Spear-
+man correlation coefficients are reported. AVG column presents the average score across all datasets, where each dataset’s score is the 
+mean of its one or two reported scores. Degradation and improvement columns present the relative degradation compared to BERT -
+Large and the relative improvement obtained by DSE (𝛼 = 0.5) over each model (reported in percentages), respectively. 
+
+    BERT-Large: This is the BERT-Large model from 
+(Devlin et al. 2019). This model is also used as a teacher 
+model. Results are reported from (Devlin et al. 2019). 
+    BERT-Base: This is the BERT-Base model from (Devlin 
+et al. 2019). Results are reported from (Devlin et al. 2019). 
+    DSE: This is our proposed model from Section 3. We 
+consider three variants of DSE that differ by the parameter 
+values of 𝛼 ∈ {0,0.5,1} which controls the amount of distil-
+lation. For all datasets we set the distillation loss 𝑙𝑑𝑠𝑡𝑙 = 𝑙𝐿2 . 
+For QQP, MRPC, QNLI and MNLI we set the label loss 
+𝑙𝑙𝑏𝑙 = 𝑙𝑐𝑐𝑒 . Specifically, for MNLI we further used 𝑤 ∈
+ℝ3×512 in Eq. (3) to support a 3-dimensional output. For 
+STS-B, we set  𝑙𝑙𝑏𝑙 = 𝑙𝐿2 . We used the Adam optimizer 
+(Kingma and Ba 2014) with minibatch size of 32 and a 
+learning rate of 2e-5, except for STS-B, where we used a 
+learning rate of 1e-5.  The models were trained for 8 epochs. 
+The best model was selected based on the dev set.  
+    DSE (Frozen  ): We trained another version of DSE in 
+which 𝜓 is frozen. Since 𝜓 is implemented as BERT (Sec-
+tion 3.4), we further want to investigate the actual benefit 
+from fine-tuning 𝜓 w.r.t. the task at hand. Therefore, we pre-
+sent results for a DSE version in which 𝜓 is not fine-tuned. 
+Note that the parametric similarity function is still learned 
+in this version. 
+    ELMO + Attn: This is the BiLSTM + ELMO, Attn 
+model from (Wang et al. 2018). It comes in two variants: 
+Single-Task (ST) and Multi-Task (MT) Training. The re-
+sults are reported taken from (Wang et al. 2018). 
+    GenSen: Since DSE is a sentence embedding model, we 
+further compare its performance with GenSen (Subramanian 
+et al. 2018), which is the best performing sentence embed-
+ding model from (Wang et al. 2018). The results are taken 
+from (Wang et al. 2018). 
+
+4.1.2   Sentence-Pair Tasks Results 
+
+Table 1 presents the results for each combination of model 
+and dataset. In addition, we provide the average score that is 
+computed across the datasets for each model (AVG col-
+umn). The last two columns present the relative degradation 
+compared to BERT-Large and the relative improvement ob-
+tained by DSE (𝛼 = 0.5) over each model (reported in per-
+centages). 
+    First, we compare between the four DSE variants. We see 
+that for MNLI, QNLI, MRPC and QQP, enabling distillation 
+(𝛼 ∈ {0.5,1}) slightly improves upon using 𝛼 = 0. How-
+ever, on STS-B, distillation seems to hurt performance. We 
+attribute the degradation to the fact that STS-B is a regres-
+sion task and therefore the ground truth labels are already 
+provided in a resolution that is finer than binary values. 
+Lastly, we see that the frozen version of DSE performs much 
+worse than all other DSE variants. This is evidence for the 
+importance of fine-tuning 𝜓, which further confirms that a 
+naïve use of pre-trained BERT for sentence embedding pro-
+duces relatively poor results, in some cases. Therefore, we 
+conclude that the distilled version of DSE (𝛼 ∈ {0.5,1}) per-
+forms the best. From now on, we focus on a comparison be-
+tween the 𝛼 = 0.5 version of DSE and the other models.  
+    Next, we turn to consider the performance gaps between 
+DSE and BERT. Recall that DSE is supervised by BERT-
+Large and hence the performance gaps between the two 
+models quantifies the ability of the former to reconstruct the 
+latter’s scores. We see that the largest and smallest relative 
+degradations occur on the MNLI and STS-B datasets, re-
+spectively. Overall, DSE results in an average relative deg-
+radations of 4.6% and 3.1% compared to BERT-Large and 
+BERT-Base, respectively. We attribute these degradations 
+to the fact that DSE lacks the CA mechanism that exists in 
+
+ 
+ 
+Model 
+
+GenSen 
+
+InferSent 
+
+BERT-Large 
+DSE (𝛼 = 0.5) 
+DSE (𝛼 = 0) 
+
+MR CR 
+
+SUBJ MPQA SST TREC MRPC 
+
+SICK-R 
+
+SICK-E 
+
+STS-B 
+
+AVG 
+
+82.5 
+
+81.1 
+
+83.5 
+
+83.6 
+
+83.1 
+
+87.7 
+
+86.3 
+
+88.8 
+
+90.2 
+
+89.8 
+
+94.0 
+
+92.4 
+
+95.5 
+
+93.6 
+
+93.1 
+
+90.9 
+
+90.2 
+
+89.1 
+
+89.8 
+
+89.4 
+
+83.2 
+
+84.6 
+
+87.1 
+
+91.0 
+
+88.3 
+
+93.0 
+
+88.2 
+
+93.2 
+
+91.8 
+
+92.0 
+
+84.4/78.6 
+
+83.1/76.2 
+
+83.5/76.4 
+
+83.8/77.9 
+
+81.8/76.2 
+
+0.888 
+
+0.884 
+
+0.838 
+
+0.856 
+
+0.847 
+
+87.8 
+
+86.3 
+
+82.2 
+
+86.7 
+
+86.1 
+
+78.9/78.6 
+
+75.8/75.5 
+
+68.4/68.3 
+
+70.7/71.4 
+
+73.1/74.1 
+
+86.8 
+
+85.2 
+
+85.1 
+
+86.4 
+
+85.9 
+
+Table 2: Universal sentence embedding benchmarks results. The evaluation results are of linear models trained over each of the model’s 
+sentence representations.  The results for Gensen and InferSent are taken from their respective papers. We report the F1/accu racy scores 
+for MRPC, Pearson correlation for SICK-R, Pearson/Spearman correlations for STSB, and accuracy for the rest. AVG column presents 
+the average score across all datasets, where each dataset’s score is the mean of its one or two reported scores. 
+
+BERT, which seems to capture important information that 
+yields further improvements. 
+ Next, we turn to compare the performance of DSE against 
+the ELMO + Attn variants, which are the best performing 
+models from (Wang et al. 2018). First, we see that DSE sig-
+nificantly outperforms ELMO + Attn (ST) across all da-
+tasets with an average relative improvement of 15.6%. This 
+is despite the fact ELMO + Attn employs CA operations.  
+However, it is important to note that the CA mechanism in 
+ELMO + Attn (Appendix B.1 in (Wang et al. 2018)) is sub-
+stantially different from the one that exists in BERT (Devlin 
+et al. 2019), which is based on self-attention (Vaswani et al. 
+2017). Moreover, DSE provides an average relative im-
+provement of 8.3% compared to ELMO + Attn (MT), even 
+though DSE is trained in a single-task manner. 
+    Finally, we turn to compare between DSE and GenSen 
+(Subramanian et al. 2018), which is reported to perform the 
+best among all other sentence embedding models in (Wang 
+et al. 2018). Table 1 shows that DSE outperforms GenSen 
+across all datasets, providing an average relative improve-
+ment of 8.9%. Yet, it is important to note that although Gen-
+Sen is pre-trained on MNLI and SNLI (Bowman et al. 2015) 
+datasets, it is not fine-tuned w.r.t. the rest of the tasks from 
+Section 4.1. Similar analysis holds for other currently exist-
+ing pre-trained sentence embedding methods, such as (Kiros 
+et al. 2015;  Nie, Bennett, and Goodman 2017; Conneau et 
+al. 2017), with DSE obtaining an even higher relative im-
+provement. Therefore, we omit their results from Table 1. 
+ To the best of our knowledge, these results place DSE as 
+the best performing task specific fine-tuned sentence em-
+bedding model on GLUE sentence-pair tasks. 
+
+4.2   Universal Sentence Embeddings 
+
+We further evaluate DSE by examining its applicability for 
+producing universal sentence embeddings. In this setup, the 
+model is initially pre-trained on one or more surrogate tasks. 
+Then, the learned model is used to generate sentence embed-
+dings, that are evaluated on various downstream tasks in a 
+separate procedure that does not further update the pre-
+trained model. 
+ Choosing a suitable pre-training task and dataset is crucial 
+for learning representations that are meaningful for multiple 
+tasks. Current top performing approaches mainly vary in 
+
+this aspect, suggesting both supervised and unsupervised 
+techniques. Following (Conneau et al. 2017), we opt for pre-
+training DSE on the AllNLI (MNLI + SNLI) dataset. Sen-
+tence embeddings are then extracted from the student model 
+and evaluated on standard benchmarks using the SentEval 
+toolkit (Conneau and Kiela 2018). Both pre-training and 
+sentence embedding generation are done as described in 
+Section 3. We refer to (Conneau and Kiela 2018) for a de-
+tailed description of the datasets and the evaluation protocol. 
+
+4.2.1 Downstream Tasks Results 
+
+For each sentence embedding method and dataset included 
+in the evaluation, Table 2 contains the results of a shallow 
+linear model trained on top of the precomputed embed-
+dings. We report results for our approach with 𝛼 = 0.5, 
+which showed the most promising performance in Section 
+4.1.2, and compare it to the current state-of-the-art methods: 
+Infersent (Conneau et al. 2017) and Gensen. Additionally, 
+we include a comparison to a DSE variant without distilla-
+tion (𝛼 = 0), and to sentence embeddings that are extracted 
+from a pre-trained BERT-Large model using the procedure 
+described in Section 3.4. 
+ As can be seen in Table 2, BERT-Large embeddings 
+reach competitive results on several datasets to both In-
+ferSent and GenSen. Significant improvements are observed 
+mostly for sentiment analysis related datasets. In contrast, 
+on STS-B (semantic similarity), SICK-R, and SICK-E 
+(NLI), BERT-Large embeddings are subpar compared to In-
+ferSent and GenSen, which are pre-trained directly on NLI 
+datasets. Furthermore, recall that BERT is not explicitly 
+trained to generate sentence embeddings, possibly explain-
+ing the downfalls in some of the tasks. 
+ We now turn to compare DSE with the other baselines. 
+As in the sentence-pair tasks evaluation, using DSE with 
+𝛼 = 0.5 improves upon the non-distilled variant (𝛼 = 0), 
+outperforming it on 8 of the 10 benchmarks. Specifically, 
+substantial gains are obtained on SST and MRPC, demon-
+strating the effectiveness of knowledge distillation. There-
+fore, from now on, DSE relates to the 𝑎 = 0.5 model. 
+ DSE significantly outperforms BERT-Large embeddings 
+on sentiment analysis and NLI tasks, obtaining a relative im-
+provement of 4.4% and 5.4% on SST and SICK-E respec-
+tively. The improved results on SICK-E, as well as on 
+
+ 
+ 
+Model 
+
+Speedup 
+factor 
+
+Time Max batch 
+size 
+
+Time / Max 
+batch size  
+
+BERT-Large 
+DSE (𝜓 phase)  
+DSE (𝑓 phase) 
+
+DSE 
+
+1 
+
+- 
+
+- 
+
+934 
+
+9.66hr 
+
+34.73s 
+
+2.48s 
+
+37.21s 
+
+300 
+
+300 
+
+200k 
+
+- 
+
+10.43s 
+
+10.43s 
+
+0.49s 
+
+- 
+
+Table 3: Time comparison between DSE and BERT-Large for an offline com-
+putation of 1M sentence-pairs similarities for a catalog of 1000 sentences. 
+
+Model 
+
+Speedup factor 
+
+BERT-Large 
+DSE (𝜓 phase)  
+DSE (𝑓 phase) 
+
+DSE 
+
+1 
+
+- 
+
+- 
+
+13594 
+
+Time 
+
+58m 
+
+0.052s 
+
+0.204s 
+
+0.256s 
+
+Table 4: Time comparison between DSE and BERT-Large 
+for an online computation of sentence similarities between 
+a query sentence and a catalog of 100K sentences. 
+
+SICK-R, are straightforwardly explained by the pre-training 
+procedure of DSE, which is done on NLI datasets. An inter-
+esting byproduct is the improvement on sentiment analysis 
+benchmarks, suggesting there is a strong connection be-
+tween the tasks. In total, DSE outperforms BERT-Large em-
+beddings on 8 datasets, emphasizing the importance of fur-
+ther fine-tuning BERT in a sentence embedding oriented 
+manner. 
+ Finally, we turn to compare DSE to current state-of-the-
+art methods: InferSent and GenSen. DSE is competitive 
+with both, outperforming them on 7 and 3 datasets, respec-
+tively. We attribute these impressive results, especially on 
+sentiment analysis benchmarks, to the larger transformer ar-
+chitecture and robust BERT pre-training that the DSE stu-
+dent model is based on. On these datasets, BERT-Large im-
+proves upon InferSent and GenSen as well, though by a 
+smaller margin, further suggesting this notion. On average, 
+GenSen remains the current top performing method , slightly 
+outperforming DSE. GenSen utilizes an extensive pre-train-
+ing phase that includes multiple supervised and unsuper-
+vised tasks. The fact that DSE surpasses GenSen by a large 
+margin on some datasets, yet underperforms on others, im-
+plies that multitask pre-training results in good generaliza-
+tion on various tasks, while the specialized NLI pre-training 
+can suffer on tasks that it is less correlated with. Overall, 
+DSE is shown to provide state-of-the-art results. 
+
+4.3   Computational Efficiency Evaluation 
+
+In this section, we report computation times that were meas-
+ured for DSE and BERT-Large. We conducted two experi-
+ments on a single NVIDIA V100 32GB GPU using 
+PyTorch. The first experiment is designed to simulate an of-
+fline computation of a pairwise sentence similarity matrix. 
+To this end, we compute the 1M optional sentence-pair sim-
+ilarities between 1000 sentences. For BERT-Large, we 
+simply performed 1M forward passes with a maximal batch 
+size of 300. This operation took ~9.6 hours. For DSE, we 
+first computed the 1000 sentence embeddings using 𝜓, 
+which amounts to 1000 forward passes of BERT-Large with 
+the same batch size of 300. This operation took ~35 seconds. 
+Then, we computed the 1M pairwise similarities between 
+the sentence embeddings using 𝑓 with a maximal batch size 
+of 200K. This operation took ~2 seconds. 
+    Table 3 summarizes the results. We see that DSE provides 
+a computation time that is 934 times faster than BERT-
+
+Large: 37 seconds vs. 9.6 hours. Therefore, we conclude that 
+for large datasets that contain tens of thousands of sentences, 
+computing the sentence-pair similarity matrix using BERT-
+Large becomes infeasible, while DSE remains a practical 
+solution. In addition, we see that 𝑓 allows much larger batch 
+sizes, compared to BERT-Large (200k vs. 300) with an av-
+erage computation time per batch that is ~21 times faster. 
+    The second experiment is designed to simulate a scenario 
+of online query-candidate similarities computation. In this 
+scenario, the task is to compute the similarities between a 
+new query sentence to all the sentences in an existing cata-
+log. It is assumed that the sentence embedding for all the 
+sentences in the catalog are precomputed using 𝜓.  
+    For BERT-Large, we ran 100K forward passes with a 
+batch size of 300. This operation took ~58 minutes. For 
+DSE, we compute the embedding for the query sentence us-
+ing 𝜓 in 52 milliseconds and then compute the 100K query-
+candidate sentence similarities using 𝑓 in 204 milliseconds 
+(all the similarities are computed in a single batch of size 
+100K as the maximal batch size is 200K, as reported in Ta-
+ble 2). The results are summarized in Tab le 4. We see that 
+DSE provides a computation time that is 13.5K times faster 
+than BERT-Large: 256 milliseconds seconds vs. 58 minutes.  
+    The results in Tables 2 and 3 demonstrates the effective-
+ness of DSE: Obviously, using BERT-Large is impractical 
+in both cases (offline and online), while DSE provides a 
+practical alternative in the expense of a small relative deg-
+radation (4.6%) in quality compared to BERT-Large. 
+
+5. Conclusion 
+
+Computing sentence similarities via CA models such as 
+BERT is impractical for large scale catalogs. To this end, we 
+introduce DSE: a sentence embedding method that is based 
+on knowledge distillation from CA models. DSE bypasses 
+the need for CA operations, enabling precomputation of sen-
+tence representations for the existing catalog in advance, 
+and fast query operations using a low-cost similarity func-
+tion. We demonstrate the effectiveness of DSE on five sen-
+tence-pair tasks, where it is shown to outperform other sen-
+tence embedding methods as well as several attentive ver-
+sions of ELMO. Furthermore, sentence embeddings pro-
+duced by DSE provide state-of-the-art results on various 
+benchmarks. Thus, DSE provides a practical solution for 
+mass production systems, allowing sentence similarities 
+computation times that are several orders of magnitude 
+
+ 
+ 
+Nie, A.; Bennet, E. D.; and Goodman, N. D. 2017. Dissent: Sen-
+tence representation learning from explicit discourse relations. 
+arXiv preprint arXiv:1710.04334. 
+
+Peters, M. E.; Neumann, M.; Iyyer, M.; Gardner, M.; Clark, C.; 
+Lee, K.; and Zettlemoyer, L. 2018. Deep contextualized word rep-
+resentations. In NAACL, 2227–2237. 
+
+Radford, A.; Narasimhan, K.; Salimans, T.; and Sutskever, I. 2018. 
+Improving language understanding by generative pre-training. 
+
+Rajpurkar, P.; Zhang, J.; Lopyrev, K.; and Liang, P. 2016. SQuAD: 
+100,000+ questions for machine comprehension of text. In 
+EMNLP. 
+
+Socher, R.; Perelygin, A.; Wu, J. Y.; Chuang, J.; Manning, C. D.; 
+Ng, A. Y.; Potts, C.; et al. 2013. Recursive deep models for seman-
+tic compositionality over a sentiment treebank. In Proceedings of 
+the conference on empirical methods in natural language pro-
+cessing (EMNLP), volume 1631, 1642. 
+
+Subramanian, S.; Trischler, A.; Bengio, Y.; and Pal, C. J. 2018. 
+Learning general purpose distributed sentence representations via 
+large scale multi-task learning. In ICLR. 
+
+Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.; Jones, L.; 
+Gomez, A. N.; Kaiser, Ł.; and Polosukhin, I. 2017. Attention is all 
+you need. In Advances in Neural Information Processing Systems, 
+5998–6008. 
+
+Wang, A.; Singh, A.; Michael, J.; Hill, F.; Levy, O.; and Bowman, 
+S. R. 2018. Glue: A multi-task benchmark and analysis platform 
+for 
+natural 
+language 
+understanding. 
+arXiv 
+preprint 
+arXiv:1804.07461. 
+
+Williams, A.; Nangia, N.; and Bowman, S. R. 2017. A broadcov-
+erage challenge corpus for sentence understanding through infer-
+ence. arXiv preprint arXiv:1704.05426 
+
+Yang, Z.; Dai, Z.; Yang, Y.; Carbonell, J. G.; Salakhutdinov, R.; 
+& Le, Q. V. 2019. XLNet: Generalized autoregressive pretraining 
+for language understanding. 
+
+faster compared to BERT-Large, at the cost of a small rela-
+tive degradation. 
+
+References 
+
+Barkan, O. 2017. Bayesian neural word embedding. In AAAI, 
+3135–3143. 
+
+Barkan, O., and Koenigstein, N. 2016. Item2vec: Neural item em-
+bedding for collaborative filtering. In IEEE MLSP, 2016. 
+
+Bowman, S. R.; Angeli, G.; Potts, C.; and Manning, C. D. 2015. A 
+large annotated corpus for learning natural language inference. 
+EMNLP 632–642. 
+
+Cer D.; Diab M.; Agirre E.; Lopez-Gazpio I. and Lucia S. 2017 
+SemEval-2017 task 1: Semantic textual similarity multilingual and 
+crosslingual focused evaluation. In Proceedings of SemEval-2017, 
+pages 1–14, Vancouver, Canada. 
+
+Collobert, R.; Weston, J.; Bottou, L.; Karlen, M.; Kavukcuoglu, 
+K.; and Kuksa, P. 2011. Natural language processing (almost) from 
+scratch. Journal of Machine Learning Research 12 (Aug):2493–
+2537. 
+
+Conneau, A.; Kiela, D.; Schwenk, H.; Barrault, L.; and Bordes, A. 
+2017. Supervised learning of universal sentence representations 
+from natural language inference data. In EMNLP, 670–680.  
+
+Conneau, A., and Kiela, D. 2018. Senteval: An evaluation toolkit 
+for universal sentence representations. LREC. 
+
+Dai, A. M., and Le, Q. V. 2015. Semi-supervised sequence learn-
+ing. In Advances in Neural Information Processing Systems, 3061–
+3069. 
+
+Devlin J.; Chang M-W; Lee K; and Toutanova K. 2019. BERT: 
+Pre-training of deep bidirectional transformers for language under-
+standing. In NAACL. 
+
+Dolan, W. B. and Brockett, C. 2005. Automatically constructing a 
+corpus of sentential paraphrases. In IWP@IJCNLP. 
+
+Hinton, G.; Vinyals, O.; and Dean, J. 2014. Distilling the 
+knowledge in a neural network. In NIPS Workshop on Deep Learn-
+ing and Representation Learning. Hoffman, J.; Tzeng, E.; Park, T.; 
+Zhu, J.; I 
+
+Howard, J., and Ruder, S. 2018. Universal language model fine-
+tuning for text classification. arXiv preprint arXiv:1801.06146. 
+
+Kingma, D. P., and Ba, J. 2014. Adam: A method for stochastic 
+optimization. In Proceedings of the 3rd International Conference 
+on Learning Representations (ICLR). 
+
+Kiros, R.; Zhu, Y.; Salakhutdinov, R. R.; Zemel, R.; Urtasun, R.; 
+Torralba, A.; and Fidler, S. 2015. Skip-thought vectors. In Ad-
+vances in Neural Information Processing Systems, (pp. 3294-
+3302). 
+
+Liu, X.; He, P.; Chen, W.; and Gao, J. 2019. Multi-task deep neural 
+networks for natural language understanding. arXiv preprint 
+arXiv:1901.11504. 
+
+Liu, X.; He, P.; Chen, W.; and Gao, J. 2019. Improving Multi-Task 
+Deep Neural Networks via Knowledge Distillation for Natural 
+Language Understanding. arXiv preprint arXiv:1904.09482. 
+
+Mikolov, T.; Sutskever, I.; Chen, K.; Corrado, G. S.; and Dean, J. 
+2013. Distributed representations of words and phrases and their 
+compositionality. In NIPS. 
+
+Mnih, A., and Hinton, G. E. 2009. A scalable hierarchical distrib-
+uted language model. In NIPS. 
+
+ 
+ 
+

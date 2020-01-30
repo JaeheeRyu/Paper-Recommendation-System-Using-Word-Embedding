@@ -1,0 +1,2273 @@
+Deep Unsupervised Cardinality Estimation
+
+Zongheng Yang 1 , Eric Liang 1 , Amog Kamsetty 1 , Chenggang Wu 1 , Yan Duan 3 ,
+Xi Chen 1,3 , Pieter Abbeel 1,3 , Joseph M. Hellerstein 1 , Sanjay Krishnan 2 , Ion Stoica 1
+
+1UC Berkeley
+
+2University of Chicago
+
+3covariant.ai
+
+1 {zongheng,ericliang,amogkamsetty,cgwu,pabbeel,hellerstein,istoica}@berkeley.edu
+2 skr@uchicago. edu 3 {rocky,peter}@covariant.ai
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+B
+
+D
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+8
+7
+2
+4
+0
+
+.
+
+5
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+ABSTRACT
+
+Cardinality estimation has long been grounded in statistical
+tools for density estimation. To capture the rich multivari-
+ate distributions of relational tables, we propose the use of
+a new type of high-capacity statistical model: deep autore-
+gressive models. However, direct application of these models
+leads to a limited estimator that is prohibitively expensive
+to evaluate for range or wildcard predicates. To produce a
+truly usable estimator, we develop a Monte Carlo integration
+scheme on top of autoregressive models that can eﬃciently
+handle range queries with dozens of dimensions or more.
+Like classical synopses, our estimator summarizes the data
+without supervision. Unlike previous solutions, we approxi-
+mate the joint data distribution without any independence
+assumptions. Evaluated on real-world datasets and com-
+pared against real systems and dominant families of tech-
+ror at tail, an up to 90× accuracy improvement over the
+niques, our estimator achieves single-digit multiplicative er-
+second best method, and is space- and runtime-eﬃcient.
+
+PVLDB Reference Format:
+Zongheng Yang, Eric Liang, Amog Kamsetty, Chenggang Wu,
+Yan Duan, Xi Chen, Pieter Abbeel, Joseph M. Hellerstein, San-
+jay Krishnan, and Ion Stoica. Deep Unsupervised Cardinality
+Estimation. PVLDB, 13(3): 279-292, 2019.
+DOI: https://doi.org/10.14778/3368289.3368294
+
+1.
+
+INTRODUCTION
+
+Cardinality estimation is a core primitive in query opti-
+mization [42]. One of its main tasks is to accurately estimate
+the selectivity of a SQL predicate—the fraction of a relation
+selected by the predicate—without actual execution. De-
+spite its importance, there is wide agreement that the prob-
+lem is still unsolved [26,28,36]. Open-source and commercial
+DBMSes routinely produce up to 104−108× estimation er-
+rors on queries over a large number of attributes [26].
+The fundamental diﬃculty of selectivity estimation comes
+from condensing information about data into summaries [18].
+The predominant approach in database systems today is
+to collect single-column summaries (e.g., histograms and
+
+This work is
+licensed under
+the Creative Commons Attribution-
+NonCommercial-NoDerivatives 4.0 International License. To view a copy
+of this license, visit http://creativecommons.org/licenses/by-nc-nd/4.0/. For
+any use beyond those covered by this license, obtain permission by emailing
+info@vldb.org. Copyright is held by the owner/author(s). Publication rights
+licensed to the VLDB Endowment.
+Proceedings of the VLDB Endowment, Vol. 13, No. 3
+ISSN 2150-8097.
+DOI: https://doi.org/10.14778/3368289.3368294
+
+Figure 1: Approximating the joint data distribution in full, Naru
+enjoys high estimation accuracy and space eﬃciency.
+
+sketches), and to combine these coarse-grained models as-
+suming column independence. This represents one end of
+the spectrum, where the summaries are fast to construct
+and cheap to store, but compounding errors occur due to
+the coarse information and over-simplifying independence
+assumptions. On the other end of the spectrum, when given
+the joint data distribution of a relation (the frequency of each
+unique tuple normalized by the relation’s cardinality), per-
+fect selectivity “estimates” can be read oﬀ or computed via
+integration over the distribution. However, the joint is in-
+tractable to compute or store for all but the tiniest datasets.
+Thus, traditional selectivity estimators face the hard trade-
+oﬀ between the amount of information captured and the cost
+to construct, store, and query the summary.
+An accurate and compact joint approximation would allow
+better design points in this tradeoﬀ space (Figure 1). Recent
+advances in deep unsupervised learning have oﬀered promis-
+ing tools in this regard. While it was previously thought
+intractable to approximate the data distribution of a rela-
+tion in its full form [7, 14], deep autoregressive models, a
+type of density estimator, have succeeded in modeling high-
+dimensional data such as images, text, and audio [40, 48–
+50]. However, these models only estimate point densities—
+in query processing terms, they only handle equality predi-
+cates (e.g., “what is the fraction of tuples with price equal to
+$100?”). Full-featured selectivity estimation requires han-
+dling not only equality but also range predicates (e.g., “what
+fraction of tuples have price less than $100 and weight greater
+than 10 lbs?”). Naive estimation of the range density by
+integrating over the query region requires summing up an
+enormous number of points. In an 11-dimensional table we
+consider, a challenging range query has 1010 points in the
+query region, which would take more than 1,000 hours to
+sum over by a naive enumeration scheme. A full-featured
+selectivity estimator, therefore, requires new techniques be-
+yond the state of the art.
+
+1
+
+KBsMBsIntractableStorage104×oﬀ102×oﬀ1×AccuracyKDE/Sampling/SupervisedFullJointNaru(ours)DBMS/Heuristics 
+ 
+ 
+ 
+ 
+ 
+In this paper, we show that selectivity estimation can be
+performed with high accuracy by using deep autoregressive
+models. We ﬁrst show how relational data—including both
+numeric and categorical attributes—can be mapped onto
+these models for eﬀective selectivity estimation of equality
+predicates. We then introduce a new Monte Carlo integra-
+tion technique called progressive sampling, which eﬃciently
+estimates range queries even at high dimensionality. By
+leveraging the availability of conditional probability distri-
+butions provided by the model, progressive sampling steers
+the sampler into regions of high probability density, and then
+corrects for the induced bias by using importance weight-
+ing. This technique extends the state of the art in density
+estimation, with particular applicability to our problem of
+general-purpose selectivity estimation. Our scheme is eﬀec-
+tive: a thousand samples suﬃce to accurately estimate the
+aforementioned 1010 -point query.
+To realize these ideas, we design and implement Naru
+(Neural Relation Understanding), a selectivity estimator that
+approximates the joint data distribution in its full form,
+without any column independence assumptions. Approx-
+imating the joint in full not only provides superior accu-
+racy, but also frees us from specifying what combinations of
+columns to build synopses on. We further propose optimiza-
+tions to eﬃciently handle wildcard predicates, and to encode
+and decode real-world relational data (e.g., supporting var-
+ious datatypes, small and large domain sizes). Combining
+our integration scheme with these practical strategies re-
+sults in a highly accurate, compact, and functionality-rich
+selectivity estimator based on deep autoregressive models.
+Just like classical synopses, Naru summarizes a relation
+in an unsupervised fashion. The model is trained via sta-
+tistically grounded principles (maximum likelihood) where
+no supervised signals or query feedback are required. While
+query-driven estimators are optimized with respect to a set
+of training queries (i.e., “how much error does the estima-
+tor incur on these queries?”), Naru is optimized with respect
+to the underlying data distribution (i.e., “how divergent is
+the estimator from the data?”). Being data-driven, Naru
+supports a much larger set of queries and is automatically
+robust to query distributional shifts. Our evaluation com-
+pares Naru to the state-of-the-art unsupervised and super-
+vised techniques, showing Naru to be the only estimator to
+achieve worst-case single-digit multiplicative errors for chal-
+lenging high-dimensional queries.
+In summary, we make the following contributions:
+
+1. We show deep autoregressive models can be used for
+selectivity estimation (§2, §3), and propose optimiza-
+tions to make them suitable for relational data (§4).
+2. To handle challenging range queries, we develop pro-
+gressive sampling, a Monte Carlo integration algorithm
+that eﬃciently estimates range densities even with large
+query regions (§5.1). We augment it with a novel opti-
+mization, wildcard-skipping (§5.2), to handle wildcard
+umn orderings (§5.3) to reduce estimation variance.
+predicates. We also propose information-theoretic col-
+3. We extensively evaluate on real datasets against 8 base-
+lines across 5 diﬀerent families (heuristics, real DBM-
+Ses, sampling, statistical methods, deep supervised re-
+gression). Our estimator Naru achieves up to orders-
+of-magnitude better accuracy with space usage ∼1%
+of data size and ∼5−10ms of estimation latency (§6).
+
+2. PROBLEM FORMULATION
+
+Consider a relation T with attribute domains {A1 , . . . , An }.
+Selectivity estimation seeks to estimate the fraction of tu-
+ples in T that satisfy a particular predicate, θ : A1 × · · · ×
+An → {0, 1}. We deﬁne the selectivity to be sel(θ) :=
+|{x ∈ T : θ(x) = 1}|/|T |.
+The joint data distribution of the relation, deﬁned to be
+P (a1 , . . . , an ) := f (a1 , . . . , an )/|T |
+
+is closely related to the selectivity, where f (a1 , . . . , an ) is the
+number of occurrences of tuple (a1 , . . . , an ) in T . It forms
+a valid probability distribution since integrating it over the
+attribute domains yields a value of 1. Thus, exact selectivity
+calculation is equivalent to integration over the joint:
+θ(a1 , . . . , an ) · P (a1 , . . . , an ).
+
+· · · (cid:88)
+
+(cid:88)
+
+sel(θ) =
+
+a1∈A1
+
+an∈An
+
+In this work, we consider ﬁnite relation T and hence its
+empirical domains Ai are ﬁnite. Therefore summation is
+used in the integration calculation above.
+
+2.1 Approximating the Joint via Factorization
+
+to be summed over in the integration—is |P | = (cid:81)n
+Given the joint, exact selectivity “estimates” can be cal-
+culated by integration. However, the number of entries in
+the joint—and thus the maximum number of points needed
+i=1 |Ai |,
+a size that grows exponentially in the number of attributes.
+Real-world tables with a dozen or so columns can easily have
+a theoretic joint size of 1020 and upwards (§6). In practice,
+it is possible to bound this number by |T |, the number of
+tuples in the relation, by not storing any entry with zero
+occurrence. Algorithmically, to scale construction, storage,
+and integration to high-dimensional tables, joint approxi-
+lower-dimensional representation, (cid:98)P ≈ P .
+mation techniques seek to factorize [15] the joint into some
+tion, (cid:98)P (A1 , · · · , An ) ≈ (cid:81)n
+i=1 (cid:98)P (Ai ), where independence be-
+Classical 1D histograms [42] use the simplest factoriza-
+tween attributes is assumed. The (cid:98)P (Ai )’s are materialized
+as histograms that are cheap to construct and store. Selec-
+tivity estimation reduces to calculating per-column selectiv-
+ities and combining by multiplication,
+θ1 (a1 ) (cid:98)P (a1 )
+θn (an ) (cid:98)P (an )
+
+(cid:32) (cid:88)
+
+(cid:32) (cid:88)
+
+sel(θ) ≈
+
+(cid:33)
+
+× · · ·×
+
+(cid:33)
+
+a1∈A1
+
+an ∈An
+
+where each θi is predicate θ pro jected to each attribute (as-
+suming here θ is a conjunction of single-attribute ﬁlters).
+Richer factorizations are possible and are generally more
+accurate. For instance, Probabilistic Relational Models [13,
+into smaller distributions, { (cid:98)P (A1 |A2 , A3 ), (cid:98)P (A2 ), (cid:98)P (A3 )}).
+14] from the early 2000s leverage the conditional indepen-
+dence assumptions of Bayesian Networks (e.g., joint factored
+columns (e.g., (cid:98)P (A1 , A2 , A3 ) ≈ (cid:98)P (A1 ) (cid:98)P (A2 , A3 )). Both
+Dependency-Based Histograms [7] use decomposable inter-
+action models and rely on partial independence between
+methods are marked improvements over 1D histograms since
+they capture more than single-column interactions. How-
+ever, the tradeoﬀ between richer factorizations and costs to
+store or integrate is still unresolved. Obtaining selectivi-
+ties becomes drastically harder due to the integration now
+crossing multiple attribute domains. Most importantly, the
+
+2
+
+approximated joint’s precision is compromised since some
+forms of independence are still assumed.
+In this paper, we consider the richest possible factorization
+(cid:98)P (A1 , · · · , An ) = (cid:98)P (A1 ) (cid:98)P (A2 |A1 ) · · · (cid:98)P (An |A1 , . . . , An−1 )
+of the joint, using the product rule:
+Unlike the previous proposals, the product rule factorization
+is an exact relationship to represent a distribution. It makes
+factors, { (cid:98)P (Ai |A1 , . . . , Ai−1 )}, need not be materialized; in-
+no independence assumptions and captures all complex in-
+teractions between attributes. Key to this goal is that the
+stead, they are calculated on-demand by a neural network,
+a high-capacity universal function approximator [11].
+
+2.2 Problem Statement
+
+We estimate the selectivities of queries of the following
+form. A query is a conjunction of single-column boolean
+predicates, over arbitrary subsets of columns. A predicate
+contains an attribute, an operator, and a literal, and is read
+as Ai ∈ Ri (attribute i takes on values in valid region Ri ).
+Our formulation includes the usual =, (cid:54)=, <, ≤, >, ≥ predi-
+cates, the rectangular containment Ai ∈ [li , ri ], or even IN
+clauses. For ease of exposition, we use range to denote the
+valid region Ri or, for the whole query, the composite valid
+region R1 × · · ·×Rn . We assume the domain of each column,
+Ai , is ﬁnite: since a real dataset is ﬁnite, we can take the
+empirically present values of a column as its ﬁnite domain.
+We make a few remarks. First, disjunctions of such pred-
+icates are supported via the inclusion-exclusion principle.
+Second, our formulation follows a large amount of existing
+work on this topic [7, 14, 17, 35, 38] and, in some cases, oﬀers
+more capabilities. Certain prior work requires each predi-
+cate be a rectangle [17, 22] or columns be real-valued [17, 24];
+our “region” formulation supports complex predicates and
+does not make these assumptions. Lastly, the relation under
+estimation can either be a base table or a join result.
+
+3. DEEP AUTOREGRESSIVE MODELS
+3.1 Overview
+
+Naru uses a deep autoregressive model to approximate the
+joint distribution. We overview the statistical features they
+Access to point density (cid:98)P (x). Deep autoregressive mod-
+oﬀer and how those relate to selectivity estimation.
+els produce point density estimates (cid:98)P (x) after training on a
+set of n-dimensional tuples T = {x1 , . . . } with the unsuper-
+vised maximum likelihood ob jective. Many network archi-
+tectures have been proposed in recent years, such as masked
+multi-layer perceptrons (e.g., MADE [12], ResMADE [9]) or
+masked self-attention networks (e.g., Transformer [50]).
+Access to conditional densities { (cid:98)P (xi |x<i )}. Addition-
+ally, autoregressive models also provide access to all condi-
+tional densities present in the product rule:
+(cid:98)P (x) = (cid:98)P (x1 , x2 , · · · , xn )
+= (cid:98)P (x1 ) (cid:98)P (x2 |x1 ) · · · (cid:98)P (xn |x1 , . . . , xn−1 )
+Namely, given input tuple x = (x1 , · · · , xn ), one can ob-
+tain from the model the n conditional density estimates,
+
+Figure 2: Overview of the estimator framework. Naru is trained
+by reading data tuples and does not require supervised training
+queries or query feedback, just like classical synopses.
+
+{ (cid:98)P (xi |x<i )}. The model can be architected to use any or-
+dering(s) of the attributes (e.g., (x1 , x2 , x3 ) or (x2 , x1 , x3 )).
+In our exposition we assume the left-to-right schema order
+(§5.3 discusses heuristically picking a good ordering).
+
+(cid:105)
+
+(1)
+
+3.2 Autoregressive Models for Relational Data
+
+Naru chooses autoregressive models for selectivity estima-
+tion for two important reasons. First, autoregressive mod-
+els have shown superior modeling precision in learning im-
+ages [40, 49], audio [48], and text [50]. All these domains in-
+volve correlated, high-dimensional data akin to a relational
+table. Second, as we will show in §5.1, access to conditional
+densities is critical in eﬃciently supporting range queries.
+Naru allows any autoregressive model M to be plugged in.
+M(x) (cid:55)→ (cid:104) (cid:98)P (X1 ), (cid:98)P (X2 |x1 ), · · · , (cid:98)P (Xn |x1 , . . . , xn−1 )
+In general, such model has the following functional form:
+Namely, one tuple goes in, a list of conditional density dis-
+tributions comes out, each being a distribution of the ith
+required to compute the point density, { (cid:98)P (xi |x<i )}, are read
+attribute conditioned on previous attributes. (The scalars
+M attain the autoregressive property, e.g., that (cid:98)P (X3 |x1 , x2 )
+from these conditional distributions.) How can a neural net
+only depends on, or “sees”, the information from the ﬁrst
+two attribute values (x1 , x2 ) but not anything else?
+Information masking is a common technique used to im-
+plement autoregressive models [12, 49, 50]; here we illustrate
+the idea by constructing an example architecture for rela-
+tional data. Suppose we assign each column i its own com-
+pact neural net, whose input is the aggregated information
+about previous column values x<i . Its role is to use this con-
+main, (cid:98)P (Xi |x<i ). Consider a travel checkins table with
+text information to output a distribution over its own do-
+columns city, year, stars. Assume the model is given the
+input tuple, (cid:104)Portland, 2017, 10(cid:105). First, column-speciﬁc en-
+coders Ecol () transform each attribute value into a numeric
+vector suitable for neural net consumption, [Ecity (Portland),
+Eyear (2017), Estars (10)]. Then, appropriately aggregated in-
+puts are fed to the per-column neural nets Mcol :
+
+0 → Mcity
+
+Ecity (Portland) → Myear
+⊕ (Ecity (Portland), Eyear (2017)) → Mstars
+
+where ⊕ is the operator that aggregates information from
+several encoded attributes. In practice, this aggregator can
+be vector concatenation, a set-invariant pooling operator
+(e.g., elementwise sum or max), or even self-attention [50].
+
+3
+
+TableTuplesAutoregressiveModelDataSourceunsupervised loss(maximum likelihood)Selectivityestimatesx1x2x3!P(x1)!P(x2|x1)!P(x3|x1,x2)Notice that the ﬁrst output, from Mcity , does not depend
+on any attribute values (its input 0 is arbitrarily chosen).
+The second output depends only on the attribute value from
+city, and the third depends only on both city and year.
+Therefore, the three outputs can be interpreted as
+
+(cid:104) (cid:98)P (city), (cid:98)P (year|city), (cid:98)P (stars|city, year)
+
+(cid:105)
+
+Thus, autoregressiveness is achieved via such input masking.
+Training these model outputs to be as close as possible
+to the true conditional densities is done via maximum likeli-
+the data distribution P and the model estimate (cid:98)P is calcu-
+hood estimation. Speciﬁcally, the cross entropy [11] between
+H(P , (cid:98)P ) = − (cid:88)
+lated over all tuples in relation T and used as the loss:
+P (x) log (cid:98)P (x) = − 1
+log (cid:98)P (x)
+(2)
+Lastly, the Kullback-Leibler divergence, H(P , (cid:98)P ) − H(P ), is
+It can be fed into a standard gradient descent optimizer [20].
+the entropy gap (in bits-per-tuple) incurred by the model. A
+lower gap indicates a higher-quality density estimator; thus,
+it serves as a monitoring metric during and after training.
+
+(cid:88)
+
+x∈T
+
+|T |
+
+x∈T
+
+4. ESTIMATOR CONSTRUCTION
+
+We now discuss practical issues in constructing Naru.
+
+4.1 Workﬂow
+
+Figure 2 outlines the workﬂow of building a Naru estima-
+tor. After specifying a table T to build an estimator on,
+batches of random tuples from T are read to train Naru. In
+practice, a snapshot of the table can be saved to external
+storage so normal DBMS activities are not aﬀected. Neural
+network training can be performed either close to the data
+(at periods of low activity) or oﬄoaded to a remote process.
+For a batch of tuples, Naru encodes each attribute value
+using column-speciﬁc strategies (§4.2). The encoded batch
+then gets fed into the model to perform a gradient update
+step. Our evaluation (§6.4) empirically observed that one
+pass over data is suﬃcient to achieve a high degree of ac-
+curacy (e.g., outperforming real DBMSes by 10−20×), and
+more passes are beneﬁcial until model convergence.
+Appends and updates may cause statistical staleness. Naru
+as we show in §6.8.3. Further, if new data comes in per-day
+can be ﬁne-tuned on the updated relation to correct for this,
+partitions, then each partition can train its own Naru model.
+Eﬃcient incremental model update is an important topic
+worthy of detailed study, which we defer to future work.
+
+Joins. The estimator does not distinguish between the type
+of table it is built on. To build an estimator on a joined re-
+lation, either the entire joined relation can be pre-computed
+and materialized, or multi-way join operators [51, 52] and
+samplers [2, 27] can be used to produce batches of tuples
+on-the-ﬂy. Given access to tuples from the joined result,
+no changes are needed to the estimator framework. Once
+trained, the estimator supports queries that ﬁlter any col-
+umn in the joined relation. This treatment follows prior
+work [19, 31, 35] and is conceptually clean.
+
+4.2 Encoding and Decoding Strategies
+
+Naru models a relation as a high-dimensional discrete dis-
+tribution. The key challenge is to encode each column into
+
+4
+
+a form suitable for neural network consumption, while pre-
+put distribution (cid:98)P (Xi |x<i ) (a vector of scores) must be ef-
+serving the column semantics. Further, each column’s out-
+ﬁciently decoded regardless of its datatype or domain size.
+For each column Naru ﬁrst obtains its domain Ai either
+from user annotation or by scanning. All values in the col-
+umn are then dictionary-encoded into integer IDs in range
+[0, |Ai |). For instance, the dictionary can be Portland (cid:55)→ 0,
+SF (cid:55)→ 1, etc. For a column with a natural order, e.g., nu-
+merics or strings, the domain is sorted so that the dictionary
+order follows the column order. Overall, this pre-processing
+step is a lossless transformation (i.e., a bijection).
+Next, column-speciﬁc encoders Ecol () encode these IDs
+into vectors. The ML community has proposed many such
+strategies before; we make sensible choices by keeping in
+mind a few characteristics speciﬁc to relational datasets:
+
+Encoding small-domain columns: one-hot. For such a
+column Ecol () is set to one-hot encoding (i.e., indicator vari-
+ables). For instance, if there are a total of 4 cities, then the
+encoding of SF is Ecity (1) = [0, 1, 0, 0], a 4-dimensional vec-
+tor. The small-domain threshold is conﬁgurable and set to
+64 by default. This encoding takes O(|Ai |) space per value.
+
+Encoding large-domain columns: embedding. For a
+larger domain, the one-hot vector wastes space and compu-
+tation budget. Naru uses embedding encoding in this case.
+In this scheme—a preprocessing step in virtually all natural
+language processing tasks—a learnable embedding matrix
+of type R|Ai |×h is randomly initialized, and Ecol () is sim-
+ply row lookup into this matrix. For instance, Eyear (4) (cid:55)→
+row 4 of embedding matrix, an h-dimensional vector. The
+embedding matrix gets updated during gradient descent as
+part of the model weights. Per value this takes O(h) space
+(Naru defaults h to 64). This encoding is ideal for domains
+with a meaningful semantic distance (e.g., cities are similar
+in geo-location, popularity, relation to its nation) since each
+dimension in the embedding vector can learn to represent
+each such similarity.
+Decoding small-domain columns. Suppose domain Ai
+put layer to compute a distribution (cid:98)P (Xi |x<i ), which is
+is small.
+In this easy case, the network allocates an out-
+a |Ai |-dimensional vector of probabilities used for selectiv-
+ity estimation. We use a fully connected layer, FC(F , |Ai |),
+where F is the hidden unit size. For example, for a city col-
+umn with three values in its domain, the output distribution
+may be [SF = 0.2; Portland = 0.5; Waikiki = 0.3]. During op-
+timization, the training loss seeks to minimize the divergence
+of this output from the data distribution.
+
+Decoding large-domain columns: embedding reuse.
+If the domain is large, however, using a fully connected out-
+put layer FC(F , |Ai |) would be ineﬃcient in both space and
+has a large domain size of |Ai | = 104 , inﬂating the output
+compute. Indeed, an id column in a dataset we tested on
+layer beyond typical scales.
+Naru solves this problem by an optimization that we call
+“embedding reuse”. In essence, we replace the potentially
+large output layer FC(F , |Ai |) with a much smaller version,
+FC(F , h) (recall that h is the typically small embedding di-
+mensions; defaults to 64). This immediately yields a saving
+ratio of |Ai |/h. The goal of decoding is to take in inputs
+
+Figure 3: The intuition of progressive sampling. Uniform sam-
+ples taken from the query region have a low probability of hitting
+the high-mass sub-region of the query region, increasing the vari-
+ance of Monte Carlo estimates. Progressive sampling avoids this
+by sampling from the estimated data distribution instead, which
+naturally concentrates samples in the high-mass sub-region.
+
+When the region R is deemed too big—almost always the
+case in the datasets and workloads we considered—we in-
+stead use a novel approximate technique termed progressive
+sampling (described next), an unbiased estimator that works
+surprisingly well on the relational datasets we considered.
+Lastly, queries with out-of-domain literals can be handled
+via simple rewrite. For example, suppose year’s domain is
+{2017, 2019}. A range query with an out-of-domain literal,
+
+x<i and output |Ai | probability scores over the domain.
+With the shrunk-down output layer, inputs x<i would pass
+H ⊆ R1×h . We then calculate H E T
+through the net arriving at an h-dimensional feature vector,
+i , where Ei ⊆ R|Ai |×h is
+the already-al located embedding matrix for column i, obtain-
+ing a vector R1×|Ai | that can be interpreted as the desired
+scores after normalization. We have thus decoded the output
+while cutting down the cost of compute and storage. This
+scheme has proved eﬀective in other large-domain tasks [39].
+
+4.3 Model Choice
+
+As discussed, any autoregressive model can be plugged
+in, taking advantage of Naru’s encoding/decoding optimiza-
+tions as well as querying capabilities (§5). We experiment
+with three representative architectures:
+(A) Masked Au-
+toencoder (MADE) [12], a standard multi-layer perceptron
+with information masking to ensure autoregressiveness; (B)
+ResMADE [9], a simple extension to MADE where residual
+connections are introduced to improve learning eﬃciency;
+and (C) Transformer [50], a class of self-attentional models
+driving recent state-of-the-art advances in natural language
+processing [8, 54]. Table 7 compares the tradeoﬀs of these
+building blocks. We found that, under similar parameter
+count, more advanced architectures (B, C) achieve better
+entropy gaps; however, the smaller entropy gaps do not au-
+tomatically translate into better selectivity estimates and
+the computational cost can be signiﬁcantly higher (for C).
+
+5. QUERYING THE ESTIMATOR
+
+Once an autoregressive model is trained, it can be queried
+to compute selectivity estimates. Assume a query sel(θ) =
+P (X1 ∈ R1 , . . . , Xn ∈ Rn ) asking for the selectivity of the
+conjunction, where each range Ri can be a point (equality
+predicate), an interval (range predicate), or any subset of
+the domain (IN). The calculation of this density is funda-
+mentally summing up the probability masses distributed in
+the cross-product region, R = R1 × · · · × Rn .
+We ﬁrst discuss the straightforward support for equality
+predicates, then move on to how Naru solves the more chal-
+lenging problem of range predicates.
+
+Equality Predicates. When values are speciﬁed for al l
+columns, estimating conjunctions of these equality predi-
+cates is straightforward. Such a point query has the form
+P (X1 = x1 , . . . , Xn = xn ) and requires only a single forward
+conditionals, [ (cid:98)P (X1 = x1 ), (cid:98)P (X2 = x2 |X1 = x1 ), . . . , (cid:98)P (Xn =
+pass on the point, (x1 , . . . , xn ), to obtain the sequence of
+xn |X1 = x1 , . . . , Xn−1 = xn−1 )], which are then multiplied.
+Range Predicates. It is impractical to assume a workload
+that only issues point queries. With the presence of any
+range predicate, or when some columns are not ﬁltered, the
+number of points that must be evaluated through the model
+becomes larger than 1. (In fact, it easily grows to an as-
+tronomically large number for the ma jority of workloads we
+considered.) We discuss two ways in which Naru carries out
+this operation. Enumeration exactly sums up the densities
+sel(X1 ∈ R1 , . . . , Xn ∈ Rn ) ≈ (cid:88)
+when the queried region R is suﬃciently small:
+(cid:98)P (x1 , . . . , xn ).
+
+· · · (cid:88)
+
+x1∈R1
+
+xn ∈Rn
+
+A1  A2       AN-1  AN   domain...query regiondomain...query regionUniform SamplingProgressive SamplingA1  A2       AN-1  AN   of query region R1 × · · · × Rn using S samples.
+Algorithm 1 Progressive Sampling: estimate the density
+(cid:98)P = 0
+1: function ProgressiveSampling(S ; R1 , . . . , Rn )
+2:
+(cid:98)P = (cid:98)P + Draw(R1 , . . . , Rn )
+3:
+return (cid:98)P /S
+for i = 1 to S do
+(cid:46) Batched in practice
+4:
+5:
+(cid:98)p = 1
+6: function Draw(R1 , . . . , Rn )
+7:
+8:
+s = 0n
+(cid:46) The tuple to ﬁll in
+9:
+for i = 1 to n do
+(cid:98)P (Xi |s<i ) = the i-th model output
+Forward pass through model: M(s)
+10:
+11:
+Re-normalize, obtaining (cid:98)P (Xi |Xi ∈ Ri , s<i )
+(cid:46) Eq. 1
+12:
+Zero-out probabilities in slots [0, Di ) \ Ri
+(cid:98)p = (cid:98)p × (cid:98)P (Xi ∈ Ri |s<i )
+13:
+Sample si∼ (cid:98)P (Xi |Xi ∈ Ri , s<i )
+14:
+15:
+return (cid:98)p
+16:
+s[i] = si
+17:
+(cid:46) Density of the sampled tuple s
+
+(cid:46) Draw one tuple
+
+This more meaningful region is exactly described by the
+(cid:98)P (X2 |x(i)
+second conditional output from the autoregressive model,
+1 ), a distribution over the second domain given
+the ﬁrst dimension sample. We can obtain a sample of
+the second dimension, x(i)
+2 , from this space instead of from
+Unif(R2 ). This sampling process continues for all columns.
+To summarize, progressive sampling consults the autoregres-
+sive model to steer the sampler into the high-mass part of
+the query region, and ﬁnally compensating for the induced
+bias with importance weighting.
+
+1 , x(i)
+
+1
+
+1 , x(i)
+
+query. Drawing the i-th sample for query P (X1 ∈ R1 , X2 ∈
+Example. We show the sampling procedure for a 3-ﬁlter
+R2 , X3 ∈ R3 ):
+1. Forward 0 to get (cid:98)P (X1 ). Compute and store (cid:98)P (X1 ∈
+1 ∼ (cid:98)P (X1 |X1 ∈ R1 ).
+to get (cid:98)P (X2 |x(i)
+R1 ) by summing. Then draw x(i)
+(cid:98)P (X2 ∈ R2 |x(i)
+2 ∼ (cid:98)P (X2 |X2 ∈ R2 , x(i)
+2. Forward x(i)
+1 ). Compute and store
+1 ). Draw x(i)
+2 ) to get (cid:98)P (X3 |x(i)
+1 ).
+and store (cid:98)P (X3 ∈ R3 |x(i)
+3. Forward (x(i)
+2 ). Compute
+2 ).
+The summation and sampling steps are fast since they are
+only over single-column distributions. This is in contrast to
+integrating or summing over all columns at once, which has
+an exponential number of points. The product of the three
+(cid:98)P (X1 ∈ R1 ) · (cid:98)P (X2 ∈ R2 |x(i)
+1 ) · (cid:98)P (X3 ∈ R3 |x(i)
+stored intermediates,
+2 )
+is an unbiased estimate for the desired density. By construc-
+tion, the sampled point satisﬁes the query (x(i)
+is drawn
+from range R1 , x(i)
+from R2 , and so forth). It remains to
+show that this sampler is approximating the correct sum:
+Theorem 1. Progressive Sampling estimates are unbiased.
+
+1 , x(i)
+
+1 , x(i)
+
+(3)
+
+1
+
+2
+
+The proof only uses basic probability rules and is deferred
+to our online technical report. Algorithm 1 shows the pseu-
+docode for the general n-ﬁlter case. For a column that does
+
+6
+
+not have an explicit ﬁlter, it can in theory be treated as hav-
+ing a wildcard ﬁlter, i.e., Ri = [0, Di ). We describe our more
+eﬃcient treatment, wildcard-skipping, in §5.2. Our evalua-
+tion shows that the sampler can cover both low and high
+density regions, and handles challenging range queries for
+large numbers of columns and joint spaces.
+Progressive sampling bears connections to sampling al-
+gorithms in graphical models. Notice that the autoregres-
+sive factorization corresponds to a complex graphical model
+where each node i has all nodes with indices < i as its par-
+ents.
+In this interpretation, progressive sampling extends
+the forward sampling with likelihood weighting algorithm [23]
+to allow variables taking on ranges of values (the former, in
+its default form, allows equality predicates only).
+
+5.2 Reducing Variance: Wildcard-Skipping
+
+Naru introduces wildcard-skipping, a simple optimization
+to eﬃciently handle wildcard predicates.
+Instead of sam-
+pling through the full domain of each wildcard column in
+a query, Xi ∈ ∗, we could restrict it to a special token,
+Xi = MASKi .
+Intuitively, MASKi signiﬁes column i’s ab-
+sence and essentially marginalizes it. In our experiments,
+wildcard-skipping can reduce the variance of worst-case er-
+rors by several orders of magnitude (§6.6).
+During training, we perturb each tuple so that the training
+data contains MASK tokens. We uniformly sample a subset
+of columns to mask out—their original values in the tuple are
+discarded and replaced with corresponding MASKcol . For an
+n-column tuple, each column has a probability of w/n to be
+masked out, where w ∼ Unif[0, n). The output target for the
+cross-entropy loss still uses the original values.
+
+5.3 Reducing Variance: Column Ordering
+
+Naru models adopt a single ordering of columns during
+construction (§4). However, diﬀerent orderings may have
+diﬀerent sampling eﬃciency. For instance, having city as
+the ﬁrst column and setting it to Waikiki focuses on records
+only relevant to that city, a data region supposedly much
+narrower than that from having year as the ﬁrst column.
+Empirically, we ﬁnd that these heuristic orders work well:
+
+1. MutInfo: successively pick column Xi that maximizes
+the mutual information [6] between all columns chosen
+so far and itself, arg maxi I (Xchosen ; Xi ).
+
+2. PMutInfo: a variant of the above that maximizes the
+pairwise mutual information, arg maxi I (Xlast ; Xi ).
+
+Intuitively, maximizing I (Xchosen ; Xi ) corresponds to ﬁnd-
+ing the next column with the most information already con-
+tained in the chosen columns. For both schemes, we ﬁnd
+that picking the column with the maximum marginal en-
+tropy, arg maxi H (Xi ), as the ﬁrst works well. Interestingly,
+on our datasets, the Natural ordering (left-to-right order in
+table schema) is also eﬀective. We hypothesize this is due
+to human bias in placing important or “key”-like columns
+earlier that highly reduce the uncertainty of other columns.
+Lastly, we note that order-agnostic training has been pro-
+posed in the ML literature [12,47,54]. The idea is to train the
+same model on more than one order, and at inference time
+invoke a (presumably seen) order most suitable for the query.
+This is a possible future optimization for Naru, though in the
+preliminary experiments we did not ﬁnd the performance
+beneﬁts on top of our optimizations signiﬁcant.
+
+6. EVALUATION
+
+We answer the following questions in our evaluation:
+
+1. How does Naru compare to state-of-the-art selectivity
+estimators in accuracy (§6.2)? Is it robust (§6.3)?
+
+2. How long does it take to train a Naru model to achieve
+a useful level of accuracy (§6.4)?
+
+3. Naru requires multiple inference passes to produce a
+selectivity estimate. How does this compare with the
+latency of other approaches (§6.5)?
+
+4. How do wildcard-skipping and column orderings af-
+fect accuracy and variance (§6.6)? How does accuracy
+change with model choices and sizes (§6.7)?
+
+Lastly, a series of microbenchmarks are run to understand
+Naru’s limits (§6.8).
+
+6.1 Experimental Setup
+
+We compare Naru against predominant families of selec-
+tivity estimation techniques,
+including estimators in real
+databases, heuristics, non-parametric density estimators, and
+supervised learning approaches (Table 2). To ensure a fair
+comparison between estimators, we restrict each estimator
+to a ﬁxed storage budget (Table 1). For example, for the
+Conviva-A dataset, Naru’s model must be less than 3MB in
+size, and the same restriction is held for all estimators for
+that dataset when applicable.
+
+6.1.1 Datasets
+
+We use real-world datasets with challenging characteris-
+tics (Table 1). The number of rows ranges from 10K to
+11.6M, the number of columns ranges from 11 to 100, and
+the size of the joint space ranges from 1015 to 10190 :
+DMV [44]. Real-world dataset consisting of vehicle reg-
+istration information in New York. We use the following
+11 columns with widely diﬀering data types and domain
+sizes (the numbers in parentheses): record type (4), reg class
+(75), state (89), county (63), body type (59), fuel type (9),
+valid date (2101), color (225), sco ind (2), sus ind (2), rev ind
+(2). Our snapshot contains 11,591,877 tuples. The exact
+joint distribution has a size of 3.4 × 1015 .
+Conviva-A. Enterprise dataset containing anonymized user
+activity logs from a video analytics company. The table cor-
+responds to 3 days of activities. The 15 columns contain
+a mix of small-domain categoricals (e.g., error ﬂags, con-
+nection types) as well as large-domain numerical quantities
+(e.g., various bandwidth numbers in kbps). Although the
+domains have a range (2–1.9K) similar to DMV, there are
+many more numerical columns with larger domains, result-
+ing in a much larger joint distribution (1023 ).
+Conviva-B. A small dataset of 10K rows and 100 columns
+also from Conviva, with a joint space of over 10190 . Though
+this dataset is trivial in size, this enables the use of an em-
+ulated, perfect-accuracy model for running detailed robust-
+ness studies (§6.8).
+
+6.1.2 Estimators
+
+We next discuss the baselines listed in Table 2.
+Real databases. Postgres and DBMS-1 represent the
+performance a practitioner can hope to obtain from a real
+DBMS. Both rely on classical assumptions and 1D histograms,
+
+Table 1: List of datasets used in evaluation. “Dom.” refers to
+per-column domain size. “Joint” is number of entries in the ex-
+act joint distribution (equal to the product of all domain sizes).
+“Budget” is the storage budget we allocated to all evaluated es-
+timators, when applicable, relative to the in-memory size of the
+corresponding original tables.
+
+Dataset
+
+Rows Cols Dom.
+
+Joint Budget
+
+DMV
+11.6M 11
+Conviva-A 4.1M 15
+Conviva-B 10K
+100
+
+2–2K
+1015
+2–1.9K 1023
+2–10K 10190
+
+1.3% (13MB)
+0.7% (3MB)
+N/A
+
+Table 2: List of estimators used in evaluation.
+Estimator Description
+
+Type
+
+Heuristic
+
+Indep
+
+Real System Postgres
+
+Real System DBMS-1
+
+Sampling
+
+Sample
+
+MHIST
+Graphical
+KDE
+Supervised
+Deep AR
+
+MHIST
+BayesNet
+KDE
+MSCN
+Naru
+
+A baseline that multiplies perfect
+per-column selectivities.
+1D stats and histograms via inde-
+pendence/uniformity assumptions.
+Commercial DBMS: 1D stats plus
+inter-column unique value counts.
+Keeps p% of all tuples in memory.
+Estimates a new query by evaluat-
+ing on those samples.
+The MaxDiﬀ(V,A) histogram [37].
+Bayes net (Chow-Liu tree [4]).
+Kernel density estimation [17, 19].
+Supervised deep regression net [22].
+(Ours) Deep autoregressive models.
+
+while the latter additionally contains cross-column correla-
+tion statistics. Every column has a histogram and associ-
+ated statistics built. Postgres is tuned to use a maximum
+amount of per-column bins (10,000). For DBMS-1, one in-
+vocation of stats creation with all columns speciﬁed only
+builds a histogram on the ﬁrst column; we therefore invoke
+stats creation several times so that all columns are covered.
+Independence assumption.
+Indep scans each column
+to obtain perfect per-column selectivities and combines them
+by multiplication. This measures the inaccuracy solely at-
+tributed to the independence assumption.
+Multi-dimensional histogram. We compare to MHIST,
+an N-dimensional histogram. We use MaxDiﬀ as our parti-
+tion constraint, Value (V) as the sort parameter, and Area
+(A) as the source parameter [37]. We use the MHIST-2
+algorithm [38] and the uniform spread assumption [37] to
+approximate the value set within each partition. Accord-
+ing to [38], the resulting MaxDiﬀ(V,A) histogram oﬀers the
+most accurate and robust performance compared to other
+state-of-the-art histogram variants.
+Bayesian Network. We use a Chow-Liu tree [4] as the
+Bayesian Network, since empirically it gave the best results
+for the allowed space. Since the size of conditional probabil-
+ity tables scales with the cube of column cardinalities, we use
+equal-frequency discretization (to 100 bins per column) to
+bound the space consumption and inference cost. Lastly, we
+apply the same progressive sampler to allow this estimator
+to support range queries (it does not support range queries
+out of the box); this ensures a fair comparison between the
+use of deep autoregressive models and this approach.
+Kernel density estimators & Sampling. In the non-
+parametric sampling regime, we evaluate a uniform sam-
+pler and a state-of-the-art KDE-based selectivity estima-
+
+7
+
+(0.5%–2%), and low (≤ 0.5%).
+Intuitively, all solutions
+should perform reasonably well for high-selectivity queries,
+because dense regions require only coarse-grained modeling
+capacity. As the query selectivity drops, the estimation task
+becomes harder, since low-density regions require each esti-
+mator to model details in each hypercube. True selectivities
+are obtained by executing the queries on Postgres.
+The query generator is inspired by prior work [22].
+In-
+stead of designating a few ﬁxed columns to ﬁlter on, we
+consider the more challenging scenario where ﬁlters are ran-
+domly placed. First, we draw the number of (non-wildcard)
+ﬁlters 5 ≤ f ≤ 11 uniformly at random. We always include
+at least ﬁve ﬁlters to avoid queries with very high selectiv-
+ity, on which all estimators perform similarly well. Next, f
+distinct columns are drawn to place the ﬁlters. For columns
+with domain size ≥ 10, the ﬁlter operator is sampled uni-
+formly from {=, ≤, ≥}; for columns with small domains, the
+equality operator is picked—the intention is to avoid placing
+a range predicate on categoricals, which often have a low do-
+main size. The ﬁlter literals are then chosen from a random
+tuple sampled uniformly from the table, i.e., they follow the
+DMV is “(fuel type = GAS) ∧ (rev ind = N) ∧ (sco ind =
+data distribution. For example, a valid 5-ﬁlter query on
+N) ∧ (valid date ≥ 2018-03-23) ∧ (color = BK)”. Overall, the
+queries span a wide range of selectivities (Figure 4).
+
+Accuracy metric. We report accuracy by the multiplica-
+tive error [22, 26, 28] (also termed “Q-error”), the factor by
+which an estimate diﬀers from the actual cardinality:
+
+Error := max(estimate, actual)/ min(estimate, actual)
+
+We lower bound the estimated and actual cardinalities at
+1 to guard against division by zero.
+In line with prior
+work [7, 26], we found that the multiplicative error is much
+more informative than the relative error, as the latter does
+not fairly penalize small cardinality estimates (which are
+frequently the case for high-dimensional queries). Lastly we
+report the errors in quantiles, with a particular focus at the
+tail. Our results show that all estimators can achieve low
+median (or mean) errors but with greatly varying perfor-
+mance at the tail, indicating that mean/median metrics do
+not accurately reﬂect the hard cases of the estimation task.
+
+6.2 Estimation Accuracy
+
+In summary, Tables 3 and 4 show that not only does Naru
+match or exceed the best estimator across the board, it ex-
+cels in the extreme tail of query diﬃculty—that is, worst-
+case errors on low-selectivity queries. For these types of
+queries, Naru achieves orders of magnitude better accuracy
+than classical approaches, and up to 90× better tail behavior
+than query-driven (supervised) methods.
+The same Naru model is used to estimate all queries on a
+dataset, showing the robustness of the model learned. We
+now discuss these macrobenchmarks in more detail.
+
+6.2.1 Results on DMV
+
+Overall, Naru achieves the best accuracy and robustness
+MHIST by 691×, DBMS-1 by 114×, un-tuned (tuned) MSCN
+across the selectivity spectrum. In the tail, it outperforms
+by 115× (33×), BayesNet by 70×, Sample by 47×, and KDE-
+superv by 21×. We next discuss takeaways from Table 3.
+
+Figure 4: Distribution of query selectivity (§6.1.3).
+
+tor [17, 19]. Sample keeps a set of p% of tuples uniformly
+at random from the original table. In accordance with our
+memory budget for each dataset, p is set to 1.3% for DMV
+and 0.7% for Conviva-A. KDE [17] attempts to learn the
+underlying data distribution by averaging Gaussian kernels
+centered around random sample points. The number of sam-
+ple points is chosen in accordance with our memory budget:
+150K samples for DMV and 28K samples for Conviva-A. The
+bandwidth for KDE is computed via Scott’s rule [41]. The
+bandwidth for KDE-superv is initialized in the same way,
+but is further optimized through query feedback from 10K
+training queries. We modify the source code released by the
+authors [30] in order to run it with more than ten columns.
+Supervised learning. We compare to a recently pro-
+posed supervised deep net-based estimator termed multi-set
+convolutional network [22], or MSCN. We apply the source
+code from the authors [21] to our datasets. As it is a su-
+pervised method, we generate 100K training queries from
+the same distribution the test queries are drawn, ensuring
+their “representativeness”. The net stores a materialized
+sample of the data. Every query is run on the sample to
+get a bitmap of qualifying tuples—this is used as an input
+additional to query features. We try three variants of the
+model, all with the same hyperparameters and all trained to
+convergence: MSCN-base uses the same setup reported origi-
+nally [22] (1K samples, 100K training queries) and consumes
+3MB. We found that MSCN’s performance is highly depen-
+dent on the samples, so we include a variant with 10× more
+samples (MSCN-10K: 10K samples, 100K train queries), con-
+suming 13MB (satisfying DMV’s budget only). We also run
+MSCN-0 that stores no samples and uses query features only.
+Deep unsupervised learning (ours). We train one
+Naru model for each dataset. All models are trained with the
+unsupervised maximum likelihood ob jective. Unless stated
+otherwise, we employ wildcard-skipping and the natural col-
+umn ordering. Sizes are reported without any compression
+of network weights:
+• DMV: masked autoencoder (MADE), 5 hidden layers
+(512, 256, 512, 128, 1024 units), consuming 12.7MB.
+• Conviva-A: MADE, 4 hidden layers with 128 units each,
+consuming 2.5MB. The embedding reuse optimization
+with h = 64 is used (§4.2).
+
+For timing experiments, we train and run the learning meth-
+ods (KDE, MSCN, Naru) on a V100 GPU. Other estimators
+are run on an 8-core node and vectorized when applicable.
+
+6.1.3 Workloads
+
+Query distribution (Figure 4). We generate multidimen-
+sional queries containing both range and equality predicates.
+The goal is to test each estimator on a wide spectrum of tar-
+get selectivities: we group them as high (>2%), medium
+
+8
+
+10−310−210−1100QuerySelectivity[logscale]0.00.20.40.60.81.0FractionDMVConviva-ATable 3: Estimation errors on DMV. Errors are grouped by true selectivities and shown in percentiles computed from 2,000 queries.
+Estimator
+High ((2%, 100%])
+Medium ((0.5%, 2%])
+Low (≤ 0.5%)
+Median
+95th
+99th
+Median
+95th
+99th
+95th
+99th
+
+Median
+
+Max
+
+1.35
+1.36
+5.28
+1.12
+38.0
+1.95
+2.95
+4.79
+1.51
+2.81
+3.41
+
+1.03
+1.03
+
+225
+227
+83.0
+43.2
+3191
+30.0
+32.5
+67.1
+14.2
+70.3
+16.1
+
+1.44
+1.41
+
+2231
+2287
+417
+98.1
+2 · 104
+98.0
+85.6
+169
+33.7
+352
+79
+
+2.51
+2.18
+
+Max
+2 · 104
+2 · 104
+917
+377
+5 · 104
+175
+921
+6145
+264
+5532
+561
+
+8.00
+8.00
+
+Indep
+Postgres
+DBMS-1
+Sample
+KDE
+KDE-superv
+MSCN-base
+MSCN-0
+MSCN-10K
+MHIST
+BayesNet
+
+Naru-1000
+Naru-2000
+
+1.12
+1.12
+1.45
+1.00
+10.9
+1.40
+1.17
+16.8
+1.04
+1.70
+1.01
+
+1.01
+1.01
+
+1.55
+1.55
+3.36
+1.02
+1502
+3.81
+1.42
+92.4
+1.10
+2.65
+1.07
+
+1.03
+1.03
+
+46.1
+46.3
+5.80
+1.03
+1 · 104
+4.91
+1.47
+195
+1.12
+4.11
+1.12
+
+1.05
+1.04
+
+2566
+2608
+12.6
+1.05
+2 · 105
+13.3
+1.58
+285
+1.16
+9.20
+1.44
+
+1.28
+1.16
+
+1.25
+1.25
+2.72
+1.02
+48.0
+1.53
+1.14
+8.89
+1.04
+1.65
+1.05
+
+1.01
+1.01
+
+46.6
+45.5
+6.38
+1.05
+2 · 104
+4.36
+1.65
+80.4
+1.12
+6.00
+1.18
+
+1.06
+1.04
+
+1051
+1070
+9.29
+1.07
+9 · 104
+8.12
+2.53
+344
+1.19
+15.1
+1.26
+
+1.15
+1.09
+
+Max
+8 · 104
+8 · 104
+10.1
+1.10
+2 · 105
+16.9
+3.96
+471
+1.23
+21.1
+1.40
+
+1.27
+1.38
+
+Table 4: Estimation errors on Conviva-A. Errors grouped by true selectivities and shown in percentiles computed from 2,000 queries.
+Estimator
+High ((2%, 100%])
+Medium ((0.5%, 2%])
+Low (≤ 0.5%)
+95th
+99th
+Median
+95th
+99th
+95th
+99th
+
+Median
+
+Median
+
+Max
+
+Max
+
+Max
+
+DBMS-1
+Sample
+KDE
+KDE-superv
+MSCN-base
+MHIST
+BayesNet
+
+Naru-1000
+Naru-2000
+Naru-4000
+
+1.75
+1.02
+105
+1.99
+1.14
+1.54
+1.15
+
+1.02
+1.02
+1.02
+
+5.25
+1.06
+2 · 105
+7.97
+1.27
+5.24
+1.75
+
+1.11
+1.10
+1.10
+
+7.77
+1.09
+5 · 105
+14.5
+1.36
+11.2
+2.05
+
+1.18
+1.16
+1.17
+
+9.12
+1.11
+8 · 105
+33.6
+1.48
+1 · 104
+2.70
+
+1.37
+1.28
+1.21
+
+3.93
+1.04
+347
+2.04
+1.15
+2.22
+1.31
+
+1.05
+1.05
+1.04
+
+13.6
+1.14
+6 · 104
+8.44
+1.55
+10.5
+2.70
+
+1.17
+1.17
+1.15
+
+19.9
+1.18
+8 · 104
+17.0
+2.26
+30.3
+4.95
+
+1.27
+1.27
+1.27
+
+31.3
+1.23
+8 · 104
+49.7
+57.7
+3 · 104
+47.6
+
+1.40
+1.38
+1.36
+
+8.63
+1.18
+224
+2.76
+2.05
+6.71
+1.67
+
+1.10
+1.09
+1.09
+
+176
+49.3
+1 · 104
+74.5
+20.3
+792
+14.8
+
+1.71
+1.66
+1.57
+
+636
+218
+2 · 104
+251
+84.1
+4170
+78.0
+
+3.01
+3.00
+2.50
+
+4737
+696
+2 · 104
+462
+370
+8 · 104
+998
+
+185
+58.0
+4.00
+
+Independence assumptions lead to orders of mag-
+nitude errors. Estimators that assume full or partial inde-
+pendence between columns produce large errors, regardless
+of query selectivity or how good per-column estimates are.
+These include Indep, Postgres, and DBMS-1, whose tail er-
+rors are in the 103 − 105× range. Naru’s model is powerful
+enough to avoid this assumption, leading to better results.
+MHIST outperforms Indep and Postgres by over an order
+of magnitude. However, its performance is limited by the
+linear partitioning and uniform spread assumptions.
+BayesNet also does quite well, nearly matching supervised
+approaches, but is still signiﬁcantly outperformed by Naru
+due to the former’s uses of lossy discretization and condi-
+tional independence assumptions.
+Worst-case errors are much harder to be robust
+against. All estimators perform worse for low-selectivity
+queries or at worst-case errors. For instance, in the high-
+selectivity regime Postgres’s error is a reasonable 1.55× at
+95th, but becomes 1682× worse at the maximum. Also,
+Sample performs exceptionally well for high and medium
+selectivity queries, but drops oﬀ considerably for low selec-
+tivity queries where the sample has no hits. MSCN struggles
+since its supervised ob jective requires more training data to
+cover all possible low-selectivity queries. Naru yields much
+lower (single-digit) errors at the tail, showing the robustness
+that results from directly approximating the joint.
+KDE struggles with high-dimensional data. KDE’s
+errors are among the highest. The reason is that, the band-
+width vector found is highly sub-optimal despite tunings,
+due to (1) a large number of attributes in DMV, and (2)
+discrete columns fundamentally do not work well with the
+notion of “distance” in KDE [17]. The method must rely on
+query feedback (KDE-superv) to ﬁnd a good bandwidth.
+
+MSCN heavily relies on its materialized samples
+for accurate prediction. Across the spectrum, its accu-
+racy closely approximates Sample. MSCN-10K has 3× bet-
+ter tail accuracy than MSCN-base due to access to 10× more
+samples, despite having the same network architecture and
+trained on the same 100K queries. Both variants’ accuracies
+drop oﬀ considerably for low-selectivity queries, since, when
+there are no hits in the materialized sample, the model relies
+solely on the query features to make “predictions”. MSCN-
+0 which does not use materialized samples performs much
+worse, obtaining a max error of 6145×.
+
+6.2.2 Results on Conviva-A
+
+Based on DMV results, we keep only the promising base-
+lines for this dataset. Table 4 shows that Naru remains best-
+in-class for a dataset with substantially diﬀerent columns
+and a much larger joint size.
+For this dataset, most estimators produce larger errors.
+This is because Conviva-A has a much larger joint space.
+DBMS-1, MHIST, BayesNet, and KDE-superv exhibit 5×,
+14×, 1.8×, and 2.6× worse max error than before respec-
+tively. MSCN-base’s max error in the medium-selectivity
+regime is also 14× worse. As a non-parametric method cov-
+ering the full joint space, Sample remains a robust choice.
+For Naru, since the sampler needs to cross more domains
+and a much larger joint space, Naru-1000 becomes insuﬃ-
+cient to provide single-digit error in all cases. However, a
+modest scaling of the number of samples to 4K decreases
+the worst-case error back to single-digit levels. This sug-
+gests that the approximated joint is suﬃciently accurate,
+and that the key challenge lies in extracting its information.
+
+9
+
+(a) DMV
+(b) Conviva-A
+Figure 5: Training time vs. quality (§6.4). Dotted lines show divergence from data; bars show max estimation errors.
+
+(a) DMV
+(b) Conviva-A
+Figure 6: Estimator latency (§6.5). Learning methods are run on GPU; other estimators are run on CPU (dashed lines).
+
+6.3 Robustness to Out-of-Distribution Queries
+
+Our experiments thus far have drawn the ﬁlter literals
+(query centers) from the data. However, a strong estimator
+must be robust to out-of-distribution (OOD) queries where
+the literals are drawn from the entire joint domain, which
+often result in no matching tuples. Table 5 shows results on
+select estimators on 2K OOD queries on DMV, where 98%
+have a true cardinality of zero. The supervised MSCN-10K
+suﬀers greatly (e.g., median is now 23×, up from the 1.51×
+in Table 3) because it was trained on a set of in-distribution
+queries; at test time, out-of-distribution queries confuse the
+net. KDE-superv, a sampling-based approach, ﬁnds no hits
+in its sampled tuples, and therefore appropriately assigns
+zero density mass for all queries.
+
+Table 5: Robustness to OOD queries. Errors from 2,000 queries.
+Estimator Median
+
+99th Max
+
+95th
+
+MSCN-10K 23
+KDE-superv
+1.00
+Sample
+1.00
+Naru-2000
+1.00
+
+96
+1.00
+1.00
+1.00
+
+151
+3.67
+2.00
+1.26
+
+417
+163
+116
+4.00
+
+Since Naru approximates the data distribution, it correctly
+learns that out-of-distribution regions have little or no den-
+sity mass, outperforming KDE by 40× and MSCN by 104×.
+
+6.4 Training Time vs. Quality
+
+Compared to supervised learning, Naru is eﬃcient to train:
+no past queries are required; we only need access to a uni-
+form random stream of tuples from the relation. We also
+ﬁnd that, surprisingly, it only takes a few epochs of training
+to obtain a suﬃciently powerful Naru estimator.
+Figure 5 shows how two quality metrics, entropy gap and
+estimation error, change as training progresses. The metrics
+are calculated after each epoch (one pass over the data) ﬁn-
+ishes. An epoch takes about 75 seconds and 50 seconds for
+
+10
+
+DMV and Conviva-A, respectively. The number of progres-
+sive samples is set to 2K for DMV and 8K for Conviva-A.
+Observe that Naru quickly converges to a high goodness-
+of-ﬁt both in terms of entropy gap and estimation quality.
+For DMV where a larger Naru model is used, 1 epoch of
+training suﬃces to produce the best estimation accuracy
+compared to all baselines (Table 3, last column). For Con-
+viva-A, 2 epochs yields the best-in-class quality and about
+15 epochs yields the quality of single-digit max error.
+
+6.5 Estimation Latency
+
+Figure 6 shows Naru’s estimation latency against other
+baselines. On both datasets Naru can ﬁnish estimation in
+around 5-10ms on a GPU, which is faster than scanning
+samples (Sample and MSCN) and is competitive with DBMS-
+1. We note the caveat that latencies for Postgres and DBMS-
+1 include producing an entire plan for each query.
+Naive progressive sampling requires as many model for-
+ward passes as the number of attributes in the relation.
+With Naru’s wildcard-skipping optimization (§5.2), however,
+we can skip the forward passes that generate distributions
+for the wildcard columns. Hence, the number of forward
+passes required is the number of non-wildcard columns in
+each query. This eﬀect manifests in the slightly slanted na-
+ture of Naru’s CDF curves—queries that only touch a few
+columns are faster to estimate than those with a larger num-
+ber of columns. Latency tail is also well-behaved: on DMV,
+Naru-1000’s median is at 6.4ms vs. max at 9.4ms; on Con-
+viva-A, Naru-2000’s median is at 5.0ms vs. max at 9.7ms.
+Naru’s estimation latency can be further minimized by
+engineering. Naru’s sampler is written in Python code and
+a general-purpose deep learning framework (PyTorch); the
+resultant control logic overhead from interpretation can be
+removed by using hand-optimized native code. Orthogonal
+techniques such as half-precision, i.e., 32-bit ﬂoats quantized
+into 16-bit ﬂoats, would shrink Naru’s compute cost by half.
+
+123456789Epoch0.60.70.8EntropyGap(bits)515253545MaxError2610141822263034Epoch0.81.21.62.0EntropyGap(bits)101102MaxError[log]100101102103EstimatorLatency(ms)[logscale]0.00.20.40.60.81.0FractionPostgresKDEDBMS-1MSCN-baseNaru-1000Naru-2000MSCN-10KSample100101102EstimatorLatency(ms)[logscale]0.00.20.40.60.81.0FractionKDEMSCN-baseNaru-2000Naru-4000DBMS-1Sample(a) DMV
+
+(b) Conviva-A
+
+Figure 7: Variance of random orders. Each dataset’s 2000-query
+workload is run 10 times; the maximum of these 10 max errors
+are shown. Order indices sorted by descending max error.
+
+Table 6: Larger model sizes yield lower entropy gap. Here we
+only consider scaling the hidden units of a MADE model.
+Architecture
+Size (MB) Entropy gap, 5 epochs
+
+32 × 32 × 32 × 32
+64 × 64 × 64 × 64
+128 × 128 × 128 × 128
+256 × 256 × 256 × 256
+
+0.6
+1.1
+2.7
+3.8
+
+4.23 bits per tuple
+2.25 bits per tuple
+1.01 bits per tuple
+0.84 bits per tuple
+
+Table 7: Comparison of autoregressive building blocks (§4.3).
+Max error calculated by running DMV’s 2000-query workload 10
+times (Naru-2000). FLOPs is the number of ﬂoating point oper-
+ations required per forward pass per input tuple.
+Params FLOPs Ent. Gap Max Error
+8.0×
+8.0×
+8.2×
+
+MADE 3.3M
+ResMADE 3.1M
+Transformer
+2.8M
+
+6.7M
+0.59
+6.2M
+0.56
+35.5M 0.54
+
+6.6 Variance Analysis
+
+Eﬀect of random orders. Figure 7 shows the estimation
+variance of randomly sampled column orders. We sample
+20 random orders and train a Naru model on each, varying
+the autoregressive building block. The result shows that the
+choice of ordering does aﬀect estimation variance in the ex-
+treme tail. However, we found that on 99%-tile or below,
+almost all orderings can reach single-digit errors.
+Eﬀect of wildcard-skipping (§5.2) and heuristic or-
+ders (§5.3). Figure 8 shows that the information-theoretic
+orders have much lower variance than randomly sampled
+ones. The left-to-right order (Natural) is also shown for
+comparison. We also ﬁnd that wildcard-skipping is criti-
+cal in reducing max error variance by up to several orders
+of magnitude (e.g., MutInfo’s max drops from 103 to < 10).
+
+6.7 Autoregressive Model Choice and Sizing
+
+In Table 6, we measure the relationship between model
+size and entropy gap on Conviva-A. While larger model sizes
+yield lower entropy gaps, Figure 5 shows that this can yield
+diminishing returns in terms of accuracy.
+Table 7 compares accuracy and (storage and computa-
+tion) cost of three similarly sized autoregressive building
+blocks. The results suggest that ResMADE and regular
+MADE are preferable due to their eﬃciency. We expect
+the Transformer—a more advanced architecture—to excel
+on datasets of larger scale.
+
+6.8 Understanding Estimation Performance
+
+Naru’s accuracy depends critically on two factors: (1) the
+accuracy of the density model; and (2) the eﬀectiveness of
+
+11
+
+Figure 8: Wildcard-skipping and heuristic orders. These or-
+ders have much lower variance than random orders. Ablation
+of wildcard-skipping is shown. Distributions of 10 max errors are
+plotted; whiskers denote min/max and bold bars denote medians.
+
+progressive sampling. This section seeks to understand the
+interplay between the two components and how each con-
+tributes to estimation errors. We do this by running mi-
+crobenchmarks against the Conviva-B dataset, which has
+only 10K rows but has 100 columns for a total joint space of
+10190 . The small size of the dataset makes it possible to run
+queries against an emulated oracle model with perfect accu-
+racy by scanning the data. This allows us to isolate errors
+introduced by density estimation vs. progressive sampling.
+
+6.8.1 Robustness to Increasing Model Entropy Gap
+
+One natural question is: how accurate does the density
+model have to be? One metric of modeling accuracy is the
+fraction of total probability mass assigned to observed data
+tuples. For example, a randomly initialized model will as-
+sign equal probability mass to all points in the joint space
+of tuples. As training proceeds, it learns to assign higher
+probability to tuples actually present in the relation. Un-
+der the simplifying assumption that all relation tuples are
+unique (as they are in Conviva-B), we can quantify this frac-
+tion as follows. Suppose the model has an entropy gap of 2
+bits; then, the fraction of probability mass assigned to the
+relation, f , satisﬁes − log2 f = 2, which leads to f = 25%.
+Figure 9 shows that Naru achieves the best performance
+with a model entropy gap of 0-2 bits. A gap of lower than
+0.5 bits does not substantially improve performance. This
+means that for the best accuracy, the model must assign
+between 25 − 100% of the probability mass to the empirical
+data distribution. Surprisingly, Naru still outperforms base-
+lines with up to 10 bits of entropy gap, which corresponds to
+less than ≈ 0.1% probability mass assigned. We hypothesize
+that the range queries make such modeling errors less crit-
+ical, because density errors of individual tuples could even
+out when estimating the density of the region as a whole.
+
+6.8.2 Robustness to Increasing Column Counts
+
+While the datasets tested in macrobenchmarks have a
+good number of columns, using Conviva-B we test how well
+progressive sampling scales to 10× as many dimensions. Fig-
+ure 10 shows that while the number of columns does signif-
+icantly increase the variance of estimates, the number of
+progressive samples required to mitigate this variance re-
+mains tractable. A choice of 1000 sample paths produces
+reasonable worst-case accuracies for up to 100 columns, and
+10000 sample paths improves on that by a modest factor.
+
+6.8.3 Robustness to Data Shifts
+
+Lastly, we study how Naru reacts to data shifts. We par-
+tition DMV by a date column into 5 parts. We then ingest
+each partition in order, emulating the common practice of “1
+
+024681012141618RandomOrderIndex101102103MaxError(10runs)Naru-2K(MADE)Naru-2K(ResMADE)024681012141618RandomOrderIndex101102MaxError(10runs)Naru-4K(MADE)Naru-4K(ResMADE)15101517MaxErrors,10runsnow.s.Naturalnow.s.MutInfonow.s.PMutInfo(a)DMV100101102103MaxErrors,10runs(b)Conviva-AFigure 9: Accuracy of Naru as an artiﬁcial entropy gap is added
+to an oracle model for Conviva-B pro jected to the ﬁrst 15 columns.
+50 queries are drawn from the same distribution as in the mac-
+robenchmarks. Naru has the best accuracy for an entropy gap of
+less than 2 bits, though remains competitive up to a surprisingly
+large gap of 10 bits. Variance of progressive sampling decreases
+dramatically when moving from 50 to 250 to 1000 samples.
+
+Figure 10: Accuracy of Naru as we add more columns from Con-
+viva-B. We again use an oracle model (with 0 bits of entropy gap)
+and 50 randomly generated queries. The number of predicates
+covers at most 12 columns. The number of progressive sample
+paths required to accurately query the model increases modestly
+with the number of columns, but remains tractable even as the
+joint data space reaches over 10190 (at 100 columns).
+
+new partition per day”. Each estimator is built after seeing
+the ﬁrst partition. After a new ingest, we test the previously
+built estimators on queries that touch all data ingested so
+far. The same query generator as macrobenchmarks is used
+where the ﬁlters are drawn from tuples in the ﬁrst partition
+(true selectivities computed on all data ingested so far).
+
+Table 8: Robustness to data shifts. Errors from 200 queries.
+Partitions Ingested
+
+4
+
+5
+
+1
+
+2
+
+3
+
+Naru, refreshed: max
+90%-tile
+
+Naru, stale: max
+90%-tile
+
+2.0
+1.20
+
+2.0
+2.0
+
+2.0
+1.14
+
+40.3
+2.4
+
+2.0
+1.12
+
+47.5
+3.4
+
+2.0
+1.14
+
+52.9
+4.4
+
+2.0
+1.15
+
+53.5
+5.5
+
+Table 8 shows the results of (1) Naru, no model updates,
+(2) Naru, with gradient updates on each new ingest. The
+model architecture is the same as in Table 3; 8,000 progres-
+sive samples are used since we are interested in learning how
+much imprecision or staleness presents in the model itself
+and not the eﬀectiveness of information extraction. The re-
+sults show that, Naru is able to handle queries on new data
+with reasonably good accuracy, even without having seen
+the new partitions. The model has learned to capture the
+underlying data correlations so the degradation is graceful.
+
+Query-driven estimators are supervised methods that
+take advantage of past or training queries [3]. ISOMER [43]
+and STHoles [1] are two representatives that adopt feedback
+to improve histograms. LEO [45] and CardLearner [53] use
+feedback to improve selectivity estimation of future queries.
+Heimel et al. [17] propose query-driven KDEs; Kiefer et
+al. [19] enhance them to handle joins. Supervised learning
+regressors [10, 22, 29], some utilizing deep learning, have also
+been proposed. Naru, an unsupervised data-driven synopsis,
+is orthogonal to this family. Our evaluation shows that full
+joint approximation yields accuracy much superior to two
+supervised methods.
+Machine learning in query optimizers. Naru can
+be used as a drop-in replacement of selectivity estimator
+used in ML-enhanced query optimizers. Ortiz et al. [34]
+learns query representation to predict cardinalities, a re-
+gression rather than our generative approach. Neo [31], a
+learned query optimizer, approaches cardinality estimation
+indirectly: embeddings for all attribute values are ﬁrst pre-
+trained; later, a network takes them as input and addition-
+ally learns to correct or ignore signals from the embeddings.
+This proposal, as well as reinforcement learning-based join
+optimizers (DQ [25], ReJOIN [32]), may beneﬁt from Naru’s
+improved estimates.
+
+7. RELATED WORK
+
+8. CONCLUSION
+
+Naru builds upon decades of rich research on selectivity
+estimation and this section cannot replace comprehensive
+surveys [5]. Below, we highlight the most related areas.
+Joint approximation estimators. Multidimensional
+histograms [16, 33, 37, 38] can been seen as coarse approxima-
+tions to the joint data distribution. Probabilistic relational
+models (PRMs) [14] rely on a Bayes Net (conditional inde-
+pendence DAG) to factor the joint into materialized con-
+ditional probability tables. Tzoumas et al. [46] propose a
+variant of PRMs optimized for practical use. Dependency-
+based histograms [7] make partial or conditional indepen-
+dence assumptions to keep the approximated joint tractable
+(factors stored as histograms). Naru belongs to this fam-
+ily and applies recent advances from the deep unsupervised
+learning community. Naru does not make any independence
+assumptions; it directly models the joint distribution and
+lazily encodes all product-rule factors in a universal func-
+tion approximator.
+
+We have shown that deep autoregressive models are highly
+accurate selectivity estimators. They approximate the data
+distribution without any independence assumptions. We de-
+velop a Monte Carlo integration scheme and associated vari-
+ance reduction techniques that eﬃciently handle challenging
+range queries. To the best of our knowledge, these are novel
+extensions to autoregressive models. Our estimator, Naru,
+exceeds the state-of-the-art in accuracy over several families
+of estimators.
+Naru can be thought of as an unsupervised neural syn-
+opsis. In contrast to supervised learning-based estimators,
+Naru enjoys drastically more eﬃcient training since there
+is no need to execute queries to collect feedback—it only
+needs to read the data. Learning directly from the under-
+lying data allows Naru to answer a much more general set
+of future queries and makes it inherently robust to shifts in
+the query workload. Our approach is non-intrusive and can
+serve as an opt-in component inside an optimizer.
+
+12
+
+00.5251020EntropyGap(bits/tuple)100101102MaxError[logscale]Naru-50Naru-250Naru-1000IndepSample(1%)51530405075100NumberofColumns100101102MaxError[logscale]Naru-100Naru-1000Naru-10000IndepSample(1%)9. REFERENCES
+
+[1] N. Bruno, S. Chaudhuri, and L. Gravano. STHoles: A
+multidimensional workload-aware histogram. In
+Proceedings of the 2001 ACM SIGMOD International
+Conference on Management of Data, SIGMOD ’01,
+pages 211–222, New York, NY, USA, 2001. ACM.
+[2] S. Chaudhuri, R. Motwani, and V. Narasayya. On
+random sampling over joins. In ACM SIGMOD
+Record, volume 28, pages 263–274. ACM, 1999.
+[3] C. M. Chen and N. Roussopoulos. Adaptive selectivity
+estimation using query feedback. In Proceedings of the
+1994 ACM SIGMOD International Conference on
+Management of Data, SIGMOD ’94, pages 161–172,
+New York, NY, USA, 1994. ACM.
+[4] C. Chow and C. Liu. Approximating discrete
+probability distributions with dependence trees. IEEE
+transactions on Information Theory, 14(3):462–467,
+1968.
+[5] G. Cormode, M. Garofalakis, P. J. Haas, and
+C. Jermaine. Synopses for massive data: Samples,
+histograms, wavelets, sketches. Foundations and
+Trends in Databases, 4(1-3):1–294, 2011.
+[6] T. M. Cover and J. A. Thomas. Elements of
+information theory. John Wiley & Sons, 2012.
+[7] A. Deshpande, M. Garofalakis, and R. Rastogi.
+Independence is good: Dependency-based histogram
+synopses for high-dimensional data. ACM SIGMOD
+Record, 30(2):199–210, 2001.
+[8] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova.
+BERT: Pre-training of deep bidirectional transformers
+for language understanding. In Proceedings of the 2019
+Conference of the North American Chapter of the
+Association for Computational Linguistics: Human
+Language Technologies, Volume 1 (Long and Short
+Papers), pages 4171–4186, Minneapolis, Minnesota,
+June 2019. Association for Computational Linguistics.
+[9] C. Durkan and C. Nash. Autoregressive energy
+machines. In Proceedings of the 36th International
+Conference on Machine Learning, volume 97 of
+Proceedings of Machine Learning Research, pages
+1735–1744, Long Beach, California, USA, 09–15 Jun
+2019. PMLR.
+[10] A. Dutt, C. Wang, A. Nazi, S. Kandula,
+V. Narasayya, and S. Chaudhuri. Selectivity
+estimation for range predicates using lightweight
+models. PVLDB, 12(9):1044–1057, 2019.
+[11] J. Friedman, T. Hastie, and R. Tibshirani. The
+elements of statistical learning. Springer series in
+statistics New York, 2001.
+[12] M. Germain, K. Gregor, I. Murray, and H. Larochelle.
+MADE: Masked autoencoder for distribution
+estimation. In International Conference on Machine
+Learning, pages 881–889, 2015.
+[13] L. Getoor, N. Friedman, D. Koller, and B. Taskar.
+Learning probabilistic models of relational structure.
+In ICML, volume 1, pages 170–177, 2001.
+[14] L. Getoor, B. Taskar, and D. Koller. Selectivity
+estimation using probabilistic models. In ACM
+SIGMOD Record, volume 30, pages 461–472. ACM,
+2001.
+[15] G. Grimmett, D. Stirzaker, et al. Probability and
+random processes. Oxford university press, 2001.
+
+[16] D. Gunopulos, G. Kollios, V. J. Tsotras, and
+C. Domeniconi. Selectivity estimators for
+multidimensional range queries over real attributes.
+The VLDB Journal, 14(2):137–154, 2005.
+[17] M. Heimel, M. Kiefer, and V. Markl. Self-tuning,
+gpu-accelerated kernel density models for
+multidimensional selectivity estimation. In Proceedings
+of the 2015 ACM SIGMOD International Conference
+on Management of Data, SIGMOD ’15, pages
+1477–1492, New York, NY, USA, 2015. ACM.
+[18] R. Kaushik, J. F. Naughton, R. Ramakrishnan, and
+V. T. Chakravarthy. Synopses for query optimization:
+A space-complexity perspective. volume 30, pages
+1102–1127, New York, NY, USA, Dec. 2005. ACM.
+[19] M. Kiefer, M. Heimel, S. Breß, and V. Markl.
+Estimating join selectivities using
+bandwidth-optimized kernel density models. PVLDB,
+10(13):2085–2096, 2017.
+[20] D. P. Kingma and J. Ba. Adam: A method for
+stochastic optimization. In 3rd International
+Conference on Learning Representations, ICLR 2015,
+San Diego, CA, USA, May 7-9, 2015, Conference
+Track Proceedings, 2015.
+[21] A. Kipf. Github repository, learnedcardinalities.
+
+github.com/andreaskipf/learnedcardinalities,
+
+2019. [Online; accessed March, 2019].
+[22] A. Kipf, T. Kipf, B. Radke, V. Leis, P. A. Boncz, and
+A. Kemper. Learned cardinalities: Estimating
+correlated joins with deep learning. In CIDR 2019, 9th
+Biennial Conference on Innovative Data Systems
+Research, Asilomar, CA, USA, January 13-16, 2019.
+[23] D. Koller and N. Friedman. Probabilistic graphical
+models: principles and techniques. MIT press, 2009.
+[24] F. Korn, T. Johnson, and H. Jagadish. Range
+selectivity estimation for continuous attributes. In
+Proceedings. Eleventh International Conference on
+Scientiﬁc and Statistical Database Management, pages
+244–253. IEEE, 1999.
+[25] S. Krishnan, Z. Yang, K. Goldberg, J. Hellerstein, and
+I. Stoica. Learning to optimize join queries with deep
+reinforcement learning. arXiv preprint
+arXiv:1808.03196, 2018.
+[26] V. Leis, A. Gubichev, A. Mirchev, P. Boncz,
+A. Kemper, and T. Neumann. How good are query
+optimizers, really? PVLDB, 9(3):204–215, 2015.
+[27] V. Leis, B. Radke, A. Gubichev, A. Kemper, and
+T. Neumann. Cardinality estimation done right:
+Index-based join sampling. In CIDR, 2017.
+[28] V. Leis, B. Radke, A. Gubichev, A. Mirchev,
+P. Boncz, A. Kemper, and T. Neumann. Query
+optimization through the looking glass, and what we
+found running the join order benchmark. The VLDB
+Journal, pages 1–26, 2018.
+[29] H. Liu, M. Xu, Z. Yu, V. Corvinelli, and C. Zuzarte.
+Cardinality estimation using neural networks. In
+Proceedings of the 25th Annual International
+Conference on Computer Science and Software
+Engineering, pages 53–59. IBM Corp., 2015.
+[30] M. Heimel. Bitbucket repository, feedback-kde.
+
+bitbucket.org/mheimel/feedback- kde, 2019.
+
+[Online; accessed March, 2019].
+[31] R. Marcus, P. Negi, H. Mao, C. Zhang, M. Alizadeh,
+
+13
+
+accessed March 1st, 2019].
+[45] M. Stillger, G. M. Lohman, V. Markl, and M. Kandil.
+LEO-DB2’s learning optimizer. In VLDB, volume 1,
+pages 19–28, 2001.
+[46] K. Tzoumas, A. Deshpande, and C. S. Jensen.
+Lightweight graphical models for selectivity estimation
+without independence assumptions. PVLDB,
+4(11):852–863, 2011.
+[47] B. Uria, I. Murray, and H. Larochelle. A deep and
+tractable density estimator. In Proceedings of the 31st
+International Conference on International Conference
+on Machine Learning - Volume 32, ICML’14, pages
+I–467–I–475. JMLR.org, 2014.
+[48] A. Van den Oord, S. Dieleman, H. Zen, K. Simonyan,
+O. Vinyals, A. Graves, N. Kalchbrenner, A. Senior,
+and K. Kavukcuoglu. WaveNet: A generative model
+for raw audio. arXiv preprint arXiv:1609.03499, 2016.
+[49] A. Van den Oord, N. Kalchbrenner, L. Espeholt,
+O. Vinyals, A. Graves, et al. Conditional image
+generation with pixelcnn decoders. In Advances in
+neural information processing systems, pages
+4790–4798, 2016.
+[50] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit,
+L. Jones, A. N. Gomez, (cid:32)L. Kaiser, and I. Polosukhin.
+Attention is all you need. In Advances in neural
+information processing systems, pages 5998–6008,
+2017.
+[51] T. L. Veldhuizen. Triejoin: A simple, worst-case
+optimal join algorithm. In ICDT, 2014.
+[52] S. D. Viglas, J. F. Naughton, and J. Burger.
+Maximizing the output rate of multi-way join queries
+over streaming information sources. In Proceedings of
+the 29th international conference on Very large data
+bases-Volume 29, pages 285–296. VLDB Endowment,
+2003.
+[53] C. Wu, A. Jindal, S. Amizadeh, H. Patel, W. Le,
+S. Qiao, and S. Rao. Towards a learning optimizer for
+shared clouds. PVLDB, 12(3):210–222, Nov. 2018.
+[54] Z. Yang, Z. Dai, Y. Yang, J. Carbonell,
+R. Salakhutdinov, and Q. V. Le. Xlnet: Generalized
+autoregressive pretraining for language understanding.
+arXiv preprint arXiv:1906.08237, 2019.
+
+T. Kraska, O. Papaemmanouil, and N. Tatbul. Neo: A
+learned query optimizer. PVLDB, 12(11):1705–1718,
+2019.
+[32] R. Marcus and O. Papaemmanouil. Deep
+reinforcement learning for join order enumeration. In
+Proceedings of the First International Workshop on
+Exploiting Artiﬁcial Intel ligence Techniques for Data
+Management, aiDM’18, pages 3:1–3:4, New York, NY,
+USA, 2018. ACM.
+[33] M. Muralikrishna and D. J. DeWitt. Equi-depth
+multidimensional histograms. In ACM SIGMOD
+Record, volume 17, pages 28–36. ACM, 1988.
+[34] J. Ortiz, M. Balazinska, J. Gehrke, and S. S. Keerthi.
+Learning state representations for query optimization
+with deep reinforcement learning. In Proceedings of
+the Second Workshop on Data Management for
+End-To-End Machine Learning, DEEM’18, pages
+4:1–4:4, New York, NY, USA, 2018. ACM.
+[35] Y. Park, S. Zhong, and B. Mozafari. Quicksel: Quick
+selectivity learning with mixture models. arXiv
+preprint arXiv:1812.10568, 2018.
+[36] M. Perron, Z. Shang, T. Kraska, and M. Stonebraker.
+How I learned to stop worrying and love
+re-optimization. In 35th IEEE International
+Conference on Data Engineering, ICDE 2019, 2019.
+[37] V. Poosala, P. J. Haas, Y. E. Ioannidis, and E. J.
+Shekita. Improved histograms for selectivity
+estimation of range predicates. In Proceedings of the
+1996 ACM SIGMOD International Conference on
+Management of Data, SIGMOD ’96, pages 294–305,
+New York, NY, USA, 1996. ACM.
+[38] V. Poosala and Y. E. Ioannidis. Selectivity estimation
+without the attribute value independence assumption.
+In VLDB, volume 97, pages 486–495, 1997.
+[39] A. Radford, J. Wu, R. Child, D. Luan, D. Amodei,
+and I. Sutskever. Language models are unsupervised
+multitask learners. URL https://openai.
+com/blog/better-language-models, 2019.
+[40] T. Salimans, A. Karpathy, X. Chen, and D. P.
+Kingma. PixelCNN++: Improving the pixelcnn with
+discretized logistic mixture likelihood and other
+modiﬁcations. In 5th International Conference on
+Learning Representations, ICLR 2017, Toulon,
+France, April 24-26, 2017, Conference Track
+Proceedings, 2017.
+[41] D. W. Scott. Multivariate Density Estimation:
+Theory, Practice, and Visualization. John Wiley &
+Sons, Inc., 1992.
+[42] P. G. Selinger, M. M. Astrahan, D. D. Chamberlin,
+R. A. Lorie, and T. G. Price. Access path selection in
+a relational database management system. In
+Proceedings of the 1979 ACM SIGMOD international
+conference on Management of data, pages 23–34.
+ACM, 1979.
+[43] U. Srivastava, P. J. Haas, V. Markl, M. Kutsch, and
+T. M. Tran. ISOMER: Consistent histogram
+construction using query feedback. In 22nd
+International Conference on Data Engineering
+(ICDE’06), pages 39–39. IEEE, 2006.
+[44] State of New York. Vehicle, snowmobile, and boat
+
+registrations. catalog.data.gov/dataset/vehicle-
+snowmobile- and- boat- registrations, 2019. [Online;
+
+14
+
+

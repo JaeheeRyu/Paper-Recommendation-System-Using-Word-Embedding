@@ -1,0 +1,863 @@
+Incremental Learning of Motion Primitives for
+Pedestrian Trajectory Prediction at Intersections
+
+Golnaz Habibi1 and Nikita Jaipuria2 and Jonathan P. How1
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+O
+
+R
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+6
+7
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract— This paper presents a novel incremental learning
+algorithm for pedestrian motion prediction, with the ability to
+improve the learned model over time when data is incrementally
+available. In this setup, trajectories are modeled as simple
+segments called motion primitives. Transitions between motion
+primitives are modeled as Gaussian Processes. When new data
+is available, the motion primitives learned from the new data are
+compared with the previous ones by measuring the inner prod-
+uct of the motion primitive vectors. Similar motion primitives
+and transitions are fused and novel motion primitives are added
+to capture newly observed behaviors. The proposed approach
+is tested and compared with other baselines in intersection
+scenarios where the data is incrementally available either from a
+single intersection or from multiple intersections with different
+geometries. In both cases, our method incrementally learns
+motion patterns and outperforms the ofﬂine learning approach
+in terms of prediction errors. The results also show that the
+model size in our algorithm grows at a much lower rate than
+standard incremental learning, where newly learned motion
+primitives and transitions are simply accumulated over time.
+
+I . INTRODUCT ION
+Safe navigation of self-driving vehicles and robots in
+urban environments requires the ability to interact with,
+and accurately predict the motion of, other moving agents,
+including cars, cyclists and pedestrians. Pedestrian motion
+prediction is challenging as compared to that of cars and
+cyclists, as the “rules” as less clear and more frequently
+violated. Pedestrians can also abruptly change their direction
+of motion due to environmental contexts; and modeling
+all such contexts is often impractical. The complexity is
+increased further in urban environments (e.g., intersections),
+where additional context, such as trafﬁc lights, stop signs
+and environment geometry, such as location of sidewalks and
+crosswalks, also inﬂuences pedestrian movement [1].
+Thanks to larger, annotated datasets and faster computers,
+data-driven machine learning techniques have become pop-
+ular tools for learning motion behaviors in urban areas [2].
+However, most of these techniques are limited to the classical
+batch setting where a dataset comprising of a wide variety of
+behaviors is used to train models ofﬂine, while inference, i.e.
+behavior prediction, is run online [3]. Such a setting works
+well if the training dataset is representative of all possible
+behaviours one would expect to encounter during inference.
+But the large diversity in human behaviors makes ofﬂine
+learning impractical as autonomous robots and vehicles may
+
+*This work was supported by Ford Motor Company
+1 Jonathan P. How and Golnaz Habibi are with the Department of
+Aeronautics and Astronautics, MIT. golnaz,jhow@mit.edu
+2 Nikita Jaipuria is with Ford Motor Company and contributed to this
+work during her time in MIT. niksjaipuria@gmail.com
+
+encounter different behaviors as they explore new environ-
+ments. Ofﬂine training in such environments does not have
+the option of learning new motion behaviours incrementally
+and hence, limits the adaptation of the pre-trained model to
+new behaviors.
+Incremental learning refers to learning from streaming
+data, that is available incrementally over time. Such a setting
+offers systems, with limited memory or computation power,
+the possibility of processing big data gradually in scenarios
+where ofﬂine learning is challenging and impractical. Prior
+works in incremental learning of motion behaviors either
+need predeﬁned motion patterns [4] or require complete
+trajectories, i.e., trajectories including the pedestrian’s point
+of entry and exit from an intersection, for training and
+inferring pedestrian intent (goal) [5]. Collecting such datasets
+is impractical in busy intersections where often a part of the
+pedestrian trajectory is occluded by cars, buildings and/or
+other pedestrians.
+This paper presents the Similarity-based Incremental
+Learning algorithm (SILA) for building models for accurate
+pedestrian motion prediction in urban intersections. Our
+prediction models comprise of motion primitives and pair-
+wise transitions between them. To learn motion primitives
+that can be transferred across environments (i.e. intersections
+with different geometries), ﬁrst, the observed trajectories are
+projected from the original frame into a common frame [1].
+Then, motion primitives and the pair-wise transitions be-
+tween them are learned using a sparse coding technique [6].
+To reduce computational complexity, the transitions are mod-
+eled as Sparse Gaussian Processes (GPs) based on “pseudo
+inputs” [7].
+Normalized inner product of motion primitives from each
+model is applied to measure the pair-wise similarity between
+pre-trained and new motion primitives and a fusion strategy
+based on similarity graph is proposed. The following sum-
+marizes the main contributions:
+• Present SILA to incrementally update the prediction
+model while simultaneously transferring knowledge
+across intersections with different geometries.
+• Use normalized inner product techniques to measure
+similarity between motion primitives learned across in-
+tersections with different geometries to constrain model
+size growth.
+• Show that SILA has signiﬁcantly slower growth in
+model size compared to standard incremental learning.
+• Show that signiﬁcantly lower learning time enables
+SILA for online learning of motion behaviors.
+
+ 
+ 
+ 
+ 
+ 
+ 
+I I . RELATED WORK
+This section brieﬂy reviews the previous work in incre-
+mental learning applied to motion prediction. Ref. [5] in-
+troduced a Growing Hidden Markov Model (GHMM) based
+incremental learning algorithm for pedestrian motion pre-
+diction. Their method relies on estimating pedestrian intent
+for trajectory prediction and hence, requires full pedestrian
+trajectories, from intersection entry till exit,
+to train on.
+In contrast, SILA can learn from incomplete or partially
+occluded trajectories [6]. Ref. [4] incrementally learns the
+relationship between motion primitives for body movements
+using HMMs. However, the set of motion primitives itself
+is pre-deﬁned. Such an approach does not directly apply
+to the task of pedestrian trajectory prediction, where the
+wide variety of motion primitives cannot be pre-deﬁned and
+must instead be learned from data. Thus, SILA incrementally
+adds novel primitives to the model, while simultaneously
+updating existing primitives. Ref. [8] does online learning of
+motion patterns by detecting changing intent using Gaussian
+Processes. In their work, when a new motion behavior is
+observed, it is compared with the pre-trained model and if
+different, it is considered as a new behavior/change in intent.
+SILA, on the other hand, not only detects new behaviors
+and adds those to the model, it also fuses similar behaviors
+to enrich the learning model. Ref. [6] provides a compact
+representation of motion behaviors in the form of motion
+primitives or dictionary atoms which cluster trajectories into
+local segments. The motion patterns of these clusters and
+their transitions are modeled as Gaussian Processes to predict
+pedestrian motions. This paper leverages the idea of [6] to
+compactly represent pedestrian motion in terms of motion
+primitives and their transitions.
+I I I . BACKGROUND AND NOTAT IONS
+As proposed in [6], trajectories are mapped into a grid
+world with N = r × c cells, where r and c are the number of
+rows and columns respectively. Let the training dataset con-
+sist of p trajectories. The i-th trajectory can be represented
+as a column vector tri ∈ RN such that the k-th element of tri
+is the normalized velocity vector of the i-th trajectory in the
+k-th grid cell. Given this vectorized representation of training
+trajectories, a set of L motion primitives (dictionary atoms),
+D = {m1 , . . . , mL }, are learned using sparse coding [6]. Each
+color in Fig. 1(a) represents a single motion primitive mi ,
+learned from the trajectories shown in gray in Fig. 1(b). Each
+motion primitive mi is represented as a set of normalized
+cell-wise velocities {vk
+i } . Here, vk
+is the velocity of mi in
+the k-th grid cell (in N = 25 × 29 grid cells in Fig. 1(a)).
+Dictionary atoms (D) are used to segment the training
+trajectories into clusters (Fig. 1(b)). Each color in Fig. 1(b)
+is one such cluster, best explained by the motion primitive in
+Fig. 1(a) in the same color. These clusters are used to create
+the transition matrix TL×L , where T (i, j) denotes the number
+of training trajectories exhibiting a transition from mi to m j .
+Following Ref. [6], each of these transitions is modeled as a
+two-dimensional GP ﬂow ﬁeld [7], [9], [10]. Thus, T is used
+to create the set of transitions R, which has two components:
+
+i
+
+Red ges = {(i, j)|T(i, j) (cid:54)= /0} and RGP . RGP consists of two
+independent GPs for each tuple in Red ges , (GPx , GPy ), that
+learn a mapping from the two-dimensional position features
+(x, y) to velocities vx and vy respectively [11]. These GPs
+are also referred to as ‘motion patterns’. We use a sparse
+GP regression model for learning motion patterns [7]. Such
+a model uses a ﬁxed number of pseudo-inputs, learned using
+a gradient-based optimization, as a sparse representation of
+the full GP. The hyperparameters of the covariance function
+are also estimated using a joint optimization technique, thus
+doing away with the need to manually tune hyperparameters,
+as in previous GP models [12].
+Assume M (n − 1) is the trained model at the (n − 1)-
+th training episode and comprises of the set of motion
+primitives D = {m1 , · · · , mN1 } and the set of transitions
+i.e. Red ges and RGP . In the n-th training episode, a
+new batch of data is used to learn M (cid:48) (n), comprising of
+} motion primitives and R(cid:48) transitions
+with R(cid:48)
+ed ges and R(cid:48)
+GP . The following section explains SILA
+algorithm for updating M (n − 1) to M (n) by computing
+the similarity between the incremental model M (cid:48) (n) and
+M (n − 1); and fuse them based on a similarity graph.
+
+R,
+D(cid:48) = {m(cid:48)
+
+1 , · · · , m(cid:48)
+
+N (cid:48)
+
+1
+
+IV. S IM ILAR ITY-BASED INCREMENTAL
+LEARN ING ALGOR ITHM (S ILA )
+
+This section describes an algorithm for motion prediction
+(Algorithm 1) that incrementally updates the model as more
+data is available, without
+the need to re-learn the full
+model from scratch. We demonstrate its capability on the
+speciﬁc use-case of pedestrian trajectory prediction in urban
+intersections. SILA has ﬁve main steps in each training
+episode: (1) normalize trajectory data using [13]; (2) learn
+M (cid:48) (n) from new data using [6]; (3) augment pre-trained
+model M (n − 1) with M (cid:48) (n) to get
+ˆM (n) and re-index the
+motion primitives and their transitions (line 4); (4) measure
+similarity between motion primitives in M (cid:48) (n) and M (n − 1)
+to create a similarity graph (line 5); (5) fuse M (n − 1) with
+M (cid:48) (n) based on the similarity graph to get M (n) (line 7-26).
+The rest of this section describes each of these steps in detail.
+Steps 1 and 2 are prepossessing stages from existing works.
+The main contribution of this paper are steps 3-5.
+
+A. Normalize Trajectory Data
+We use the Augmented Semi Non-negative Sparse Coding
+(ASNSC) algorithm [6] to learn trajectory prediction models
+as a set of motion primitives and the pair-wise transitions
+between them, using spatial position and velocity features.
+Thus, to learn from data collected in different intersections
+(each with its own frame of reference), it becomes imperative
+to learn motion primitives and transitions from features that
+are transferable across environments. This issue is addressed
+by the use of a common frame [13], with its origin at
+the intersection corner of interest and axes aligned with
+the intersecting curbsides. In this common frame, each data
+point is represented by its contravariant distance [14] from
+the curbsides (see Fig. 4). Furthermore,
+the transformed
+
+(a)
+(b)
+(c)
+(d)
+(e)
+Fig. 1.
+(a) Motion primitives are learned in a grid world using ASNSC [6]. Each color represents a single motion primitive mi learned from pedestrian
+trajectories; (b) Segmentation of training trajectories (gray) into clusters, each cluster is best explained by the motion primitive of the same color in (a),
+the black arrows show the transition between motion primitives, for cases in which the corresponding element in the transition matrix T is non-zero; (c)
+motion primitives and their transitions in (b) are modeled as a directed graph, called motion primitive graph where nodes represent motion primitives and
+edges represent transitions, corresponding to only the 8 motion primitives shown in (a), not the entire learned set of 29 motion primitives. (d) Case where
+two motion primitives, mi and m j , are similar to another primitive mk (refer Case 1 in Section III-D under connected components with two edges). Here,
+mi and m j together provide a richer representation of motion behaviors. Thus, mk is replaced by mi and m j , while all of mk ’s relationships to other nodes
+are modiﬁed as shown in the following ﬁgure. (e) replacing mk with mi and m j , as explained in (d), all the edges entering mk now enter mi ; and all edges
+exiting from mk now exit from m j , which requires re-indexing as follows: mk,in = mi,in and mk,out = m j,out (ﬁgures are seen better in colors).
+
+trajectories are normalized with respect to the sidewalk width
+to account for scale differences across intersections.
+
+B. Learn Motion Primitives and Transitions
+In every training episode, ASNSC learns motion primitives
+and transitions from the new batch of data available, which
+are then modelled as a motion primitive graph [15]. In
+this graph (Fig. 1(c)), nodes represent a motion primitive
+and edges represent the order of observing primitives, i.e.
+transitions.
+
+C. Initialize Indexes of Motion Primitives and Transitions
+SILA’s ultimate goal
+is to efﬁciently merge the pre-
+trained model M (n − 1) with the new model M (cid:48) (n) to get
+a single model M (n) that is best representative of all motion
+behaviours seen so far. The ﬁrst step towards this goal is to
+re-index the motion primitives and transitions from M (n − 1)
+and M (cid:48) (n) to avoid repetition of indices. Thus, initially the
+ˆM (n) simply combines M (n − 1) with
+accumulated model
+M (cid:48) (n), such that ˆD = {D, D(cid:48) } is of size N1 + N (cid:48)
+1 . Similarly,
+the set of accumulated transitions ˆR = {R, R(cid:48) } is of size
+N2 + N (cid:48)
+2 (Alg. 1, line 4)
+Each node is represented by two virtual nodes, denoted by
+in and out , and a virtual transition (edge): (in, out ). Given
+this virtual representation of each node, we need to re-index
+edges such that all edges entering mk now enter mk,in ; and
+all edges exiting mk now exit mk,out . This implies that for
+every transition edge (i, j), (i.e. edges exiting from mi and
+entering m j , in ˆRed ges re-indexing is done as follows: (i, j) (cid:55)→
+(mi,out , m j,in ). In the beginning of each learning episode,
+indices in and out for all nodes are initialized equivalently.
+For instance, mk,in = mk,out = k for the k-th motion primitive
+in accumulated motion primitive set. Fig. 2(a) shows the
+accumulated motion primitive graph of M (cid:48) (n) and M (n − 1),
+i.e., ˆM (n), post re-indexing (i.e., each index is unique and not
+repeated). The numbers in circles denote the motion primitive
+index. For clarity, nodes are colored based on the model they
+come from, and transitions are shown as black arrows.
+
+A special set, called the fusion set, is also deﬁned and
+initialized as an empty set in this step. Eventually, it contains
+a list of tuples of nodes that need to be fused. For e.g. the
+tuple (mi , m j ) implies mi and m j need to be fused in the
+model fusion step.
+
+j (cid:105)
+
+j ) =
+
+(cid:104)mi , m(cid:48)
+|mi ||m(cid:48) j |
+
+D. Similarity between Motion Primitives and Re-indexing of
+Motion Primitives and Transitions
+The next step is to compute the similarity between mo-
+tion primitives in M (n − 1) and M (cid:48) (n). Motion primitives
+are representative of human motion behaviors in terms of
+both heading and region of occurrence in the grid-based
+world. Thus, computing the similarity between such motion
+primitives should reﬂect both the difference in heading and
+the overlap of regions of occurrence. In this work, similarity
+between motion primitives is computed as the cosine of the
+angle between the two motion primitive vectors, which is
+equivalent to their normalized inner product:
+S(mi , m(cid:48)
+(1)
+where, (cid:104)·, ·(cid:105) denotes inner product, mi is the i-th motion
+primitive in M (n − 1), m(cid:48)
+j is j-th motion primitive in M (cid:48) (n).
+Here, S(mi , m(cid:48)
+j ) accounts (in a grid environment) for the
+number of overlapping cells between two motion primitives
+as well as the difference between the angle of their direction
+in each cell.
+Given Eq. 1, pairs of nodes M (n − 1) and M (cid:48) (n) with
+similarities greater than a pre-deﬁned threshold, ts , are con-
+sidered as matched nodes. Fig. 2(b) shows the similarity
+graph [16] for M (n − 1) and M (cid:48) (n), denoted by Gs , where
+nodes represent motion primitives, and edges represent the
+similarity between motion primitives. An edge exists only if
+the similarity is greater than ts and is assigned a weight that
+is equal to the similarity value:
+e(i, j (cid:48) ) = {(i, j (cid:48) )|S(mi , m(cid:48)
+j ) ≥ ts }, ω (i, j (cid:48) ) = S(mi , m(cid:48)
+
+j ) (2)
+
+1520253035404550250255260265270275280(1)(2)(3)(4)(5)(6)(7)(8)1520253035404550250255260265270275T(1,2)>0T(7,4)>0T(3,4)>0T(6,5)>0m2m8Transitionm43m2m7m26m21mTransition(k)(i)( j)1inout.........mkmjmi3
+
+Algorithm 1: M (n) = I ncrement alLearning(M (n − 1), M (cid:48) (n))
+
+1 Input: previous model M (n − 1){D, R} and incremental
+model M (cid:48) (n){D(cid:48) , R(cid:48) }
+2 Output: updated model M (n){D(cid:48)(cid:48) , R(cid:48)(cid:48) }
+ˆM (n) ← { ˆD{D : D(cid:48) }, ˆR{R : R(cid:48) }}, /0 ← F useSet
+4 [ ˆD, ˆR] = Reind ex( ˆD, ˆR)
+5 Gs = Simil arit yGra ph(D, D(cid:48) )
+6 CC = Connect edCom ponent s(Gs )
+ee = |ed ges(CCk )|, [h, c] = nod esI d x(CCk )
+
+7 for k = 1 : |CC| do
+
+if ee == 1 then
+
+mi,in = mi,out = min(mh,in , mc,in ), i ∈ {h, c}
+
+F useSet ← F useSet ∪ mh ∪ mc
+
+else if ee == 2 then
+
+for mi ∈ nod es(CCk ) do
+if Degree(mi ) == 2 then
+[w, q] = nbrsI d x(mi ) *** neighbor index
+
+if (mw , mq ) ∈ ˆR then
+
+mi,in ← mw,out
+mi,out ← mq,in
+
+else if S(mw , mq ) ≥ ts then
+
+∀ j ∈ {w, q, i}, m j,in = m j,out =
+
+min(mw,in , mq,in , mi,in )
+
+F useSet ← F useSet ∪ mi ∪ mw ∪ mq
+
+8
+9
+10
+11
+
+12
+13
+14
+15
+16
+17
+18
+
+19
+20
+
+21
+
+22
+23
+24
+
+(a)
+(b)
+(c)
+ˆM (n), pre-trained
+M (n − 1) in green and new model M (cid:48) (n) is in brown (self transitions are
+Fig. 2.
+(a) motion primitive graph of accumulated model
+omitted for brevity), black arrows represent the directed transitions. Nodes
+from both models are re-indexed to have a unique id,(b)similarity graph
+Gs with threshold of ts = 0.7 ,blue two sided arrows are matching relation
+and nodes are colored in blue regardless of their original model, (note:
+magenta arrow shows the intra-similarity between two nodes from same
+model which is considered in case 2 of the algorithm) Gs has three connected
+components: CC1 , CC2 , and CC3 , in CC3 the edge with least similarity is
+relaxed (crossed).(c) ﬁnal motion primitive graph corresponding to updated
+model M (n) which is created after re-indexing the matched nodes based on
+the topology of connected components in (b) and applying it in (a) nodes
+with no fusion are colored by their original model color and fused nodes
+and edges are colored in dark red. The nodes is ﬁnally re-indexed to 1 : 10
+which is not shown in this ﬁgure to help the reader understand all steps.
+The fusion set in this example is {(2, 7), (6, 12, 13)}
+
+Each set of matching nodes creates a connected component
+in Gs [17]. Fig. 2(b) shows Gs with its connected components
+encircled in red. Gs by deﬁnition does not include unmatched
+nodes, which implies that the unmatched nodes are neither
+re-indexed nor merged. The rest of this section presents
+strategies for re-indexing nodes based on the topology of
+the connected component.
+1) Connected components with one edge: has two nodes
+mi and m j (see Fig. 2(b)-CC1 ). This case is also called ‘one-
+to-one matching’. To re-index, in and out indices of both
+nodes are collapsed to the same index, as follows: mi,in =
+
+mi,out = m j,in = m j,out = min(mi,in , m j.in ).
+
+2) Connected components with two edges:
+it happens
+when two nodes from one model, mi and m j , are matched
+with a single node mk from another model (see Fig. 2(b)-
+CC2 ). The re-indexing strategy now depends on the relation-
+ship between mi and m j in their original motion primitive
+graph, these cases are considered in this following order
+(Alg. 1, lines 7-24):
+
+• Case 1: there exists a transition from mi to m j .
+
+This implies that mi and m j
+together have a richer
+and more primitive representation of motion behaviours
+as compared to mk . Thus, mk is replaced with mi and
+m j and its indices are re-indexed as mk,in = mi,in and
+mk,out = m j,out (see Fig. 1(d) and Fig. 1(e)).
+S(mi , m j ) ≥ ts . mi , m j and mk are fused and added
+to the fusion set. The fused primitive is indexed as the
+minimum over the indices i, j, k.
+
+• Case 2: no transition between mi and m j with
+
+• Case 3: no transition between mi and m j with
+
+S(mi , m j ) < ts . This case happens when two motion
+
+else
+
+CCk = Rel axed ges(CCk , 2)
+Go to line 13
+25 D(cid:48)(cid:48) = F usePrimit ives(F useSet )
+26 R(cid:48)(cid:48) = Reind ex&F useE d ges( ˆR, D(cid:48)(cid:48) )
+
+27 return M (n){D(cid:48)(cid:48) , R(cid:48)(cid:48) }
+
+primitives are matched to a portion of another primitive.
+In our experiments, we observed that such a case only
+arises when ts is too small and the matching is not valid.
+In this case the nodes and edges in this component are
+not updated.
+3) Connected components with three or more edges: In
+this case, the edge with the least similarity value is suc-
+cessively relaxed (removed) until the connected component
+has only two edges left. This relaxation does not affect
+performance as this situation rarely occurs. However, further
+investigation would beneﬁt future work.
+
+m(cid:48)
+
+E. Model Fusion
+1) Fusion of nodes (motion primitives): Motion primitives
+are fused according to the fusion set. The average of mi and
+j gives the fused motion primitive m(cid:48)(cid:48)
+i (Fig. 3). Fused
+nodes and other nodes with no fusion are stored in D(cid:48)(cid:48) .
+2) Fusion of edges (transitions): To fuse transitions, each
+edge (i, j) is ﬁrst mapped to (mout ,i , min, j ). This re-indexing
+can create similar edges and it happens when two nodes
+corresponding the indices are similar (Fig. 2(c). Similar
+
+1234561312111089714M'(n)M(n-1)273586121314275386121314CC1CC2CC30.780.840.90.750.780.710.72X2111093514146Algorithm 2: R(cid:48)(cid:48) = Reind ex&F useE d ges( ˆR, D(cid:48)(cid:48) {mk=1:N1+N (cid:48)
+
+})
+
+1
+
+1 /0 ← R(cid:48)(cid:48)
+
+ed ges , /0 ← R(cid:48)(cid:48)
+2 for (i, j) ∈ ˆRed ges do
+
+3
+
+˜Red ges ← ˜Red ges ∪ (mi,out , m j,in )
+
+GP , /0 ← ˜Red ges , /0 ← ˜RGP
+
+4 [I, U] = uniqueE d ges( ˜Red ges ) *** U is the unique edges
+
+5 for i = 1 : |U| do
+R(cid:48)(cid:48)
+R(cid:48)(cid:48)
+
+ed ges ← R(cid:48)(cid:48)
+
+6
+7
+
+ed ges ∪ Ui
+
+GP ← RGP ∪ F useGP(∪ ˆR j∈Ii ,GP )
+8 *** Ii is the indexes of similar edges in original ˜Red ges ,
+which is the same as ˆRed ges
+
+9 return R(cid:48)(cid:48)
+
+R(cid:48)(cid:48)
+
+edges (including self-transitions) are then fused to get a
+‘unique’ list of edges and build R(cid:48)(cid:48)
+ed ges (Alg. 2). To build
+GP , recall each transition is modeled as a pair of two
+dimensional GP ﬂow ﬁelds (GPx ,GPy ), where each GP is
+represented by a sparse number of pseudo inputs. Let the
+pseudo inputs and hyperparameters for matched transitions
+in M (n − 1) be denoted by g p1 and the data associated with
+these transitions in M (cid:48) (n) be denoted by d2 . To fuse GPs
+associated with similar transitions in M (n − 1) and M (cid:48) (n),
+Ref. [18] is used to update g p1 incrementally using d2 .
+Updated transitions are stored in R(cid:48)(cid:48) : {R(cid:48)(cid:48)
+
+ed ges , R(cid:48)(cid:48)
+
+GP }
+
+Fig. 3. matched (similar) motion primitives learned from model M (n − 1)
+(green) and model M (cid:48) (n) (red). They are fused by considering the cell-wise
+average of each vector (black). Here, similarity threshold is ts = 0.6.
+
+V. EXPER IMENTAL RESULT
+A. Dataset Description
+SILA and baselines are trained and evaluated on real
+pedestrian trajectory datasets collected in ﬁve intersections
+with different geometries and different neighborhood which
+creates various pedestrian behaviors (see Fig. 4). The datasets
+are also different in terms of measurement noise and quality.
+The trajectories in intersections B and C were collected using
+a GEM vehicle, equipped with 2D Lidar and cameras [19],
+and curbside boundaries is extracted from the map created by
+Lidar. Trajectories in Intersections E and D were collected by
+a stationary tripod with a 3D Lidar. An online human clas-
+siﬁcation technique, as proposed in [20], was used to detect
+and track pedestrians. Curbside boundary was extracted by
+tracking a volunteer that walked the curbside boundary.
+
+B. Baselines for Comparison
+In all experiments, SILA is run with the similarity thresh-
+olds ts =∈ {0.5, 0.7, 1.0} and compared with the following
+
+two different baselines.
+• Baseline 1– Batch Learning. Batch Learning assumes
+the entire data is available and model is learned ofﬂine.
+• Baseline 2– Standard Incremental Learning. This algo-
+rithm is similar to SILA, there is no access to entire
+data because of memory constraints or the nature of
+data which is incrementally available only. To update the
+pre-trained model, the newly learned motion primitives
+and transitions from M (cid:48) (n) are simply added to the pre-
+trained model M (n − 1), without any fusion. The model
+size thus grows as |M (n)| = ∑n
+i=1 |M (i)|.
+C. Evaluation Metrics:
+In all experiments, the future trajectory is predicted for the
+time horizon of 5 seconds after the trajectory is observed for
+3.2 seconds. Three metrics are used for the evaluation: (1)
+prediction error compared to the ground truth using modiﬁed
+Hausdorff distance (MHD) [21], similar to [22] we use the
+weighted average of predicted trajectories. The weight is
+corresponding to likelihood of each prediction (Fig. 6). (2)
+Model size:total number of motion primitives and number of
+transitions (3) Learning time.
+
+D. Experiment 1: Incremental Learning from data collected
+at one intersection
+We collected 989 trajectories in an intersection next to
+MIT campus, at different times (see Fig. 4, intersection B).
+The test size of 149 trajectories and 840 trajectories are split
+into 42 batches of 20 trajectories. The batches of data are
+given to the learning process in 42 episodes. Fig. 5 (a-c)
+shows the result of experiment 1 which run for 12 trials. The
+order of batch data is shufﬂed in each trial and the average
+of performance (prediction error) and model size growth are
+recorded for different baselines.
+All baselines show that, as the learning progresses, the
+prediction error decreases with increased model size. OF
+these, baseline 2 approach has the largest growing rate
+of 1.01 which (one model size growth per one trajectory)
+which is expected as the learned motion primitives and their
+transitions are added up without merging in each training
+episode. The model size in SILA with ts = 0.7 on the other
+hand grows with the rate of 0.31. As expected, SILA in the
+extreme case of ts = 1 (two motion primitives are matched
+only if they are the identical, which rarely happens and
+hence none of the motion primitives from two models are
+fused) is very similar to the standard incremental learning.
+By decreasing the threshold in SILA, the model size growth
+rate is reduced as the number of matched motion primitive
+increases and more motion primitives are fused. However,
+lowering the threshold could encourage motion primitives
+with different behavior to be fused, leading to an increase in
+the prediction error. Fig. 5(b) shows the relation of prediction
+accuracy (normalized inverse of error) and the model size.
+The ideal approach would have the maximum accuracy even
+when the model size is still small (i.e., top left corner). This
+result indicates that SILA (ts = 0.7, blue in Fig. 5(b)) has the
+best combined performance.
+
+-0.500.510.511.5-0.500.510.511.5200.20.40.60.80.60.811.21.41.6Pedestrian trajectory data is collected in 5 intersections denoted by letters A − E , with different geometries (right, closed and open angle corners).
+Fig. 4.
+Intersections B − E are located in Cambridge/Boston areas, and intersection A is in a mock city of Mcity, The intersections and trajectories are shown in
+bird’s eye view Google map, however the trajectory data is collected locally at the ground of each intersection, except data in A which is from GPS data.
+The intersection axis (cyan arrows) with origin at its corner is used for normalizing the trajectories described in section IV-A
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+Fig. 5. The performance comparison of SILA with standard incremental learning when the data is incrementally available over the time in one intersection
+in (a-c) and across 5 intersections (d), the result also compared with batch learning (dashed line), the results of average and standard deviation for 12 trials
+are compared for different algorithm (a-d): (a) prediction error (MHD) (b) Prediction accuracy (normalized of inverse of MHD) vs model size (top left is
+better) (c) Learning time (sec)(d) prediction error (MHD) when data is available incrementally by exploring different intersections shown in Fig. 4
+
+Fig. 6.
+Example of prediction at an intersection (sidewalk is dashed
+line). Trajectory observed for 3.2s (magenta) and predicted for 5s, which
+may contain multiple predicted trajectories with different probabilities (blue
+lines, numbers give negative log likelihood). To measure the prediction error
+respect to the ground truth (green line), the weighted average of prediction
+error (MHD) is computed, with weights corresponding to the likelihood of
+each prediction. Distribution of training data shown by grey lines.
+
+Another beneﬁt of incremental learning compared to batch
+incremental learning; where every time the model is reset
+and trained from the accumulated data) is the learning time
+Fig. 5(c) shows the learning time in batch incremental
+learning increases linearly as the learning progresses over
+the time, but in incremental methods (standard and SILA),
+learning time is essentially a constant that is proportional to
+the size of incremental data (20 trajectories).
+
+E. Experiment 2: Incremental Learning from data collected
+in different intersections
+The dataset used for this experiment has a total of 412
+trajectories Each of intersections A to D contributed 79 train
+and 13 test trajectories. Intersection E has 56 trajectories
+only and contributed 48 train and 8 test trajectories.
+Fig. 5(d) shows results from a model that incrementally
+learns from data in 5 intersections. Note the improvement
+in prediction error over time. Similar to Experiment 1,
+
+decreasing ts leads to a slower rate of model growth. For
+case of ts = 0.7, model growth rate is 1.02. The model size
+growth ratio is higher than in Experiment 1 due to the greater
+diversity in motion behaviors across different intersections.
+Model growth rate of baseline 2 is 1.42 (worst) as it is
+directly correlated to the size of the accumulated model.
+Both experiments standard incremental learning (baseline
+2) and SILA outperform the batch learning method in terms
+of prediction error. Batch learning on a large dataset can
+result in learning motion primitives, less accurately than
+incremental learning which increases the prediction error.
+V I . CONCLUS ION
+This work proposed Similarity-based Incremental Learn-
+ing Algorithm (SILA) for prediction of pedestrians trajectory
+when the data is incrementally available in one or across
+multiple intersections. A new model is learned from new data
+and the similarity between motion primitives from new and
+pre-trained models is computed for fusion of two models.
+The result conﬁrms that SILA is able to incrementally
+learn and improve the prediction accuracy over the time
+and outperform batch (off-line) learning in predicting the
+pedestrian trajectories in intersections, while the learning
+time is constantly small, which enables SILA for online
+learning applications. While prediction accuracy of SILA
+is comparable to standard incremental learning, where the
+newly learned model are simply accumulated, the model size
+growth ratio is up to 3 times slower than standard approach.
+SILA can be considered as a meta learning approach for
+learning new motion behaviors. The extension of SILA for
+multi-agent learning is left for further study.
+
+0100200300400500600700800900# of trajectories0.60.70.80.911.11.21.31.4Prediction Error (MHD)with ts=0.5with ts=0.7with ts=1incremental learningbatch learningSILASILASILAStandard0100200300400500600700800900Model Size (#transition + #motion primitives)0.750.80.850.90.951Prediction Accuracy (inverse of MHD)0100200300400500600700800900# of trajectories00.10.20.30.40.50.60.70.8Learning Time (sec)12345Data sequence (intersection)0.70.80.911.11.21.31.4Prediction Error (MHD)Trajectory 43.3044-0.489964.1377R E FER ENC E S
+[1] N. Jaipuria, G. Habibi, and J. P. How, “A Transferable Pedestrian
+Motion Prediction Model for Intersections with Different Geometries,”
+ArXiv e-prints, Jun. 2018.
+[2] D. Ridel, E. Rehder, M. Lauer, C. Stiller, and D. Wolf, “A literature
+review on the prediction of pedestrian behavior in urban scenarios,”
+in 2018 21st International Conference on Intelligent Transportation
+Systems (ITSC).
+IEEE, 2018, pp. 3105–3112.
+[3] V. Losing, B. Hammer, and H. Wersing, “Incremental on-line learning:
+A review and comparison of state of the art algorithms,” Neurocom-
+puting, vol. 275, pp. 1261–1274, 2018.
+[4] D. Kuli ´c, W. Takano, and Y. Nakamura, “Incremental learning, clus-
+tering and hierarchy formation of whole body motion patterns using
+adaptive hidden markov chains,” The International Journal of Robotics
+Research, vol. 27, no. 7, pp. 761–784, 2008.
+[5] D. Vasquez, T. Fraichard, and C. Laugier, “Incremental learning of
+statistical motion patterns with growing hidden markov models,” IEEE
+Transactions on Intelligent Transportation Systems, vol. 10, no. 3, pp.
+403–416, 2009.
+[6] Y. F. Chen, M. Liu, and J. P. How, “Augmented dictionary learning for
+motion prediction,” in Robotics and Automation (ICRA), 2016 IEEE
+International Conference on.
+IEEE, 2016, pp. 2527–2534.
+[7] E. Snelson and Z. Ghahramani, “Sparse gaussian processes using
+pseudo-inputs,” in Advances in neural information processing systems,
+2006, pp. 1257–1264.
+[8] S. Ferguson, B. Luders, R. C. Grande, and J. P. How, “Real-time
+predictive modeling and robust avoidance of pedestrians with uncer-
+tain, changing intentions,” in Algorithmic Foundations of Robotics XI.
+Springer, 2015, pp. 161–177.
+[9] J. Joseph, F. Doshi-Velez, A. S. Huang, and N. Roy, “A bayesian
+nonparametric approach to modeling motion patterns,” Autonomous
+Robots, vol. 31, no. 4, p. 383, 2011.
+[10] G. S. Aoude, B. D. Luders, J. M. Joseph, N. Roy, and J. P. How,
+“Probabilistically safe motion planning to avoid dynamic obstacles
+with uncertain motion patterns,” Autonomous Robots, vol. 35, no. 1,
+pp. 51–76, 2013.
+
+[11] Y. F. Chen, “Predictive modeling and socially aware motion planning
+in dynamic, uncertain environments,” Thesis, 2017.
+[12] L. Csat ´o and M. Opper, “Sparse on-line gaussian processes,” Neural
+computation, vol. 14, no. 3, pp. 641–668, 2002.
+[13] N. Jaipuria, G. Habibi, and J. P. How, “Learning in the curbside coordi-
+nate frame for a transferable pedestrian trajectory prediction model,”
+in 2018 21st International Conference on Intelligent Transportation
+Systems (ITSC).
+IEEE, 2018, pp. 3125–3131.
+[14] R. M. Bowen and C.-C. Wang, Introduction to vectors and tensors.
+Courier Corporation, 2008, vol. 2.
+[15] D. Kuli ´c, C. Ott, D. Lee, J. Ishikawa, and Y. Nakamura, “Incremental
+learning of full body motion primitives and their sequencing through
+human motion observation,” The International Journal of Robotics
+Research, vol. 31, no. 3, pp. 330–345, 2012.
+[16] L. A. Zager and G. C. Verghese, “Graph similarity scoring and
+matching,” Applied mathematics letters, vol. 21, no. 1, pp. 86–94,
+2008.
+[17] J. Hopcroft and R. Tarjan, “Algorithm 447: Efﬁcient algorithms for
+graph manipulation,” Commun. ACM, vol. 16, no. 6, pp. 372–378, Jun.
+1973. [Online]. Available: http://doi.acm.org/10.1145/362248.362272
+[18] H.-I. Suk, Y. Wang, and S.-W. Lee, “Incremental sparse pseudo-
+input gaussian process regression,” International Journal of Pattern
+Recognition and Artiﬁcial Intelligence, vol. 26, no. 08, p. 1250019,
+2012.
+[19] J. Miller and J. P. How, “Predictive positioning and quality of service
+ridesharing for campus mobility on demand systems,” in 2017 IEEE
+International Conference on Robotics and Automation (ICRA).
+IEEE,
+2017, pp. 1402–1408.
+[20] Z. Yan, T. Duckett, and N. Bellotto, “Online learning for human clas-
+siﬁcation in 3d lidar-based tracking,” in 2017 IEEE/RSJ International
+Conference on Intelligent Robots and Systems (IROS).
+IEEE, 2017,
+pp. 864–871.
+[21] M.-P. Dubuisson and A. K. Jain, “A modiﬁed hausdorff distance for
+object matching,” in Proceedings of 12th international conference on
+pattern recognition.
+IEEE, 1994, pp. 566–568.
+[22] M. Shen, G. Habibi, and J. P. How, “Transferable Pedestrian Motion
+Prediction Models at Intersections,” ArXiv e-prints, Mar. 2018.
+
+

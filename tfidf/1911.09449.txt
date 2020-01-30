@@ -1,0 +1,1341 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+9
+4
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Heuristic Black-box Adversarial Attacks on Video Recognition Models
+
+Zhipeng Wei1 , Jingjing Chen2 , Xingxing Wei∗ 3 , Linxi Jiang2 , Tat-Seng Chua4 ,
+Fengfeng Zhou5 , Yu-Gang Jiang2
+
+1 Jilin University, 2Fudan University, 3Beihang University, 4National University of Singapore,
+5Health Informatics Lab, College of Computer Science and Technology, and Key Laboratory of Symbolic
+Computation and Knowledge Engineering of Ministry of Education, Jilin University, Changchun, Jilin, China, 130012
+weizp17@mails.jlu.edu.cn, chenjingjing@fudan.edu.cn, xxwei@buaa.edu.cn, lxjiang18@fudan.edu.cn,
+chuats@comp.nus.edu.sg, FengfengZhou@gmail.com, ygj@fudan.edu.cn
+
+Abstract
+
+We study the problem of attacking video recognition models
+in the black-box setting, where the model information is un-
+known and the adversary can only make queries to detect the
+predicted top-1 class and its probability. Compared with the
+black-box attack on images, attacking videos is more chal-
+lenging as the computation cost for searching the adversar-
+ial perturbations on a video is much higher due to its high
+dimensionality. To overcome this challenge, we propose a
+heuristic black-box attack model that generates adversarial
+perturbations only on the selected frames and regions. More
+speciﬁcally, a heuristic-based algorithm is proposed to mea-
+sure the importance of each frame in the video towards gener-
+ating the adversarial examples. Based on the frames’ impor-
+tance, the proposed algorithm heuristically searches a subset
+of frames where the generated adversarial example has strong
+adversarial attack ability while keeps the perturbations lower
+than the given bound. Besides, to further boost the attack ef-
+ﬁciency, we propose to generate the perturbations only on the
+salient regions of the selected frames. In this way, the gen-
+erated perturbations are sparse in both temporal and spatial
+domains. Experimental results of attacking two mainstream
+video recognition methods on the UCF-101 dataset and the
+HMDB-51 dataset demonstrate that the proposed heuristic
+black-box adversarial attack method can signiﬁcantly reduce
+the computation cost and lead to more than 28% reduction in
+query numbers for the untargeted attack on both datasets.
+
+Introduction
+
+Deep neural networks are vulnerable to adversarial sam-
+ples (Goodfellow, Shlens, and Szegedy 2014; Szegedy et al.
+2013). Recent works have shown that adding a small human-
+imperceptible perturbation to a clean sample can fool the
+deep models, leading them to make wrong predictions with
+high conﬁdence (Moosavi-Dezfooli et al. 2017). As results,
+it has raised serious security concerns for the deployment
+of deep models in security-critical applications, such as face
+recognition (Kurakin, Goodfellow, and Bengio 2016), video
+surveillance (Sultani, Chen, and Shah 2018), etc. Therefore,
+it is crucial to study the adversarial examples for deep neural
+
+∗Corresponding author
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+networks. In addition, investigating adversarial samples also
+helps to understand the working mechanism of deep models
+and provides opportunities to improve networks’ robustness.
+Nevertheless, most of the existing works focus on explor-
+ing adversarial samples for image recognition models un-
+der white-box or black-box settings (Kurakin, Goodfellow,
+and Bengio 2016; Szegedy et al. 2013; Papernot et al. 2016;
+Carlini and Wagner 2017; Su, Vargas, and Sakurai 2019).
+Adversarial attacks on video models, especially the black-
+box attacks, have been seldom explored. Indeed, deep neural
+network based real-time video classiﬁcation systems, e.g.,
+video surveillance systems, are being increasing deploys in
+real-world scenarios. Therefore, it is crucial to investigating
+the adversarial samples for video models.
+This paper studies the problem of generating adversarial
+samples to attack video recognition models in the black-
+box settings, where the model is not revealed and we can
+only make queries to detect the predicted top-1 class and its
+probability. The major obstacle for solving this problem is
+how to reduce the number of queries to improve attack ef-
+ﬁciency. Compare to statistic images, the dimensionality of
+video data is much higher as videos have both temporal and
+spatial dimensions. As results, directly extending the exist-
+ing black-box attack methods proposed for image models to
+video models will consume much more queries for gradient
+estimation, leading to the low attack efﬁciency.
+To this end, we propose an efﬁcient black-box attack
+method specially for video models in this paper. Consid-
+ering the fact that video data contains both temporal and
+spatial redundancy, it is therefore not necessary to search
+the adversarial perturbations for all the frames (Wei, Zhu,
+and Su 2019). Besides, for a given video, different frames
+and different regions in each frame contribute differently to-
+wards video classiﬁcation results (Peng, Zhao, and Zhang
+2018). Intuitively, the key frames which contain the key ev-
+idence of one speciﬁc event, or the salient regions in the
+key frame (usually the foreground regions), play a vital role
+for the video classiﬁcation results. As results, generating ad-
+versarial perturbations on the salient regions of key frames
+is the most effective way to attack video models. Moti-
+vated by this, we propose a heuristic-based method to select
+the key frames for adversarial samples generation. Figure
+
+ 
+ 
+ 
+ 
+ 
+ 
+Figure 1: Overview of the proposed heuristic algorithm for black-box adversarial attacks on video recognition models.
+
+1 overviews the proposed method. In the proposed method,
+the perturbation directions are initialized with the samples
+from other classes different from the class of the clean video.
+Meanwhile, it heuristically searches a subset of frames from
+the clean video with the initialized directions, and the salient
+regions detected from the selected frames are utilized to up-
+date the initial directions. The initial directions as well as
+the selected key frames are updated iteratively to make the
+number of selected frames as small as possible while keeps
+the perturbation noise lower than the given bound. Then the
+initial direction which has the minimum distance to the de-
+cision boundary is chosen as the ﬁnal initial direction and
+zeroth order optimization (Chen et al. 2017) is next utilized
+for direction updating. As the perturbations are generated
+only for the salient regions of the selected frames, the pro-
+posed method signiﬁcantly reduces the number of queries.
+Our major contributions can be summarized as follows:
+• We propose an efﬁcient black-box adversarial attack
+model that heuristically select a subset consisting of the
+key frames to generate adversarial perturbations.
+• We introduce saliency detection in the black-box adver-
+sarial attack model to generate adversarial perturbations
+only on the salience regions of the key frames, which fur-
+ther reduces query numbers. As far as we know, this is the
+ﬁrst attempt to introduce prior knowledge for black-box
+video attack.
+• Extensive experiments on two benchmark data sets
+demonstrate that the proposed method is efﬁcient and ef-
+fective. It reduces more than 28% reduction in query num-
+bers for the untargeted attack.
+
+Related Work
+
+Adversarial Attack on Image Models
+
+Recent works on adversarial attack are mostly focus on im-
+age models, including both white-box (Szegedy et al. 2013;
+Goodfellow, Shlens, and Szegedy 2014; Kurakin, Goodfel-
+low, and Bengio 2016; Dong et al. 2018; Carlini and Wag-
+ner 2017; Moosavi-Dezfooli, Fawzi, and Frossard 2016;
+
+Papernot et al. 2016; Sarkar et al. 2017) and black-box at-
+tacks (Chen et al. 2017; Tu et al. 2018; Cheng et al. 2018;
+Brendel, Rauber, and Bethge 2017; Papernot et al. 2017;
+Liu et al. 2016). This section reviews recent works on gen-
+erating adversarial samples for image models.
+White-box Attack White-box attack assumes that
+the
+structure as well as the parameters of the targeted model
+are known to the attacker. In this setting, attacks can be
+done easily as the gradient of attack objective function can
+be computed via backpropagation. In recent years, different
+white box attack methods have been proposed. For exam-
+ple, L-BFGS attack (Szegedy et al. 2013) ﬁrst crafts adver-
+sarial examples against deep neural networks towards max-
+imizing the networks prediction error. and demonstrates the
+transferability of adversarial examples. Fast Gradient Sign
+Method (FGSM) (Goodfellow, Shlens, and Szegedy 2014)
+updates gradient once along the direction of the sign of gra-
+dient at each pixel. FGSM can be applied in multiple times
+with small step size for better adversarial examples in (Ku-
+rakin, Goodfellow, and Bengio 2016), and also be combined
+with momentum to increase adversarial intensity (Dong et
+al. 2018). C&W’s Attack (Carlini and Wagner 2017) gener-
+ates the targeted adversarial examples by deﬁning effective
+objective functions, and provides three types of attacks: l0
+attack, l2 attack, and l∞ attack. Other algorithms such as
+DeepFool (Moosavi-Dezfooli, Fawzi, and Frossard 2016),
+Jacobian-based Saliency Map Attack (JSMA) (Papernot et
+al. 2016), UPSET and ANGRI (Sarkar et al. 2017), etc, have
+carried out white box attacks from different aspects.
+Black-box Attack Compare with the white-box attack,
+the black-box attack is a more realistic but more chal-
+lenging setting as the model information remains unknown
+to the attacker. Existing efforts on black-box attack for
+image models include Zeroth Order Optimization (ZOO)
+(Chen et al. 2017), Autoencoder-based Zeroth Order Opti-
+mization Method (AutoZOOM) (Tu et al. 2018), decision
+based black-box attack (Brendel, Rauber, and Bethge 2017),
+Opt-attack (Cheng et al. 2018). Zeroth Order Optimization
+(ZOO) (Chen et al. 2017) uses ADAM’s update rule or New-
+
+ton’s method to update perturbations with the formulation of
+the C&W attack, gradients estimated by symmetric differ-
+ence quotient, and coordinate-wise Hessian. Autoencoder-
+based Zeroth Order Optimization Method (AutoZOOM) (Tu
+et al. 2018) is a query-efﬁcient black-box attack, which em-
+ploys an autoencoder in reducing query counts, and the ran-
+dom full gradient estimation. Decision-based black-box at-
+tack (Brendel, Rauber, and Bethge 2017) starts with an ad-
+versarial perturbation and performs a random walk on the
+boundary to reduce the perturbation. Opt-attack (Cheng et
+al. 2018) formulates the black-box attack into a real-valued
+optimization problem, which requires fewer queries but
+ﬁnds smaller perturbations of adversarial examples. There
+also exist transfer-based attacks using a white-box attack to-
+wards the substitute model for generating adversarial exam-
+ples in a black-box setting, such as (Papernot et al. 2017),
+(Liu et al. 2016).
+
+Adversarial Attack on Video Models
+
+There is much less related work on generating adversarial
+samples to attack video models compared with adversarial
+attacks on image models. The ﬁrst white-box attack method
+for video recognition models is proposed in (Wei, Zhu, and
+Su 2019), where an l2,1 -norm regularization based optimiza-
+tion algorithm is proposed to compute the sparse adversarial
+perturbations for videos. Different from (Wei, Zhu, and Su
+2019), (Li et al. 2018) took advantages of Generative Ad-
+versarial Networks (GANs) to do a white-box attack. Their
+attack method generates the universal perturbation ofﬂine
+and works with unseen input for the real-time video recog-
+nition model. Nevertheless, the above mentioned methods
+assume the complete knowledge of the video recognition
+models which is different from our settings. Another work is
+(Inkawhich et al. 2019) which proposes an untargeted adver-
+sarial attack that based on FGSM (Goodfellow, Shlens, and
+Szegedy 2015) and iterative FGSM (Kurakin, Goodfellow,
+and Bengio 2017) for ﬂow-based video recognition mod-
+els in both white-box and black-box settings. The proposed
+white-box attack leverages Flownet2 and chain rule to obtain
+the gradients through the whole video recognition model,
+where Flownet2 is required to estimate optical ﬂow frames
+while also providing gradient information easily. They used
+the transferability of adversarial examples generated by the
+white-box model to implement the black-box attack. Differ-
+ent to these two works which generate the adversarial pertur-
+bations for all the frames in the video, our work heuristically
+searches a subset of frames and the adversarial perturba-
+tions are only generated on the salient regions of the selected
+frames, which effectively reduce the number of queries.
+
+Methodology
+
+In this section, we introduce the proposed heuristic black-
+box attack algorithm for video recognition models. We as-
+sume that the predicted top-1 class and its probability are
+known to an attacker.
+RT ×W ×H×C as an input and output the top-1 class (cid:98)y and its
+Denote the video recognition model as a function F .
+the DNN F (x) takes a clean video x ∈
+Speciﬁcally,
+
+probability P ((cid:98)y |x), where T , W , H , C denote the number
+of frames, width, height, and the number of channels respec-
+tively. It sufﬁces to denote its associated true class label by
+y ∈ Y = {1, · · · , K }, where K is the number of classes, and
+its adversarial example by xadv . In the untargeted attack, the
+goal is to make F (xadv ) (cid:54)= y , while for the targeted attack
+with the targeted adversarial class yadv , the goal is to satisfy
+
+F (xadv ) = yadv .
+
+Our attack algorithm is built based on the Opt-attack
+(Cheng et al. 2018), which is originally proposed for at-
+tacking image models by formulating the hard-label black-
+box attack as a real-valued optimization problem that can be
+solved by zeroth order optimization algorithms. We extend
+Opt-attack (Cheng et al. 2018) from image models to video
+models. Speciﬁcally, to deal with the high dimensional video
+data and improve the attack efﬁciency, we propose a heuris-
+tic algorithm to select a subset of video frames and only
+search the adversarial perturbations for the selected frames.
+Following the Opt-attack, we denote θ as the search direc-
+tion of the video. The function of the distance from x to the
+decision boundary along the direction θ is denoted as g(θ),
+which is calculated by a ﬁne-grained search and a binary
+search function deﬁned in (Cheng et al. 2018). The objec-
+tive of Opt-attack’s is to ﬁnd the direction that minimizes
+g(θ) by zeroth order optimization proposed in (Cheng et
+al. 2018). In Opt-attack algorithm, the optimization process
+can be divided into two parts: direction initialization and di-
+rection updating. The direction initialization is done by the
+function θ = p(cid:107)p(cid:107) , where p = ˆx − x, and ˆx denotes the video
+from other classes; Then update θ with the zeroth order opti-
+mization and g(θ). Finally, we ﬁnd the adversarial example
+by xadv = x + g(θ∗ ) × θ∗ , where θ∗ is the optimal solution
+of the zeroth order optimization.
+Here, we focus on the direction initialization part, and
+propose heuristic temporal and spatial selection methods in
+direction initialization for generating barely noticeable ad-
+versarial videos that result in misclassiﬁcation of DNN F .
+Speciﬁcally, we attempt to ﬁnd the sparse θ by modifying p
+with the equation p = p×M , where M ∈ {0, 1}T ×W ×H×C
+is the mask introducing temporal and spatial sparsity. For
+each element in M , if its value equals 1, the corresponding
+pixel in the video will be included in the process of perturba-
+tion computation. The selected regions with M are named as
+masked regions. During the adversarial example generation,
+the computed perturbations are only added to the masked
+regions. Next, we describe in detail the proposed heuristic
+sparse methods.
+It worth to mention that it has been demonstrated in Ue-
+sato et al., the type of gradient-free optimizer has relatively
+small inﬂuence towards the attack efﬁciency. Hence, we use
+the zero-order optimization here. The estimated gradient is
+deﬁned as
+
+ˆg =
+
+(1)
+where u is a random Gaussian vector of the same size as
+θ , and β > 0 is a smoothing parameter which will reduce
+by 10 times if the estimated gradients can’t provide useful
+information for updating θ . Following (Cheng et al. 2018),
+we set β = 0.005 in all experiments. Besides, we sample
+
+g(θ + βu) − g(θ)
+β
+
+· u
+
+u from Gaussian distribution for 20 times to calculate their
+estimators and average them to get more stable ˆg . In each
+iteration, θ is updated by
+
+θ ← θ − η ˆg
+
+(2)
+where η is the step size, which is adjusted at each iteration
+by a backtracking line-search approach.
+
+Heuristic Temporal Sparsity
+
+Videos have successive frames in the temporal domain, thus,
+we consider to search a subset of frames that contributes the
+most to the success of an adversarial attack. Here we intro-
+duce the concept of temporal sparsity which refers to the
+adversarial perturbations generated only on the selected key
+frames during the direction initialization process.
+In order to achieve temporal sparsity, we ﬁrst propose a
+heuristic-based algorithm to evaluate the importance of each
+class label and its probability by (cid:98)yt , P ( (cid:98)yt |(p × Mt + x)) =
+frame. Given a frame t, Mt means that all frames except
+the t-th frame are equal to 1. Based on F , we can get top-1
+F (p × Mt + x), ∀t ∈ {1, · · · , T }. We then sort the se-
+P ( (cid:98)yt |(p × Mt + x)) under the condition that (cid:98)yt is an adver-
+sarial label. Note that, the larger value of P ( (cid:98)yt |(p×Mt + x))
+quence of video frames according to the descending order of
+means the less importance of t-th frame towards generating
+the adversarial sample.
+We search a set of key frames based on the sorted video
+frame sequence. This searching process is performed dur-
+ing the direction initialization for all randomly selected ˆx.
+Denote ω as the bound of mean absolute perturbation of
+each pixel in videos that determines when to stop toward
+searching a smaller set of key frames. When the mean abso-
+lute perturbation on the selected key frames lower than the
+bound ω , our method will continue searching a smaller set
+of key frames for adversarial perturbation generation. The
+value of ω is selected according to the experiments on val-
+idation set, which we will discuss in the experimental part.
+Algorithm 1 summarizes the whole procedure of searching
+the key frames for the targeted attack. In Algorithm 1, DEL-
+FRAME sets the values of i-th frame in M to 0; SORTED
+sorts the indexes of frames in descending order by the as-
+sociated top-1 probabilities; LENS calculates the number of
+selected key frames; and MAP computes the mean absolute
+perturbation for g(θ) × θ .
+
+Heuristic Spatial Sparsity
+
+Intuitively, salient regions, for example, the foreground of
+the frames, contribute more to the video classiﬁcation re-
+sults. Generating adversarial perturbations on the salient re-
+gions will be more likely to fool the deep models. There-
+fore, we introduce the saliency maps of video frames as
+prior knowledge for the generation of adversarial perturba-
+tions. As the perturbation are only generated for salient re-
+gions, it hence introduces spatial sparsity. To generate the
+saliency map for each frame, an efﬁcient saliency detection
+approach proposed in (Hou and Zhang 2007) and implement
+by OpenCV (Bradski 2000) is applied. To control the area
+ratio of the salient region in the frame, we introduce a pa-
+rameter ϕ ∈ (0, 1], and smaller ϕ leads to smaller portion of
+
+4
+
+5
+6
+7
+
+Input
+
+Algorithm 1: Heuristic temporal selection algorithm for
+the targeted attack.
+: DNN F , clean video x, true label y , target
+class yadv , initial mask
+M ∈ {1}T ×W ×H×C , an empty array A.
+: Mask of key frames M .
+1 ˆx ← a video sample of target class yadv ;
+
+Output
+Parameter: Bound ω .
+
+3 for t ← 1 to T do
+if (cid:98)y = yadv then
+8 end
+
+2 p, k ← ˆx − x, 0 ;
+Mt ← DELFRAME(M , t) ;
+(cid:98)y , P ((cid:98)y |(p × Mt + x)) ← F (p × Mt + x) ;
+// the values
+of i-th frame are equal to 0.
+A[k ], k ← (t, P ((cid:98)y |(p × Mt + x))), k + 1;
+9 A ← SORTED(A) ;
+P ((cid:98)y |(p × Mt + x)).
+// indexes of frames
+are sorted in descending order by
+10 θinit ← p(cid:107)p(cid:107) for i ← 1 to k do
+(cid:99)M ← DELFRAME(M , A[i]) ;
+(cid:98)y , P ((cid:98)y |(x + (cid:98)p)) ← F (x + (cid:98)p) ;
+if MAP(g(θ) × θ) ≤ ω then
+if LENS( (cid:99)M ) < LENS(M ) then // the
+number of key frames.
+M , θinit ← (cid:99)M , θ;
+MAP(g(θ) × θ) < MAP(g(θinit ) × θinit )
+M , θinit ← (cid:99)M , θ;
+
+(cid:98)p ← p × (cid:99)M ;
+θ ← (cid:98)p
+
+if (cid:98)y = yadv then
+
+(cid:107)(cid:98)p(cid:107) ;
+
+else
+if
+
+then
+
+11
+
+12
+
+13
+
+14
+15
+16
+17
+
+18
+19
+20
+
+21
+22
+
+end
+
+23 end
+24 return M
+
+salient regions. In the untarget attack, we initialize the mask
+M to introduce spatial sparsity for all video frames based on
+ϕ. In the targeted attack, we also use the heuristic-based al-
+gorithm to obtain the descending order sequence of frames.
+After that, we only add spatial sparsity on the selected frame
+in M . In M , the pixels of salient regions is as 1 while the rest
+is set 0. We investigate different values of ϕ in Section 10.
+
+Overall Framework
+
+The whole process of the our method for the targeted attack
+is describe in Algorithm 2, where SPATIAL function per-
+forms a saliency detection with ϕ for each frame, and initial-
+izes M by setting the values of the salient regions to 1, the
+others to 0; UPDATE represents the zeroth order optimiza-
+tion to update θ , . In the overall framework, we ﬁrstly ini-
+tialize M by SPATIAL to implement spatial sparsity, then
+
+Input
+
+Algorithm 2: Heuristic-based targeted attack algorithm.
+: DNN F , clean video x, true label y , target
+class yadv , an empty array A
+: Adversarial example xadv .
+Parameter: ω , ϕ, the number of update iterations I .
+
+Output
+
+1 M ← SPATIAL(x, ϕ);
+2 M ← Algorithm 1(F , x, y , yadv , M , A, ω);
+
+6
+7
+
+5 for t ← 1 to I do
+
+ˆg = g(θ+βu)−g(θ)
+β
+
+θ = θ − η ˆg ;
+9 xadv = x + g(θ) × θ;
+
+8 end
+
+10 return xadv
+
+3 θ = ˆx−x
+
+(cid:107) ˆx−x(cid:107) ;
+
+4 θ = θ×M(cid:107)θ×M (cid:107) ;
+
+· u;
+
+combine the spatial sparsity with the temporal sparsity by
+Algorithm 1 to get the ﬁnal M . After that, we obtain the
+temporal and spatial sparse θ , and use UPDATE to update θ
+iteratively. Finally, the adversarial example can be found by
+the optimal direction.
+
+Experiments
+
+In this section, we test the performance of our heuristic
+based black-box attack algorithm with various parameters
+ω and ϕ in reducing overall perturbations and the number of
+queries. Furthermore, we show a comprehension evaluation
+of our method on multiple video recognition models.
+
+Experimental Setting
+
+Datasets. We consider two widely used datasets for video
+recognition: UCF-101 (Su et al. 2009) and HMDB-51
+(Kuehne et al. 2011). UCF-101 is an action recognition
+dataset that contains 13,320 videos with 101 action cate-
+gories. HMDB-51 is a dataset for human motion recognition
+and contains a total of 7000 clips distributed in 51 action
+classes. Both datasets split 70% of the videos as training set
+and the remaining 30% as test set. During the evaluation, we
+use 16-frame snippets that uniform sampled from each video
+as input samples of target models.
+Metrics. Four metrics are used to evaluate the perfor-
+mance of our method on various sides. 1) fooling rate (FR):
+the ratio of adversarial videos that are successfully mis-
+classiﬁed. 2) Median queries (MQ) (Ilyas et al. 2018): the
+median number of queries. 3) Mean absolute perturbation
+(MAP): denotes the mean perturbation of each pixel in the
+entire video. We use MAP∗ to denote the MAP of each pixel
+in the masked region. 4) Sparsity (S): represents the pro-
+portion of pixels with no perturbations versus all pixels in a
+speciﬁc video. S = 1 − 1
+t=1 ϕt , where ϕ is the area of
+the selected salient region at the corresponding frame, ϕt is
+ϕ of the t-th frame and T is the total number of frames.
+Threat Model We use the special case of the Partial-
+information setting (Ilyas et al. 2018). In this setting, the
+
+(cid:80)T
+
+T
+
+Table 1: Test Accuracy(%) of the target models.
+Model UCF-101 HMDB-51
+C3D
+85.88
+59.57
+LRCN
+64.92
+37.42
+attacker only has access to the top-1 class (cid:98)y and its prob-
+ability P ((cid:98)y |x), given a video x. Both untargeted and tar-
+geted black-box attacks are considered. In the experiments,
+two video recognition models, Long-term Recurrent Convo-
+lutional Networks (LRCN) (Donahue et al. ) and C3D (Hara,
+Kataoka, and Satoh 2018) are used as target models. LRCN
+(Donahue et al. ) model uses Recurrent Neural Networks
+(RNNs) to encodes the temporal information and long-range
+dependencies on the features generated by CNNs. In our im-
+plementation, Inception V3 (Szegedy et al. 2016) is ultilzied
+to extract features for video frames and LSTM is utilized for
+video classiﬁcation; C3D model (Hara, Kataoka, and Satoh
+2018) applies 3D convolution to learn spatio-temporal fea-
+tures from videos with spatio-temporal ﬁlters for video clas-
+siﬁcation. These models are the main methods of video clas-
+siﬁcation. Table 1 summarizes the test accuracy of 16-frame
+snippets with these two models.
+
+Parameter Setting
+
+Note that we have two parameters need to set in Algorithm 2,
+one is the perturbations bound ω and the other one is the area
+ratio of salient regions ϕ. The parameter tuning is done on 30
+videos that randomly sampled from the test set of UCF-101
+and can be correctly classiﬁed by the target models. We do a
+grid search to ﬁnd the most appropriate values for these two
+parameters. For ω , we set it as {0, 3, 6, 9, 12, 15, ∞} in the
+untargeted attack, as {0, 15, 30, 45, ∞} in the targeted attack
+since the targeted attack has larger perturbations than the un-
+targeted attack, and evaluate the attack performance on C3D
+model. Table 2 shows the performance on the untargeted at-
+tack. Basically, large ω leads to sparse perturbations When
+ω is set to ∞ , the sparsity value can be as low as 83.75%,
+which means that only 2.6 (16 × (1 − 83.75%) ≈ 2.6) video
+frames will be selected to generate the adversarial pertur-
+bations. Therefore, to strikes a balance between the MAP∗
+and temporal sparsity, we set ω = 3 in the untargeted attack
+to conduct subsequent experiments. Table 4 lists the results
+on the targeted attack. The values of ω and M Q is greater
+than those in the untargeted attack since the targeted attack
+has larger perturbations than the untargeted attack. We set
+ω = 30 in experiments of the targeted attack.
+Similarly, we perform grid search to decide the value of ϕ.
+For the untargeted attack, we ﬁx ω = 3 and set parameter ϕ
+as {0.2, 0.4, 0.6, 0.8, 1.0} to evaluate the performance. Table
+3 lists the results. Note that, ϕ = 1 means that all the regions
+in the frame are selected. As can be seen, when the value of
+ϕ is small, the median query number (MQ), mean absolute
+lute perturbations (MAP∗ ) on the selected regions will be
+perturbations (MAP) will be reduced, while the mean abso-
+increased. When ϕ = 0.2, the sparsity value can be as high
+as 85.00%, which results in a large MAP∗ and lower fool-
+ing rate (FP). To balance the metrics MAP∗ , MQ and MAP,
+
+Table 2: Results of our algorithm with various ω in the un-
+targeted attack.
+
+Table 4: Results of our algorithm with various ω in the tar-
+geted attack.
+
+ω
+
+F R(%) M Q
+
+M AP M AP ∗
+
+ω
+
+F R(%) M Q
+
+0
+100
+3
+100
+6
+100
+9
+100
+12
+100
+15
+100
+∞ 100
+
+ϕ
+
+0.2
+0.4
+0.6
+0.8
+1.0
+
+90
+100
+100
+100
+100
+
+16085.0
+16085.0
+15996.0
+17527.0
+15912.5
+16795.0
+14382.0
+
+3.7033
+3.6858
+3.7471
+3.7757
+3.8169
+3.7274
+3.6039
+
+3.8449
+3.9667
+4.0328
+4.2862
+4.3646
+4.3429
+7.9585
+
+8770.0
+12336.0
+14125.0
+13845.0
+16085.0
+
+1.5890
+2.6273
+3.2194
+3.4507
+3.6858
+
+8.7153
+7.0203
+5.7604
+4.6347
+3.9667
+
+Table 3: Results of our algorithm with various ϕ in the un-
+targeted attack.
+
+F R(%) M Q
+
+M AP M AP ∗
+
+302230.50
+302230.50
+323615.50
+307470.00
+209826.00
+
+M AP
+
+9.7547
+9.7178
+8.5328
+10.6991
+5.0075
+
+M AP ∗
+
+10.5442
+10.6463
+11.1309
+14.8790
+16.6886
+
+S (%)
+
+8.54
+11.67
+26.88
+35.00
+71.98
+
+Table 5: Results of our algorithm with various ϕ in the tar-
+geted attack.
+
+F R(%) M Q
+
+142253.5
+146720.0
+175194.5
+191216.0
+323615.0
+
+M AP
+
+11.7693
+13.4624
+11.4973
+10.7961
+8.5328
+
+M AP ∗
+
+17.6957
+18.9002
+16.2451
+13.4766
+11.1309
+
+S (%)
+
+44.17
+36.54
+34.58
+22.58
+26.88
+
+S (%)
+
+17.69
+25.19
+23.94
+34.19
+36.44
+36.69
+83.75
+
+S (%)
+
+85.00
+68.84
+54.25
+40.33
+25.19
+
+0
+100
+15
+100
+30
+100
+45
+100
+∞ 100
+
+ϕ
+
+0.2
+0.4
+0.6
+0.8
+1.0
+
+100
+100
+100
+100
+100
+
+we set ϕ as 0.6 for the untargeted attack. When ϕ = 0.6,
+it reduces the number of queries by 22.17% and the overall
+perturbations (MAP) by 25.79%. The results also suggest
+that the incursion of spatial sparsity brings to our method
+not just a reduction in the number of queries but a reduction
+in MAP. Table 4 lists the results for the targeted attack. Sim-
+ilarly, in order to balance the metrics MAP∗ , MQ and MAP,
+we set ϕ as 0.8 for the targeted attack.
+
+Performance Comparison
+
+We compare our method with the Opt-attack (Cheng et al.
+2018) which originally proposed to attack image classiﬁ-
+cation models under black-box setting. We directly extend
+Opt-attack to attack video models for comparison. Besides,
+we also compare with one variant of our method by remov-
+ing the spatial sparsity module. In this setting, only temporal
+sparsity is considered. The evaluations are performed with
+two video recognition models on two datasets.
+Table 6 lists the performance comparisons regarding to
+the untargeted attack as well the targeted attack on UCF-
+101 dataset and HMDB-51 dataset. For untargeted attack,
+we have the following observations. First, compared to Opt-
+attack, our method that considers both temporal and spa-
+tial sparsity signiﬁcantly reduces the number of queries. For
+LRCN and C3D model, the number of queries has been re-
+duced by more than 28% on both datasets. Second, com-
+pared to introducing temporal sparsity, introducing spatial
+sparsity is more effective in reducing the query numbers. For
+example, for C3D, introducing temporal sparsity alone helps
+to reduce the query numbers around 9% while introducing
+both spatial and temporal sparsity reduce the query numbers
+for more than 28% on UCF-101. By looking into the results,
+we found that around 12% of the queries are spent on search-
+ing a set of key frames that maximize the sparsity value
+while keeping the mean absolute perturbations (MAP) lower
+than the given bound. Third, on most cases, introducing tem-
+
+poral and spatial sparsity helps to make the adversarial per-
+turbations much sparser and hence reduce the mean absolute
+perturbations (MAP). In summary, introducing temporal and
+spatial sparsity increases the query efﬁciency and helps to
+achieve human-imperceptible perturbations.
+For the targeted attack, similar trends are observed as the
+untargeted attack. By introducing both spatial and temporal
+sparsity, our method signiﬁcantly reduces the query num-
+bers. On UCF-101 dataset, the query numbers can be re-
+duced from 445,279 to 399,655 for LRCN model. For C3D
+model, the query numbers have been reduced by more than
+19.59% on both datasets. Although spatial sparsity signiﬁ-
+cantly reduces the number of queries, it increases MQ, MAP
+and MAP∗ a large margin on the targeted attack. Compared
+to the untargeted attack, MQ, MAP as well MAP∗ on the
+targeted attack are much higher. One major reason is that
+compared to the untargeted attack, the target attack are much
+more difﬁcult. Besides, to make sure that it achieves 100%
+of the fooling rate, the MAP as well MAP∗ increased sig-
+niﬁcantly when introducing the spatial sparsity. The results
+basically suggest that for the targeted attack, the selected
+saliency regions from the clean video frames may not con-
+tribute much to the classiﬁcation of targeted classes, hence it
+increases the perturbations in order to successfully fool the
+recognition model, the generated sparse directions cause the
+targeted attack to fall into local optimal solutions and stop
+the direction updating early. In addition, introducing tempo-
+ral sparsity increases the query numbers because 39.75% of
+the queries are spent on searching a small set of keyframes
+in order to achieve temporal sparsity.
+Figure 2 further shows four examples of adversarial
+frames generated by the proposed method. For all the exam-
+ples, our method successfully fools the recognition model.
+For example, in the ﬁrst example, the ground-truth label
+for the video is “Apply eye makeup”, by adding the gen-
+erated human-imperceptible adversarial perturbations (sec-
+ond row), the model tends to predict a wrong label “Playing
+ﬂute” at the top-1 place. By re-scaling the adversarial per-
+
+Table 6: Untargeted and targeted attacks against C3D/LRCN Models. For all attack models, the Fooling Rate (FR) is 100%.
+
+Dataset
+
+Target Model
+
+Attack Model
+
+Untargeted attacks
+
+M AP M AP ∗
+
+M Q
+
+S (%)
+
+M Q
+
+Targeted attacks
+
+M AP M AP ∗
+
+S (%)
+
+UCF-101
+
+HMDB-51
+
+C3D
+
+LRCN
+
+C3D
+
+LRCN
+
+Opt-attack (Cheng et al. 2018)
+Our (Temp.)
+Our (Temp. + Spat.)
+Opt-attack (Cheng et al. 2018)
+Our (Temp.)
+Our (Temp. + Spat.)
+Opt-attack (Cheng et al. 2018)
+Our (Temp.)
+Our (Temp. + Spat.)
+Opt-attack (Cheng et al. 2018)
+Our (Temp.)
+Our (Temp. + Spat.)
+
+17997.5
+16292.0
+
+12940.0
+
+12359.5
+14713.5
+
+8421.5
+
+14509.5
+13536.5
+
+10616.0
+
+18655.0
+15369.5
+
+13311.5
+
+4.2540
+4.0895
+
+3.0346
+1.8320
+
+1.8754
+1.8383
+2.8930
+2.9214
+
+2.3765
+
+2.7586
+2.8011
+
+1.5390
+
+4.2540
+
+4.3642
+5.5189
+
+1.8320
+
+1.8794
+3.0848
+
+2.8930
+
+3.2010
+4.4574
+
+2.7586
+
+2.8923
+2.8302
+
+0.00
+21.19
+
+54.33
+
+0.00
+17.19
+
+47.50
+
+0.00
+26.94
+
+57.04
+
+0.00
+24.22
+
+62.03
+
+207944.5
+313229.0
+
+167217.0
+
+445279.0
+566719.0
+
+399655.0
+
+205286.5
+196371.5
+
+144917.5
+
+224414.0
+339367.0
+
+206120.0
+
+9.0906
+
+7.8069
+
+10.8588
+13.4795
+11.7858
+
+11.2066
+6.5704
+
+8.3599
+9.6109
+
+3.8598
+
+4.0618
+12.7966
+
+9.0906
+
+10.4700
+15.4904
+
+13.4795
+
+14.7894
+19.8620
+
+6.5704
+
+10.6761
+12.2993
+
+3.8598
+
+5.5601
+18.1835
+
+0.00
+28.00
+
+34.28
+
+0.00
+23.33
+
+46.92
+
+0.00
+21.88
+
+28.70
+
+0.00
+28.75
+
+42.87
+
+Figure 2: Examples of adversarial frames generated in the untargeted attack by our method. The clean frames are show in the
+top row; the corresponding adversarial frames are in the middle row and the perturbations are show in the bottom row. The
+perturbations are visualized by re-scaling them into the range of 0-255.
+
+turbations to the range of 0-255, we visualize the adversarial
+perturbations in the third row. As can be seen, the generated
+adversarial perturbations are basically quite sparse and most
+of them are focused on the foreground of the key frames.
+
+Conclusion
+
+In this paper, we proposed a heuristic black-box adversar-
+ial attack algorithm for video recognition models. To reduce
+query numbers and improve attack efﬁciency, our method
+explores the sparsity of adversarial perturbations in both
+temporal and spatial domains. Our algorithm is adaptive
+to multiple target models and video datasets and enjoys
+global sparsity and query efﬁciency improvement. More-
+over, the experimental results demonstrate that video recog-
+nition models are vulnerable to adversarial attack, and our
+algorithm achieves small human-imperceptible perturbation
+using fewer queries. The most pertinent area of future work
+is to further investigate the black-box attack for the targeted
+
+attack using fewer queries.
+
+Acknowledgments
+
+The work was funded by the National Research Foun-
+dation, Prime Ministers Ofﬁce, Singapore under
+its
+IRC@Singapore Funding Initiative, and the NSFC Projects
+(No.61806109). The work was also funded by the Jilin
+Provincial Key Laboratory of Big Data Intelligent Comput-
+ing (20180622002JC), the Education Department of Jilin
+Province (JJKH20180145KJ), and the startup grant of the
+Jilin University, the Bioknow MedAI Institute (BMCPP-
+2018-001), the High Performance Computing Center of Jilin
+University, and the Fundamental Research Funds for the
+Central Universities, JLU.
+
+References
+
+[Bradski 2000] Bradski, G. 2000. The OpenCV Library. Dr.
+Dobb’s Journal of Software Tools.
+
+[Brendel, Rauber, and Bethge 2017] Brendel, W.; Rauber, J.;
+and Bethge, M. 2017. Decision-based adversarial attacks:
+Reliable attacks against black-box machine learning models.
+arXiv preprint arXiv:1712.04248.
+[Carlini and Wagner 2017] Carlini, N., and Wagner, D. 2017.
+Towards evaluating the robustness of neural networks.
+In
+2017 IEEE Symposium on Security and Privacy (SP), 39–
+57. IEEE.
+[Chen et al. 2017] Chen, P.-Y.; Zhang, H.; Sharma, Y.; Yi, J.;
+and Hsieh, C.-J. 2017. Zoo: Zeroth order optimization based
+black-box attacks to deep neural networks without training
+substitute models. In Proceedings of the 10th ACM Work-
+shop on Artiﬁcial Intelligence and Security, 15–26. ACM.
+[Cheng et al. 2018] Cheng, M.; Le, T.; Chen, P.-Y.; Yi, J.;
+Zhang, H.; and Hsieh, C.-J. 2018. Query-efﬁcient hard-label
+black-box attack: An optimization-based approach. arXiv
+preprint arXiv:1807.04457.
+[Donahue et al. ] Donahue, J.; Anne Hendricks, L.; Guadar-
+rama, S.; Rohrbach, M.; Venugopalan, S.; Saenko, K.; and
+Darrell, T. Long-term recurrent convolutional networks for
+visual recognition and description. In Proceedings of CVPR.
+[Dong et al. 2018] Dong, Y.; Liao, F.; Pang, T.; Su, H.; Zhu,
+J.; Hu, X.; and Li, J. 2018. Boosting adversarial attacks with
+momentum. In Proceedings of CVPR.
+[Goodfellow, Shlens, and Szegedy 2014] Goodfellow, I. J.;
+Shlens, J.; and Szegedy, C. 2014. Explaining and harnessing
+adversarial examples. arXiv preprint arXiv:1412.6572.
+[Goodfellow, Shlens, and Szegedy 2015] Goodfellow, I. J.;
+Shlens, J.; and Szegedy, C. 2015. Explaining and harnessing
+adversarial examples. CoRR abs/1412.6572.
+[Hara, Kataoka, and Satoh 2018] Hara, K.; Kataoka, H.; and
+Satoh, Y. 2018. Can spatiotemporal 3d cnns retrace the
+history of 2d cnns and imagenet? In Proceedings of CVPR.
+[Hou and Zhang 2007] Hou, X., and Zhang, L.
+2007.
+Saliency detection: A spectral residual approach.
+In Pro-
+ceedings of CVPR.
+[Ilyas et al. 2018] Ilyas, A.; Engstrom, L.; Athalye, A.; and
+Lin, J. 2018. Black-box adversarial attacks with limited
+queries and information. arXiv preprint arXiv:1804.08598.
+[Inkawhich et al. 2019] Inkawhich, N.; Inkawhich, M.; Li,
+H.; and Chen, Y. 2019. Adversarial attacks for optical ﬂow-
+based action recognition classiﬁers.
+[Kuehne et al. 2011] Kuehne, H.; Jhuang, H.; Garrote, E.;
+Poggio, T.; and Serre, T. 2011. HMDB: a large video
+database for human motion recognition. In Proceedings of
+ICCV.
+[Kurakin, Goodfellow, and Bengio 2016] Kurakin,
+A.;
+Goodfellow, I.; and Bengio, S. 2016. Adversarial examples
+in the physical world. arXiv preprint arXiv:1607.02533.
+[Kurakin, Goodfellow, and Bengio 2017] Kurakin,
+A.;
+Goodfellow, I. J.; and Bengio, S.
+2017. Adversarial
+machine learning at scale. CoRR abs/1611.01236.
+[Li et al. 2018] Li, S.; Neupane, A.; Paul, S.; Song, C.; Kr-
+ishnamurthy, S. V.; Roy-Chowdhury, A. K.; and Swami, A.
+2018. Stealthy adversarial perturbations against real-time
+video classiﬁcation systems. CoRR abs/1807.00458.
+
+[Liu et al. 2016] Liu, Y.; Chen, X.; Liu, C.; and Song, D.
+2016. Delving into transferable adversarial examples and
+black-box attacks. arXiv preprint arXiv:1611.02770.
+[Moosavi-Dezfooli et al. 2017] Moosavi-Dezfooli,
+S.-M.;
+Fawzi, A.; Fawzi, O.; and Frossard, P. 2017. Universal
+adversarial perturbations. In Proceedings of CVPR.
+[Moosavi-Dezfooli, Fawzi, and Frossard 2016] Moosavi-
+Dezfooli, S.-M.; Fawzi, A.; and Frossard, P.
+2016.
+Deepfool: a simple and accurate method to fool deep neural
+networks. In Proceedings of CVPR.
+[Papernot et al. 2016] Papernot, N.; McDaniel, P.; Jha, S.;
+Fredrikson, M.; Celik, Z. B.; and Swami, A. 2016. The
+limitations of deep learning in adversarial settings. In 2016
+IEEE European Symposium on Security and Privacy (Eu-
+roS&P), 372–387. IEEE.
+[Papernot et al. 2017] Papernot, N.; McDaniel, P.; Goodfel-
+low, I.; Jha, S.; Celik, Z. B.; and Swami, A. 2017. Practical
+black-box attacks against machine learning. In Proceedings
+of the 2017 ACM on Asia conference on computer and com-
+munications security, 506–519. ACM.
+[Peng, Zhao, and Zhang 2018] Peng, Y.; Zhao, Y.; and
+Zhang, J. 2018. Two-stream collaborative learning with
+spatial-temporal attention for video classiﬁcation.
+IEEE
+Transactions on Circuits and Systems for Video Technology
+29(3):773–786.
+[Sarkar et al. 2017] Sarkar, S.; Bansal, A.; Mahbub, U.; and
+Chellappa, R. 2017. Upset and angri: Breaking high perfor-
+mance image classiﬁers. arXiv preprint arXiv:1707.01159.
+[Su et al. 2009] Su, D.; Su, Z.; Wang, J.; Yang, S.; and Ma, J.
+2009. Ucf-101, a novel omi/htra2 inhibitor, protects against
+cerebral ischemia/reperfusion injury in rats. The Anatomical
+Record: Advances in Integrative Anatomy and Evolutionary
+Biology: Advances in Integrative Anatomy and Evolutionary
+Biology 292(6):854–861.
+[Su, Vargas, and Sakurai 2019] Su, J.; Vargas, D. V.; and
+Sakurai, K. 2019. One pixel attack for fooling deep neural
+networks. IEEE Transactions on Evolutionary Computation.
+[Sultani, Chen, and Shah 2018] Sultani, W.; Chen, C.; and
+Shah, M. 2018. Real-world anomaly detection in surveil-
+lance videos. In Proceedings of CVPR.
+[Szegedy et al. 2013] Szegedy, C.; Zaremba, W.; Sutskever,
+I.; Bruna, J.; Erhan, D.; Goodfellow, I.; and Fergus, R. 2013.
+Intriguing properties of neural networks. arXiv preprint
+arXiv:1312.6199.
+[Szegedy et al. 2016] Szegedy, C.; Vanhoucke, V.; Ioffe, S.;
+Shlens, J.; and Wojna, Z. 2016. Rethinking the inception
+architecture for computer vision. In Proceedings of CVPR,
+2818–2826.
+[Tu et al. 2018] Tu, C.-C.; Ting, P.; Chen, P.-Y.; Liu, S.;
+Zhang, H.; Yi, J.; Hsieh, C.-J.; and Cheng, S.-M. 2018.
+Autozoom: Autoencoder-based zeroth order optimization
+method for attacking black-box neural networks.
+arXiv
+preprint arXiv:1805.11770.
+[Uesato et al. 2018] Uesato, J.; O’Donoghue, B.; Oord, A.
+v. d.; and Kohli, P. 2018. Adversarial risk and the dan-
+
+gers of evaluating against weak attacks.
+arXiv:1802.05666.
+[Wei, Zhu, and Su 2019] Wei, X.; Zhu, J.; and Su, H.
+2019. Sparse adversarial perturbations for videos. CoRR
+abs/1803.02536.
+
+arXiv preprint
+
+

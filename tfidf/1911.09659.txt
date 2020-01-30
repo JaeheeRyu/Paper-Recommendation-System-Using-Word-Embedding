@@ -1,0 +1,882 @@
+AdaFilter: Adaptive Filter Fine-tuning for Deep Transfer Learning
+
+Yunhui Guo † Yandong Li ‡ Liqiang Wang‡ Tajana Rosing †
+
+University of California, San Diego, CA † University of Central Florida, Orlando, FL ‡
+yug185@eng.ucsd.edu, lyndon.leeseu@outlook.com, lwang@cs.ucf.edu, tajana@ucsd.edu
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+9
+5
+6
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+There is an increasing number of pre-trained deep neural net-
+work models. However, it is still unclear how to effectively
+use these models for a new task. Transfer learning, which
+aims to transfer knowledge from source tasks to a target
+task, is an effective solution to this problem. Fine-tuning is a
+popular transfer learning technique for deep neural networks
+where a few rounds of training are applied to the parameters
+of a pre-trained model to adapt them to a new task. Despite
+its popularity, in this paper we show that ﬁne-tuning suffers
+from several drawbacks. We propose an adaptive ﬁne-tuning
+approach, called AdaFilter, which selects only a part of the
+convolutional ﬁlters in the pre-trained model to optimize on
+a per-example basis. We use a recurrent gated network to se-
+lectively ﬁne-tune convolutional ﬁlters based on the activa-
+tions of the previous layer. We experiment with 7 public im-
+age classiﬁcation datasets and the results show that AdaFil-
+ter can reduce the average classiﬁcation error of the standard
+ﬁne-tuning by 2.54%.
+
+Introduction
+
+Inductive transfer learning (Pan, Yang, and others 2010) is
+an important research topic in traditional machine learning
+that attempts to develop algorithms to transfer knowledge
+from source tasks to enhance learning in a related target
+task. While transfer learning for traditional machine learn-
+ing algorithms has been extensively studied (Pan, Yang, and
+others 2010), how to effectively conduct transfer learning
+using deep neural networks is still not fully exploited. The
+widely adopted approach, called ﬁne-tuning, is to continue
+the training of a pre-trained model on a given target task.
+Fine-tuning assumes the source and target tasks are related.
+Thus, we would expect the pre-trained parameters from the
+source task to be close to the optimal parameters for the tar-
+get target.
+In the standard ﬁne-tuning, we either optimize all the pre-
+trained parameters or freeze certain layers (often the initial
+layers) of the pre-trained model and optimize the rest of
+the layers towards the target task. This widely adopted ap-
+proach has two potential issues. First, the implicit assump-
+tion behind ﬁne-tuning is that all the images in the target
+
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+dataset should follow the same ﬁne-tuning policy (i.e., all
+the images should ﬁne-tune all the parameters of the pre-
+trained model), which may not be true in general. Recent
+work (Shazeer et al. 2017) points out that activating parts
+of the network on a per-example basis can better capture the
+diversity of the dataset to provide better classiﬁcation perfor-
+mance. In transfer learning, some classes in the target dataset
+may have overlap with the source task, so directly reusing
+the pre-trained convolutional ﬁlters without ﬁne-tuning can
+beneﬁt the learning process due to the knowledge transfer.
+The second issue is that deep neural networks often have
+millions of parameters, so when the pre-trained model is be-
+ing applied on a relatively small target dataset, there is a
+danger of overﬁtting since the model is overparameterized
+for the target dataset. Solving either of the issues is of great
+practical importance due to the wide use of ﬁne-tuning for a
+variety of applications.
+In this paper, we propose a deep transfer learning model,
+called AdaFilter, which automatically selects reusable ﬁlters
+from the pre-trained model on a per-example basis. This is
+achieved by using a recurrent neural network (RNN) gate
+(Graves, Mohamed, and Hinton 2013), which is conditioned
+on the activations of the previous layer, to layerwisely de-
+cide which ﬁlter should be reused and which ﬁlter should be
+further ﬁne-tuned for each example in the target dataset. In
+AdaFilter, different examples in the target dataset can ﬁne-
+tune or reuse different convolutional ﬁlters in the pre-trained
+model. The adaptive ﬁne-tuning scheme implicitly consid-
+ers the similarity between the source task and the target task.
+Moreover, AdaFilter mitigates the overﬁtting issue by reduc-
+ing the number of trainable parameters for each example in
+the target dataset via reusing pre-trained ﬁlters. We exper-
+iment on 7 publicly available image classiﬁcation datasets.
+The results show that the proposed AdaFilter outperforms
+ﬁne-tuning on all the datasets and achieves much faster con-
+vergence speed.
+The contributions of this paper can be summarized as fol-
+lows,
+• We propose AdaFilter, a deep transfer learning algo-
+rithm which aims to improve the performance of the
+widely used ﬁne-tuning method. We propose ﬁlter selec-
+tion, layer-wise recurrent gated network and gated batch
+
+ 
+ 
+ 
+ 
+ 
+ 
+normalization techniques to allow different images in the
+target dataset to ﬁne-tune different convolutional ﬁlters in
+the pre-trained model.
+• We experiment with 7 publicly available datasets and the
+results show that the proposed method can reduce the av-
+erage classiﬁcation error by 2.54% compared with the
+standard ﬁne-tuning.
+• We also show that AdaFilter can consistently perform bet-
+ter than the standard ﬁne-tuning during the training pro-
+cess due to more efﬁcient knowledge transfer.
+
+Related Work
+
+Transfer learning addresses the problem of how to transfer
+the knowledge from source tasks to a target task (Pan, Yang,
+and others 2010). It is closely related to life-long learn-
+ing (Parisi et al. 2019), multi-domain learning (Guo et al.
+2019) and multi-task learning (Ruder 2017). Transfer learn-
+ing has achieved great success in a variety of areas, such
+as computer vision (Raina et al. 2007), recommender sys-
+tems (Pan, Yang, and others 2010) and natural language pro-
+cessing (Min, Seo, and Hajishirzi 2017). Traditional transfer
+learning approaches include subspace alignment (Gong et
+al. 2012), instance weighting (Dud´ık, Phillips, and Schapire
+2006) and model adaptation (Duan et al. 2009).
+Recently, a slew of works (Kumar et al. 2018; Ge and Yu
+2017; Li et al. 2018; 2019) are focusing on transfer learn-
+ing with deep neural networks. The most widely used ap-
+proach, called ﬁne-tuning, is to slightly adjust the param-
+eters of a pre-trained model to allow knowledge transfer
+from the source task to the target task. Commonly used
+ﬁne-tuning strategies include ﬁne-tuning all the pre-trained
+parameters and ﬁne-tuning the last few layers (Long et al.
+2015). In (Yosinski et al. 2014), the authors conduct exten-
+sive experiments to investigate the transferability of the fea-
+tures learned by deep neural networks. They showed that
+transferring features is better than random features even if
+the target task is distant from the source task. Kornblith
+et al. (Kornblith, Shlens, and Le 2018) studied the prob-
+lem that whether better ImageNet models transfer better.
+Howard et al. (Howard and Ruder 2018) extended the ﬁne-
+tuning method to natural language processing (NLP) tasks
+and achieved the state-of-the-art results on six NLP tasks.
+In (Ge and Yu 2017), the authors proposed a selective joint
+ﬁne-tuning scheme for improving the performance of deep
+learning tasks with insufﬁcient training data. In order to get
+the parameters of the ﬁne-tuned model close to the original
+pre-trained model, (Li, Grandvalet, and Davoine 2018) ex-
+plicitly added regularization terms to the loss function.
+The proposed AdaFilter is complementary to previous
+works. For example, the works that are based on ﬁne-
+tuning can utilize AdaFilter to further improve the results. In
+AdaFilter, we allow different examples in the target dataset
+to ﬁne-tune different convolutional ﬁlters in the pre-trained
+model. The adaptive ﬁne-tuning scheme takes the similarity
+between the source task and the target task into considera-
+tion. The examples in the target dataset which are similar to
+the source task can reuse more pre-trained ﬁlters to achieve
+better knowledge transfer.
+
+AdaFilter
+
+In this work, we propose a deep transfer learning method
+which ﬁnds the convolutional ﬁlters in a pre-trained model
+that are reusable for each example in the target dataset. Fig-
+ure 1 shows the overview of the proposed approach. We ﬁrst
+use a ﬁlter selection method to achieve per-example ﬁne-
+tuning scheme. We therefore leverage a recurrent gated net-
+work which is conditioned on the activations of the previous
+layer to layerwisely decide the ﬁne-tuning policy for each
+example. Finally, we propose gated batch normalization to
+consider the different statistics of the output channels pro-
+duced by the pre-trained layer and the ﬁne-tuned layer.
+To this end, we ﬁrst introduce the ﬁlter selection method
+in Sec. 3.1. Then we introduce our recurrent gated network
+in Sec. 3.2. Finally we present the proposed gated batch nor-
+malization method in Sec. 3.3. In Sec. 3.4, we discuss how
+the proposed method can achieve better performance by mit-
+igating the issues of the standard ﬁne-tuning.
+
+Filter Selection
+
+In convolutional neural network (CNN), convolutional ﬁl-
+ters are used for detecting the presence of speciﬁc features
+or patterns in the original images. The ﬁlters in the initial
+layers of CNN are used for detecting low level features such
+as edges or textures while the ﬁlters at the end of the net-
+work are used for detecting shapes or objects (Zeiler and
+Fergus 2014). When convolutional neural networks are used
+for transfer learning, the pre-trained ﬁlters can be reused to
+detect similar patterns on the images in the target dataset.
+For those images in the target dataset that are similar to the
+images in the source dataset, the pre-trained ﬁlters should
+not be ﬁne-tuned to prevent from being destructed.
+The proposed ﬁlter selection method allows different im-
+ages in the target dataset to ﬁne-tune different pre-trained
+convolutional ﬁlters. Consider the i-th layer in a con-
+volutional neural network with input feature map xi ∈
+Rni×wi×hi , where ni the number of input channels, wi is the
+width of the feature map and hi is the height of the feature
+map. Given xi , the convolutional ﬁlters in the layer i pro-
+duce an output xi+1 ∈ Rni+1×wi+1×hi+1 . This is achieved
+by applying ni+1 convolutional ﬁlter F ∈ Rni×k×k on the
+input feature map. Each ﬁlter F ∈ Rni×k×k is applied on xi
+to generate one channel of the output. All the ni+1 ﬁlters in
+the i-th convolutional layer can be stacked together as a 4D
+tensor.
+We denote the 4D convolutional ﬁlters in the i-th layer
+as Fi . Given xi ∈ Rni×wi×hi , Fi (xi ) is the output xi+1 ∈
+Rni+1×wi+1×hi+1 . To allow different images to ﬁne-tune dif-
+ferent ﬁlters, we initialize a new 4D convolutional ﬁlter Si
+from Fi and freeze Si during training. We use a binary vector
+Gi (xi ) ∈ {0, 1}ni+1 , called the ﬁne-tuning policy, which is
+conditioned on the input feature map xi to decide which ﬁl-
+ters should be reused and which ﬁlters should be ﬁne-tuned.
+With Gi (xi ), the output of the layer i can be calculated as,
+
+xi+1 = Gi (xi ) ◦ Fi (xi ) + (1 − Gi (xi )) ◦ Si (xi )
+
+(1)
+where ◦ is a Hadamard product. Each element of
+Gi (xi ) ∈ {0, 1}ni+1 is multiplied with the correspond-
+
+Figure 1: The overview of AdaFilter for deep transfer learning. Layerwise recurrent gated network (the middle row) decides
+how to select the convolutional ﬁlters from the ﬁne-tuned layer (the ﬁrst row) and the pre-trained layer (the last row) conditioned
+on activations of the previous layer. Note that the RNN gate is shared across all the layers.
+
+ing channel of Fi (xi ) ∈ Rni+1×wi+1×hi+1 and Si (xi ) ∈
+
+Rni+1×wi+1×hi+1 . Essentially, the ﬁne-tuning policy Gi (xi )
+selects each channel of xi+1 either from the output produced
+by the pre-trained layer Si (if the corresponding element is
+0) or the ﬁne-tuned layer Fi (if the corresponding element is
+1). Since Gi (xi ) is conditioned on xi , different examples in
+the target dataset can ﬁne-tune different pre-trained convo-
+lutional ﬁlters in each layer.
+
+Figure 2: The proposed recurrent gated network.
+
+Layerwise Recurrent Gated Network
+
+There are many possible choices to generate the ﬁne-tuning
+policy Gi (xi ). We adopt a recurrent gated network to both
+consider the dependencies between different layers and the
+model size. Figure 2 illustrates the proposed recurrent gated
+network which takes activations from the previous layer as
+input and discretizes the output of sigmoid function as the
+ﬁne-tuning policy.
+
+Recurrent neural network (RNN) (Graves, Mohamed, and
+Hinton 2013) is a powerful tool for modelling sequential
+data. The hidden states of the recurrent neural network can
+remember the correlations between different timestamps. In
+order to apply the RNN gate, we need to map the input fea-
+ture map xi into a low-dimensional space. We ﬁrst apply
+then use a 1 × 1 convolution which translates the 3D in-
+a global average pooling on the input feature map xi and
+put feature map into a one-dimensional embedding vector.
+The embedding vector is used as the input of the RNN gate
+to generate the layer-dependent ﬁne-tune policy Gi (xi ). We
+translate the output of the RNN gate using a linear layer fol-
+lowed by a sigmoid function. To obtain the binary ﬁne-tuned
+policy Gi (xi ), we use a hard threshold function to discretize
+the output of the sigmoid function.
+The discreteness of Gi (xi ) makes it hard to optimize the
+network using gradient-based algorithm. To mitigate this
+problem, we use the straight-through estimator which is a
+widely used technique for training binarized neural network
+in the ﬁeld of neural network quantization (Guo 2018). In
+the straight-through estimator, during the forward pass we
+discretize the sigmoid function using a threshold and during
+backward we compute the gradients with respect to the input
+of the sigmoid function,
+
+sigmoid(x) ≥ 0.5,
+0, otherwise
+
+(2)
+
+(cid:26)1,
+∂E
+∂xb
+
+=
+
+Forward: xb =
+
+Backward:
+
+∂E
+∂x
+
+ˆxj =
+
+(cid:112)V ar [X.j ]
+xj − E [X.j ]
+yj = γj ˆxj + βj
+
+(3)
+
+where E is the loss function. The adoption of the straight-
+through estimator allows us to back-propagate through the
+discrete output and directly use gradient-based algorithms to
+end-to-end optimize the network. In the experimental sec-
+tion, we use Long Short-Term Memory (LSTM) (Hochre-
+iter and Schmidhuber 1997) which has shown to be useful
+for different sequential tasks. We also compare the proposed
+recurrent gated network with a CNN-based gated network.
+The experimental results show that we can achieve higher
+classiﬁcation accuracy by explicitly modelling the cross-
+layer correlations.
+
+Gated Batch Normalization
+
+Batch normalization (BN) (Ioffe and Szegedy 2015) layer is
+designed to alleviate the issue of internal covariate shifting
+of training deep neural networks. In BN layer, we ﬁrst stan-
+dardize each feature in a mini-batch, then scale and shift the
+standardized feature. Let Xp,n denote a mini-batch of data,
+where p is the batch size and n is the feature dimension. BN
+layer normalizes a feature dimension xj as below,
+
+(4)
+The scale parameter γj and shift parameter βj are trained
+jointly with the network parameters. In convolutional neu-
+ral networks, we use BN layer after each convolutional layer
+and apply batch normalization over each channel (Ioffe and
+Szegedy 2015). Each channel has its own scale and shift pa-
+rameters.
+In the standard BN layer, we compute the mean and vari-
+ance of a particular channel across all the examples in the
+mini-batch. In AdaFilter, some examples in the mini-batch
+use the channel produced by the pre-trained ﬁlter while the
+others use the channel produced by the ﬁne-tuned ﬁlter. The
+statistics of the channels produced by the pre-trained ﬁlters
+and the ﬁne-tuned ﬁlters are different due to domain shift.
+To consider this fact, we maintain two BN layers, called
+Gated Batch normalization, which normalize the channels
+produced by the pre-trained ﬁlters and the ﬁne-tuned ﬁlters
+separately. To achieve this, we apply the ﬁne-tuning policy
+learned by the RNN gate on the output of the BN layers to
+select the normalized channels,
+
+xi+1 = Gi (xi ) ◦ BN1 (xi+1 ) + (1 − Gi (xi )) ◦ BN2 (xi+1 )
+
+(5)
+where BN1 and BN2 denote the BN layer for the pre-
+trained ﬁlters and the ﬁne-tuned ﬁlters separately and ◦ is
+the Hadamard product. In this way, we can deal with the
+case when the target dataset and the source dataset have very
+different domain distribution by adjusting the corresponding
+shift and scale parameters.
+
+Discussion
+
+The design of the proposed AdaFilter mitigates two issues
+brought by the standard ﬁne-tuning. Since the ﬁne-tuning
+policy is conditioned on the activations of the previous layer,
+
+Training Evaluation Classes
+
+Dataset
+
+Stanford Dogs
+UCF-101
+Aircraft
+Caltech 256 - 30
+Caltech 256 - 60
+MIT Indoors
+Omniglot
+
+12000
+7629
+3334
+7680
+15360
+5360
+19476
+
+8580
+1908
+3333
+5120
+5120
+1340
+6492
+
+120
+101
+100
+256
+256
+67
+1623
+
+Table 1: Datasets used to evaluate AdaFilter against other
+ﬁne-tuning baselines.
+
+different images can ﬁne-tune different pre-trained ﬁlters.
+The images in the target dataset which are similar to the
+source dataset can reuse more ﬁlters from the pre-trained
+model to allow better knowledge transfer. On the other hand,
+while the number of parameters compared with standard
+ﬁne-tuning increase by a factor of 2.2x with AdaFilter, the
+trainable parameters for a particular image are much fewer
+than the standard ﬁne-tuning due to the reuse of the pre-
+trained ﬁlters. This alleviates the issue of overﬁtting which
+is critical if the target dataset is much smaller than the source
+dataset.
+All the proposed modules are differentiable which allows
+us to use gradient-based algorithm to end-to-end optimize
+the network. During test time, the effective number of ﬁlters
+for a particular test example is equal to a standard ﬁne-tuned
+model, thus AdaFilter has similar test time compared with
+the standard ﬁne-tuning.
+
+Experimental Settings
+
+Datasets
+
+We compare the proposed AdaFilter method with other ﬁne-
+tuning and regularization methods on 7 public image clas-
+siﬁcation datasets coming from different domains: Stanford
+dogs (Khosla et al. 2011), Aircraft (Maji et al. 2013), MIT
+Indoors (Quattoni and Torralba 2009), UCF-101 (Bilen et
+al. 2016), Omniglot (Lake, Salakhutdinov, and Tenenbaum
+2015), Caltech 256 - 30 and Caltech 256 - 60 (Grifﬁn, Holub,
+and Perona 2007). For Caltech 256 - x (x = 30 or 60), there
+are x training examples for each class. The statistics of the
+datasets are listed in Table 1. Performance is measured by
+classiﬁcation accuracy on the evaluation set.
+
+Baselines
+
+We consider the following ﬁne-tuning variants and regular-
+ization techniques for ﬁne-tuning in the experiments,
+• Standard Fine-tuning: this is the standard ﬁne-tuning
+method which ﬁne-tunes all the parameters of the pre-
+trained model.
+• Fine-tuning half: only ﬁne-tune second half of the layers
+of the pre-trained model and freeze the ﬁrst half of layers.
+• Random Policy: use AdaFilter with a random ﬁne-tuning
+policy. This shows the effectiveness of ﬁne-tuning policy
+learned by the recurrent gated network.
+• L2-SP (Li, Grandvalet, and Davoine 2018): this is a
+recently proposed regularization method for ﬁne-tuning
+
+Method
+Standard Fine-tuning
+Fine-tuning half
+Random Policy
+L2-SP
+
+AdaFilter
+
+Stanford-Dogs UCF-101
+77.47%
+73.10%
+79.61%
+76.43%
+81.84%
+75.15%
+79.69%
+74.33%
+
+82.44%
+
+56.52%
+76.99% 55.41%
+
+Aircraft
+52.59%
+53.61%
+54.15%
+
+Caltech256-30 Caltech256-60 MIT Indoors Omniglot
+78.09%
+82.25%
+76.42%
+87.06%
+78.86%
+82.55%
+76.94%
+87.29%
+79.90%
+83.35%
+76.71%
+85.78%
+79.33%
+82.89%
+76.41%
+86.92%
+
+80.62%
+
+84.31%
+
+77.53%
+
+87.46%
+
+Table 2: The results of AdaFilter and all the baselines.
+
+which explicitly adds regularization terms in the loss
+function to encourage the ﬁne-tuned model to be similar
+to the pre-trained model.
+
+Pretrained Model
+
+To compare AdaFilter with each baseline. We use ResNet-
+50 which is pre-trained on ImageNet. The ResNet-50 starts
+with a convolutional layer followed by 16 blocks with resid-
+ual connection. Each block contains three convolutional lay-
+ers and are distributed into 4 macro blocks (i.e, [3, 4, 6, 3])
+with downsampling layers in between. The ResNet-50 ends
+with an average pooling layer followed by a fully connected
+layer. For a fair comparison with each baseline, we use the
+pre-trained model from Pytorch which has a classiﬁcation
+accuracy of 75.15% on ImageNet.
+
+Implementation Details
+
+Our implementation is based on Pytorch. All methods are
+trained on 2 NVIDIA Titan Xp GPUs. We use SGD with
+momentum as the optimizer. The initial learning rate is 0.01
+for the classiﬁcation network and the initial learning rate for
+the recurrent gated network is 0.1. The momentum rate is 0.9
+for both classiﬁcation network and recurrent gated network.
+The batch size is 64. We train the network with a total of
+110 epochs. The learning rate decays three times at the 30th,
+60th and 90th epoch respectively.
+
+Results and Analysis
+
+Quantitative Results
+
+AdaFilter vs Baselines We show the results of AdaFilter
+and all the baselines in Table 2. AdaFilter achieves the best
+results on 6 out of 7 datasets. It outperforms the standard
+ﬁne-tuning on all the datasets. Compared with the standard
+ﬁne-tuning, AdaFilter can reduce the classiﬁcation error by
+up to 5%. This validates our claim that by exploiting the
+idea of per-example ﬁlter ﬁne-tuning, we can greatly boost
+the performance of the standard ﬁne-tuning method by mit-
+igating its drawbacks. While ﬁne-tuning half of the layers
+generally performs better than the standard ﬁne-tuning, it
+still performs worse than AdaFilter since it still applies the
+same ﬁne-tuning policy for all the images which ignores the
+similarity between the target task and the source task.
+Compared with Random policy and L2-SP, AdaFilter ob-
+tains higher accuracy by learning optimal ﬁne-tuning policy
+for each image in the target dataset via the recurrent gated
+network. The results reveal that by carefully choosing dif-
+ferent ﬁne-tuning for different images in the target dataset,
+
+we can achieve better transfer learning results. With AdaFil-
+ter, we can automatically specialize the ﬁne-tuning policy
+for each test example which cannot be done manually due to
+the huge search space.
+Test accuracy curve We show the test accuracy curve on
+four benchmark datasets in Figure 3. We can clearly see
+that the proposed AdaFilter consistently achieves higher ac-
+curacy than the standard ﬁne-tune method across all the
+datasets. For example, after training for one epoch, AdaFil-
+ter reaches a test accuracy of 71.96% on the Stanford Dogs
+dataset while the standard ﬁne-tuning method only achieves
+54.69%. Similar behavior is also observed on other datasets.
+The fact that AdaFilter can reach the same accuracy level
+as standard ﬁne-tuning with much fewer epochs is of great
+practical importance since it can reduce the training time on
+new tasks.
+
+Qualitative Results
+
+Visualization of Policies
+
+In this section, we show the ﬁne-
+tuning policies learned by the recurrent gated network on
+Caltech256-30 and Caltech256-60 in Figure 4. The x-axis
+denotes the layers in the ResNet-50. The y-axis denotes the
+percentage of images in the evaluation set that use the ﬁne-
+tuned ﬁlters in the corresponding layer. As we can see, there
+is a strong tendency for images to use the pre-trained ﬁl-
+ters in the initial layers while ﬁne-tuning more ﬁlters at the
+higher layers of the network. This is intuitive since the ﬁl-
+ters in the initial layers can be reused on the target dataset to
+extract visual patterns (e.g., edges and corners). The higher
+layers are mostly task-speciﬁc which need to be adjusted fur-
+ther for the target task (Lee, Ekanadham, and Ng 2008). We
+also note that the policy distribution is varied across different
+datasets, this suggests that for different datasets it is prefer-
+able to design different ﬁne-tuning strategies.
+
+Ablation Study
+
+Gated BN vs Standard BN In this section, an ablation
+study is performed to demonstrate the effectiveness of the
+proposed gated batch normalization. We compare gated
+batch normalization (Gated BN) against the standard batch
+normalization (Standard BN). In Gated BN, we normalize
+the channels produced by the pre-trained ﬁlters and ﬁne-
+tuned ﬁlters separately as in Equation 5. In standard batch
+normalization, we use one batch normalization layer to nor-
+malize each channel across a mini-batch,
+
+(6)
+Table 3 shows the results of the Gated BN and the stan-
+dard BN on all the datasets. Clearly, Gated BN can achieve
+
+xi+1 = BN (xi+1 )
+
+Figure 3: The test accuracy curve of AdaFilter and the standard ﬁne-tuning on Stanford-Dogs, Caltech256-30, Caltech256-60
+and MIT Indoors.
+
+Figure 4: The visualization of ﬁne-tuning policies on Caltech256-30 and Caltech256-60.
+
+Dataset
+Gated BN
+Standard BN
+
+Stanford-Dogs Aircraft Omniglot UCF-101 MIT Indoors Caltech-30 Caltech-60
+82.44%
+55.41%
+87.46%
+76.99%
+77.53%
+80.06%
+84.31%
+82.02%
+54.33%
+87.27%
+76.02%
+77.01%
+79.84%
+83.84%
+
+Dataset
+RNN-based
+CNN-based
+
+Stanford-Dogs Aircraft Omniglot UCF-101 MIT Indoors Caltech-30 Caltech-60
+82.44%
+55.41%
+87.46%
+76.99%
+77.53%
+80.06%
+84.31%
+83.05%
+54.63%
+87.04%
+76.33%
+77.46%
+80.25%
+83.41%
+
+Table 3: Comparison of Gated BN and the standard BN
+
+higher accuracy by normalizing the channels produced by
+the pre-trained ﬁlters and ﬁne-tuned ﬁlters separately. This
+suggests that although we can reuse the pre-trained ﬁlters on
+the target dataset, it is still important to consider the differ-
+ence of the domain distributions between the target task and
+the source task.
+
+Recurrent Gated Network vs CNN-based Gated Net-
+
+work In this section, we perform an ablation study to show
+the effectiveness of the proposed recurrent gated network.
+We compare the recurrent gated network against a CNN-
+based policy network. The CNN-based policy network is
+based on ResNet-18 which receives images as input and pre-
+dicts the ﬁne-tuning policy for all the ﬁlters at once. In the
+CNN-based model, the input image is directly used as the
+input for the CNN. The output of the CNN is a list of fully
+connected layers (one for each output feature map in the
+original backbone network) followed by sigmoid activation
+function. We show the results of the recurrent gated network
+and CNN-based policy network in Table 4. Recurrent gated
+network performs better than the CNN-based policy network
+on most of the datasets by explicitly considering the depen-
+dency between layers. More importantly, predicting the pol-
+icy layerwisely and reusing the hidden states of the recurrent
+gated network can greatly reduce the number of parameters.
+
+Table 4: Comparison of recurrent gated network and a CNN-
+based policy network. The “RNN-based” means the recur-
+rent gated network.
+
+The lightweight design of the recurrent gated network is also
+faster to train than the CNN-based alternative.
+
+Conclusion
+
+In this paper, we propose a deep transfer learning method,
+called AdaFilter, which adaptively ﬁne-tunes the convolu-
+tional ﬁlters in a pre-trained model. With the proposed ﬁl-
+ter selection, recurrent gated network and gated batch nor-
+malization techniques, AdaFilter allows different images in
+the target dataset to ﬁne-tune different pre-trained ﬁlters to
+enable better knowledge transfer. We validate our methods
+on seven publicly available datasets and show that AdaFilter
+outperforms the standard ﬁne-tuning on all the datasets. The
+proposed method can also be extended to lifelong learning
+(Yoon et al. 2017) by modelling the tasks sequentially.
+
+Acknowledgment
+
+This work is supported in part by CRISP, one of six cen-
+ters in JUMP, an SRC program sponsored by DARPA. This
+work is also supported by NSF CHASE-CI #1730158, NSF
+#1704309 and Cyber Florida Collaborative Seed Award.
+
+Stanford-DogsCaltech256-30Caltech256-60MITIndoors0102030405060708090100Epoch65707580Test AccuracyAdaFilterFinetune0102030405060708090100Epoch707580Test AccuracyAdaFilterFinetune0102030405060708090100Epoch6570758085Test AccuracyAdaFilterFinetune0102030405060708090100Epoch657075Test AccuracyAdaFilterFinetuneReferences
+
+Bilen, H.; Fernando, B.; Gavves, E.; Vedaldi, A.; and Gould,
+S. 2016. Dynamic image networks for action recognition.
+In CVPR.
+Duan, L.; Tsang, I. W.; Xu, D.; and Maybank, S. J. 2009.
+Domain transfer SVM for video concept detection.
+In
+CVPR.
+Dud´ık, M.; Phillips, S. J.; and Schapire, R. E. 2006. Cor-
+recting sample selection bias in maximum entropy density
+estimation. In NIPS.
+Ge, W., and Yu, Y. 2017. Borrowing treasures from the
+wealthy: Deep transfer learning through selective joint ﬁne-
+tuning. In CVPR.
+Gong, B.; Shi, Y.; Sha, F.; and Grauman, K. 2012. Geodesic
+ﬂow kernel for unsupervised domain adaptation. In CVPR.
+Graves, A.; Mohamed, A.-r.; and Hinton, G. 2013. Speech
+recognition with deep recurrent neural networks. In Acous-
+tics, speech and signal processing (icassp), 2013 ieee inter-
+national conference on, 6645–6649. IEEE.
+Grifﬁn, G.; Holub, A.; and Perona, P. 2007. Caltech-256
+object category dataset.
+Guo, Y.; Li, Y.; Feris, R.; Wang, L.; and Rosing, T. 2019.
+Depthwise convolution is all you need for learning multiple
+visual domains. arXiv preprint arXiv:1902.00927.
+Guo, Y. 2018. A survey on methods and theories of quan-
+tized neural networks. arXiv preprint arXiv:1808.04752.
+Hochreiter, S., and Schmidhuber, J. 1997. Long short-term
+memory. Neural computation 9(8):1735–1780.
+Howard, J., and Ruder, S. 2018. Universal language model
+ﬁne-tuning for text classiﬁcation. In Proceedings of the 56th
+Annual Meeting of the Association for Computational Lin-
+guistics (Volume 1: Long Papers), volume 1, 328–339.
+Ioffe, S., and Szegedy, C. 2015. Batch normalization: Accel-
+erating deep network training by reducing internal covariate
+shift. arXiv preprint arXiv:1502.03167.
+Khosla, A.; Jayadevaprakash, N.; Yao, B.; and Fei-Fei, L.
+2011. Novel dataset for ﬁne-grained image categorization.
+In First Workshop on Fine-Grained Visual Categorization,
+IEEE Conference on Computer Vision and Pattern Recogni-
+tion.
+Kornblith, S.; Shlens, J.; and Le, Q. V.
+better imagenet models transfer better?
+arXiv:1805.08974.
+Kumar, A.; Sattigeri, P.; Wadhawan, K.; Karlinsky, L.; Feris,
+R. S.; Freeman, W. T.; and Wornell, G. 2018. Co-regularized
+alignment for unsupervised domain adaptation. In NIPS.
+Lake, B. M.; Salakhutdinov, R.; and Tenenbaum, J. B. 2015.
+Human-level concept learning through probabilistic pro-
+gram induction. Science 350(6266):1332–1338.
+Lee, H.; Ekanadham, C.; and Ng, A. Y. 2008. Sparse deep
+belief net model for visual area v2. In Advances in neural
+information processing systems, 873–880.
+Li, Z.; Wei, Y.; Zhang, Y.; and Yang, Q. 2018. Hierarchical
+attention transfer network for cross-domain sentiment clas-
+
+2018. Do
+arXiv preprint
+
+siﬁcation. In Thirty-Second AAAI Conference on Artiﬁcial
+Intelligence.
+Li, Z.; Li, X.; Wei, Y.; Bing, L.; Zhang, Y.; and Yang, Q.
+2019. Transferable end-to-end aspect-based sentiment anal-
+ysis with selective adversarial learning. In Proceedings of
+the 2019 Conference on Empirical Methods in Natural Lan-
+guage Processing and the 9th International Joint Confer-
+ence on Natural Language Processing (EMNLP-IJCNLP),
+4582–4592. Hong Kong, China: Association for Computa-
+tional Linguistics.
+Li, X.; Grandvalet, Y.; and Davoine, F. 2018. Explicit induc-
+tive bias for transfer learning with convolutional networks.
+In ICML.
+Long, M.; Cao, Y.; Wang, J.; and Jordan, M. I. 2015. Learn-
+ing transferable features with deep adaptation networks. In
+ICML.
+Maji, S.; Rahtu, E.; Kannala, J.; Blaschko, M.; and Vedaldi,
+A. 2013. Fine-grained visual classiﬁcation of aircraft. arXiv
+preprint arXiv:1306.5151.
+Min, S.; Seo, M.; and Hajishirzi, H. 2017. Question answer-
+ing through transfer learning from large ﬁne-grained super-
+vision data. arXiv preprint arXiv:1702.02171.
+Pan, S. J.; Yang, Q.; et al. 2010. A survey on transfer learn-
+ing. IEEE Transactions on knowledge and data engineering
+22(10):1345–1359.
+Parisi, G. I.; Kemker, R.; Part, J. L.; Kanan, C.; and Wermter,
+S. 2019. Continual lifelong learning with neural networks:
+A review. Neural Networks.
+Quattoni, A., and Torralba, A. 2009. Recognizing indoor
+scenes. In CVPR, 413–420. IEEE.
+Raina, R.; Battle, A.; Lee, H.; Packer, B.; and Ng, A. Y.
+2007. Self-taught learning: transfer learning from unlabeled
+data. In Proceedings of the 24th international conference on
+Machine learning, 759–766. ACM.
+Ruder, S. 2017. An overview of multi-task learning in deep
+neural networks. arXiv preprint arXiv:1706.05098.
+Shazeer, N.; Mirhoseini, A.; Maziarz, K.; Davis, A.; Le, Q.;
+Hinton, G.; and Dean, J. 2017. Outrageously large neu-
+ral networks: The sparsely-gated mixture-of-experts layer.
+arXiv preprint arXiv:1701.06538.
+Yoon, J.; Yang, E.; Lee, J.; and Hwang, S. J. 2017. Life-
+long learning with dynamically expandable networks. arXiv
+preprint arXiv:1708.01547.
+Yosinski, J.; Clune, J.; Bengio, Y.; and Lipson, H. 2014.
+How transferable are features in deep neural networks? In
+NIPS.
+Zeiler, M. D., and Fergus, R. 2014. Visualizing and under-
+standing convolutional networks.
+In European conference
+on computer vision, 818–833. Springer.
+
+

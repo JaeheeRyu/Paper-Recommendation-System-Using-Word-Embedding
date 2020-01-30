@@ -1,0 +1,760 @@
+T H E TA B OO T R A P : B EHAV IOURA L D E T E C T ION O F
+A DV E R SAR IA L SAM P L E S
+
+A PRE PR INT
+
+Ilia Shumailov∗
+Computer Laboratory
+University of Cambridge
+
+Yiren Zhao*
+Computer Laboratory
+University of Cambridge
+
+ilia.shumailov@cl.cam.ac.uk
+
+yiren.zhao@cl.cam.ac.uk
+
+Robert Mullins
+Computer Laboratory
+University of Cambridge
+
+Ross Anderson
+Computer Laboratory
+University of Cambridge
+
+robert.mullins@cl.cam.ac.uk
+
+ross.anderson@cl.cam.ac.uk
+
+November 22, 2019
+
+ABSTRACT
+
+Deep Neural Networks (DNNs) have become a powerful tool for a wide range of problems. Yet
+recent work has found an increasing variety of adversarial samples that can fool them. Most existing
+detection mechanisms against adversarial attacks impose signiﬁcant costs, either by using additional
+classiﬁers to spot adversarial samples, or by requiring the DNN to be restructured. In this paper,
+we introduce a novel defence. We train our DNN so that, as long as it is working as intended on
+the kind of inputs we expect, its behavior is constrained, in that some set of behaviors are taboo. If
+it is exposed to adversarial samples, they will often cause a taboo behavior, which we can detect.
+Taboos can be both subtle and diverse, so their choice can encode and hide information. It is a well-
+established design principle that the security of a system should not depend on the obscurity of its
+design, but on some variable (the key) which can differ between implementations and be changed
+as necessary. We discuss how taboos can be used to equip a classiﬁer with just such a key, and how
+to tune the keying mechanism to adversaries of various capabilities. We evaluate the performance
+of a prototype against a wide range of attacks and show how our simple defense can defend against
+cheap attacks at scale with zero run-time computation overhead, making it a suitable defense method
+for IoT devices.
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+5
+7
+3
+7
+0
+
+.
+
+1
+1
+8
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+1 Introduction
+
+Deep Neural Networks (DNNs) are being built into ever more systems. Applications such as vision [10], language
+processing [3] and fraud detection [20] are now using them. Some of these applications are starting to support safety-
+critical missions. Unfortunately, recent research has discovered that surprisingly small changes to inputs, such as
+images and sounds, can cause DNNs to misclassify. In the new ﬁeld of adversarial machine learning, attackers craft
+small perturbations that are not perceptible by humans but are effective at tricking DNNs. Such adversarial samples
+can pose a serious threat to systems that use machine learning techniques: examples range from tricking a voice or
+face recognition system to break into stolen smart phones [1], to changing road signs and street scenes so that human
+drivers will interpret them one way while autonomous cars or drones read them differently [4].
+
+Current adversarial sample detection has two main approaches. The ﬁrst is to train additional classiﬁers to distinguish
+between clean and adversarial samples [2, 15]. The second is to restructure or augment the original network topology
+[6]. These mechanisms detect a range of attacks, but are not available off-the-shelf and are not infallible. Both
+
+∗Equal contribution
+
+ 
+ 
+ 
+ 
+ 
+ 
+A PRE PR INT - NOVEMBER 2 2 , 2 0 1 9
+
+introduce extra design complexity and computational cost – which can be particularly difﬁcult for low-cost or energy-
+limited IoT devices. Low-cost attacks can be surprisingly portable [25], so expensive defense mechanisms would
+impose additional costs on a wide range of products.
+
+In this paper, we introduce a novel method of detecting adversarial samples, named the Taboo Trap. As before, we
+detect them by observing the classiﬁers’ behaviour. However, rather than learning the expected behaviour of a classiﬁer
+we wish to protect, and then trying to harden it against adversarial samples, we restrict its behaviour during training
+and detect the unexpected reactions that such samples cause.
+
+To set a Taboo Trap, we ﬁrst proﬁle the activation values and choose a transform function to apply to them so they can
+be limited to speciﬁc ranges. We then re-train the network to get one with the restricted activations we chose. Finally,
+we use a detection function that rings the alarm if any activation breaks a taboo by falling outside the expected ranges.
+In a simple implementation, the transform function can be simply clipping activation values, which adds almost zero
+computation overhead, and is effective at rejecting simple attacks.
+
+In this paper we make the following contributions:
+
+• We propose a conceptually different defense strategy, namely restricting DNN behaviour during training so
+as to detect adversarial inputs later;
+
+• We evaluate our proposed detection mechanism using a range of adversarial attacks and DNNs, demonstrating
+that it has a low run-time overhead;
+
+• We show that the changes made to the training process do not impair the convergence and performance of the
+tested networks.
+
+2 Related Work
+
+Szegedy et al. [22] ﬁrst pointed out that DNNs are vulnerable to adversarial samples and that, in many cases, humans
+cannot distinguish between clean and adversarial samples. That paper sparked off an arms race between adversarial
+attack and defense. Defense mechanisms come in a wide variety of ﬂavours. The earliest defense, adversarial training,
+was proposed by Szegedy et al.
+themselves; they noticed that, when they fed adversarial samples into the training
+process, the classiﬁer became more robust [22]. Szegedy et al. found however that adversarial samples often transfer
+between models, enabling black-box attacks where a sample trained on one model is used to attack another. Variations
+on this theme were then explored, Tramer et al. found simple attacks that defeat the basic, single-step, version of
+adversarial training. One type involves a random perturbation to escape local minima, followed by a linearisation
+step [23]. They proposed ensemble adversarial training in which a model is trained against adversarial samples
+generated on a variety of networks pre-trained from the same data. They also described gradient masking as a defense
+mechanism, noting that gradient-based attacks need to measure a gradient and making this hard to do accurately stops
+the attacks from working [23].
+
+The alternative defense approach is adversarial sample detection. Conceptually, such mechanisms are like intrusion
+detection systems; they provide situational awareness, which in turn can enable a ﬂexible defense. Metzen et al. were
+among the ﬁrst to study adversarial sample detection [17]. They augmented the original classiﬁer with an auxiliary
+network which they trained to classify the inputs as either clean or adversarial, and concluded that it could detect
+adversarial samples. Grosse et al. proposed two other approaches [6]. First, they found feasible to use statistical test
+to distinguish adversary from legitimate sample distribution data distribution; but such test was compute demanding in
+practice. Second, they found that instrumenting the network with an additional class designed for adversarial sample
+detection is able to work more efﬁciently. Meng and Chen focused on detecting adversarial samples using an additional
+classiﬁer [16] and designed the MagNet system that consists of a detector network and a reformer network. Lu et al.
+presented SafetyNet – another way of instrumenting a classiﬁer with an adversarial sample detector [15]. It replaces
+the last layers of the classiﬁer with a quantised ReLU activation function and uses an RBF-based SVM to classify
+the activation patterns. Li et al. invented another detection method based on observation of the last-layer outputs of
+convolutional neural networks [14]. They built a cascade classiﬁer to detect unexpected behaviours in this last layer.
+
+All of the above defences, however, have at least one of the following shortcomings. First, some require additional
+classiﬁers [14, 17], which means extra computation at runtime. Second, some require restructuring the original neural
+network [15, 16], which means extra design complexity and possible degradation of functionality. Our goal is to build a
+detection mechanism for IoT devices that requires no additional classiﬁers, does not impair the network’s performance
+in the absence of adversarial samples, and can detect them dependably with almost zero computational overhead.
+
+2
+
+A PRE PR INT - NOVEMBER 2 2 , 2 0 1 9
+
+3 Methodology
+
+3.1 The Taboo Trap
+
+The intuition behind the Taboo Trap is simple. We train the DNN to have a restricted set of behaviours on activations
+that are hidden from the attackers during training, and report any behaviour that later violates these restrictions as
+an adversarial sample. We ﬁrst proﬁle activation values for all samples (N ) on the training dataset across different
+layers (L), A ⊂ RN ×L×X×Y ×C . Each Al,n is a three-dimensional tensor which is a collection of feature maps,
+An,l ⊂ RX×Y ×C , where X , Y and C are the feature map’s width, height and number of channels respectively. To set
+a Taboo Trap, we need to deﬁne a transform function ft on all activations. During the training phase, we combine the
+output of the transform function, considering only a batch of data (B ):
+
+L = LSGD + λ
+
+B
+
+Xn=1
+
+ft (An )
+
+(1)
+
+λ is a hyper-parameter and LSGD is the loss from Stochastic Gradient Descent (SGD). In the third stage, the output of
+ft (An ) translates to the detection result:
+Detected = (cid:26)True,
+if ft (An ) ≥ 0
+False, otherwise
+To give an example, we study one of the many possible transform functions – the maximum percentile function. We
+will return to the discussion of what makes a good transform function, and how to diversify them, in Section 5 on
+page 5.
+Consider the activation values, for each layer l and sample n, we have An,l ⊂ RX×Y ×C , where X , Y and C are the
+feature map’s width, height and number of channels respectively. We use max(A) ⊂ RN ×L to represent the proﬁled
+maximum activations of N samples on L layers; effectively, max(An,l ) is a single value that is the maximum of An,l .
+The proﬁled maximum activation max(A[1:N ],l ) is a vector of length N , where N is the number of samples. We ﬁrst
+calculate a threshold value for a particular layer:
+
+(2)
+
+We design a function αl = g (max(A[1:N ],l )) = Percentilen (max(A[1:N ],l )), where Percentilen computes the nth
+percentile of the function input. We then perform ﬁne-tuning on the DNN with a regularizer that penalizes activations
+larger than the proﬁled thresholds. We then design the transform function (ft ) in the following form:
+
+αl = g (max(A[1:N ],l ))
+
+(3)
+
+ft (An ) =
+
+L−1
+
+Xl−1
+
+Yl−1
+
+Cl−1
+
+λ
+
+Xl=0
+
+Xx=0
+
+Xy=0
+
+Xc=0
+
+fp (An,l,x,y ,c , αl )
+
+(4)
+
+We deﬁne fp to be:
+
+fp (a, b) = (cid:26)1,
+if a ≥ b
+0, otherwise
+After ﬁnding the number of activations in each layer that are over-excited, we try to minimize their values using SGD.
+The regularizer provides an extra loss to the loss function of the neural network and λ is a hyperparameter used to
+control how hard we are penalizing the neural network for having large activation values. We call λ the alarm rate.
+
+(5)
+
+Finally, we use a detection function when we deploy the model. For any given input n, we check the activation values
+that the neural network produces at every layer. If any of them is greater than the threshold value for that particular
+layer, we recognize that particular input as adversarial.
+
+3.2 Training Strategy
+
+When training with Taboo Trap, we ﬁnd that it is necessary to gain some model diversity when re-training the models.
+Fine-tuning from a pretrained model can lead to a suboptimal outcome when balancing the cost from the taboo regu-
+larization term against the model cost. We summarize our training strategy in Algorithm 1, which effectively is about
+balancing the training hyperparameters.
+
+3
+
+A PRE PR INT - NOVEMBER 2 2 , 2 0 1 9
+
+Algorithm 1: Taboo Trap instrumented training process
+Data: λ = Alarm Rate, ǫ = Learning Rate, l = loss
+Result: WTC instrumented network with comparable performance
+Pick initial values for Alarm Rate and Learning Rate;
+while Detection Rate on test data > 0 do
+Retrain with λ and ǫ and collect loss l for a number of epochs.
+if l is not decreasing then
+Increase λ
+Decrease ǫ
+end
+end
+
+LeNet5 – MNIST M-CifarNet – CIFAR10 ResNet18 – CIFAR10
+
+Baseline
+
+FGSM
+
+PGD
+
+θ
+
+ǫ = 0.02
+ǫ = 0.04
+ǫ = 0.08
+ǫ = 0.1
+
+ǫ = 0.07
+ǫ = 0.5
+ǫ = 1.0
+
+A
+
+0.99
+
+0.9
+0.64
+0.12
+0.05
+
+0
+0
+0
+
+D
+
+0
+
+0.07
+0.27
+0.73
+0.88
+
+0.63
+0.64
+0.64
+
+AD
+
+A
+
+0.02
+
+0.89
+
+0.06
+0.21
+0.68
+0.84
+
+0.04
+0.02
+0.01
+0.01
+
+0
+0
+0
+
+0
+0
+0
+
+D
+
+0
+
+0.04
+0.06
+0.3
+0.64
+
+0.79
+0.79
+0.79
+
+AD
+
+0.02
+
+0.06
+0.09
+0.3
+0.72
+
+0
+0
+0
+
+A
+
+0.95
+
+0.6
+0.35
+0.08
+0.06
+
+0.01
+0.01
+0.01
+
+D
+
+0
+
+0.01
+0.16
+0.91
+0.92
+
+0.94
+0.94
+0.94
+
+AD
+
+0.02
+
+0.08
+0.18
+1
+1
+
+0.97
+0.9
+0.9
+
+DeepFool
+
+i = 1
+i = 3
+i = 5
+
+0.87
+0.07
+0.11
+0.45
+0.03
+0.03
+0.71
+0.02
+0.15
+0.1
+0.13
+0.21
+0.02
+0.03
+0.04
+0.4
+0.03
+0.46
+0
+0.14
+0.05
+0
+0.03
+0
+0.26
+0.05
+0.71
+Table 1: The max n-th percentile detector evaluation of LeNet5 (MNIST), M-CifarNet (CIFAR10), ResNet18 (CI-
+FAR10). A means the accuracy on generated adversarial samples, D means the detection rate on adversarial samples
+that have fooled the models and AD represents the detection rates on adversarial samples that are correctly classiﬁed
+by the models. Detection ratios on clean evaluation data (false positives) in all cases are controlled less than 1%.
+
+4 Evaluation
+
+4.1 Attacks, Networks and Datasets
+
+We consider the Fast Gradient Sign Method (FGSM) [5], Projected Gradient Descent [11] and Deepfool [18] attacks
+to evaluate the Taboo Trap. We used the implementations of the attacks above from Foolbox [21] and implemented
+our defense mechanism in Pytorch [19]. At the time of writing, FGSM is generally considered to be a weak adversary,
+PGD a slightly stronger one and DeepFool the strongest attack.
+
+We use LeNet5 [13] on MNIST [12]. The LeNet5 model has 431K parameters and classiﬁes MNIST hand-written
+digits with an accuracy of 99.17%. For the CIFAR10 [9] datasets, we use M-CifarNet [24] and ResNet18 [7] to perform
+classiﬁcations. The M-CifarNet classiﬁer [24] has 1.3M parameters and achieves 89.48% classiﬁcation accuracy, and
+our ResNet18 model achieves 93.83% accuracy on CIFAR10.
+
+4.2 Max nth Percentile Detector
+
+Table 1 shows the performance of the Taboo Trap against three different attackers. All of the networks have shown a
+good detection rate (D and AD) for FGSMs with a relatively high ǫ. Interestingly, LeNet5 on MNIST and ResNet18
+on CIFAR10 have shown good accuracy for small values of ǫ, whereas M-CifarNet have not. Both models have in
+common that they try to solve a rather complex task with a much smaller architecture capability. The Taboo Trap
+shows a relatively weak performance on a relatively strong attack (PGD) and a lot worse performance against a strong
+attack (DeepFool). Similar to FGSM, the performance of the detector was better in models with higher capacity for a
+given dataset.
+
+4
+
+A PRE PR INT - NOVEMBER 2 2 , 2 0 1 9
+
+To summarize, the nth percentile detector has shown relatively good detection rates against weak attackers with the
+rates decreasing as the attacks become stronger. Finally, the detector’s performance and adversarial recovery effect
+observed seems to be connected with the general capacity of the chosen DNN to solve a given task.
+
+FGSM with a relatively large epsilon value can be seen as a simple attack that is easy to execute at scale in practice.
+It is a single-step method and a large epsilon makes the adversarial samples transferable through different networks.
+Iterative methods, such as DeepFool and PGD with binary search, can break our defense. However, these attacks
+are usually performed with a strong assumption that attackers can iteratively optimize the adversarial samples, so
+detecting these expensive attacks is not the aim of our detection method. As we have demonstrated in our results,
+we can efﬁciently reject adversarial samples generated by cheap attacks with high detection ratios, especially on
+adversarial samples that have successfully fooled our models (the D measurement in Table 1 on the previous page).
+
+4.3 Efﬁciency Comparison
+
+As mentioned previously, we designed Taboo Trap with efﬁciency in mind, aiming at rejecting cheap attacks at scale.
+Table 2 shows the computational performance and also defense efﬁciency when compared to MagNet [16] and Safe-
+tyNet [15]. Since Taboo Trap with maximum percentile as a transfer function is only a value comparison in com-
+putation, it does not either introduce extra compute or extra parameters. Existing adversarial detection mechanisms
+have surprisingly large overheads, some of them even have the defense networks to be multiple times larger than the
+original classiﬁcation network. In the case of edge devices, when compute resources are limited and the running net-
+works are small, a large increase in compute and memory footprint caused by defense is infeasible. We realize Taboo
+Trap performs worse on DeepFool compared to other methods. However, we used a simple transfer function, a more
+advanced transfer function might aid detection ratios. Also, we highlight the purpose of designing Taboo Trap is to
+defeat simple attacks at scale and Deepfool as an iterative attacking method should not be considered as a cheap attack.
+Taboo Trap detects simple attack like single-step FGSM as well as other advanced detection methods (Table 2).
+
+Technique
+
+Taboo Trap
+
+MagNet [16]
+
+θ
+
+P1
+
+FGSM DeepFool New MACs
+
+as % New Params
+
+0.99
+
+1.0
+
+0.14
+
+1.0
+
+0
+
+190K
+
+0
+
+20
+
+0
+
+297
+
+SafetyNet [15]
+
+1 layer
+0.92
+0.82
+34.81M
+3622
+5,95M
+3 layers
+0.98
+0.92
+21.77M
+2265
+4.86M
+Table 2: LeNet5 has 961K multiply-accumulate operations (MACs) and 17.75K parameters without defenses. Safe-
+tyNet is trained on the DeepFool adversarial samples. Pi refers to the ith-percentile. FGSM ǫ = 0.8 is used. Overhead
+for MagNet is only calculated over the detector.
+
+5 Discussion
+
+In 1883, the cryptographer Auguste Kerckhoffs enunciated a design principle that has stood the test of time: a system
+should withstand enemy capture, and in particular it should remain secure if everything about it, except the value of
+a key, becomes public knowledge [8]. Here, we have studied the performance of using the nth maximum percentile
+as a simple transform function. This can be applied to any randomly chosen subset of the activation values, and gives
+plenty of opportunity to add the equivalent of a cryptographic key.
+
+In the grey-box setup, attackers might be aware of the deployment of the taboo trap classiﬁer but remain ignorant of the
+chosen transform function. In a white-box scenario, attackers might construct samples that trick the defence employed
+– they can try to feed in various inputs to ﬁgure out the transform function. The defence against white-box attacks is
+changing the key – for example, to combine a series of transform functions that work on different activation values or
+different ranges. That way, a vendor can produce two different versions of his product, one for the mass market and
+one for industrial use; an attacker who develops adversarial samples for the former will not be able to use them on the
+latter.
+
+So how do we choose good keys? We have experimented with a number of different transform functions and have
+observed them exhibiting a variety of defensive capabilities.
+
+To demonstrate that behavioral defense can work with different transform functions, Table 3 shows the defensive
+capabilities of LeNet5 (MNIST) trained with three different transform functions, f1 is the maximum 1st percentile
+([0 : α]), where the threshold α is different for each layer since it is per-layer proﬁling dependent. f2 is restricted to
+
+5
+
+A PRE PR INT - NOVEMBER 2 2 , 2 0 1 9
+
+Attack
+
+θ
+
+f1
+
+f2
+
+f3
+
+FGSM
+0.94
+0.97
+0.98
+PGD
+0.94
+0.92
+0.61
+DeepFool
+0.01
+0.12
+0.06
+Table 3: Taboo Trap on LeNet5 with three different transform functions: f1 and f3 on all layers; f2 on the ﬁrst.
+
+ǫ = 0.4
+ǫ = 0.07, i = 5
+i = 5
+
+(0 : 1] and applied only on the ﬁrst layer. f2 is restricted to [0 : 1], [2 : 3], [4 : 5] and applied on all layers. All of the
+networks were trained to have an accuracy of around 99% with a false positive rate of less than 1%. As can be seen
+in the table, the performance of different attacks on various keys differs from each other. This suggests that each of
+the attacks focuses on exploiting a particular layer within a particular range, and so a defender can choose different
+families of transform functions to block different adversaries.
+
+The diversity and heterogeneity of the potential defensive transform functions gives the classic solution to the white-
+box attack. They make defense unpredictable, and the defender can respond to both the expectation and the experience
+of attacks by changing a key. The key selects from among different transform functions and will also add non-
+determinism to grey-box attacks, where the transform functions are known but the parameters are not.
+
+We designed Taboo Trap for deployment on low-cost hardware where computation may be severely limited, for exam-
+ple by battery life. However, nothing stops the defender from using classiﬁers with Taboo Traps in conjunction with
+other strategies where the computation budget permits this. As our approach does not change the network structure
+or add any other additional components to the pipeline it is easily combined with other, more expensive, defensive
+systems like MagNet [2] or SafetyNet [15].
+
+6 Conclusion
+
+In this paper we presented the Taboo Trap, a radically new way to detect adversarial samples that is both simple and
+cheap. The run-time compute overhead of Taboo Trap is close to zero, with the only additional cost being a slight
+increase in the time taken to train the network. We evaluated our simple mechanism and showed that it performs well
+against a range of popular attacks. The simple nth percentile transfer function that we tested did not perform as well
+as more complex detection mechanisms such as MagNet but still provides a very useful tool in the defender’s armoury.
+
+In addition to simplicity and low cost, the Taboo Trap offers diversity in defence. It can be used with a wide variety of
+transfer functions, which perform much the same function that key material does in cryptographic systems: the security
+of a system need not reside in keeping the basic design secret, but in the secrecy of parameters that can be chosen at
+random for each implementation. This opens the prospect of extending defences against adversarial machine-learning
+attacks from black-box applications to grey-box and even white-box adversaries.
+
+Acknowledgements
+
+Partially supported with funds from Bosch-Forschungsstiftungim Stifterverband
+
+References
+
+[1] N. Carlini, P. Mishra, T. Vaidya, Y. Zhang, M. Sherr, C. Shields, D. Wagner, and W. Zhou. Hidden Voice
+Commands. In 25th USENIX Security Symposium (USENIX Security 16). USENIX Association, 2016.
+
+[2] N. Carlini and D. A. Wagner. Magnet and ”efﬁcient defenses against adversarial attacks” are not robust to
+adversarial examples. CoRR, abs/1711.08478, 2017.
+
+[3] R. Collobert and J. Weston. A uniﬁed architecture for natural language processing: Deep neural networks with
+multitask learning. In Proceedings of the 25th international conference on Machine learning, pages 160–167.
+ACM, 2008.
+
+[4] K. Eykholt, I. Evtimov, E. Fernandes, B. Li, A. Rahmati, C. Xiao, A. Prakash, T. Kohno, and D. Song. Robust
+Physical-World Attacks on Deep Learning Visual Classiﬁcation.
+In Proceedings of the IEEE Conference on
+Computer Vision and Pattern Recognition, pages 1625–1634, 2018.
+
+[5] I. J. Goodfellow, J. Shlens, and C. Szegedy. Explaining and harnessing adversarial examples.
+Conference on Learning Representations (ICLR), 2015.
+
+International
+
+6
+
+A PRE PR INT - NOVEMBER 2 2 , 2 0 1 9
+
+[6] K. Grosse, P. Manoharan, N. Papernot, M. Backes, and P. D. McDaniel. On the (statistical) detection of adver-
+sarial examples. CoRR, abs/1702.06280, 2017.
+
+[7] K. He, X. Zhang, S. Ren, and J. Sun. Deep residual learning for image recognition. In Proceedings of the IEEE
+conference on computer vision and pattern recognition, pages 770–778, 2016.
+
+[8] A. Kerckhoffs. La cryptographie militaire. Journal des sciences militaires, vol. IX, pages 161–191, 1883.
+
+[9] A. Krizhevsky, V. Nair, and G. Hinton. The CIFAR-10 dataset. 2014.
+
+[10] A. Krizhevsky, I. Sutskever, and G. E. Hinton. Imagenet classiﬁcation with deep convolutional neural networks.
+In Advances in neural information processing systems, pages 1097–1105, 2012.
+
+[11] A. Kurakin, I. Goodfellow, and S. Bengio. Adversarial examples in the physical world.
+arXiv:1607.02533, 2016.
+
+arXiv preprint
+
+[12] Y. LeCun, C. Cortes, and C. Burges. MNIST handwritten digit database. 2, 2010.
+
+[13] Y. LeCun et al. LeNet-5, convolutional neural networks. page 20, 2015.
+
+[14] X. Li and F. Li. Adversarial examples detection in deep networks with convolutional ﬁlter statistics. CoRR,
+abs/1612.07767, 2016.
+
+[15] J. Lu, T. Issaranon, and D. A. Forsyth. Safetynet: Detecting and rejecting adversarial examples robustly.
+
+[16] D. Meng and H. Chen. Magnet: A two-pronged defense against adversarial examples. In Proceedings of the
+2017 ACM SIGSAC Conference on Computer and Communications Security, CCS ’17, pages 135–147, New
+York, NY, USA, 2017. ACM.
+
+[17] J. H. Metzen, T. Genewein, V. Fischer, and B. Bischoff. On detecting adversarial perturbations. arXiv preprint
+arXiv:1702.04267, 2017.
+
+[18] S. Moosavi-Dezfooli, A. Fawzi, and P. Frossard. DeepFool: a simple and accurate method to fool deep neural
+networks. 2016.
+
+[19] A. Paszke, S. Gross, S. Chintala, G. Chanan, E. Yang, Z. DeVito, Z. Lin, A. Desmaison, L. Antiga, and A. Lerer.
+Automatic differentiation in pytorch. In NIPS-W, 2017.
+
+[20] R. Patidar, L. Sharma, et al. Credit card fraud detection using neural network. International Journal of Soft
+Computing and Engineering (IJSCE), 1(32-38), 2011.
+
+[21] J. Rauber, W. Brendel, and M. Bethge. Foolbox: a python toolbox to benchmark the robustness of machine
+learning models (2017). URL http://arxiv. org/abs/1707.04131, 2017.
+
+[22] C. Szegedy, W. Zaremba, I. Sutskever, J. Bruna, D. Erhan, I. J. Goodfellow, and R. Fergus. Intriguing properties
+of neural networks. CoRR, abs/1312.6199, 2013.
+
+[23] F. Tram `er, A. Kurakin, N. Papernot, I. Goodfellow, D. Boneh, and P. McDaniel. Ensemble adversarial training:
+Attacks and defenses. arXiv preprint arXiv:1705.07204, 2017.
+
+[24] Y. Zhao, X. Gao, R. Mullins, and C. Xu. Mayo: A framework for auto-generating hardware friendly deep neural
+networks. 2018.
+
+[25] Y. Zhao, I. Shumailov, R. Mullins, and R. Anderson. To compress or not to compress: Understanding the
+interactions between adversarial attacks and neural network compression. arXiv preprint arXiv:1810.00208,
+2018.
+
+7
+
+

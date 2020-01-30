@@ -1,0 +1,773 @@
+High-quality Instance-aware Semantic 3D Map Using RGB-D Camera
+
+Dinh-Cuong Hoang∗ , Todor Stoyanov∗ , and Achim J. Lilienthal∗
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+O
+
+R
+
+.
+
+s
+
+c
+
+[
+
+6
+v
+2
+8
+7
+0
+1
+
+.
+
+3
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract— We present a mapping system capable of con-
+structing detailed instance-level semantic models of room-sized
+indoor environments by means of an RGB-D camera. In this
+work, we integrate deep-learning based instance segmentation
+and classiﬁcation into a state of the art RGB-D SLAM system.
+We leverage the pipeline of ElasticFusion [1] as a backbone,
+and propose modiﬁcations of the registration cost function. The
+proposed objective function features a tunable weight for the
+appearance channel, which can be learned from data. The
+resulting system is capable of producing accurate semantic
+maps of room-sized environments, as well as reconstructing
+highly detailed object-level models. The developed method has
+been veriﬁed through experimental validation on the TUM
+RGB-D SLAM benchmark and the YCB video dataset. Our
+results conﬁrmed that the proposed system performs favorably
+in terms of trajectory estimation, surface reconstruction, and
+segmentation quality in comparison to other state-of-the-art
+systems.
+
+I . IN TRODUC T ION
+
+With the advent of 3D measurement devices using struc-
+tured light sensing such as affordable RGB-D cameras like
+the ASUS Xtion Pro Live or Microsoft’s Kinect, research on
+SLAM (Simultaneous Localization and Mapping) has made
+giant strides in development [1], [2], [3]. These approaches
+achieve dense surface reconstruction of complex indoor
+scenes while maintaining real-time performance through
+implementations on highly parallelized hardware. Beyond
+classical SLAM systems which solely provide a purely
+geometric map, the idea of a system that generates a dense
+map in which object instances are semantically annotated
+has attracted substantial interest in the research community
+[4], [5], [6], [7], [8]. An instance-aware semantic 3D map is
+useful for enabling more context-aware and more intelligent
+robot behaviors.
+In this study, we propose a 3D mapping system to produce
+highly accurate object-aware semantic scene reconstruction.
+Our work beneﬁts from incorporating state of the art RGB-
+D SLAM and deep-learning-based instance segmentation
+techniques [1], [9]. We develop a CNN architecture beyond
+the original Mask R-CNN to input RGB image and output an
+adaptive weight for the cost function used in the sensor pose
+estimation process. In contrast to existing approaches that
+update the probabilities for all elements (surfels or voxels)
+in the 3D map, we reduce the space complexity by a more
+efﬁcient strategy based on instance labels. In addition to the
+highly accurate semantic scene reconstruction, we correct
+misclassiﬁed regions using two proposed criteria which rely
+on location information and pixel-wise probability of the
+
+*Centre for Applied Autonomous Sensor Systems (AASS); Orebro Uni-
+versity.
+
+Fig. 1: An instance-aware semantic 3D map of our ofﬁce
+produced by the proposed mapping system.
+
+class. We evaluate the performance of our system on the
+TUM RGB-SLAM benchmark and the YCB video dataset
+[10] and show that our system beneﬁts greatly from the use
+of the proposed joint cost function with adaptive weights.
+The developed system performs on par with the state of the
+art in terms of camera trajectory estimation while generating
+accurate object
+instance models. We also show that our
+approach leads to an improvement in the 2D instance labeling
+over baseline single frame predictions.
+
+I I . RELATED WORK
+A. Registration of RGB-D Images
+A large number of registration algorithms have been
+proposed in the context of RGB-D Tracking and Mapping
+(TAM) [1], [2], [3], [11], [12]. Feature-based approaches
+estimate the sensor pose by only considering informative
+and characteristic points known as key points [11], [12].
+Alternatively, dense geometric tracking approaches, such as
+KinectFusion [2], typically apply an ICP [13] variant to
+directly register the full depth image to an online recon-
+structed volumetric model. The original KinectFusion algo-
+rithm uses a Truncated Signed Distance Function (TSDF)
+[14] for model representation and point-to-plane ICP [13] for
+alignment. Several alternatives to this choice of algorithms
+have been proposed [15], [16], [17], which are expected to
+perform better in regions where the point-to-plane distance
+is ill-deﬁned.
+Using only depth data,
+tracking failure can occur in
+situations where the amount of characteristic features in the
+depth map is low. Steinbrucker et al. [18] introduced an
+energy minimization approach for RGB-D image registration
+that relies on color information instead. In comparison with
+geometric ICP, the authors reported that their method is more
+accurate in the regime of small camera motions. Whelan et
+
+ 
+ 
+ 
+ 
+ 
+ 
+al. [19] combined the color and depth information in the
+cost function so that all given information is used. They
+demonstrated that this combination increases the robustness
+of camera tracking across a variety of environments. This
+idea was further used in ElasticFusion [1] which fuses
+measurements and uses a surfel structure instead of volu-
+metric one for reconstruction. ElasticFusion demonstrates the
+capability to produce globally consistent reconstructions in
+real-time without the use of post-processing steps. Similarly
+to Elastic Fusion, our approach also integrates both geometric
+and photometric cues for camera tracking.
+
+B. Semantic Mapping
+Fusing semantic along with geometry information within a
+3D reconstructed map is a promising approach to enable in-
+telligent systems to better understand a 3D scene. A number
+of semantic mapping systems have been developed [6], [20],
+[21]. Hermans et al. [20] utilize Random Decision Forests to
+achieve semantic pixel-wise image labeling and fuse them in
+a classic Bayesian framework. Previous work by McCormac
+et al. [6] aimed towards a useful semantic 3D map by
+combining the advantages of Convolutional Neural Networks
+(CNNs) and ElasticFusion [1]. The correspondences between
+frames are estimated by the SLAM system. Meanwhile,
+their CNN architecture adopts a Deconvolutional Semantic
+Segmentation network [22] to generate a pixel-wise semantic
+map for incoming images. Unlike the original architecture
+[22], this system incorporates depth information to obtain
+a higher accuracy than the pretrained RGB network. The
+authors reported that fusing multiple predictions led to a
+signiﬁcant improvement in the semantic labeling and it is
+the ﬁrst real-time capable approach suitable for interactive
+indoor scene scanning and labeling. Likewise, SegICP-DSR
+[21] fuses RGB-D observations into a semantically-labeled
+point cloud for object pose estimation using adversarial net-
+works and ElasticFusion. There is, however, one signiﬁcant
+difference. SegICP-DSR employs the semantic label differ-
+ence instead of a photometric error when formulating the
+alignment objective function. Then, a semantically-labeled
+point cloud can be directly outputted from the reconstruction
+process without an extra update step. Obviously, the addition
+of semantic information enables a much greater range of
+functionality than geometry alone. However, since the above
+systems only consider class labels, they are limited to scenar-
+ios with single object instances per scene and may degenerate
+performance in case multiple objects of the same type are
+present.
+MaskFusion [8] is a real-time, object-aware, semantic and
+dynamic RGB-D SLAM system. It combines geometric seg-
+mentation running on every frame and semantic segmentation
+using Mask R-CNN computed for select keyframes. The
+geometric segmentation algorithm acquires object boundaries
+based on an analysis of depth discontinuities and surface
+normals, while Mask R-CNN is used to provide object
+masks with semantic labels. Camera poses are estimated by
+minimizing a joint geometric and photometric error function
+as presented in [1]. The reported results demonstrate that
+
+Fig. 2: Flow of the proposed framework: The segmentation
+
+network ﬁrstly yields masks and probabilities speciﬁed for
+each category. Then the output of the segmentation stage
+along with depth map and RGB frame is used for camera
+pose estimation. Finally, input data and semantic information
+are fused into the 3D map based on the transformation matrix
+estimated from the previous stage.
+
+while MaskFusion outperforms a set of baseline state of
+the art algorithms in highly dynamic scenes, ElasticFusion
+performs best on static and moderately dynamic scenes.
+Unlike MaskFusion, our system is not designed to deal with
+dynamic scenes and real-time operation. Instead, we assume
+all objects to be static during an observation and aim to
+reconstruct high-quality object models.
+Most related to ours is the work of McCormac et al.
+Fusion++ [7], which aims to produce multiple semantically
+labeled maps of object instances without a dense represen-
+tation of the entire static scene. Fusion++ uses Mask R-
+CNN instance segmentation to initialize dense per-object
+TSDF reconstructions with object size-dependent resolutions.
+For camera tracking, Fusion++ takes an approach similar
+to KinectFusion using projective data association and a
+point-to-plane error. Note that apart from object level maps,
+Fusion++ also maintains a coarse background TSDF to
+assist frame-to-model tracking. While the authors evaluated
+the trajectory error of the developed system against
+the
+baseline approach of simple coarse TSDF odometry,
+the
+reports did not provide a comparison with other photometry
+or semantics-aware state of the art approaches.
+Though we aim towards multiple object level maps, there
+are clear differences between Fusion++ and our work. While
+Fusion++ only uses depth information for motion tracking,
+the proposed system increases the robustness of sensor track-
+ing through integrating appearance and geometric cues into
+the reconstruction process. In addition, our CNN network is
+able to generate an adaptive weight for the joint cost function
+which plays a big role in robust camera pose tracking.
+
+I I I . METHODOLOGY
+
+Our pipeline is composed of three main components as
+illustrated in Fig. 2. The input RGB-D data is processed
+through a semantic instance segmentation stage, followed by
+a frame-to-model alignment stage, and ﬁnally a model fusion
+
+Fig. 3: CNN architecture: Extending Mask R-CNN to predict masks and classes probabilities while simultaneously yielding
+an adaptive weight for camera tracking.
+
+stage. In the following, we summarise the key elements of
+our method.
+Segmentation: Produce object masks with semantic labels
+using our CNN architecture. The developed architecture
+also predicts weights for the joint cost function for camera
+tracking.
+Tracking: Estimate camera poses within the ElasticFusion
+pipeline using our proposed joint cost function. We combine
+the cost functions of geometric and photometric estimates
+in a weighted sum. The adaptive weight for color image is
+generated by the segmentation process above.
+
+Fusion and Segmentation Improvement: Fuse segmen-
+
+tation information into 3D map using our instance-based
+semantic fusion. To improve segmentation accuracy, misclas-
+siﬁed regions are corrected by two criteria which rely on a
+sequence of CNN predictions.
+
+A. Segmentation Network
+In our framework, we employ an end-to-end CNN frame-
+work, Mask R-CNN for generating a high-quality segmenta-
+tion mask for each instance. Mask R-CNN has three outputs
+for each candidate object, a class label, a bounding-box
+offset, and a mask. Its procedure consists of two stages. In
+the ﬁrst stage, candidate object bounding boxes are proposed
+by a Region Proposal Network (RPN). In the second stage,
+classiﬁcation, bounding-box regression, and mask prediction
+are performed in parallel on each small feature map, which
+is extracted by RoIPool. Note that to speed up inference and
+improve accuracy the mask branch is applied to the highest
+scoring 100 detection boxes after running the box prediction.
+The mask branch predicts a binary mask from each RoI using
+an FCN architecture [23]. The binary mask is a single m×m
+output regardless of class, which is generated by binarizing
+the ﬂoating-number mask or soft mask at a threshold of 0.5.
+To integrate deep-learning based segmentation and classi-
+ﬁcation into our system, we extend Mask R-CNN to iden-
+tify object outlines at the pixel level while simultaneously
+generating an adaptive weight used in camera pose tracking
+stage as shown in Fig. 3. A fourth branch is added to our
+CNN framework, which shares computation of feature maps
+
+with Mask R-CNN branches and outputs the weight by a
+fully connected layer. In general, the network consists of a
+backbone CNN, a region proposal network (RPN), an ROI
+classiﬁer, a bounding Box Regressor, a mask branch, and
+a camera tracking weight estimator. The CNN backbone
+is a standard convolutional neural network that is used for
+extracting a feature map. This convolutional feature map not
+only becomes the input for the other stages of Mask R-
+CNN but also shares computation with our extended branch
+for adaptive weight estimation. Therefore,
+the developed
+network receives an RGB image and returns a set of per-
+pixel class probabilities and weights used in the cost function
+in the subsequent alignment stage. The weight estimation
+is treated as a classiﬁcation problem where the target is a
+binary decision whether or not the given RGB image should
+be used in the registration process. In other words, we aim
+to train our weight predicting model as a binary classiﬁer,
+where one class signiﬁes that the RGB image contains useful
+information for the subsequent registration process, while the
+other class indicates the converse. The probability predicted
+from the classiﬁcation model is considered as an adaptive
+weight for our joint cost function for camera pose estimation.
+B. Camera Tracking
+To perform camera tracking, our object-oriented mapping
+system maintains a fused surfel-based model of the environ-
+ment (similar to the model used by ElasticFusion [1]). Here
+we borrow and extend the notation proposed in the original
+ElasticFusion paper. The model is represented by a cloud
+of surfels Ms , where each surfel consists of of a position
+p ∈ R3 , normal n ∈ R3 , colour c ∈ N3 , weight w ∈ R,
+radius r ∈ R, initialisation timestamp t0 and last updated
+timestamp t. In addition, each surfel aslo stores a object
+instance label lo ∈ N . Each object instance o is associated
+with a discrete probability distribution over potential class
+labels, P (lo = li ) over the set of class labels, li ∈ L.
+The image space domain is deﬁned as Ω ⊂ N2 , where
+an RGB-D frame is composed of a color map and a depth
+map D of depth pixels d : Ω → R. We deﬁne the 3D
+back projection of a point u ∈ Ω given a depth map D
+
+as p(u, D) = K −1 ud(u) , where K is the camera intrinsics
+matrix and u the homogeneous form of u. The perspective
+projection of a 3D point p = [x, y , z ](cid:62) is deﬁned as
+u = π(K p), where π(p) = (x/z , y/z ). In the following,
+we describe our proposed approach for combined ICP pose
+estimation.
+Our approach aims to estimate a sensor pose that mini-
+mizes the cost over a combination of the global point-plane
+energy and photometric error. We wish to minimize a joint
+optimization objective:
+
+Ecombined = Eicp + ωrgbErgb
+
+(1)
+
+where Eicp and ωrgbErgb are the geometric and photomet-
+ric terms respectively. The photometric error function is
+weighted by factor predicted from our CNN.
+Finally, we ﬁnd the transformation by minimizing the
+objective (1) through the Gauss-Newton non-linear least-
+square method with a three-level coarse-to-ﬁne pyramid
+scheme.
+
+C. Fusion and Segmentation Improvement
+Class labels fusion: Given an RGB-D frame at time step
+t, each mask M from Mask R-CNN must be corresponded to
+an instance in the 3D map. Otherwise, it will be assigned as
+a new instance. To ﬁnd the corresponding instance, we use
+the tracked camera pose and existing instances in the map
+built at time step t − 1 to predict binary masks via splatted
+rendering. The percent overlap between the mask M and
+a predicted mask ˆM for object instance o is computed as
+
+U(M , ˆM ) =
+
+M
+
+To train our CNNs, We start with a weights ﬁle thats
+been trained on the ImageNet dataset [25] with a ResNet-
+101 [26] backbone. We ﬁnetune layers of Mask R-CNN on
+COCO dataset with 10 common object classes in indoor
+environments (backpack, chair, keyboard, laptop, monitor,
+computer mouse, cell phone, sink, refrigerator, microwave)
+and on a portion of the YCB video data set not used in the
+evaluations. To train the weight estimator branch, we split
+SceneNN dataset [27] into two groups based on camera pose
+ground truth and trajectory estimation of ElasticFusion using
+only photometric error.
+
+A. Camera Pose Tracking
+We compare the trajectory estimation performance of
+our system to two most related works MaskFusion and
+Fusion++ on the widely used RGB-D benchmark of [24].
+This benchmark is one of the most popular datasets for the
+evaluation of RGB-D SLAM systems. The dataset covers
+a large variety of scenes and camera motions and provides
+sequences for debugging with slow motions as well as longer
+trajectories with and without loop closures. Each sequence
+contains the color and depth images, as well as the ground-
+truth trajectory from the motion capture system. To evaluate
+the error in the estimated trajectory by comparing it with the
+ground-truth, we adopt the absolute trajectory error (ATE)
+root-mean-square error metric (RMSE) as proposed in [24].
+Table I shows the results. From these we can see the
+performance of our system is comparable to state of the art
+classical approaches, and outperforms both MaskFusion and
+Fusion++. Results for Fusion++ are taken from the respective
+publication as presented by the authors, and values for
+MaskFusion are calculated from MaskFusion implementa-
+tion. While the original ElasticFusion algorithm still obtains
+the best overall ATE performance, the results of our approach
+are comparable. Despite this relative similarity in the average
+trajectories, our approach performs better in reconstructing
+the relevant object-scale detail, as discussed in the next sub-
+section.
+
+B. Reconstruction
+It should be noted that a good performance on a camera
+trajectory benchmark does not always imply a high qual-
+ity surface reconstruction. We have evaluated our system
+by performing experiments on Yale-CMU-Berkeley (YCB)
+Object and Model set [28]. We ﬁnetuned our network on the
+training set of the YCB-Video dataset. It contains 92 real
+video sequences for 21 object instances. 89 videos along with
+80,000 synthetic images are used for training. We evaluate
+on the remaining test videos from the original data set, as
+well as on three video sequences we acquired independently
+in scenes featuring a larger number of objects and more
+complex camera trajectories.
+In order to evaluate surface reconstruction quality, we
+compare the object models obtained through our approach to
+the ground truth YCB object models. Note that the ground
+truth object models are only used here to compute evaluation
+metrics, unlike in prior works like SLAM++ which use them
+
+Fig. 4: Results of segmentation accuracy evaluation on YCB
+videos.
+
+within the tracking framework. For every object present in
+the scene, we ﬁrst register the reconstructed model M to the
+ground truth model G. Next, we project every vertex from
+M onto G, and compute the distance between the original
+vertex and it’s projection. Finally, we calculate and report
+the mean distance µd over all model points and all objects.
+Table II shows the mean reconstruction error over the
+six sequences produced by our system, MaskFusion and
+ElasticFusion. Our method consistently results in the lowest
+reconstruction errors over all datasets. From this comparison
+it is evident that our approach beneﬁts greatly from the use
+of the proposed joint cost function with adaptive weight. We
+also note that in our approach all surfels on objects of interest
+are always active, while ElasticFusion segments these surfels
+into inactive area if they have not been observed for a period
+of time ∂t . This means that object surfels are updated all the
+time. As a result, our framework is able to produce a highly
+accurate object-oriented semantic map.
+
+C. Segmentation Accuracy Evaluation
+In this section, we show on the YCB video dataset that our
+system leads to an improvement in the 2D instance labeling
+over the baseline single frame predictions generated by Mask
+R-CNN. Our 2D masks are obtained by reprojecting the
+reconstructed 3D model. We use the Intersection over Union
+(IoU) metric for this evaluation, which measures the number
+of pixels common between the ground-truth and prediction
+masks divided by the total number of pixels present across
+both masks. The results of this evaluation are shown in
+Fig. 4. We observe the segmentation performance improved,
+on average, from 63.5% for a single frame to 83.4% when
+projecting the predictions from the 3D map.
+
+D. Run-time Performance and Memory Usage
+Run-time Performance: Our current system does not
+run in real time because of heavy computation in instance
+segmentation. Our CNN requires 350ms, while camera pose
+estimation, fusion, and segmentation require a further 70ms
+on a typical sample of RGB-D SLAM Benchmark [24].
+Memory Usage: We compared our mask-based fusion
+method with other approaches [6], [7], [8] which assign class
+probabilities to each element of the 3D map rather than to
+
+TABLE I: Comparison of ATE RMSE on RGB-D SLAM benchmark. All units given are in metres.
+
+freiburg1 desk
+freiburg1 room
+freiburg1 desk2
+freiburg1 360
+freiburg1 teddy
+freiburg2 desk
+freiburg2 xyz
+freiburg2 rpy
+freiburg3 long ofﬁce household
+freiburg3 large cabinet
+
+PCL-KinFu
+0.073
+0.187
+0.102
+-
+-
+0.103
+0.077
+-
+0.086
+-
+
+Kintinuous
+0.037
+0.075
+0.071
+0.116
+0.132
+
+0.034
+
+0.029
+0.018
+0.030
+0.144
+
+0.068
+
+0.020
+
+0.048
+0.108
+0.083
+
+ElasticFusion MaskFusion
+0.034
+0.153
+0.093
+0.157
+0.129
+0.108
+0.041
+0.076
+0.102
+0.133
+
+0.015
+0.017
+0.099
+
+0.071
+
+0.011
+
+Fusion++
+0.049
+0.235
+0.153
+-
+-
+0.114
+0.020
+-
+0.108
+-
+
+Our System
+0.022
+
+0.065
+
+0.056
+0.126
+0.095
+0.083
+0.025
+
+0.012
+
+0.085
+
+0.052
+
+TABLE II: Comparison of surface reconstruction accuracy
+results on the YCB objects (mm).
+
+YCB video 0007
+YCB video 0036
+YCB video 0072
+Our sequence 01
+Our sequence 02
+Our sequence 03
+
+ElasticFusion MaskFusion
+9.6
+7.3
+8.1
+6.4
+10.1
+9.4
+7.1
+6.7
+7.3
+6.6
+7.5
+6.2
+
+Our System
+
+6.5
+5.7
+8.7
+3.7
+4.1
+3.4
+
+Fig. 5: Memory usage for storing class probabilities.
+
+each mask. The memory usage of the proposed method is
+signiﬁcantly reduced compared to the conventional approach
+over all samples as shown in Fig. 5. The average memory
+usage of the proposed method is 5.7% of those conventional
+approaches.
+
+V. CONCLUS IONS
+In this paper we have presented a 3D mapping system
+for RGB-D camera pose tracking that yields high quality
+object-oriented semantic reconstruction. Our system is based
+on incorporating state of the art RGB-D SLAM and deep-
+learning-based instance segmentation and classiﬁcation. The
+developed system shows that by combining appearance and
+semantic cues with the adaptive weight
+in camera pose
+tracking we are able to obtain reliable camera tracking and
+state of the art surface reconstruction in small-scale envi-
+ronments populated with objects of interest. In addition, we
+propose an approach to improve segmentation accuracy and
+reduce memory usage for storing class probability distribu-
+tion. We have provided an extensive evaluation on common
+benchmarks and our own dataset. The results conﬁrm that
+
+the developed system performs strongly in terms of sensor
+pose estimation, surface reconstruction, and segmentation in
+comparison to other state-of-the-art systems. As future work,
+we plan on incorporating depth images in the Mask R-CNN
+pipeline and on reducing the runtime requirements of the
+proposed system. Devising methods for automatic tuning of
+the ICP weight in our camera tracking objective function are
+also promising directions for further investigation.
+
+R E FER ENC E S
+[1] T. Whelan, R. F. Salas-Moreno, B. Glocker, A. J. Davison, and
+S. Leutenegger, “Elasticfusion: Real-time dense slam and light source
+estimation,” The International Journal of Robotics Research, vol. 35,
+no. 14, pp. 1697–1716, 2016.
+[2] R. A. Newcombe, S. Izadi, O. Hilliges, D. Molyneaux, D. Kim,
+A. J. Davison, P. Kohi, J. Shotton, S. Hodges, and A. Fitzgibbon,
+“Kinectfusion: Real-time dense surface mapping and tracking,” in
+Mixed and augmented reality (ISMAR), 2011 10th IEEE international
+symposium on.
+IEEE, 2011, pp. 127–136.
+[3] D. R. Canelhas, T. Stoyanov, and A. J. Lilienthal, “Sdf tracker: A
+parallel algorithm for on-line pose estimation and scene reconstruction
+from depth images,” in Intelligent Robots and Systems (IROS), 2013
+IEEE/RSJ International Conference on.
+IEEE, 2013, pp. 3671–3676.
+[4] Y. Nakajima and H. Saito, “Efﬁcient object-oriented semantic mapping
+with object detector,” IEEE Access, vol. 7, pp. 3206–3213, 2019.
+[5] N. S ¨underhauf, T. T. Pham, Y. Latif, M. Milford, and I. Reid,
+“Meaningful maps with object-oriented semantic mapping,” in 2017
+IEEE/RSJ International Conference on Intelligent Robots and Systems
+(IROS).
+IEEE, 2017, pp. 5079–5085.
+[6] J. McCormac, A. Handa, A. Davison, and S. Leutenegger, “Se-
+manticfusion: Dense 3d semantic mapping with convolutional neural
+networks,” in 2017 IEEE International Conference on Robotics and
+Automation (ICRA).
+IEEE, 2017, pp. 4628–4635.
+[7] J. McCormac, R. Clark, M. Bloesch, A. J. Davison, and S. Leuteneg-
+ger, “Fusion++: Volumetric object-level
+slam,” arXiv preprint
+arXiv:1808.08378, 2018.
+[8] M. R ¨unz and L. Agapito, “Maskfusion: Real-time recognition, track-
+ing and reconstruction of multiple moving objects,” arXiv preprint
+arXiv:1804.09194, 2018.
+[9] K. He, G. Gkioxari, P. Doll ´ar, and R. Girshick, “Mask r-cnn,” in
+Computer Vision (ICCV), 2017 IEEE International Conference on.
+IEEE, 2017, pp. 2980–2988.
+[10] Y. Xiang, T. Schmidt, V. Narayanan, and D. Fox, “Posecnn: A
+convolutional neural network for 6d object pose estimation in cluttered
+scenes,” arXiv preprint arXiv:1711.00199, 2017.
+[11] A. S. Huang, A. Bachrach, P. Henry, M. Krainin, D. Maturana, D. Fox,
+and N. Roy, “Visual odometry and mapping for autonomous ﬂight
+using an rgb-d camera,” in Robotics Research.
+Springer, 2017, pp.
+235–252.
+[12] F. Endres, J. Hess, N. Engelhard, J. Sturm, D. Cremers, and W. Bur-
+gard, “An evaluation of the rgb-d slam system,” in Robotics and
+Automation (ICRA), 2012 IEEE International Conference on.
+IEEE,
+2012, pp. 1691–1696.
+[13] Y. Chen and G. Medioni, “Object modelling by registration of multiple
+range images,” Image and vision computing, vol. 10, no. 3, pp. 145–
+155, 1992.
+
+[14] B. Curless and M. Levoy, “A volumetric method for building complex
+models from range images,” in Proceedings of
+the 23rd annual
+conference on Computer graphics and interactive techniques. ACM,
+1996, pp. 303–312.
+[15] T. Whelan, M. Kaess, M. Fallon, H. Johannsson, J. Leonard, and
+J. McDonald, “Kintinuous: Spatially extended kinectfusion,” 2012.
+[16] T. Whelan, M. Kaess, H. Johannsson, M. Fallon, J. J. Leonard, and
+J. McDonald, “Real-time large-scale dense rgb-d slam with volumetric
+fusion,” The International Journal of Robotics Research, vol. 34, no.
+4-5, pp. 598–626, 2015.
+[17] F. I. I. Mu ˜noz and A. I. Comport, “Point-to-hyperplane rgb-d pose
+estimation: Fusing photometric and geometric measurements,” in 2016
+IEEE/RSJ International Conference on Intelligent Robots and Systems
+(IROS).
+IEEE, 2016, pp. 24–29.
+[18] F. Steinbr ¨ucker, J. Sturm, and D. Cremers, “Real-time visual odometry
+from dense rgb-d images,” in Computer Vision Workshops (ICCV
+Workshops), 2011 IEEE International Conference on.
+IEEE, 2011,
+pp. 719–722.
+[19] T. Whelan, H. Johannsson, M. Kaess, J. J. Leonard, and J. McDonald,
+“Robust real-time visual odometry for dense rgb-d mapping,” in
+Robotics and Automation (ICRA), 2013 IEEE International Conference
+on.
+IEEE, 2013, pp. 5724–5731.
+[20] A. Hermans, G. Floros, and B. Leibe, “Dense 3d semantic mapping
+of indoor scenes from rgb-d images,” in Robotics and Automation
+(ICRA), 2014 IEEE International Conference on.
+IEEE, 2014, pp.
+2631–2638.
+[21] J. M. Wong, S. Wagner, C. Lawson, V. Kee, M. Hebert, J. Rooney,
+G.-L. Mariottini, R. Russell, A. Schneider, R. Chipalkatty, et al.,
+“Segicp-dsr: Dense semantic scene reconstruction and registration,”
+arXiv preprint arXiv:1711.02216, 2017.
+[22] H. Noh, S. Hong, and B. Han, “Learning deconvolution network for
+semantic segmentation,” in Proceedings of the IEEE international
+conference on computer vision, 2015, pp. 1520–1528.
+[23] J. Long, E. Shelhamer, and T. Darrell, “Fully convolutional networks
+for semantic segmentation,” in Proceedings of the IEEE conference on
+computer vision and pattern recognition, 2015, pp. 3431–3440.
+[24] J. Sturm, N. Engelhard, F. Endres, W. Burgard, and D. Cremers, “A
+benchmark for the evaluation of rgb-d slam systems,” in Intelligent
+Robots and Systems (IROS), 2012 IEEE/RSJ International Conference
+on.
+IEEE, 2012, pp. 573–580.
+[25] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei,
+“Imagenet: A large-scale hierarchical image database,” 2009.
+[26] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image
+recognition,” in Proceedings of the IEEE conference on computer
+vision and pattern recognition, 2016, pp. 770–778.
+[27] B.-S. Hua, Q.-H. Pham, D. T. Nguyen, M.-K. Tran, L.-F. Yu, and S.-K.
+Yeung, “Scenenn: A scene meshes dataset with annotations,” in 2016
+Fourth International Conference on 3D Vision (3DV).
+IEEE, 2016,
+pp. 92–101.
+[28] B. Calli, A. Walsman, A. Singh, S. Srinivasa, P. Abbeel, and
+A. M. Dollar, “Benchmarking in manipulation research: The ycb
+object and model set and benchmarking protocols,” arXiv preprint
+arXiv:1502.03143, 2015.
+
+

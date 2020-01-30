@@ -1,0 +1,1726 @@
+PUBLISHED IN IEEE TRANSACTIONS ON COMPUTATIONAL IMAGING, DOI: 10.1109/TCI.2019.2948726
+
+1
+
+Deep Generative Endmember Modeling:
+An Application to Unsupervised Spectral Unmixing
+
+Ricardo Augusto Borsoi Student Member, IEEE, Tales Imbiriba, Member, IEEE,
+José Carlos Moreira Bermudez, Senior Member, IEEE
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+3
+v
+8
+2
+5
+5
+0
+
+.
+
+2
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract—Endmember (EM) spectral variability can greatly
+impact the performance of standard hyperspectral image analysis
+algorithms. Extended parametric models have been successfully
+applied to account for the EM spectral variability. However,
+these models still lack the compromise between ﬂexibility and
+low-dimensional representation that is necessary to properly
+explore the fact that spectral variability is often conﬁned to
+a low-dimensional manifold in real scenes. In this paper we
+propose to learn a spectral variability model directly from the
+observed data, instead of imposing it a priori. This is achieved
+through a deep generative EM model, which is estimated using a
+variational autoencoder (VAE). The encoder and decoder that
+compose the generative model are trained using pure pixel
+information extracted directly from the observed image, what
+allows for an unsupervised formulation. The proposed EM model
+is applied to the solution of a spectral unmixing problem, which
+we cast as an alternating nonlinear least-squares problem that
+is solved iteratively with respect to the abundances and to the
+low-dimensional representations of the EMs in the latent space
+of the deep generative model. Simulations using both synthetic
+and real data indicate that the proposed strategy can outperform
+the competing state-of-the-art algorithms.
+Index Terms—Hyperspectral data, endmember variability, gen-
+erative models, deep neural networks, variational autoencoders,
+spectral unmixing.
+
+I . IN TRODUC T ION
+
+Hyperspectral image analysis consists in a vast collection
+of algorithms and methods used to retrieve vital information
+from hyperspectral images (HI) in a increasing number of
+applications. Common applications include [1], [2] space
+exploration, remote sensing, surveillance, and, more recently,
+medical applications such as disease diagnosis and image-
+guided surgery [3]. One analysis methodology of particular
+interest is spectral unmixing (SU), which aims at retrieving
+sub-pixel
+information concerning the spectra of materials
+present in the scene, as well as estimating the proportions
+in which they contribute to each HI pixel [4], [5].
+
+This work has been supported by the National Council
+for Scien-
+tiﬁc and Technological Development (CNPq) under grants 304250/2017-1,
+409044/2018-0, 141271/2017-5 and 204991/2018-8, and by the Brazilian
+Education Ministry (CAPES) under grant PNPD/1811213.
+R.A. Borsoi is with the Department of Electrical Engineering, Federal
+University of Santa Catarina (DEE–UFSC), Florianópolis, SC, Brazil, and
+with the Lagrange Laboratory, Université Côte d’Azur, Nice, France. e-mail:
+raborsoi@gmail.com. T. Imbiriba was with the DEE–UFSC, Florianópolis,
+SC, Brazil, and is with the ECE department of the Northeastern University,
+Boston, MA, USA. e-mail: talesim@ece.neu.edu. J.C.M. Bermudez is with
+the DEE–UFSC, Florianópolis, SC, Brazil, and with the Graduate Program
+on Electronic Engineering and Computing, Catholic University of Pelotas
+(UCPel) Pelotas, Brazil. e-mail: j.bermudez@ieee.org.
+Manuscript received Month day, year; revised Month day, year.
+
+Many parametric models have been proposed to describe the
+interaction between light and the target surface [4], [6]. The
+simplest of such models is the Linear Mixing Model (LMM),
+which considers that the observed reﬂectance of an HI pixel is
+obtained from a convex combination of the spectral signatures
+of pure materials. This model imposes a convex geometry to
+the SU problem, where all HI pixels are conﬁned to a simplex
+whose vertices are the pure material reﬂectances, usually
+termed endmembers (EMs). The linearity and convexity of
+the LMM model lead to an interpretation of its coefﬁcients
+as the relative abundances of each pure material in the HI.
+Nevertheless, some characteristics of practical HIs cannot be
+modeled by the standard LMM, such as nonlinearities [6]–[9]
+or variations of the EMs along the image [10]–[12]. More
+sophisticated models are required when such nonidealities
+have important impact on the formation of the HI.
+
+A. EM variability and learning-based SU methods
+The variation of the endmembers across an HI (also called
+EM variability) is a very common effect since we can often
+associate multiple, different spectral signatures to each pure
+underlying material in a scene. EM variability can originate
+from environmental conditions, illumination, or atmospheric
+or temporal changes [13]. Its occurrence may incur the
+propagation of signiﬁcant estimation errors throughout the
+unmixing process [10]. Different strategies have been proposed
+to cope with EM variability in SU. They can be classiﬁed
+in methods that represent EMs as sets, methods that model
+EMs as statistical distributions, and methods that incorporate
+parametric representations of EM variability in the mixing
+model [14].
+Parametric models are raising considerable interest since
+they lead to good unmixing results and avoid the main
+drawbacks of the other groups of SU methods that address EM
+variability, namely the dependence on a priori knowledge of
+libraries of material spectra or the need for strong assumptions
+on the statistical distribution of the EMs for mathematical
+tractability [13], [14]. Recently proposed parametric models
+attempt to capture spectral variability by extending the LMM
+using either additive [10] or multiplicative [11], [12], [15],
+[16] scaling factors, or by considering tensor-based formula-
+tions [17], [18].
+Although SU methods based on extended parametric models
+offer different trade-offs between representation capacity and
+model complexity, they still fail to achieve a desirable balance
+between a low-dimensional representation and enough ﬂexibil-
+ity to represent complex EM variability. Speciﬁcally, they fail
+
+ 
+ 
+ 
+ 
+ 
+ 
+PUBLISHED IN IEEE TRANSACTIONS ON COMPUTATIONAL IMAGING, DOI: 10.1109/TCI.2019.2948726
+
+2
+
+to properly explore the fact that, although being very complex
+and spectrally non-homogeneous, spectral variability in real
+scenes is often conﬁned to low-dimensional manifolds [19]–
+[21]. This property is due to the fact that the spectral signature
+of many materials is a function of only a few photometric
+or chemical properties of the medium. Prominent examples
+include packed particle spectra as a function of its roughness,
+size and density [19], leaf reﬂectance spectra as a function of
+various biophysical parameters [20], and soil reﬂectance as a
+function of moisture conditions [21]. Thus, existing models
+tend to be either too restrictive in their modeling capability or
+to lead to severely ill-posed estimation problems.
+SU considering EM variability has also been formulated as a
+supervised learning problem, which is then solved without the
+need for an accurate physical model using neural networks
+(NNs) or support vector machines (SVMs) [22]–[25]. How-
+ever, these strategies depend on the availability of vast amounts
+of training data to adequately capture the spectral diversity of
+real scenes. This makes the training process computationally
+intensive and often intractable for large EM libraries, which
+must also be known a priori. Some works attempt to reduce the
+computational cost of these solutions by modifying learning
+algorithms to use hybrid soft-hard classiﬁcation [26]–[28].
+However, the resulting reconstructed abundance fractions do
+not have a clear physical interpretation due to the lack of a
+direct relationship to a physically motivated mixing model.
+More recently, unsupervised SU approaches have also
+emerged by using autoencoders (AEC), which consist of
+encoder-decoder structured NNs originally devised for non-
+linear dimensionality reduction [29]. These methods attempt
+to associate the decoder structure of the network with the
+LMM and the low-dimension representation of the input
+spectral vectors to the fractional abundances [30]. Different
+variations have been proposed, using pre-processing steps to
+reduce noise and outliers [31], [32], untiying the decoder from
+the encoder weights [33], using spectral angle distances to
+address nonlinear SU [34], or using denoising autoencoders
+to generate a robust initialization to matrix factorization-based
+SU strategies [35]. In [36] the authors proposed a nonlinear
+encoder-decoder structure to address the unmixing problem
+considering spectral variability. The proposed solution involves
+the simultaneous training of six neural networks to optimize a
+very large number of parameters. An autoencoder structure is
+employed to estimate the parameters of a spectral model of a
+hyperspectral image by minimizing the image reconstruction
+error while limiting the energy of some of the model parame-
+ters. No regularization strategy connecting the different pixels
+of the image is employed.
+Despite their popularity, supervised learning-based SU al-
+gorithms are still not able to properly address the spectral vari-
+ability problem, as they depend on extremely large amounts of
+labeled training data, leading to a computationally unfeasible
+learning process. Furthermore, the lack of a clear connection
+between AEC-based strategies and the physical mixing process
+makes one skeptic when concerning the robustness of AEC-
+based SU in face of more complex phenomena such as spectral
+variability.
+
+B. Proposed methodology
+
+In this work, we propose a novel SU formulation that
+leverages the advantages of deep learning methods to address
+EM variability while still maintaining a strong connection to
+the physical mixing process, and using limited amounts of
+training data. Speciﬁcally, we adopt a deep generative NN to
+represent the manifold of EM spectra, which is then incorpo-
+rated within the LMM. Generative models such as variational
+autoencoders (VAE) [37] and generative adversarial networks
+(GAN) [38] have recently obtained excellent performance
+at learning the probability distribution of complex data sets
+in very high dimensional spaces (e.g. natural images) from
+relatively small amounts of training data. The structure of
+generative models allow one to ﬁnd a low-dimensional latent
+representation that parsimonously describes the variability of
+complex high-dimensional data sets. This leads to a low-
+dimensional parametrization of the training data distribution.
+We formulate a novel unmixing strategy that can be cast
+as the problem of estimating the latent representations of
+the generative endmember models and the corresponding
+fractional abundances for each pixel in the HI. Speciﬁcally,
+we break down the SU problem in two steps. In the ﬁrst
+step, we learn the latent EM variability manifold for each
+material in the scene using a deep generative EM model.
+The learning process uses pure pixel
+information directly
+extracted from the observed HI, which makes the proposed
+strategy suitable for unsupervised SU. In the second step, an
+alternating least-squares strategy is employed to estimate the
+parameters of an extended version of the LMM parametrized
+using the generative EM models obtained in the ﬁrst step.
+The corresponding optimization problem is solved iteratively
+with respect to the abundances and to the low-dimensional
+representations of the EMs in the latent space of the deep
+generative models.
+As a result, the proposed approach beneﬁts from the re-
+duced dimension of the latent space. Moreover, unlike current
+approaches, the new method does not depend on the careful
+selection of regularization parameters to yield a good per-
+formance. The resulting algorithm is named Deep Genera-
+tive Unmixing algorithm (DeepGUn). The proposed method
+is strongly related to parametric models and leverages the
+learning and generalization capability of deep neural networks
+to properly represent the manifold of EM variability. Hence,
+DeepGUn leads to a model that is both low-dimensional and
+physically accurate, better describing the variability actually
+present in the scene.
+Experimental results performed with both synthetic and
+real data indicate that the proposed strategy leads to more
+accurate abundance estimations than standard state-of-art SU
+methods accounting for EM variability. Qualitative analysis
+of the estimated abundance maps conﬁrms these results. The
+improved accuracy comes at the expense of a small increase in
+the computational cost when compared to the best competing
+strategies.
+This paper is organized as follows. Section II brieﬂy reviews
+the LMM and its parametric extended versions. Section III
+discusses the basic properties of generative models in the
+
+PUBLISHED IN IEEE TRANSACTIONS ON COMPUTATIONAL IMAGING, DOI: 10.1109/TCI.2019.2948726
+
+3
+
+context of VAE and GAN. Section IV introduces the proposed
+generative EM model and its learning strategy. In Section V
+we formulate the resulting SU problem, present the DeepGUn
+algorithm, and discuss aspects of the proposed optimization
+strategy. The neural network architecture is discussed in Sec-
+tion VI. The performance of the proposed method is compared
+with that of competing algorithms in Section VII. Finally, the
+conclusions are presented in Section VIII.
+
+I I . L IN EAR M IX ING MOD EL S
+
+yn = M an + en ,
+
+The Linear Mixing Model (LMM) [4] assumes that a given
+n-th pixel yn ∈ RL , with L bands, is represented as
+subject to 1(cid:62)an = 1 and an ≥ 0 (1)
+where M ∈ RL×P is a matrix whose columns are the P
+EM spectral signatures mk , an is the abundance vector and
+en is an additive white Gaussian noise (WGN). The LMM
+assumes that the EM spectra are ﬁxed for all HI pixels yn ,
+n = 1, . . . , N . This assumption jeopardizes the accuracy
+of estimated abundances in many circumstances due to the
+spectral variability existing in a typical scene.
+Different parametric models have been recently proposed to
+account for variable EM spectra within a given scene [10]–
+[12]. These models can be generically described as
+
+yn = f (M 0 , θn )an + en
+
+(2)
+where f is a parametric function, M 0 ∈ RL×P is a reference
+EM matrix, and θn is a vector of parameters describing the
+manifold of EM variability.
+Different
+functional
+forms have been proposed for
+f (M 0 , θn ) to account for EM variability in this framework,
+such as additive [10] or multiplicative [11], [12] variability
+factors acting upon the reference EM matrix M 0 . However,
+these models fail
+to achieve a desirable balance between
+a low-dimensional representation and enough ﬂexibility to
+represent complex variability patterns. They tend to be either
+too restrictive in their modeling capability, or to lead to ill-
+posed optimization problems [18]. Instead of using a pre-
+deﬁned parametric model, we propose to address this issue by
+learning a parametric function f (M 0 , θn ) using a generative
+model.
+
+I I I . G EN ERAT IV E MOD EL S
+
+Generative models attempt to estimate the probability dis-
+tribution p(X ) of a random variable X ∈ RL based on a set of
+observations xi , i = 1, . . . , Nx in such a way that allows one
+to generate new samples that look similar to new realizations
+of X . The main characteristic of this problem, which sets it
+apart of other unsupervised learning methods such as density
+estimation, is the fact that we must to be able to sample from
+the estimated model ˆp(X ).
+In many practical applications of interest, the dimensional-
+ity L of the variable of interest X is very high. This makes
+the general problem very difﬁcult, as it amounts to estimating
+and sampling from an arbitrary high-dimensional probability
+density function [39], [40]. Nonetheless, the distributions of
+interest are often supported at a low-dimensional manifold
+
+of a set of so-called latent variables, and this fact can be
+explored to make the problem more tractable. A convenient
+way to address this problem is to deﬁne a new random variable
+RK (cid:51) Z ∼ p(Z ) with a known distribution in a low-
+dimensional space (e.g. an isotropic Gaussian distribution with
+K (cid:28) L), and a parametric function (e.g. a neural network)
+Gθ mapping Z (cid:55)→ (cid:98)X ∈ RL such that the image of Z by Gθ is
+of Gθ such that the distribution of (cid:98)X = Gθ (Z ) is as close to
+a random variable whose distribution is very close to p(X ).
+p(X ) as possible. Then, samples of (cid:98)X can be generated by
+In other words, the goal becomes to learn the parameters θ
+sampling from Z ∼ p(Z ) and using the mapping Gθ (Z ).
+Although estimating θ may still seem difﬁcult at ﬁrst,
+recent advances in machine learning such as VAEs [37] and
+GANs [38] have shown formidable performance at learning
+complex distributions such as those of natural images.
+VAEs address this problem by assuming that the distribution
+of the observed data X follows a directed graphical model
+p(X |Z ), which is represented by the function Gθ . The param-
+eters of Gθ are learned by maximizing a lower bound on the
+log-likelihood of p(X ) [37]:
+
+(cid:8) log p(X |Z )(cid:9)
+log p(X ) ≥ Eqφ (Z |X )
+− K L(cid:0)qφ (Z |X )(cid:107)p(Z )(cid:1)
+
+(3)
+where K L(·(cid:107)·) is the Kullback-Leibler divergence between
+two distributions, Eς {·} is the expected value operator with
+respect to the distribution ς and qφ (Z |X ) is a variational
+approximation to the intractable posterior p(Z |X ), which is
+modeled by a function Dφ (e.g. another neural network) pa-
+rameterized in φ. Note that qφ (Z |X ) must be a high-capacity
+distribution1 , so that it can provide a good approximation of
+the posterior p(Z |X ), which then allows the lower bound
+in (3) to be close to the true value of log p(X ) [41].
+GANs, on the other hand, attempt to learn the distribution
+p(X ) by searching for the Nash equilibrium of a two-player
+adversarial game [38]. A generator network Gθ tries map the
+distribution of the latent variables Z into the data distribution
+of X , and a discriminator network Cφ tries to predict the
+probability of a random sample xi coming from the true
+distribution p(X ) instead of being generated through Gθ . The
+generator Gθ is trained by maximizing the probability of the
+discriminator making a mistake. This is formulated as the
+minimax optimization problem
+
++ Ep(Z )
+
+(4)
+GANs are more ﬂexible and have shown better performance
+at approximating complex distributions such as natural images
+(leading to sharper results) when compared to VAEs [38].
+However, GANs are also much harder to train [40]. Moreover,
+VAEs naturally offer a way to obtain the latent representations
+corresponding to samples xi ∼ p(X ) by mapping X (cid:55)→ Z
+using the function Dφ , which is also called an encoder model.
+This property and their stable training have motivated us to
+use VAEs in this work.
+
+1Capacity of a distribution is a generic term to describe how complex a
+relationship it can model.
+
+minGθ
+
+maxCφ
+
+Ep(X )
+
+(cid:8) log Cφ (X )(cid:9)
+(cid:8)(1 − Cφ (Gθ (Z )))(cid:9) .
+
+PUBLISHED IN IEEE TRANSACTIONS ON COMPUTATIONAL IMAGING, DOI: 10.1109/TCI.2019.2948726
+
+4
+
+Figure 1: Illustration of the proposed Deep Generative Endmember Model.
+
+IV. A D E E P G EN ERAT IV E ENDM EMB ER MODE L
+
+In this section, we propose to model the distribution of EM
+spectral variability using a deep generative model. By doing
+so, we can explicitly explore a common property of spectral
+variability: the EM spectra are usually conﬁned to a low-
+dimensional manifold. This property is due to the fact that
+the spectral signature of many materials is a function of a few
+photometric or chemical properties of the medium. Prominent
+examples include packed particle spectra as a function of its
+roughness, size and density [19], leaf reﬂectance spectra as
+a function of various biophysical parameters [20], and soil
+reﬂectance as a function of moisture conditions [21].
+
+A. The steps of the proposed SU method
+We assume the existence of nonlinear functions Gθp , p =
+1, . . . , P (the generative model) that map latent representations
+z p into their corresponding spectral signatures mp . We assume
+also the existence of encoder models Dφp that map spectral
+signatures into their latent representations. In other words,
+we assume that any arbitrary observation mp of a spectral
+signature of a material belongs to the set
+
+mp ∈ (cid:8)Gθp (z p ) : z p ∈ RK (cid:9)
+
+(5)
+
+and thus can be equivalently represented by a corresponding
+low-dimensional vector z p ∈ RK in the latent space of the
+generative model Gθp . This reasoning is illustrated in Fig. 1,
+where the encoder function Dφ maps the input EM signature to
+the low-dimensional manifold. Reciprocally, low-dimensional
+vectors in the latent space can be mapped (decoded) to their
+corresponding spectral signatures using Gθ .
+As such, we can formulate EM estimation in the SU
+problem in the latent domain (as opposed to the input spectral
+space), which is of a much lower order. Moreover,
+this
+approach will keep the physical interpretation of the model,
+provided that we have relevant training data to learn the gen-
+erative models [42]–[45]. This strategy relies on the existence
+of a priori training data for each material in the image, which
+might come in the form of, e.g., spectral libraries of laboratory
+measurements [46]. Nevertheless, we propose a more practical
+and effective approach to train the generators Gθp by exploring
+information contained in multiple pure pixels extracted from
+the observed HI. The presence of multiple pure pixels in an
+
+observed HI is a characteristic of many real scenes, and can be
+leveraged to help in estimating the EM models, thus, reducing
+the ill-posedness of the SU problem2 .
+Therefore, we propose to break the unmixing problem into
+a sequence of two problems:
+i) Using pure pixel information extracted from the HI by
+standard EM extraction methods, learn the generative and
+encoder models, Gθp and Dφp , for all EMs in the scene
+
+(p = 1, . . . , P ).
+
+ii) Using the learned generative models, solve the SU prob-
+lem by estimating the latent EM representations Z n =
+[z 1,n , . . . , zP,n ] and the fractional abundance vectors an
+that can best represent the observed hyperspectral data,
+for all pixels in the scene (n = 1, . . . , N ).
+B. Learning the generative and encoder models Gθp and Dφp
+The objective of this ﬁrst problem is to estimate the gen-
+erative and encoding models Gθp and Dφp , for p = 1, . . . , P .
+We assume the knowledge of a set NP ,p of pure pixels for the
+p-th EM, for all p = 1, . . . , P . Multiple pure pixels exist in
+many scenes, and can be directly extracted from the observed
+HI using automated EM extraction techniques [47], [48]. The
+sets of pure pixels NP ,p , which can be seen as observations
+from the statistical distribution of each EM, are then used in
+the form of training data to learn the models Gθp and Dφp
+using a VAE [37]. If the set NP ,p is representative of the
+variability of the p-th material, the learned generative model
+Gθp will be able to accurately describe the manifold of the p-
+th EM variability. Doing the same for all p = 1, . . . , P yields
+a set of variability models for all the EM spectra.
+Although the extraction of multiple pure pixels from ob-
+served HIs is a well-established technique used to produce
+EM libraries [47], mixed pixels can sometimes be mistakenly
+identiﬁed as a pure pixel of some of the EMs. This constitutes
+a problem for library-based SU applications (e.g. MESMA and
+sparse SU) since some of the library spectra may end up not
+being representative of their EM class (material).
+The smooth nature of the latent representation of VAEs
+allows the mitigation of this problem in the proposed approach.
+Assuming the availability of a reference EM matrix M 0 of
+
+2 Pure pixels are deﬁned here as a set of pixels whose spectral distance
+relative to the reference EMs in M 0 is less than a speciﬁed threshold.
+
+HiddenLayersNeural NetworkGenerativeSignaturesGeneratedSpaceLatentlearned EM manifoldHiddenLayersNeural NetworkEncoderSignaturesSamplePUBLISHED IN IEEE TRANSACTIONS ON COMPUTATIONAL IMAGING, DOI: 10.1109/TCI.2019.2948726
+
+5
+
+correctly identiﬁed signatures (which can be obtained using
+any EM extraction method) and of a set of encoder models
+Dφp , we can compute the latent representation of these refer-
+ence signatures of each EM as
+
+Z 0 = (cid:2)z 1,0 , . . . , zP,0
+= (cid:2)Dφ1 (m1,0 ), . . . , DφP (mP,0 )(cid:3) .
+
+(cid:3)
+
+(6)
+
+where mp,0 is the p-th column of M 0 . The latent represen-
+tation z p,0 can be used as a reference latent code for the p-th
+material. Thus, we can measure how close an estimated EM
+latent representation z p is to the latent representation of a pure
+pixel by evaluating its Euclidean distance to z p,0 . This can be
+performed since the output of VAEs have been shown to vary
+smoothly with changes of the latent variable [37]. Thus, we
+can use Z 0 to regularize the SU problem to prevent Gθp (z p )
+from representing mixed pixels. This increases the robustness
+of the proposed approach.
+
+C. Extracting sets of pure pixels from the observed HI
+An important part of the proposed methodology consists in
+the extraction of the sets of pure pixels NP ,p , p = 1, . . . , P
+from the observed hyperspectral image Y . Although differ-
+ent strategies have been proposed for image-based library
+construction (see e.g. [49], [50]), these techniques depend
+on multiple parameters that must be carefully adjusted in
+order to obtain good results. Instead of these approaches, we
+adopt a very simple strategy to select pure pixels from an HI
+that makes use of the reference matrix M 0 extracted from
+the image using a pure-pixel-based endmember extraction
+algorithm (e.g. VCA [51]), which will also later be used to
+construct Z 0 in (6). We simply select as the elements of NP ,p
+the Sp image pixels that have the smallest spectral angle to
+the reference signature in the p-th column of M 0 , where
+Sp is the cardinality of NP ,p for p = 1, . . . , P . Although
+the success of this strategy depends on having a reasonably
+accurate estimation of M 0 , we experimentally found it to be
+more robust and easier to adjust than, for instance, the one
+in [47].
+
+V. TH E UNM IX ING A LGOR I THM
+
+Given a set of generative models Gθp
+: RK → RL ,
+p = 1, . . . , P for each EM in the scene, a latent space
+representation Z 0 of a reference EM matrix M 0 , and an
+HI Y = [y1 , . . . , yN ], the SU problem can be cast as the
+minimization of a risk functional of the form
+
+(cid:107)yn − (cid:101)G (Z n )an(cid:107)2
+F + R(A) + R(Z) (7)
+
+J (A, Z) =
+
+1
+2
+
+N(cid:88)
+
+n=1
+
+where A = [a1 , . . . , aN ] ∈ RP ×N is the abundance matrix,
+Z ∈ RN ×P ×K is a 3-D tensor obtained by stacking all pixel-
+problem conditioning, and the matrix-valued function (cid:101)G (Z n )
+dependent latent EM representations Z n , such that [Z]n,:,: =
+Z n , R(A) and R(Z) are regularization terms to improve the
+deﬁned as
+
+(cid:101)G (Z n ) = (cid:2)Gθ1 (z 1,n ), . . . , GθP (zP,n )(cid:3), n = 1, . . . , N
+
+is the concatenation of the generative functions for each EM.
+The term R(A) is a regularization functional that aims to
+provide spatial smoothness and to enforce positivity and sum-
+to-one constraints to the abundances. It is given by [12]
+
+(cid:0)(cid:107)Hh (A)(cid:107)2,1 + (cid:107)Hv (A)(cid:107)2,1
+
+(cid:1) + ιS 1 (A)
+
+R(A) = λA
+
+(8)
+
+where parameter λA controls the contribution of this term to
+the cost function. The ﬁrst two terms are a spatial regularizers
+over A, where Hh and Hv are linear operators that compute
+(cid:107) · (cid:107)2,1 is the L2,1 norm, deﬁned as (cid:107)X (cid:107)2,1 = (cid:80)N
+the ﬁrst-order horizontal and vertical gradients of a bidimen-
+sional signal, acting separately for each material of A, and
+The term ιS 1 (A) is the indicator function of the unity simplex,
+i.e. ιS 1 (A) = 0 if A ∈ S 1 and ιS 1 (A) = ∞ otherwise, where
+(9)
+The term R(Z) constrains the EM latent representations Z to
+be close to the latent representation Z 0 of the reference EM
+matrix M 0 . It is given by
+
+S 1 = (cid:8)A ∈ RP ×N : A ≥ 0, 1(cid:62)A = 1(cid:62)(cid:9) .
+
+n=1 (cid:107)xn(cid:107)2 .
+
+R(Z) =
+
+λZ
+2
+
+(cid:107)Z n − Z 0 (cid:107)2
+
+F
+
+(10)
+
+N(cid:88)
+
+n=1
+
+where parameter λZ controls the contribution of this term to
+the cost function. This regularization makes the estimation
+problem more robust to the selection of the training data NP ,p
+by assuring the closeness of the estimated latent codes Z and
+the representations of pure pixels of each class. However, it
+relies indirectly on the reference EM signatures M 0 (which
+are extracted from the observed HI with endmember extraction
+algorithms) being adequate representatives of their material
+classes in order to provide a good performance.
+The optimization problem then becomes
+
+( (cid:98)A, (cid:98)Z) = arg min
+
+A, Z
+
+J (A, Z).
+
+(11)
+
+The problem deﬁned in (11) is non-smooth and non-convex
+if solved simultaneously with respect to both variables A,
+and Z. However, an approximate solution can be found by
+minimizing (11) iteratively with respect
+to each variable,
+leading to the Deep Generative Unmixing (DeepGUn) method
+described in Algorithm 1. The DeepGUn algorithm consists of
+two distinctive steps. First, the generative endmember models
+generative and encoder models Gθp , Dφp , p = 1, . . . , P are
+trained based on the pure pixels NP ,p , p = 1, . . . , P extracted
+from the observed HI and Z 0 is computed. Afterwards,
+the alternating minimization approach is applied to compute
+the abundance maps and the latent representations of the
+endmembers for each pixel. We next describe the details of
+each optimization step. Implementation details are described
+in Sections VI and VII.
+
+A. Optimization with respect to Z
+Rewriting (11) considering only the terms in (7) that depend
+on Z, the problem becomes
+
+(cid:16)(cid:107)yn − (cid:101)G (Z n )an(cid:107)2
+F + λZ (cid:107)Z n − Z 0(cid:107)2
+
+N(cid:88)
+
+(cid:17)
+
+(12)
+
+F
+
+min
+
+Z
+
+1
+2
+
+n=1
+
+PUBLISHED IN IEEE TRANSACTIONS ON COMPUTATIONAL IMAGING, DOI: 10.1109/TCI.2019.2948726
+
+6
+
+Algorithm 1: DeepGUn algorithm for solving (11)
+: Y , λZ , and λA .
+
+Output: (cid:98)A and (cid:98)M.
+Input
+
+1 Estimate the reference EM signatures M 0 using an EM
+extraction method (e.g. VCA);
+2 Estimate A(0) using a standard LMM-based SU method;
+3 Extract sets of pure pixels NP ,p , p = 1, . . . , P from the
+HI using a bundle extraction strategy;
+4 Train the generative and encoder models Gθp , Dφp ,
+
+5 Compute the latent representation of M 0 as
+
+p = 1, . . . , P ;
+Z 0 = [Dφ1 (m1,0 ), . . . , DφP (mP,0 )] ;
+
+6 Set i = 0 ;
+7 while stopping criterion is not satisﬁed do
+
+Z
+
+10
+
+8
+9
+
+i = i + 1 ;
+J (A(i−1) , Z) ;
+Z(i) = arg min
+A(i) = arg min
+J (A, Z(i) ) ;
+12 for n = 1, . . . , N , do, [ (cid:98)M]:,:,n = (cid:101)G ([Z]:,:,n ), end;
+
+13 return (cid:98)A = A(i) , (cid:98)M ;
+
+11 end
+
+A
+
+This is a regularized nonlinear least squares problem, which
+can be solved individually for each pixel yn . Thus, (12) can
+be decomposed into N non-convex, nonlinear optimization
+mand in (12) by (cid:101)J (n) , n = 1, . . . , N . We solve each of those
+problems with dimensionality K × P by denoting each sum-
+problems (cid:101)J (n) using a quasi-Newton algorithm, described in
+dimensional functions (cid:101)G [52].
+Algorithm 2, which provides an efﬁcient solution for high-
+the generator network (cid:101)G , the problem of recovering the latent
+Although problem (12) is generally non-convex, recent
+research [53] has proven that, under suitable assumptions on
+variable Z n does not have any stationary point (e.g. local
+minima or saddle points) outside a small neighborhood of the
+desired solution and its negative scalar multiple. This indicates
+Note that (cid:101)G is not necessarily differentiable with respect
+the existence of a favorable global geometry of (12).
+to the latent representations Z n , which can make the op-
+timization problem more challenging. Nonetheless, quasi-
+Newton algorithms show excellent performance at non-smooth
+problems [54], where convergence is generally observed as
+long as the line search procedure does not return a point
+at which the objective function is non-differentiable. This
+allows quasi-Newton algorithms to be directly applied to
+obtain approximate solutions to non-smooth problems with
+good computational efﬁciency [54], [55].
+
+B. Optimization with respect to A
+Restating (11) considering only the terms in (7) that depend
+on A leads to
+
+N(cid:88)
+
+(cid:107)yn − (cid:101)G (Z n )an(cid:107)2
+1
+F + ιS 1 (A)
+2
++ λA ((cid:107)Hh (A)(cid:107)2,1 + (cid:107)Hv (A)(cid:107)2,1 ) .
+
+n=1
+
+min
+
+A
+
+(13)
+
+Algorithm 2: Quasi-Newton algorithm for solving (12)
+
+: an , yn , λZ , Z 0 and (cid:101)J (n) .
+1 Set i = 0 and B 1 = I ;
+
+Input
+Output: Z n .
+
+3
+
+2 while stopping criterion is not satisﬁed do
+Compute search direction pi = −B i∇ (cid:101)J (n)
+;
+Set z i+1 = µipi , where µi is computed using a line
+search procedure to satisfy the Wolfe conditions;
+
+i = i + 1 ;
+Deﬁne si = z i+1 − z i and ui = ∇ (cid:101)J (n)
+
+i
+i+1 − ∇ (cid:101)J (n)
+i
+
+4
+5
+
+;
+
+6
+
+7
+
+B i+1 = B i − B i si s(cid:62)
+
+i B i
+i B i si
+
+s(cid:62)
+
++ uiu(cid:62)
+
+u(cid:62)
+
+i
+i si
+
+;
+
+8 end
+
+10 return (cid:98)Z n = Z n ;
+9 Reorder z i+1 as a matrix Z n ;
+Table I: Encoder network architecture.
+
+Layer
+Input
+Hidden # 1
+Hidden # 2
+Hidden # 3
+
+Activation Function
+—
+ReLU
+ReLU
+ReLU
+
+Number of units
+
+max (cid:8)(cid:100)L/4(cid:101), K + 2(cid:9) + 3
+L
+max (cid:8)(cid:100)L/10(cid:101), K + 1(cid:9)
+(cid:100)1.2 × L(cid:101) + 5
+
+Since the latent variables Z n are ﬁxed, (13) consists of a
+SU problem with a pixel-dependent EM matrix and an edge-
+preserving spatial regularization. Although this problem is
+not separable with respect to each pixel in the image, the
+Alternating Direction Method of the Multipliers (ADMM) can
+be used to obtain an efﬁcient solution [56]. The solution of (13)
+using the ADMM is well described elsewhere (e.g. [11]) and
+will thus be omitted here for conciseness.
+
+V I . N EURA L N E TWORK ARCH I T EC TUR E
+
+As discussed before, we used a VAE [37] to learn the
+generative and encoder models Gθp and Dφp from the sets of
+pure pixels NP ,p . Compared to GANs, the training of VAEs is
+much simpler and more stable [40]. Moreover, VAEs naturally
+return the encoder model Dφp as an approximation to the
+posterior distribution when learning Gθp . We have selected a
+dimension K = 2 for the latent space, as it was experimentally
+veriﬁed to be sufﬁcient to adequately capture the variability
+of each single material in a scene.
+For the network architectures, we selected the number of
+layers and neurons according to the autoencoder implemen-
+tation in [29], [57], with three hidden layers using ReLU
+activations (deﬁned as ReLU (x) = max(x, 0)) in the hidden
+layers, which are described in more detail in Tables I and II.
+We found that this conﬁguration led to spectrally smooth
+generated signatures, and was effective at generalizing well
+with small training sample sizes. We trained the network for
+50 epochs with the Adam optimizer [58] in TensorFlow, using
+a batch optimization with mini-batch size equal to one third
+of the total amount of training data for each EM.
+
+Table II: Decoder network architecture.
+
+PUBLISHED IN IEEE TRANSACTIONS ON COMPUTATIONAL IMAGING, DOI: 10.1109/TCI.2019.2948726
+max (cid:8)(cid:100)L/10(cid:101), K + 1(cid:9)
+max (cid:8)(cid:100)L/4(cid:101), K + 2(cid:9) + 3
+(cid:100)1.2 × L(cid:101) + 5
+L
+
+Activation Function
+ReLU
+ReLU
+ReLU
+Sigmoid
+
+Layer
+Hidden # 1
+Hidden # 2
+Hidden # 3
+Output
+
+Number of units
+
+7
+
+Table III: Simulation results using synthetic data.
+
+Data Cube 1 – DC1
+NRMSEA NRMSEM SAMM NRMSEY Time [s]
+
+V I I . EX PER IM EN TA L R E SU LT S
+
+In this section, simulation results using both synthetic
+and real data illustrate the performance of the proposed
+method. We compare the proposed DeepGUn method with
+the fully constrained least squares (FCLS), the PLMM [10],
+the ELMM [11], and the GLMM [12]. In all experiments,
+the VCA algorithm [51] was used to extract the reference EM
+matrix M 0 from the observed HI and to initialize the different
+methods. The abundance maps of all methods were initialized
+using the results obtained by the FCLS algorithm. The sets
+NP ,p of pure pixels were constructed by selecting the 100
+image pixels yn with the smallest spectral angles relative to
+the reference EMs in M 0 . We ran the alternating optimization
+process in Algorithm 1 for at most 10 iterations or until the
+relative change of A and Z was less than 10−3 . The iterative
+procedure in Algorithm 2 was run until the relative change of
+z i was less than 10−3 . The performances were evaluated using
+the Normalized Root Means Squared Error (NRMSE) between
+the estimated abundance maps (NRMSEA ), between the EM
+matrices (NRMSEM ) and between the reconstructed images
+and its estimate (cid:98)X is deﬁned as
+(NRMSEY ). The NRMSE between a true, generic tensor X
+NRMSEX =
+
+.
+(cid:98)Y is given by [ (cid:98)Y ]:,n = [ (cid:98)M]:,:,n [ (cid:98)A]:,n , n = 1, . . . , N .
+
+Note that for the case of NRMSEY , the reconstructed image
+We consider also the Spectral Angle Mapper (SAM) to
+(cid:18) m(cid:62)
+evaluate the estimated EMs
+SAMM =
+(15)
+where mp,n and (cid:99)mp,n are the true and the estimated signatures
+of the p-th endmember in the n-th pixel, respectively.
+
+(cid:115) (cid:107)X − (cid:98)X(cid:107)2
+(cid:107)X(cid:107)2
+
+(cid:107)mp,n(cid:107)(cid:107)(cid:99)mp,n(cid:107)
+
+p,n(cid:99)mp,n
+
+N(cid:88)
+
+P(cid:88)
+
+(cid:19)
+
+arccos
+
+F
+
+F
+
+(14)
+
+1
+N
+
+n=1
+
+p=1
+
+.
+
+A. Synthetic data
+To quantitatively compare the different algorithms, four syn-
+thetic datasets were created, namely Data Cubes 1–4 (DC1–
+DC4), with 70×70 pixels (DC1) and 50×50 pixels (DC2, DC3
+and DC4). These datasets were built using three (DC1, DC2
+and DC3) and ﬁve (DC4) 224-band EMs extracted from the
+USGS Spectral Library [59] and spatially correlated abundance
+maps, as depicted in the ﬁrst row of Fig. 2.
+Spectral variability of the EMs was imposed using four dif-
+ferent models. For the DC1 datacube, we adopted the variabil-
+ity model used in [10], consisting of pixelwise multiplicative
+spectral factors given by random piecewise-linear functions.
+For DC2, the variability model of [12] was used, consisting
+of band dependent scaling factors that varied smoothly in both
+
+FCLS
+PLMM
+ELMM
+GLMM
+DeepGUn
+
+FCLS
+PLMM
+ELMM
+GLMM
+DeepGUn
+
+FCLS
+PLMM
+ELMM
+GLMM
+DeepGUn
+
+FCLS
+PLMM
+ELMM
+GLMM
+DeepGUn
+
+0.2854
+0.2604
+0.2554
+0.2480
+
+0.0566
+
+0.1294
+0.1197
+0.1110
+0.1146
+
+0.0969
+
+0.2606
+0.2028
+0.1997
+0.1841
+
+0.1613
+
+0.5109
+0.5066
+0.4385
+0.4371
+
+0.2550
+
+—
+0.1075
+0.1032
+0.1036
+
+0.0944
+
+—
+0.0440
+0.0398
+0.0355
+
+0.0233
+
+Data Cube 2 – DC2
+—
+—
+0.0481
+0.0378
+0.0566
+0.0382
+0.0534
+0.0367
+
+0.0463
+
+0.0323
+
+Data Cube 3 – DC3
+—
+—
+0.0928
+0.0385
+0.0640
+0.0188
+0.0638
+0.0185
+
+0.0600
+
+0.0172
+
+Data Cube 4 – DC4
+—
+—
+0.6245
+0.4874
+0.4712
+0.1451
+0.4855
+0.1972
+
+0.2918
+
+0.0873
+
+0.0350
+
+0.0007
+
+0.0321
+0.0235
+0.0448
+
+0.0393
+0.0336
+0.0231
+
+0.0226
+
+0.0384
+
+0.0542
+0.0302
+0.0238
+
+0.0226
+
+0.0457
+
+0.1712
+0.0320
+
+0.0106
+
+0.0108
+0.1403
+
+0.71
+122.09
+8.82
+23.74
+75.20
+
+0.38
+41.31
+20.25
+17.03
+36.40
+
+0.34
+59.88
+17.99
+25.74
+48.96
+
+0.50
+269.48
+18.36
+21.15
+99.94
+
+the spatial and spectral dimensions. For DC3, we considered
+a simple model introduced in [49, Section IV-A-1] to emulate
+errors in atmospheric compensation as a function of the
+viewing geometry given the direct and diffuse light on the
+scene, and the solar path transmittance. For datacube DC4,
+we used as endmembers pure pixels of ﬁve materials (asphalt,
+tree, roof, metal and dirt) which were manually extracted from
+a real hyperspectral image, thus depicting realistic spectral
+variability. White Gaussian noise was ﬁnally added to all
+datasets to yield a 30dB SNR.
+The optimal parameters for each algorithm were selected
+by performing grid searches for each dataset. The ranges in
+which the parameters were searched were selected according
+to those discussed by the authors in the original publications.
+For the PLMM we searched for α, β and γ in the ranges
+[10−2 , 0.1, 1, 10, 102 ], respectively. For both ELMM and
+GLMM,
+the parameters were selected among the follow-
+
+[0.01, 0.1, 0.35, 0.7, 1.4, 25], [10−9 , 10−5 , 10−4 , 10−3 ] and
+
+ing values: λS , λM ∈ [0.01, 0.1, 1, 5, 10, 50], λA ∈
+[0.001, 0.01, 0.05], and λψ , λΨ ∈ [10−6 , 10−3 , 1, 103 ]. For
+
+the proposed DeepGUn algorithm, we ﬁxed λZ = 0.1 and
+selected λA among the values [0.005, 0.01, 0.05]. For the
+proposed method, the sets of pure pixels for each EM NP ,p
+were constructed by selecting the 100 pixels closest to the
+reference materials M 0 .
+The quantitative results are shown in Table III, with the best
+results for each metric marked in bold. The proposed method
+
+PUBLISHED IN IEEE TRANSACTIONS ON COMPUTATIONAL IMAGING, DOI: 10.1109/TCI.2019.2948726
+
+8
+
+maps provided by DeepGUn, displayed in Fig. 2, are clearly
+much closer to the true abundance maps than those provided
+by the other methods. These are important results, as accuracy
+in abundance estimation is the main objective of SU.
+For the EM reconstruction metrics NRMSEM and SAMM ,
+DeepGUn gave the best results for all data cubes. This indi-
+cates that the proposed endmember model used by DeepGUn
+allows for precise material identiﬁcation from the observed
+hyperspectral scenes.
+The reconstruction error NRMSEY of the DeepGUn algo-
+rithm was comparable to the FCLS and signiﬁcantly larger
+than that of the GLMM. This is natural since the GLMM has
+more degrees of freedom. However, the connection between
+NRMSEY and the abundance reconstruction error is far from
+being direct, as can be seen in Table III.
+The execution times, at the rightmost column of Table III,
+indicate that the computational complexity of DeepGUn is
+somewhere between the complexities of GLMM and PLMM,
+the two major competing algorithms. Hence, the DeepGUn
+method yielded superior SU performance, with easier param-
+eter tuning, and at a reasonable computational cost.
+
+B. Inﬂuence of the latent dimension K
+An important parameter in the design of the DeepGUn
+method is the dimensionality K of the latent space of the gen-
+erative endmember models Gi , i = 1, . . . , P . The individual
+dimensions of the latent space are used to represent changes in
+the endmember signatures due to spectral variability. Since in
+a given scene the endmembers are likely to be affected only by
+a small number of effects (hence the hypothesis that they are
+supported at a low-dimensional manifold), K should be small
+in order to avoid introducing spurious effects and increasing
+the computational complexity of the solution.
+To illustrate this, we performed a simulation with DeepGUn
+where we varied the dimensionality of the latent space K
+and measured the normalized abundance reconstruction er-
+ror NRMSEA . For this, we considered the data cubes DC1
+and DC2 described above in Section VII-A. The results are
+depicted in Figure 3, and show that the abundance estimation
+error tends to increase with K . It can also be seen that there
+is a sharper increase in NRMSEA for DC1 when compared to
+DC2. This is likely due to the fact that the dataset DC2 uses a
+more complex model to generate endmember variability. This
+indicates that the selection of a small value for K is important
+to obtain good unmixing results.
+
+Figure 2: Abundance maps of DC1 (top), DC2 (middle up),
+DC3 (middle down) and DC4 (bottom) for all tested algo-
+rithms. Abundance values represented by colors ranging from
+blue (ak = 0) to red (ak = 1).
+
+clearly outperformed the competing algorithms in terms of
+NRMSEA for all four datasets. Qualitatively, the abundance
+
+Figure 3: Abundance NRMSE as a function of the latent space
+dimension K for datacubes DC1 (left) and DC2 (right).
+
+EM#2EM#3EM#1TrueFCLSPLMMELMMGLMMDeepGUnEM#2EM#3EM#1TrueFCLSPLMMELMMGLMMDeepGUnEM#2EM#3EM#1TrueFCLSPLMMELMMGLMMDeepGUn05101500.10.20.30.40.50.60510150.050.10.150.20.250.3PUBLISHED IN IEEE TRANSACTIONS ON COMPUTATIONAL IMAGING, DOI: 10.1109/TCI.2019.2948726
+
+9
+
+Table IV: Simulation results using real data.
+
+Houston HI
+
+Samson HI
+
+Jasper Ridge HI
+
+FCLS
+PLMM
+ELMM
+GLMM
+DeepGUn
+
+NRMSEY Time [s] NRMSEY Time [s] NRMSEY Time [s]
+0.2470
+2.56
+0.0545
+1.38
+0.2057
+1.52
+0.0713
+663.25
+0.0239
+103.84
+0.0553
+220.84
+0.0171
+38.30
+0.0119
+14.76
+0.0278
+27.08
+48.53
+46.69
+86.33
+259.61
+121.88
+209.64
+
+0.0016
+
+0.0019
+
+0.0006
+
+0.0862
+
+0.2355
+
+0.1094
+
+Figure 5: Abundance maps of the Samson dataset for all tested
+algorithms. Abundance values represented by colors ranging
+from blue (αk = 0) to red (αk = 1).
+
+Figure 4: Abundance maps of the Houston dataset for all tested
+algorithms. Abundance values represented by colors ranging
+from blue (αk = 0) to red (αk = 1).
+
+C. Real data
+We considered the Houston, Samson and the Jasper Ridge
+datasets for the simulations with real data. These datasets were
+captured by the AVIRIS instrument, and originally had 224
+bands. The spectral bands corresponding to water absorption
+and low SNR regions were removed, resulting in 188 bands for
+the Houston image, 156 bands for the Samson image and 198
+bands for the Jasper Ridge image. Previous studies indicate
+that the Houston HI has four predominant EMs [11], while
+the Samson and Jasper Ridge HIs are known to have three
+and four EMs, respectively [60].
+The reconstructed abundance maps for both datasets and all
+algorithms are shown in Figs. 4, 5 and 6. For the Houston
+dataset,
+the last row of Fig. 4 shows that
+the abundance
+maps provided by the DeepGUn method better evidence the
+strong vegetation and concrete abundances at
+the stadium
+ﬁeld and stands, respectively, as well as the stronger asphalt
+abundances in the parking lot. For the Samson and Jasper
+Ridge images, a clear performance improvement can be seen
+for the DeepGUn algorithm. Note, for instance, a smaller
+confusion between the Water and Soil EMs in the Samson
+HI when compared to the other methods. Similarly, for the
+Jasper Ridge HI, the DeepGUn method leads to considerably
+stronger Water abundances in the region containing the river.
+Moreover, although the ELMM provided a better estimation
+of the road in the scene when compared to the remaining
+methods, it also resulted in a greater confusion between the
+
+Figure 6: Abundance maps of the Jasper Ridge dataset for
+all tested algorithms. Abundance values represented by colors
+ranging from blue (αk = 0) to red (αk = 1).
+
+Vegetation and Soil EMs, especially in the right part of the
+scene.
+The quantitative results for all algorithms and datasets are
+shown in Table IV. Since the correct abundance values (the
+ground truth) are not available for most real
+images,
+the
+reconstruction error NRMSEY has been used as a sort of
+quality veriﬁcation. As was the case for the synthetic data,
+the DeepGUn reconstruction errors are higher than those
+
+VegetationFCLSMet.RoofsConcreteAsphaltPLMMELMMGLMMDeepGUnPUBLISHED IN IEEE TRANSACTIONS ON COMPUTATIONAL IMAGING, DOI: 10.1109/TCI.2019.2948726
+
+10
+
+yielded by other methods that address spectral variability.
+However, the reconstruction error is deﬁnitely not a good
+performance measure for abundance estimation in real images,
+which is the main objective of unmixing algorithms. The
+higher reconstruction errors of DeepGUn in this case are just
+due the fact that DeepGUn has much fewer degrees of freedom
+than the ELMM, PLMM and GLMM algorithms. In fact, the
+DeepGUn has only K × P degrees of freedom for each pixel,
+which is comparable to the FCLS (P ) much smaller than the
+ELMM, GLMM and PLMM methods (> L × P ). Although
+this means that the ELMM, GLMM and PLMM can achieve
+arbitrarily small reconstruction errors NRMSEY , this is not
+necessarily reﬂected as good abundance estimation results. The
+execution times of the proposed DeepGUn method were again
+comparable to those of the other algorithms addressing spectral
+variability, which indicates that it scales well with larger image
+sizes.
+
+V I I I . CONCLU S ION S
+
+In this paper, a deep generative EM model was proposed
+to address spectral variability in SU of HIs. Instead of relying
+on user-deﬁned parametric EM models which have shown to
+be very hard to estimate in practical scenes, the proposed
+methodology leveraged the generalization capability of deep
+neural networks to accurately model EM spectra while still
+maintaining a strong connection to the physical mixing pro-
+cess. A deep generative model for each EM was trained prior
+to unmixing by using pure pixel information extracted directly
+from the observed HI, which allowed for an unsupervised
+formulation. The proposed EM model was then applied to
+solve the SU problem, which was cast as the estimation of
+the low-dimensional representations of the EMs in the latent
+space of the deep generative models and their corresponding
+fractional abundances, for each pixel. The resulting DeepGUn
+algorithm presented excellent performance despite the simple
+strategy used for selecting the training data for learning the
+generative model. Simulations using synthetic and real data
+indicate that
+the proposed method can lead to signiﬁcant
+improvements in abundance estimation accuracy.
+
+R E FERENC E S
+
+[1] T. Kouyama, Y. Yokota, Y. Ishihara, R. Nakamura, S. Yamamoto,
+and T. Matsunaga, “Development of an application scheme for the
+SELENE/SP lunar reﬂectance model for radiometric calibration of
+hyperspectral and multispectral sensors,” Planetary and Space Science,
+vol. 124, pp. 76–83, 2016.
+[2] J. M. Bioucas-Dias, A. Plaza, G. Camps-Valls, P. Scheunders,
+N. Nasrabadi, and J. Chanussot, “Hyperspectral remote sensing data
+analysis and future challenges,” IEEE Geoscience and Remote Sensing
+Magazine, vol. 1, no. 2, pp. 6–36, 2013.
+[3] G. Lu and B. Fei, “Medical hyperspectral imaging: a review,” Journal
+of biomedical optics, vol. 19, no. 1, p. 010901, 2014.
+[4] N. Keshava and J. F. Mustard, “Spectral unmixing,” IEEE Signal
+Processing Magazine, vol. 19, no. 1, pp. 44–57, 2002.
+[5] T. Imbiriba, R. A. Borsoi, and J. C. M. Bermudez, “A low-rank
+tensor regularization strategy for hyperspectral unmixing,” in 2018 IEEE
+Statistical Signal Processing Workshop (SSP), 2018, pp. 373–377.
+[6] N. Dobigeon, J.-Y. Tourneret, C. Richard, J. C. M. Bermudez,
+S. McLaughlin, and A. O. Hero, “Nonlinear unmixing of hyperspectral
+images: Models and algorithms,” IEEE Signal Processing Magazine,
+vol. 31, no. 1, pp. 82–94, Jan 2014.
+
+[7] T. Imbiriba, J. C. M. Bermudez, C. Richard, and J.-Y. Tourneret,
+“Nonparametric detection of nonlinearly mixed pixels and endmember
+estimation in hyperspectral images,” IEEE Transactions on Image Pro-
+cessing, vol. 25, no. 3, pp. 1136–1151, March 2016.
+[8] T. Imbiriba, J. C. M. Bermudez, and C. Richard, “Band selection
+for nonlinear unmixing of hyperspectral images as a maximal clique
+problem,” IEEE Transactions on Image Processing, vol. 26, no. 5, pp.
+2179–2191, May 2017.
+[9] T. Imbiriba, J. C. M. Bermudez, J.-Y. Tourneret, and C. Richard,
+“Detection of nonlinear mixtures using gaussian processes: Application
+to hyperspectral imaging,” in ICASSP, IEEE International Conference
+on Acoustics, Speech and Signal Processing, Jan 2014, pp. 7949–7953.
+[10] P.-A. Thouvenin, N. Dobigeon, and J.-Y. Tourneret, “Hyperspectral
+unmixing with spectral variability using a perturbed linear mixing
+model,” IEEE Trans. Signal Processing, vol. 64, no. 2, pp. 525–538,
+Feb. 2016.
+[11] L. Drumetz, M.-A. Veganzones, S. Henrot, R. Phlypo, J. Chanussot,
+and C. Jutten, “Blind hyperspectral unmixing using an extended linear
+mixing model to address spectral variability,” IEEE Transactions on
+Image Processing, vol. 25, no. 8, pp. 3890–3905, 2016.
+[12] T. Imbiriba, R. A. Borsoi, and J. C. M. Bermudez, “Generalized linear
+mixing model accounting for endmember variability,” in Acoustics,
+Speech and Signal Processing (ICASSP), 2018 IEEE International
+Conference on.
+IEEE, 2018, pp. 1862–1866.
+[13] A. Zare and K. C. Ho, “Endmember variability in hyperspectral anal-
+ysis: Addressing spectral variability during spectral unmixing,” Signal
+Processing Magazine, IEEE, vol. 31, pp. 95–104, January 2014.
+[14] L. Drumetz, J. Chanussot, and C. Jutten, “Variability of the endmembers
+in spectral unmixing: recent advances,” in 8th IEEE Workshop on Hy-
+perspectral Image and Signal Processing: Evolution in Remote Sensing,
+Los Angeles, USA, August 2016, pp. 1–5.
+[15] R. A. Borsoi, T. Imbiriba, and J. C. Moreira Bermudez, “A Data
+Dependent Multiscale Model for Hyperspectral Unmixing With Spectral
+Variability,” ArXiv e-prints, Aug. 2018.
+[16] R. A. Borsoi, T. Imbiriba, and J. C. M. Bermudez, “Super-resolution
+for hyperspectral and multispectral image fusion accounting for seasonal
+spectral variability,” IEEE Transactions on Image Processing, pp. 1–1,
+2019, doi: 10.1109/TIP.2019.2928895.
+[17] T. Imbiriba, R. A. Borsoi, and J. C. M. Bermudez, “Low-rank tensor
+modeling for hyperspectral unmixing accounting for spectral variability,”
+arXiv preprint arXiv:1811.02413, 2018.
+[18] R. A. Borsoi, T. Imbiriba, and J. C. M. Bermudez, “Improved hyper-
+spectral unmixing with endmember variability parametrized using an
+interpolated scaling tensor,” in 2019 IEEE International Conference
+on Acoustics, Speech and Signal Processing (ICASSP), May 2019, pp.
+2177–2181.
+[19] B. Hapke, “Bidirectional reﬂectance spectroscopy, 1, Theory,” Journal
+of Geophysical Research, vol. 86, no. B4, pp. 3039–3054, 1981.
+[20] S. Jacquemoud and S. L. Ustin, “Leaf optical properties: A state of
+the art,” in 8th International Symposium of Physical Measurements &
+Signatures in Remote Sensing. CNES, Aussois France, 2001, pp. 223–
+332.
+[21] D. B. Lobell and G. P. Asner, “Moisture effects on soil reﬂectance,” Soil
+Science Society of America Journal, vol. 66, no. 3, pp. 722–727, 2002.
+[22] A. Okujeni, S. van der Linden, L. Tits, B. Somers, and P. Hostert,
+“Support vector regression and synthetically mixed training data for
+quantifying urban land cover,” Remote Sensing of Environment, vol. 137,
+pp. 184–197, 2013.
+[23] L. Wang, D. Liu, Q. Wang, and Y. Wang, “Spectral unmixing model
+based on least squares support vector machine with unmixing residue
+constraints,” IEEE Geoscience and Remote Sensing Letters, vol. 10,
+no. 6, pp. 1592–1596, 2013.
+[24] F. A. Mianji and Y. Zhang, “SVM-based unmixing-to-classiﬁcation con-
+version for hyperspectral abundance quantiﬁcation,” IEEE Transactions
+on Geoscience and Remote Sensing, vol. 49, no. 11, pp. 4318–4327,
+2011.
+[25] M. Parente, I. Gemp, and I. Durugkar, “Unmixing in the presence of
+nuisances with deep generative models,” in Geoscience and Remote
+Sensing Symposium (IGARSS), 2017 IEEE International.
+IEEE, 2017,
+pp. 5189–5192.
+[26] L. Wang and X. Jia, “Integration of soft and hard classiﬁcations
+using extended support vector machines,” IEEE Geoscience and Remote
+Sensing Letters, vol. 6, no. 3, pp. 543–547, 2009.
+[27] Y. Gu, S. Wang, and X. Jia, “Spectral unmixing in multiple-kernel hilbert
+space for hyperspectral imagery,” IEEE Transactions on Geoscience and
+Remote Sensing, vol. 51, no. 7, pp. 3968–3981, 2013.
+
+PUBLISHED IN IEEE TRANSACTIONS ON COMPUTATIONAL IMAGING, DOI: 10.1109/TCI.2019.2948726
+
+11
+
+[28] X. Li, X. Jia, L. Wang, and K. Zhao, “On spectral unmixing resolu-
+tion using extended support vector machines,” IEEE Transactions on
+Geoscience and Remote Sensing, vol. 53, no. 9, pp. 4985–4996, 2015.
+[29] L. Van Der Maaten, E. Postma, and J. Van den Herik, “Dimension-
+ality reduction: A comparative review,” Journal of Machine Learning
+Research, vol. 10, pp. 1–41, 2009.
+[30] B. Palsson, J. Sigurdsson, J. R. Sveinsson, and M. O. Ulfarsson,
+“Hyperspectral unmixing using a neural network autoencoder,” IEEE
+Access, vol. 6, pp. 25 646–25 656, 2018.
+[31] R. Guo, W. Wang, and H. Qi, “Hyperspectral image unmixing using
+autoencoder cascade,” in 2015 7th Workshop on Hyperspectral Image
+and Signal Processing: Evolution in Remote Sensing (WHISPERS).
+Tokyo, Japan: IEEE, June 2015, pp. 1–4.
+[32] Y. Su, A. Marinoni, J. Li, J. Plaza, and P. Gamba, “Stacked nonnegative
+sparse autoencoders for robust hyperspectral unmixing,” IEEE Geo-
+science and Remote Sensing Letters, vol. 15, no. 9, pp. 1427–1431,
+2018.
+[33] Y. Qu and H. Qi, “uDAS: An untied denoising autoencoder with sparsity
+for spectral unmixing,” IEEE Transactions on Geoscience and Remote
+Sensing, vol. 57, no. 3, pp. 1698–1712, March 2019.
+[34] S. Ozkan, B. Kaya, and G. B. Akar, “Endnet: Sparse autoencoder
+network for endmember extraction and hyperspectral unmixing,” IEEE
+Transactions on Geoscience and Remote Sensing, no. 99, pp. 1–15, 2018.
+[35] Y. Su, J. Li, A. Plaza, A. Marinoni, P. Gamba, and S. Chakravortty,
+“DAEN: Deep autoencoder networks for hyperspectral unmixing,” IEEE
+Transactions on Geoscience and Remote Sensing, 2019, doi: 10.1109/
+TGRS.2018.2890633.
+[36] S. Ozkan and G. B. Akar, “Improved deep spectral convolution net-
+work for hyperspectral unmixing with multinomial mixture kernel and
+endmember uncertainty,” arXiv preprint arXiv:1808.01104, 2018.
+[37] D. P. Kingma
+and M. Welling,
+“Auto-encoding
+variational
+bayes,”
+in Proceedings
+of
+the
+International Conference
+on
+Learning Representations
+(ICLR),
+2014.
+[Online]. Available:
+https://arxiv.org/pdf/1312.6114.pdf
+[38] I. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley,
+S. Ozair, A. Courville, and Y. Bengio, “Generative adversarial nets,” in
+Advances in neural information processing systems, 2014, pp. 2672–
+2680.
+[39] R. M. Neal, “Annealed importance sampling,” Statistics and computing,
+vol. 11, no. 2, pp. 125–139, 2001.
+[40] M. Arjovsky, S. Chintala, and L. Bottou, “Wasserstein generative ad-
+versarial networks,” in International Conference on Machine Learning,
+2017, pp. 214–223.
+[41] C. Doersch, “Tutorial on variational autoencoders,” arXiv preprint
+arXiv:1606.05908, 2016.
+[42] V. Shah and C. Hegde, “Solving linear inverse problems using GAN
+priors: An algorithm with provable guarantees,” in Proc. IEEE Int. Conf.
+Acoust., Speech, and Signal Processing (ICASSP).
+IEEE, 2018, pp.
+4609–4613.
+[43] A. Bora, A. Jalal, E. Price, and A. Dimakis, “Compressed sensing using
+generative models,” in Proc. Int. Conf. Machine Learning, vol. 70, 2017,
+pp. 537–546.
+[44] R. Anirudh, J. J. Thiagarajan, B. Kailkhura, and T. Bremer, “An
+unsupervised approach to solving inverse problems using generative
+adversarial networks,” arXiv preprint arXiv:1805.07281, 2018.
+[45] M. Asim, F. Shamshad, and A. Ahmed, “Solving bilinear inverse prob-
+lems using deep generative priors,” arXiv preprint arXiv:1802.04073,
+2018.
+[46] M.-D. Iordache, J. M. Bioucas-Dias, and A. Plaza, “Sparse unmixing
+of hyperspectral data,” IEEE Transactions on Geoscience and Remote
+Sensing, vol. 49, no. 6, pp. 2014–2039, 2011.
+[47] B. Somers, M. Zortea, A. Plaza, and G. P. Asner, “Automated extraction
+of image-based endmember bundles for improved spectral unmixing,”
+IEEE Journal of Selected Topics in Applied Earth Observations and
+Remote Sensing, vol. 5, no. 2, pp. 396–408, 2012.
+[48] B. Somers, L. Tits, D. Roberts, and E. Wetherley, “Endmember library
+approaches to resolve spectral mixing problems in remotely sensed data:
+Potential, challenges, and applications,” in Data Handling in Science and
+Technology. Elsevier, 2016, vol. 30, pp. 551–577.
+[49] T. Uezato, R. J. Murphy, A. Melkumyan, and A. Chlingaryan, “A novel
+endmember bundle extraction and clustering approach for capturing
+spectral variability within endmember classes,” IEEE Transactions on
+Geoscience and Remote Sensing, vol. 54, no. 11, pp. 6712–6731, 2016.
+[50] C. Andreou, D. Rogge, and R. Müller, “A new approach for endmember
+extraction and clustering addressing inter-and intra-class variability via
+multiscaled-band partitioning,” IEEE Journal of Selected Topics in
+
+Applied Earth Observations and Remote Sensing, vol. 9, no. 9, pp. 4215–
+4231, 2016.
+[51] J. M. P. Nascimento and J. M. Bioucas-Dias, “Vertex Component Anal-
+ysis: A fast algorithm to unmix hyperspectral data,” IEEE Transactions
+on Geoscience and Remote Sensing, vol. 43, no. 4, pp. 898–910, April
+2005.
+[52] J. Nocedal and S. Wright, Numerical Optimization. Springer Science
+& Business Media, 2006.
+[53] P. Hand and V. Voroninski, “Global guarantees for enforcing deep gen-
+erative priors by empirical risk,” in Proceedings of the 31st Conference
+On Learning Theory, ser. Proceedings of Machine Learning Research,
+S. Bubeck, V. Perchet, and P. Rigollet, Eds., vol. 75.
+PMLR, 06–09
+Jul 2018, pp. 970–978.
+[54] A. S. Lewis and M. L. Overton, “Nonsmooth optimization via quasi-
+newton methods,” Mathematical Programming, vol. 141, no. 1-2, pp.
+135–163, 2013.
+[55] F. E. Curtis and X. Que, “A quasi-newton algorithm for nonconvex, non-
+smooth optimization with global convergence guarantees,” Mathematical
+Programming Computation, vol. 7, no. 4, pp. 399–428, 2015.
+[56] S. Boyd, N. Parikh, E. Chu, B. Peleato, and J. Eckstein, “Distributed
+optimization and statistical learning via the alternating direction method
+of multipliers,” Found. Trends Mach. Learn., vol. 3, no. 1, pp. 1–122,
+Jan. 2011.
+[57] L. Van
+der Maaten,
+“Matlab
+toolbox
+for
+dimensionality
+reduction.” [Online]. Available: https://lvdmaaten.github.io/drtoolbox/
+code/drtoolbox.tar.gz
+[58] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,”
+in International Conference on Learning Representations (ICLR), 2015.
+[Online]. Available: https://arxiv.org/pdf/1412.6980.pdf
+[59] R. N. Clark, G. A. Swayze, K. E. Livo, R. F. Kokaly, S. J. Sutley, J. B.
+Dalton, R. R. McDougal, and C. A. Gent, “Imaging spectroscopy: Earth
+and planetary remote sensing with the USGS tetracorder and expert
+systems,” Journal of Geophysical Research: Planets, vol. 108, no. E12,
+2003, doi: 10.1029/2002JE001847.
+[60] R. A. Borsoi, T. Imbiriba, J. C. Moreira Bermudez, and C. Richard,
+“A Fast Multiscale Spatial Regularization for Sparse Hyperspectral
+Unmixing,” IEEE Geoscience and Remote Sensing Letters, vol. 16, no. 4,
+pp. 598–602, 2019.
+
+(S’18)
+
+Ricardo Augusto Borsoi
+
+received the MSc degree in electrical
+engineering from Federal University of Santa Catarina (UFSC), Florianópolis,
+Brazil, in 2016. He is currently working towards his doctoral degree at
+Université Côte d’Azur (OCA) and at UFSC. His research interests include
+image processing, tensor decomposition, and hyperspectral image analysis.
+
+Tales Imbiriba (S’14, M’17) received his Doctorate degree from the De-
+partment of Electrical Engineering (DEE) of the Federal University of Santa
+Catarina (UFSC), Florianópolis, Brazil, in 2016. He served as a Postdoctoral
+Researcher at the DEE–UFSC and is currently a Postdoctoral Researcher
+at the ECE dept. of the Northeastern University, Boston, MA, USA. His
+research interests include audio and image processing, pattern recognition,
+kernel methods, adaptive ﬁltering, and Bayesian Inference.
+
+José Carlos M. Bermudez (S’78,M’85,SM’02) received the B.E.E. degree
+
+from the Federal University of Rio de Janeiro (UFRJ), Rio de Janeiro, Brazil,
+the M.Sc. degree in electrical engineering from COPPE/UFRJ, and the Ph.D.
+degree in electrical engineering from Concordia University, Montreal, Canada,
+in 1978, 1981, and 1985, respectively. He joined the Department of Electrical
+Engineering, Federal University of Santa Catarina (UFSC), Florianopolis,
+Brazil, in 1985. He is currently a Professor of Electrical Engineering at UFSC
+and a Professor at Catholic University of Pelotas (UCPel), Pelotas, Brazil.
+He has held the position of Visiting Researcher several times for periods of
+one month at the Institut National Polytechnique de Toulouse, France, and
+at Université Nice Sophia-Antipolis, France. He spent sabbatical years at the
+Department of Electrical Engineering and Computer Science, University of
+California, Irvine (UCI), USA, in 1994, and at the Institut National Poly-
+technique de Toulouse, France, in 2012. His recent research interests are in
+statistical signal processing, including linear and nonlinear adaptive ﬁltering,
+image processing, hyperspectral image processing and machine learning. Prof.
+Bermudez served as an Associate Editor of the IEEE TRANSACTIONS ON
+SIGNAL PROCESSING in the area of adaptive ﬁltering from 1994 to 1996
+and from 1999 to 2001. He also served as an Associate Editor of the EURASIP
+Journal of Advances on Signal Processing from 2006 to 2010, and as a Senior
+Area Editor of the IEEE TRANSACTIONS ON SIGNAL PROCESSING from
+2015 to 2019. He is the Chair of the Signal Processing Theory and Methods
+Technical Committee of the IEEE Signal Processing Society. Prof. Bermudez
+is a Senior Member of the IEEE.
+
+

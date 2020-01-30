@@ -1,0 +1,1022 @@
+Learning Instance Occlusion for Panoptic Segmentation
+
+Justin Lazarow∗ Kwonjoon Lee∗ Kunyu Shi∗ Zhuowen Tu
+University of California San Diego
+
+{jlazarow, kwl042, kshi, ztu}@ucsd.edu
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+3
+v
+6
+9
+8
+5
+0
+
+.
+
+6
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Panoptic segmentation requires
+segments of both
+“things” (countable object instances) and “stuff ” (un-
+countable and amorphous regions) within a single output.
+A common approach involves the fusion of instance seg-
+mentation (for “things”) and semantic segmentation (for
+“stuff ”) into a non-overlapping placement of segments, and
+resolves occlusions (or overlaps). However, instance order-
+ing with detection conﬁdence do not correlate well with nat-
+ural occlusion relationship. To resolve this issue, we pro-
+pose a branch that is tasked with modeling how two instance
+masks should overlap one another as a binary relation. Our
+method, named OCFusion, is lightweight but particularly
+effective on the “things” portion of the standard panoptic
+segmentation benchmarks, bringing signiﬁcant gains (up to
++3.2 PQTh and +2.0 overall PQ) on the COCO dataset —
+only requiring a short amount of ﬁne-tuning. OCFusion is
+trained with the ground truth relation derived automatically
+from the existing dataset annotations. We obtain state-of-
+the-art results on COCO and show competitive results on
+the Cityscapes panoptic segmentation benchmark.
+
+1. Introduction
+
+Image understanding has been a long standing problem
+in both human perception [1] and computer vision [25]. The
+image parsing framework [35] is concerned with the task
+of decomposing and segmenting an input image into con-
+stituents such as objects (text and faces) and generic regions
+through the integration of image segmentation, object de-
+tection, and object recognition. Scene parsing is similar in
+spirit and consists of both non-parametric [33] and paramet-
+ric [40] approaches.
+After the initial development, the problem of image un-
+derstanding was studied separately as object detection (or
+extended to instance segmentation) and semantic segmenta-
+tion. Instance segmentation [27, 28, 5, 20, 10, 29, 39, 15] re-
+quires the detection and segmentation of each thing (count-
+able object instance) within an image, while semantic seg-
+mentation [30, 34, 9, 24, 2, 41, 40] provides a dense labeling
+
+∗ indicates equal contribution.
+
+Figure 1: An illustration of
+fusion using masks
+sorted by detection conﬁdence alone [17] vs. with
+the ability to query for occlusions (OCFusion; ours).
+
+Occlude(A, B ) = 0 in occlusion head means mask B
+should be placed on top of mask A. Mask R-CNN proposes
+three instance masks listed with decreasing conﬁdence. The
+heuristic of [17] occludes all subsequent instances after the
+“person”, while our method retains them in the ﬁnal output
+by querying the occlusion head.
+
+of what kind of stuff (a non-thing) or thing class each pixel
+belongs to without distinction between instances within the
+same thing category. Summarizing the development in in-
+stance segmentation and semantic segmentation, Kirillov et
+al. [17] proposed the panoptic segmentation task that com-
+bines the strength of semantic segmentation and instance
+segmentation.
+In this task, each pixel in an image is as-
+signed either to a background class (stuff ) or to a speciﬁc
+foreground object (an instance of things).
+A common approach for panoptic segmentation has
+emerged in a number of works [16, 19, 38] that relies on
+combining the strong baseline architectures used in seman-
+tic segmentation and instance segmentation into either a
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+Figure 2: Illustration of overall architecture. The FPN is used as shared backbone for both thing and stuff branch.
+In thing branch, Mask R-CNN will generate instance mask proposals, and the occlusion head will output binary values
+Occlude(Mi , Mj ) (Equation 1) for each pair of mask proposals Mi and Mj with appreciable overlap (larger than a thresh-
+old) to indicate occlusion relation between them. Occlusion head architecture is described in Section 2.4. Fusion process is
+described in 2.3.
+
+separate or shared architecture and then fusing the results
+from the semantic segmentation and instance segmentation
+branches into a single panoptic output. Since there is no ex-
+pectation of consistency in proposals between semantic and
+instance segmentation branches, conﬂicts must be resolved.
+Furthermore, one must resolve conﬂicts within the instance
+segmentation branch as it proposes segmentations indepen-
+dent of each other. While a pixel in the panoptic output can
+only be assigned to a single class and instance, instance seg-
+mentation proposals are often overlapping across or within
+classes.
+To handle these issues, Kirillov et al. [17] proposed a fu-
+sion process similar to non-maximum suppression (NMS)
+that favors instance proposals over semantic proposals.
+However, we observe that occlusion relationships between
+different objects (things) in the COCO dataset do not cor-
+relate well with object detection conﬁdences used in this
+NMS-like fusion procedure [17]. For this reason, the NMS
+procedure — which favors instances with higher detection
+conﬁdence score — generally leads to poor performance
+when an instance that overlaps another (e.g., a tie on a shirt
+in Figure 3a) has lower detection conﬁdence than the in-
+stance it should occlude. This can cause a large number
+of instances that Mask R-CNN successfully proposes fail to
+exist in the panoptic prediction (shown in Figure 1).
+Therefore, in this work, we focus on enriching the fu-
+sion process established by [17] with a binary relationship
+between instances to determine occlusion ordering. We pro-
+pose adding an additional branch to the instance segmenta-
+
+tion pipeline tasked with determining which of two instance
+masks should lie on top of (or below) the other. This binary
+relation can then be consulted at inference time when the fu-
+sion process must actually resolve such questions. The rela-
+tion can be ﬁne-tuned easily on top of an existing Panoptic
+Feature Pyramid Networks (FPNs) [16] architecture with
+minimal difﬁculty. We call our approach fusion with occlu-
+sion head (OCFusion). Once the fusion process is equipped
+with occlusion head, we observe signiﬁcant gains in the
+overall performance on the COCO and Cityscapes panoptic
+segmentation benchmarks, particularly large gains in PQTh
+which corresponds to the correct placement of things.
+
+2. Learning Instance Occlusion for Panoptic
+Fusion
+
+We adopt the coupled approach of [16] that uses a shared
+Feature Pyramid Network (FPN) [21] backbone with a top-
+down process for semantic segmentation branch and Mask
+R-CNN [10] for instance segmentation branch.
+In this section, we ﬁrst discuss the instance occlusion
+problem arising within the fusion heuristic introduced in
+[17] and then introduce occlusion head to address the prob-
+lem. The overall approach is shown in Figure 2.
+
+2.1. Fusion by conﬁdence
+
+The fusion protocol in [17] adopts a greedy strategy dur-
+ing inference. In an iterative manner, pixels in the output
+are (exclusively) assigned to segments by their class and an
+additional instance ID for those assigned as “things”.
+
+FPN FeatureRPNRoIsRoIAlignMax pooling14⨯14⨯256×414⨯14⨯25628⨯28⨯25628⨯28⨯C28⨯28⨯1Max pooling14⨯14⨯256×414⨯14⨯25628⨯28⨯25628⨯28⨯C28⨯28⨯114⨯14⨯514⨯314⨯14⨯5127⨯7⨯51210241Instance iclassboxInstance jOcclusion matrixOcclude (𝑴𝑴𝒊𝒊,𝑴𝑴𝒋𝒋)InputConvolution and UpsampleMask headStuff branchThing branchFusion moduleInstance masksStuff mapOutputOcclusion headInstance segmentation proposals are ﬁrst sorted in order
+of decreasing detection conﬁdence. Each proposal is then
+examined — the proposal’s mask intersection with the mask
+of all already assigned pixels is considered. If this is above
+a certain ratio of τ (usually 0.5), this instance is entirely
+skipped in the output. Otherwise, pixels in this mask that
+have yet to be assigned are assigned to the instance in the
+output. After all instance proposals of some minimum de-
+tection threshold are considered (usually 0.5), the semantic
+segmentation is merged into the output by considering its
+pixels corresponding to each “stuff ” class. If the total num-
+ber of pixels exceeds some threshold (usually 4096) after
+removing already assigned pixels (a semantic proposal can
+never override an instance one), then these pixels are as-
+signed to the corresponding “stuff” category. Pixels that are
+unassigned after this entire process are considered void pre-
+dictions and have special treatment in the panoptic scoring
+process. We denote this type of fusion as fusion by conﬁ-
+dence.
+Softening the greed. We note that while the greedy process
+for processing proposals is efﬁcient, its most glaring weak-
+ness is the complete reliance on detection conﬁdences (e.g.
+for Mask R-CNN, those from the box classiﬁcation score)
+for a tangential task. Detection scores not only have little
+to do with mask quality (e.g., [13]), but they also do not
+incorporate any knowledge of layout. If they are used in
+such a way, higher detection scores would imply a more
+foreground ordering. Often this is detrimental since Mask
+R-CNN exhibits behavior that can assign near maximum
+conﬁdence to very large objects (e.g. see dining table im-
+ages in Figure 3b) that are both of poor mask quality and
+not truly foreground. Because the process is greedy with
+no reclamation process for merging lower conﬁdence pro-
+posals, it is not uncommon to see images with a signiﬁcant
+number of true instances suppressed in the panoptic output
+by a single instance with large area that was assigned the
+largest conﬁdence.
+Our approach aims to aid this fusion process in bypass-
+ing the reliance on conﬁdences with one that can query
+which of two instances with appreciable intersection should
+be placed on top or below the other in the ﬁnal output, i.e.,
+learn the occlusion between instances so that the fusion pro-
+cess is indifferent to the initial ordering of the instances.
+
+2.2. Occlusion head formulation
+
+Consider two masks Mi and Mj proposed by an in-
+stance segmentation model, and denote their intersection
+
+as Iij = Mi
+
+Occlude(Mi , Mj ) =
+
+(cid:26)1 if Mi should be placed on top of Mj
+0 if Mj should be placed on top of Mi ,
+
+(1)
+
+2.3. Fusion with occlusion head
+
+We now describe our modiﬁcations to the inference-time
+fusion heuristic of [17] that incorporates Occlude(Mi , Mj )
+in Algorithm 1.
+
+Algorithm 1 Fusion with Occlusion Head.
+
+P is H × W matrix, initially empty.
+ρ is a hyperparameter, the minimum intersection ratio for
+occlusion.
+τ is a hyperparameter.
+
+Ci = Mi − P
+
+for each proposed instance mask Mi do
+(cid:46) pixels in Mi that are not assigned in P
+(cid:46) each already merged segment
+Iij is the intersection between mask Mi and Mj .
+
+for j < i do
+
+if Ri ≥ ρ or Rj ≥ ρ then
+
+Ri = Area(Iij )/Area(Mi ).
+Rj = Area(Iij )/Area(Mj ).
+(cid:83) (Cj
+(cid:84) Iij ).
+Ci = Ci
+Cj = Cj − Iij .
+
+(cid:46) signiﬁcant intersection
+if Occlude(Mi , Mj ) = 1 then
+
+end if
+end if
+end for
+
+continue
+else
+
+if Area(Ci )/Area(Mi ) ≤ τ then
+
+assign the pixels in Ci to the panoptic mask P .
+
+end if
+end for
+
+After the instance fusion component has completed, the
+semantic segmentation is then incorporated per usual, only
+considering pixels assigned to stuff classes and determin-
+ing whether the number of unassigned pixels correspond-
+ing to the class in the current panoptic output exceeds some
+threshold, e.g., 4096. The instance fusion process is illus-
+trated in Figure 1.
+
+2.4. Occlusion head architecture
+
+We implement Occlude(Mi , Mj ) as an additional
+“head” within Mask R-CNN [10]. Mask R-CNN already
+contains two heads: a box head that is tasked with tak-
+ing region proposal network (RPN) proposals and reﬁning
+the bounding box as well as assigning classiﬁcation scores,
+while the mask head predicts a ﬁxed size binary mask (usu-
+ally 28 × 28) for all classes independently from the output
+of the box head. Each head derives its own set of features
+from the underlying FPN. We name our additional head, the
+
+“occlusion head” and implement it as a binary classiﬁer that
+takes two (soft) masks Mi and Mj along with their respec-
+tive FPN features (determined by their respective boxes) as
+input. The classiﬁer output is interpreted as the value of
+Occlude(Mi , Mj ).
+The architecture of occlusion head is inspired by [13] as
+shown in Figure 2. For two mask representations Mi and
+Mj , we apply max pooling to produce a 14 × 14 representa-
+tion and concatenate each with the corresponding RoI fea-
+tures to produce the input to the head. Three layers of 3 × 3
+convolutions with 512 feature maps and stride 1 are applied
+before a ﬁnal one with stride 2. The features are then ﬂat-
+tened before a 1024 dimensional fully connected layer and
+ﬁnally projected to a single logit.
+
+2.5. Ground truth occlusion
+
+(cid:84) Mj ) /Area(Mi )
+
+In order to supervise the occlusion head, one must have
+ground truth information describing the layout ordering of
+two masks with overlap. The ground truth panoptic mask
+along with ground truth instance masks can be used to
+derive this. Therefore, we pre-compute the intersection
+between all pairs of masks in the ground truth. Those
+(cid:84) Mj ) /Area(Mj ) is larger than ρ (see Section
+pairs (Mi , Mj ) where either Area (Mi
+or Area (Mi
+5 for tested values of ρ) are considered to have signiﬁcant
+overlap. We then ﬁnd the pixels corresponding to the inter-
+section of the masks in the panoptic ground truth. We de-
+termine the instance occlusion based off of which instance
+owns the majority of pixels in the intersection. We store the
+resulting “occlusion matrix” for each image in an Ni × Ni
+matrix where Ni is the number of instances in the image
+and the value at position (i, j ) is either −1, indicating no
+occlusion, or encodes the value of Occlude(i, j ).
+
+2.6. Occlusion head training
+
+During training, the occlusion head is designed to ﬁrst
+ﬁnd pairs of predicted masks that match to different ground
+truth instances. Then, the intersection between these pairs
+of masks is computed and the ratio of intersection to mask
+area taken. A pair of masks is added for consideration
+when one of these ratios is at least as large as the pre-
+determined threshold ρ (as mentioned in Section 2.5). We
+then subsample the set of all pairs meeting this criterion to
+decrease computational cost. It is desirable for the occlu-
+sion head to reﬂect the consistency of Occlude, therefore
+we also invert all pairs so that Occlude(Mi , Mj ) = 0 ⇐⇒
+Occlude(Mj , Mi ) = 1 whenever the pair (Mi , Mj ) meets
+the intersection criteria. This also mitigates class imbal-
+ance. Since this is a binary classiﬁcation problem, the over-
+all loss Lo from the occlusion head is given by the binary
+cross entropy over all subsampled pairs of masks that meet
+the intersection criteria.
+
+3. Related work
+
+Next, we discuss in detail the difference between OCFu-
+sion and the existing approaches for panoptic segmentation,
+occlusion ordering, and non-maximum suppression.
+
+Panoptic segmentation. The task of panoptic segmentation
+is introduced in [17] along with a baseline where predic-
+tions from instance segmentation (Mask R-CNN [10]) and
+semantic segmentation (PSPNet [40]) are combined via a
+heuristics based fusion strategy. A stronger baseline based
+on a single Feature Pyramid Network (FPN) [21] backbone
+followed by multi-task heads consisting of semantic and in-
+stance segmentation branches is concurrently proposed by
+[19, 18, 16, 38]. On top of this baseline, attention layers are
+added in [19] to the instance segmentation branch, which
+are guided by the semantic segmentation branch; a loss term
+enforcing consistency between things and stuff predictions
+is then introduced in [18]; a parameter-free panoptic head
+which computes the ﬁnal panoptic mask by pasting instance
+mask logits onto semantic segmentation logits is presetned
+in [38]. These works have been making steady progress in
+panoptic segmentation but their focus is not to address the
+problem for explicit reasoning of instance occlusion.
+
+Occlusion ordering and layout learning. Occlusion han-
+
+dling is a long-studied computer vision task [36, 8, 32, 11].
+In the context of semantic segmentation, occlusion ordering
+has been adopted in [33, 3, 42]. A repulsion loss is added
+to a pedestrian detection algorithm [37] to deal with the
+crowd occlusion problem, but it focuses on detection only,
+without instance segmentation.
+In contrast, we study the occlusion ordering problem
+for instance maps in panoptic segmentation. Closest to
+our method is the recent work of [23], which proposes a
+panoptic head to resolve this issue in a similar manner to
+[38] but instead with a learnable convolution layer. Since
+our occlusion head can deal with two arbitrary masks,
+it offers more ﬂexibility over these approaches which
+attempt to “rerank” the masks in a linear fashion [38, 23].
+Furthermore, the approach of [23] is based off how a class
+should be placed on top of another class (akin to semantic
+segmentation) while we explicitly model
+the occlusion
+relation between arbitrary instances. This allows us to
+leverage the intra-class occlusion relations such as “which
+of these two persons should occlude the other?”, and we
+show this leads to a gain in Figure 7 and Table 8.
+In a
+nutshell, we tackle the occlusion problem in a scope that
+is more general than [23] with noticeable performance
+advantage, as shown in Table 1 and Table 2 on MS-COCO
+(note that the result on the Cityscapes is absent in [23]).
+
+Learnable NMS. One can relate resolving occlusions to the
+use of non-maximum suppression (NMS) that is usually ap-
+plied to boxes, while our method tries to suppress intersec-
+
+tions between masks. In this sense, our method acts as a
+learnable version of NMS for instance masks with similar
+computations to the analogous ideas for boxes such as [12].
+
+4. Experiments
+
+4.1. Implementation details
+
+We extend the Mask R-CNN benchmark framework
+[26], built on top of PyTorch, to implement our architecture.
+Batch-normalization [14] layers are frozen and not ﬁne-
+tuned. We perform experiments on the COCO dataset [22]
+with panoptic annotations [17] as well as the Cityscapes
+dataset [4]. We ﬁnd the most stable and efﬁcient way to train
+the occlusion head is by ﬁne-tuning with all other parame-
+ters frozen. We add a single additional loss only at ﬁne-
+tuning time so that the total loss during panoptic training is
+
+L = λi (Lc + Lb + Lm ) + λsLs where Lc , Lb , and Lm are
+
+the box head classiﬁcation loss, bounding-box regression
+loss, and mask loss while Ls is the semantic segmentation
+cross-entropy loss. At ﬁne-tuning time, we only minimize
+Lo , the classiﬁcation loss from the occlusion head. We sub-
+sample 128 mask occlusions per image. During fusion, we
+only consider instance masks with a detection conﬁdence
+of at least 0.5 and reject segments during fusion when their
+overlap ratio with the existing panoptic mask (after occlu-
+sions are resolved) exceeds τ = 0.5 on COCO and τ = 0.6
+on Cityscapes. Lastly, when considering the segments of
+stuff generated from the semantic segmentation, we only
+consider those which have at least 4096 pixels remaining
+after discarding those already assigned on COCO and 2048
+on Cityscapes.
+Semantic head. On COCO, repeat the combination of 3 × 3
+convolution and 2× bilinear upsampling until 1/4 scale is
+reached, following the design of [16]. For the model with
+ResNeXt-101 backbone, we replace each convolution with
+deformable convolution [6]. On Cityscapes, we adopt the
+design from [38] that uses 2 layers of deformable convolu-
+tion followed by a bilinear upsampling to the 1/4 scale.
+COCO. The COCO 2018 panoptic segmentation task con-
+sists of 80 thing and 53 stuff classes. We use 2017 dataset
+which has a split of 118k/5k/20k for training, validation and
+testing respectively.
+Cityscapes. Cityscapes consists of 8 thing classes and
+11 stuff classes. We use only ﬁne dataset with a split of
+2975/500/1525 for training, validation and testing respec-
+tively.
+COCO training. We train the FPN-based architecture de-
+scribed in [16] for 90K iterations on 8 GPUs with 2 im-
+ages per GPU. The base learning rate of 0.02 is reduced
+by 10 at both 60k and 80k iterations. We then proceed
+to ﬁne-tune with the occlusion head for 2500 more iter-
+ations. We choose λi = 1.0 and λs = 0.5 while for
+the occlusion head we choose the intersection ratio ρ as
+
+Table 1: Comparison to prior work on the MS-COCO
+
+val dataset. m.s. stands for multi-scale testing. ∗Used de-
+formable convolution.
+
+Table 2: Comparison to prior work on the MS-COCO
+
+test-dev dataset. m.s. stands for multi-scale testing. ∗Used
+deformable convolution.
+
+Method
+
+Backbone m.s.
+
+test PQ PQTh PQSt
+
+Method
+
+Backbone
+
+m.s.
+test PQ PQTh PQSt
+
+JSIS-Net [7]
+ResNet-50
+26.9 29.3 23.3
+Panoptic FPN [16] ResNet-50
+39.0 45.9 28.7
+Panoptic FPN [16] ResNet-101
+40.3 47.5 29.5
+AUNet [19]
+ResNet-50
+39.6 49.1 25.2
+UPSNet∗ [38]
+ResNet-50
+42.5 48.5 33.4
+UPSNet∗ [38]
+ResNet-50 (cid:88) 43.2 49.1 34.1
+OANet [23]
+ResNet-50
+39.0 48.3 24.9
+OANet [23]
+ResNet-101
+40.7 50.0 26.6
+AdaptIS [31]
+ResNet-50
+35.9 40.3 29.3
+AdaptIS [31]
+ResNet-101
+37
+41.8 29.9
+AdaptIS [31]
+ResNeXt-101
+42.3 49.2 31.8
+OCFusion
+ResNet-50
+41.3 49.4 29.0
+OCFusion
+ResNet-101
+43.0 51.1 30.7
+OCFusion∗
+ResNeXt-101
+45.7 53.1 34.5
+ResNet-50 (cid:88) 41.9 49.9 29.9
+OCFusion
+ResNet-101 (cid:88) 43.5 51.5 31.5
+OCFusion
+OCFusion∗
+
+ResNeXt-101 (cid:88) 46.3 53.5 35.4
+
+0.2. For models with ResNet-50 and ResNet-101 backbone,
+we use random horizontal ﬂipping as data augmentation.
+For model with ResNeXt-101 backbone, we additionally
+use scale jitter (with scale of shorter image edge equals to
+
+{640, 680, 720, 760, 800}).
+
+Cityscapes training. We random rescale each image by
+0.5 to 2× (scale factor sampled from a uniform distribu-
+tion), and construct each batch of 16 (4 images per GPU)
+by randomly cropping images of size 512 × 1024. We
+train for 65k iterations with a base learning rate of 0.01 that
+is reduced by 10 at 40k and 55k iterations. We ﬁne-tune
+the occlusion head for 5000 more iterations. We choose
+λi = λs = 1.0 with intersection ratio ρ as 0.1. We do not
+pretrain on COCO.
+
+Panoptic segmentation metrics. We adopt the panoptic
+
+quality (PQ) metric from [17] to measure panoptic segmen-
+tation performance. This single metric can capture both seg-
+mentation and recognition quality. PQ can be further broken
+down into scores speciﬁc to things and stuff, denoted PQTh
+and PQSt , respectively.
+Multi-scale testing. We adopt the same scales as [38] for
+both COCO and Cityscapes multi-scale testing. For stuff
+branch, we average the multi-scale semantic logits of se-
+mantic head. For thing branch, we average the multi-scale
+masks and choose not to do bounding box augmentation for
+simplicity.
+
+JSIS-Net [7]
+ResNet-50
+27.2 29.6 23.4
+Panoptic FPN [16] ResNet-101
+40.9 48.3 29.7
+OANet [23]
+ResNet-101
+41.3 50.4 27.7
+ResNeXt-152 (cid:88) 46.5 55.9 32.5
+AUNet [19]
+UPSNet [38]
+ResNet-101∗ (cid:88) 46.6 53.2 36.7
+AdaptIS [31]
+ResNeXt-101
+42.8 50.1 31.8
+ResNeXt-101∗ (cid:88) 46.7 54.0 35.7
+OCFusion
+
+Table 3: Comparison to our implementation of Panoptic
+FPN [16] baseline model on the MS-COCO val dataset.
+
+Method
+
+Backbone PQ PQTh PQSt
+
+Baseline
+OCFusion
+relative improvement
+Baseline
+OCFusion
+relative improvement
+
+ResNet-50 39.5 46.5 29.0
+ResNet-50 41.3 49.4 29.0
++1.8 +3.0 +0.0
+ResNet-101 41.0 47.9 30.7
+ResNet-101 43.0 51.1 30.7
++2.0 +3.2 +0.0
+
+4.2. COCO panoptic benchmark
+
+We obtain state-of-the-art results on COCO Panoptic
+Segmentation validation set with and without multi-scale
+testing as is shown in 1. We also obtain single model state-
+of-the-art results on the COCO test-dev set, as shown in Ta-
+ble 2. In order to show the effectiveness of our method, we
+compare to our baseline model in Table 3, and the results
+show that our method consistently provides signiﬁcant gain
+on PQTh as well as PQ.
+
+4.3. Cityscapes panoptic benchmark
+
+We obtain competitive results on Cityscapes Panoptic
+Segmentation validation set and the best results among
+models with ResNet-50 backbone, shown in Table 4. Ta-
+ble 5 shows our strong relative improvement over baseline
+on PQTh as well as PQ.
+
+4.4. Visual comparisons
+
+Since panoptic segmentation is a relatively new task, the
+most recent papers offer only comparisons against the base-
+line presented in [17]. We additionally compare with a few
+other recent methods [23, 38].
+We ﬁrst compare our method against [16] in Figure 4
+as well as two recent works: UPSNet [38] in Figure 6 and
+
+Figure 4: Comparison against Kirillov et al. [16] which uses fusion by conﬁdence.
+
+Figure 5: Comparison against Spatial Ranking Module [23].
+
+Figure 6: Comparison against UPSNet [38].
+
+Table 4: Comparison to prior work on the Cityscapes val
+
+dataset. All results are based on a ResNet-50 backbone.
+m.s. stands for multi-scale testing. ∗Used deformable con-
+volution.
+
+Method
+
+m.s.
+test
+
+PQ PQTh PQSt
+
+Panoptic FPN [16]
+AUNet [19]
+UPSNet∗ [38]
+UPSNet∗ [38]
+AdaptIS [31]
+OCFusion∗
+OCFusion∗
+
+57.7
+56.4
+59.3
+(cid:88) 60.1
+59.0
+59.3
+
+(cid:88) 60.2
+
+51.6
+52.7
+54.6
+55.0
+
+55.8
+
+53.5
+54.0
+
+62.2
+59.0
+62.7
+63.7
+61.3
+63.6
+
+64.7
+
+Table 5: Comparison to our implementation of Panoptic
+FPN [16] baseline model on the Cityscapes val dataset.
+
+All results are based on a ResNet-50 backbone.
+
+Method
+
+PQ PQTh PQSt
+
+Baseline
+58.6
+OCFusion
+59.3
+relative improvement +0.7
+
+51.7
+53.5
++1.7
+
+63.6
+63.6
++0.0
+
+the Spatial Ranking Module of [23] in Figure 5. The latter
+two have similar underlying architectures alongside modi-
+ﬁcations to their fusion process. We note that except for
+comparisons between [16], the comparison images shown
+are those included in the respective papers and not of our
+own choosing. Overall, we see that our method is able to
+preserve a signiﬁcant number of instance occlusions lost
+by other methods while maintaining more realistic fusions,
+e.g., the arm is entirely above the man versus sinking behind
+partly as in “fusion by conﬁdence”.
+
+Figure 7: Comparison for w/o (left) or w/ (right) intra-
+class capability enabled. Best viewed in color.
+
+5. Ablation experiments
+
+We study the sensitivity of our method to the hyperpa-
+rameters τ and ρ in Table 6 for COCO and Table 7 for
+
+Table 6: COCO Hyperparameter Ablation: PQ
+
+(τ , ρ) 0.05
+0.10
+0.20
+0.4
+41.27 (Th: 49.43, St: 28.97) 41.22 (Th: 49.33, St: 28.97) 41.20 (Th: 49.30, St: 28.97)
+0.5
+41.20 (Th: 49.32, St: 28.95) 41.15 (Th: 49.23, St: 28.95) 41.24 (Th: 49.29, St: 29.10)
+0.6
+41.09 (Th: 49.15, St: 28.93) 41.03 (Th: 49.03, St: 28.93) 41.02 (Th: 49.02, St: 28.93)
+N
+192,519
+157,784
+132,165
+
+Table 7: Cityscapes Hyperparameter Ablation: PQ
+
+(τ , ρ) 0.05
+0.10
+0.20
+0.4
+58.76 (Th: 52.10, St: 63.62) 59.15 (Th: 53.00, St: 63.62) 59.07 (Th: 52.80, St: 63.63)
+0.5
+59.18 (Th: 53.09, St: 63.61) 59.26 (Th: 53.28, St: 63.61) 59.22 (Th: 53.19, St: 63.61)
+0.6
+59.21 (Th: 53.17, St: 63.61) 59.33 (Th: 53.46, St: 63.60) 58.70 (Th: 51.96, St: 61.60)
+N
+33,391
+29,560
+6,617
+
+Cityscapes. We also include the number of examples of oc-
+clusions we are able to collect at the given ρ denoted as
+N. Naturally, a larger ρ leads to less spurious occlusions but
+decreases the overall number of examples that the occlusion
+head is able to learn from.
+Intra-class instance occlusion in Cityscapes is a chal-
+lenging problem, also noted in [10]. Since we can enable
+inter-class or intra-class occlusion query ability indepen-
+dently, we show ablation results in Table 8 that highlight
+the importance of being able to handle intra-class occlusion
+on. We believe this sets our method apart from others, e.g.,
+[23] which simplify the problem by handling inter-class oc-
+clusion only. Additionally, Figure 7 shows a visual compar-
+ison between resulting panoptic segmentations when intra-
+class occlusion handling is toggled on Cityscapes. Only the
+model with intra-class handling enabled can handle the oc-
+cluded cars better during the fusion process.
+
+Table 8: Ablation study on different types of occlusion on
+the Cityscapes val dataset. (cid:88)means capability enabled.
+Inter-class Intra-class
+PQ
+PQTh
+PQSt
+
+(cid:88)
+(cid:88)
+
+58.6
+51.7
+63.6
+59.2 (+0.5) 53.0 (+1.3) 63.6 (+0.0)
+59.3 (+0.7) 53.5 (+1.7) 63.6 (+0.0)
+
+(cid:88)
+
+6. Conclusion
+
+In this paper, we have introduced an explicit notion of
+instance occlusion to Mask R-CNN so that instances may
+be effectively fused when producing a panoptic segmenta-
+tion. We assemble a dataset of occlusions already present in
+the COCO and Cityscapes datasets and then learn an addi-
+tional head for Mask R-CNN tasked with predicting occlu-
+sion between two masks. Empirical results show that our
+proposed OCFusion produces state-of-the-art result on the
+COCO panoptic segmentation benchmark. Adding occlu-
+sion head on top of Panoptic FPN incurs minimal overhead
+and we show that it is effective even when trained for few
+thousand iterations. In the future, we hope to explore how
+further understanding of occlusion, including relationships
+of stuff, could be helpful.
+
+Acknowledgements. This work is supported by NSF IIS-
+1618477 and IIS-1717431. The authors thank Yifan Xu,
+Weijian Xu, Sainan Liu, Yu Shen, and Subarna Tripathi for
+valuable discussions.
+
+References
+
+[1] Irving Biederman.
+Recognition-by-components:
+a the-
+ory of human image understanding. Psychological review,
+94(2):115, 1987. 1
+[2] Liang-Chieh Chen, George Papandreou, Iasonas Kokkinos,
+Kevin Murphy, and Alan L Yuille. Deeplab: Semantic image
+segmentation with deep convolutional nets, atrous convolu-
+tion, and fully connected crfs. IEEE transactions on pattern
+analysis and machine intelligence, 40(4):834–848, 2018. 1
+[3] Yi-Ting Chen, Xiaokai Liu, and Ming-Hsuan Yang. Multi-
+instance object segmentation with occlusion handling.
+In
+CVPR, 2015. 5
+[4] Marius Cordts, Mohamed Omran, Sebastian Ramos, Timo
+Rehfeld, Markus Enzweiler, Rodrigo Benenson, Uwe
+Franke, Stefan Roth, and Bernt Schiele. The cityscapes
+dataset for semantic urban scene understanding. In CVPR,
+2016. 5
+[5] Jifeng Dai, Kaiming He, and Jian Sun. Instance-aware se-
+mantic segmentation via multi-task network cascades.
+In
+CVPR, 2016. 1
+[6] Jifeng Dai, Haozhi Qi, Yuwen Xiong, Yi Li, Guodong
+Zhang, Han Hu, and Yichen Wei. Deformable convolutional
+networks. In ICCV, 2017. 5
+[7] Daan de Geus, Panagiotis Meletis, and Gijs Dubbelman.
+Panoptic segmentation with a joint semantic and instance
+segmentation network. arXiv preprint arXiv:1809.02110,
+2018. 6
+[8] Markus Enzweiler, Angela Eigenstetter, Bernt Schiele, and
+Dariu M Gavrila. Multi-cue pedestrian classiﬁcation with
+partial occlusion handling. In CVPR, pages 990–997. IEEE,
+2010. 5
+[9] Mark Everingham, Luc Van Gool, Christopher KI Williams,
+John Winn, and Andrew Zisserman. The pascal visual object
+classes (voc) challenge.
+International journal of computer
+vision, 88(2):303–338, 2010. 1
+[10] Kaiming He, Georgia Gkioxari, Piotr Doll ´ar, and Ross Gir-
+shick. Mask r-cnn. In ICCV, 2017. 1, 2, 4, 5, 8
+[11] Derek Hoiem, Andrew N Stein, Alexei A Efros, and Mar-
+tial Hebert. Recovering occlusion boundaries from a single
+image. In ICCV, 2007. 5
+[12] Jan Hosang, Rodrigo Benenson, and Bernt Schiele. Learning
+non-maximum suppression. In CVPR, 2017. 5
+[13] Zhaojin Huang, Lichao Huang, Yongchao Gong, Chang
+Huang, and Xinggang Wang. Mask scoring r-cnn. In CVPR,
+2019. 3, 4
+[14] Sergey Ioffe and Christian Szegedy. Batch normalization:
+Accelerating deep network training by reducing internal co-
+variate shift. arXiv preprint arXiv:1502.03167, 2015. 5
+[15] Long Jin, Zeyu Chen, and Zhuowen Tu. Object detection free
+instance segmentation with labeling transformations. arXiv
+preprint arXiv:1611.08991, 2016. 1
+
+[16] Alexander Kirillov, Ross Girshick, Kaiming He, and Piotr
+Doll ´ar. Panoptic feature pyramid networks. In CVPR, 2019.
+1, 2, 5, 6, 7, 8
+[17] Alexander Kirillov, Kaiming He, Ross Girshick, Carsten
+Rother, and Piotr Doll ´ar. Panoptic segmentation. In CVPR,
+2019. 1, 2, 3, 4, 5, 6
+[18] Jie Li, Allan Raventos, Arjun Bhargava, Takaaki Tagawa,
+and Adrien Gaidon. Learning to fuse things and stuff. arXiv
+preprint arXiv:1812.01192, 2018. 5
+[19] Yanwei Li, Xinze Chen, Zheng Zhu, Lingxi Xie, Guan
+Huang, Dalong Du, and Xingang Wang. Attention-guided
+uniﬁed network for panoptic segmentation. In CVPR, 2019.
+1, 5, 6, 8
+[20] Xiaodan Liang, Yunchao Wei, Xiaohui Shen, Jianchao
+Yang, Liang Lin, and Shuicheng Yan. Proposal-free net-
+work for instance-level object segmentation. arXiv preprint
+arXiv:1509.02636, 2015. 1
+[21] Tsung-Yi Lin, Piotr Doll ´ar, Ross B. Girshick, Kaiming He,
+Bharath Hariharan, and Serge J. Belongie. Feature pyramid
+networks for object detection. In CVPR, 2017. 2, 5
+[22] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays,
+Pietro Perona, Deva Ramanan, Piotr Doll ´ar, and C Lawrence
+Zitnick. Microsoft coco: Common objects in context.
+In
+ECCV, 2014. 5
+[23] Huanyu Liu, Chao Peng, Changqian Yu, Jingbo Wang, Xu
+Liu, Gang Yu, and Wei Jiang. An end-to-end network for
+panoptic segmentation. In CVPR, 2019. 5, 6, 7, 8
+[24] Jonathan Long, Evan Shelhamer, and Trevor Darrell. Fully
+convolutional networks for semantic segmentation.
+In
+CVPR, 2015. 1
+[25] David Marr. Vision: A computational investigation into the
+human representation and processing of visual information,
+henry holt and co. Inc., New York, NY, 2(4.2), 1982. 1
+[26] Francisco Massa and Ross Girshick. maskrcnn-benchmark:
+Fast, modular reference implementation of Instance Seg-
+mentation and Object Detection algorithms in PyTorch.
+
+https://github.com/facebookresearch/
+
+maskrcnn-benchmark, 2018. Accessed: January 5,
+2019. 5
+[27] Pedro O Pinheiro, Ronan Collobert, and Piotr Dollar. Learn-
+ing to segment object candidates. In NIPS, 2015. 1
+[28] Pedro O. Pinheiro, Tsung-Yi Lin, Ronan Collobert, and Piotr
+Dollr. Learning to reﬁne object segments. In ECCV, 2016. 1
+[29] Hayko Riemenschneider, Sabine Sternig, Michael Donoser,
+Peter M Roth, and Horst Bischof. Hough regions for joining
+instance localization and segmentation. In ECCV. 2012. 1
+[30] Jamie Shotton, John Winn, Carsten Rother, and Antonio Cri-
+minisi. Textonboost: Joint appearance, shape and context
+modeling for multi-class object recognition and segmenta-
+tion. In European conference on computer vision, pages 1–
+15. Springer, 2006. 1
+[31] Konstantin Soﬁiuk, Olga Barinova, and Anton Konushin.
+Adaptis: Adaptive instance selection network. In Proceed-
+ings of the IEEE International Conference on Computer Vi-
+sion, pages 7355–7363, 2019. 6, 8
+[32] Jian Sun, Yin Li, Sing Bing Kang, and Heung-Yeung Shum.
+Symmetric stereo matching for occlusion handling.
+In
+CVPR, 2005. 5
+
+[33] Joseph Tighe, Marc Niethammer, and Svetlana Lazebnik.
+Scene parsing with object instances and occlusion ordering.
+In CVPR, 2014. 1, 5
+[34] Zhuowen Tu. Auto-context and its application to high-level
+vision tasks. In CVPR, 2008. 1
+[35] Zhuowen Tu, Xiangrong Chen, Alan L Yuille, and Song-
+Chun Zhu. Image parsing: Unifying segmentation, detection,
+and recognition. International Journal of computer vision,
+63(2):113–140, 2005. 1
+[36] Xiaoyu Wang, Tony X Han, and Shuicheng Yan. An hog-lbp
+human detector with partial occlusion handling.
+In ICCV,
+2009. 5
+[37] Xinlong Wang, Tete Xiao, Yuning Jiang, Shuai Shao, Jian
+Sun, and Chunhua Shen. Repulsion loss: Detecting pedestri-
+ans in a crowd. In CVPR, 2018. 5
+[38] Yuwen Xiong, Renjie Liao, Hengshuang Zhao, Rui Hu, Min
+Bai, Ersin Yumer, and Raquel Urtasun. Upsnet: A uniﬁed
+panoptic segmentation network. In CVPR, 2019. 1, 5, 6, 7, 8
+[39] Ziyu Zhang, Sanja Fidler, and Raquel Urtasun.
+Instance-
+level segmentation for autonomous driving with deep
+densely connected mrfs. In CVPR, 2016. 1
+[40] Hengshuang Zhao, Jianping Shi, Xiaojuan Qi, Xiaogang
+Wang, and Jiaya Jia. Pyramid scene parsing network.
+In
+CVPR, 2017. 1, 5
+[41] Shuai Zheng, Sadeep Jayasumana, Bernardino Romera-
+Paredes, Vibhav Vineet, Zhizhong Su, Dalong Du, Chang
+Huang, and Philip HS Torr. Conditional random ﬁelds as
+recurrent neural networks. In ICCV, 2015. 1
+[42] Yan Zhu, Yuandong Tian, Dimitris Metaxas, and Piotr
+Doll ´ar. Semantic amodal segmentation. In CVPR, 2017. 5
+
+

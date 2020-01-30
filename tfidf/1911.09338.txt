@@ -1,0 +1,1550 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+8
+3
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Voice-Face Cross-modal Matching and Retrieval: A Benchmark
+
+Chuyuan Xiong*
+Renmin University of China
+
+Deyuan Zhang*
+Shenyang Aerospace University
+
+Tao Liu†
+Renmin University of China
+
+chuyuan@ruc.edu.cn
+
+dyzhang@sau.edu.cn
+
+tliu@ruc.edu.cn
+
+Xiaoyong Du
+Renmin University of China
+
+duyong@ruc.edu.cn
+
+Abstract
+
+Cross-modal associations between persons voice and
+face can be learnt algorithmically, which can beneﬁt a lot
+of applications. The problem can be deﬁned as voice-face
+matching and retrieval tasks. Much research attention has
+been paid on these tasks recently. However, this research
+is still in the early stage. Test schemes based on random
+tuple mining tend to have low test conﬁdence. General-
+ization ability of models cant be evaluated by small scale
+datasets. Performance metrics on various tasks are scarce.
+A benchmark for this problem needs to be established. In
+this paper, ﬁrst, a framework based on comprehensive stud-
+ies is proposed for voice-face matching and retrieval.
+It
+achieves state-of-the-art performance with various perfor-
+mance metrics on different tasks and with high test conﬁ-
+dence on large scale datasets, which can be taken as a base-
+line for the follow-up research. In this framework, a voice
+anchored L2-Norm constrained metric space is proposed,
+and cross-modal embeddings are learned with CNN-based
+networks and triplet loss in the metric space. The embed-
+ding learning process can be more effective and efﬁcient
+with this strategy. Different network structures of the frame-
+work and the cross language transfer abilities of the model
+are also analyzed. Second, a voice-face dataset (with 1.15M
+face data and 0.29M audio data) from Chinese speakers
+is constructed, and a convenient and quality controllable
+dataset collection tool is developed. The dataset and source
+code of the paper will be published together with this paper.
+
+1. Introduction
+
+Studies in biology and neuroscience have shown that hu-
+mans appearances are associated with their voices [16, 22,
+23]. Both the facial features and voice-controlling organs
+
+* The ﬁrst two authors contributed equally.
+†Corresponding author: tliu@ruc.edu.cn
+
+of individuals are affected by hormones and genetic infor-
+mation [9, 12, 24, 26]. Human beings have the ability to rec-
+ognize this association. For example, when hearing from a
+phone call, we can guess the gender, the approximate age
+of the person on the other end of the line. When watch-
+ing an unvoiced TV show, we can imagine the approximate
+voice by observing the face movement of the protagonist.
+With the recent advances of deep learning, face recognition
+models [15, 28, 29] and speaker recognition models [14, 25]
+have achieved extremely high precision. Can the associa-
+tions between voices and faces be discovered algorithmi-
+cally by machines? The research on this problem can ben-
+eﬁt a lot of applications such as synchronizing video faces
+and talking voice, generating faces according to voices.
+In recent years, much research attention [10, 13, 17, 18,
+27] has been paid on the voice-face cross-modal learn-
+ing tasks, which have shown the feasibility of recognizing
+voice-face associations. This problem is generally formu-
+lated as a voice-face matching task and a voice-face retrieval
+task as shown in Figure 1. Given a set of voice audios and
+faces, voice-face matching is to tell which face makes the
+voice when machine hearing a voice audio. Voice-face re-
+trieval is to present a sorted sequence of faces in the order
+of estimated match from a query of voice recording.
+SVHF [18] is the prior of voice-face cross-modal learn-
+ing, which studies the performance of CNN-based deep net-
+work on this problem. The humans baseline for voice-face
+matching task is also proposed in this paper. Both the voice
+to face and the face to voice matching tasks are studied in
+Pins [17] and Horiguchi’s work [10], which exhibits sim-
+ilar performance on these two tasks. Curriculum learning
+schedule is introduced in Pins for hard negative mining.
+Various visualizations of embedding vectors are presented
+to show the learned audio-visual associations in Kim’s work
+[13]. DIMNet [27] learns the common representations for
+faces and voices by leveraging their relationship to some
+covariates such as gender and nationality. DIMNet obtains
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+[20] dataset. Vox-VGG-1 is also the intersection of the
+VoxCeleb1 dataset [19] and the MS-Celeb-1M dataset [7].
+The generalization abilities of cross-modal learning models
+need to be evaluated on more data. In this paper, the Vox-
+VGG-2 [2, 4] dataset formed by the intersection of the Vox-
+Celeb2 [4] dataset and the VGGFace2 [2] dataset is used,
+which includes 5994 English speakers. The Chinese VF
+dataset constructed by a data collection tool described in
+Section 2.2 is also used, which include 500 Chinese speak-
+ers. The statistic of Vox-VGG-1, Vox-VGG-2 and Chi-
+nese VF is shown in table 1.
+
+Dataset
+
+Vox-VGG-2 [2, 4],
+
+Vox-VGG-1 [19, 20]
+
+Chinese VF
+
+Gender
+Male
+Female
+Total
+Male
+Female
+Total
+Male
+Female
+Total
+
+#Identities
+3,682
+2,312
+5,994
+690
+561
+1,251
+242
+258
+500
+
+#Utterances
+775,260
+316,749
+1,092,009
+103,295
+50,221
+153,516
+178,044
+118,225
+296,269
+
+#Images (After MTCNN [31])
+1,268,937
+636,079
+1,905,016
+378,152
+195,131
+573,283
+673,737
+476,973
+1,150,710
+
+Table 1: The statistics of voice-face cross-modal datasets.
+
+2.2. Dataset Collection Pipeline
+
+Collecting datasets from speakers with different lan-
+guages is important for analyzing the characteristics of
+cross language cross-modal learning. There are still no cur-
+rently available voice-face datasets from Chinese speakers.
+Though some speech recognition datasets can be used for
+speaker recognition, there are no corresponding face im-
+ages or videos available. Furthermore, the public avail-
+able speech recognition datasets from Chinese speakers are
+also very rare and only contain a few speakers. A semi-
+automatic tool is developed for collecting voice-face data
+from type-speciﬁc videos. Collecting data from any kind of
+video will lead to very much noise and need tedious human
+labeling effort, and more complex techniques such as Sync-
+Net [5] are needed to determine the active speaker. The type
+of videos for this tool is restricted to videos where only one
+person is talking in each video, which can greatly simplify
+the data collection procedure. The videos of MOOCs can
+meet this demand. As shown in Figure 2, the data collection
+tool consists of ﬁve steps: 1) User need to capture several
+high quality face screenshots for a target speaker. 2) User
+needs to mark a time period in the video when the speaker is
+active. The audio corresponding to the marked time period
+is extracted, and is taken as a ground truth audio. 3) Face
+detection is conducted using MTCNN [7] and audio detec-
+tion is conducted based on algorithms 1. 4) The scores of
+all collected faces and speech segments are computed based
+on their similarities with the ground-truth. 5) By setting up
+two thresholds, high quality data are retained.
+
+2
+
+Figure 1: Voice-face matching and retrieval tasks.
+
+the accuracy of 84.12% on the 1:2 matching which exceeds
+the human level.
+The research on this problem is still in the early stage.
+Datasets used by previous research are always very small,
+which cant evaluate the generalization ability of models suf-
+ﬁciently. Traditional test schemes based on random tuple
+mining tend to have low conﬁdence. A benchmark for this
+problem needs to be established. This paper presents a
+voice-face cross-modal matching and retrieval framework,
+a dataset from Chinese speakers and a data collection tool.
+In the framework, cross-modal embeddings are learned with
+CNN-based networks and triplet loss in a voice anchored
+metric space with L2-Norm constraint. An identity based
+example sampling method is adopted to improve the model
+efﬁciency. The proposed framework achieves state-of-the-
+art performance on multiple tasks. For example, the result
+of 1:2 matching tested on 10 million triplets (thousands of
+people) achieved 84.48%, which is also higher than DIM-
+Net tested on 189 people. We have evaluated the various
+modules of the CNN-based framework and provided our
+recommendations. In addition, matching and retrieval based
+on the average of multiple voices and multiple faces are
+also attempted, which can further improve the performance.
+This task is a simplest way for analyzing video data. Large-
+scale datasets are used in this problem to ensure the gen-
+eralization ability required in real application. The cross
+language transfer capability of the model is studied on the
+voice-face dataset of Chinese speakers we constructed. A
+series of performance metrics are presented on these tasks
+by extensive experiments. The source code of the paper and
+the dataset collection tool will be published along with the
+paper.
+
+2. Voice-Face Matching and Retrieval (VFMR)
+
+2.1. Dataset
+
+The dataset used by previous research is Vox-VGG-1
+[10, 19, 20] with 1251 English speakers, which is the in-
+tersection of the VoxCeleb1 [19] dataset and VggFace1
+
+Matching:Who is more likely to makethisvoice?Retrieval:Rankfaceimagesaccordingtheirrelatednesswiththevoicequery.Facedatabase…SingleVoiceRetrievedSequencePositiveFace√CorrectMatch×WrongMatchSingleVoiceNegativeFacen×WrongMatchNegativeFace1……Figure 2: Overview of the proposed dataset collection tool.
+
+Figure 3: Comparisons of VFMR with other existing methods.
+
+Algorithm 1 Speech Detection Algorithm
+1: Input: Audio-track from video: v ; Ground-truth: gt;
+Detection threshold: t;
+2: Initialize: Window: w; Min window size: smin ; Max
+window size: smax ; Step window size: sstep ;
+
+3: wstart = 0, wend = smin
+
+4: while wend < vlength do
+5:
+if score(w, gt) > t and score([wstart , wend +
+s], gt) > score(w, gt) then
+
+[wstart , wend ] = [wstart , wend + sstep ]
+
+else
+
+Extract segment w , record.
+
+[wstart , wend ] = [wend , wend + smin ]
+
+6:
+7:
+8:
+9:
+10:
+
+end if
+11: end while
+
+2.3. Learning Voice Anchored Embedding in L2-
+constrained Metric Space
+
+The representation learning of voices and faces is the ba-
+sis for voice-face matching and retrieval. The existing em-
+bedding learning methods for cross-modal learning can be
+classiﬁed as classiﬁcation based methods and pair-wise loss
+based methods as shown in Figure 3. CNNs-based networks
+are normally used to embed the voices and faces to fea-
+ture vectors. In [18], feature embeddings from multi-stream
+CNN architecture are concatenated and then fed into multi-
+
+3
+
+ple softmax classiﬁers for 1:n matching task. In [27], con-
+trolled by a modality switch, voice or face embedding net-
+works are selected to generate common features for either
+face or voice, and the learning is then supervised by a multi-
+task classiﬁcation network. For pair-wise loss based meth-
+ods, a pair or a triplet of vectors are embedded by voice and
+face network, and Contrastive Loss [8] or Triplet Loss [21]
+is used to supervise the learning of embeddings. Pair-wise
+loss based methods are aimed at making the embeddings of
+positive pairs closer and the embeddings of negative pairs
+farther. Classiﬁcation based methods are aimed at separat-
+ing the embeddings of different classes. Compared with
+classiﬁcation based methods, pair-wise loss based meth-
+ods are better at distinguishing hard examples due to the
+characteristics of these methods. Adding additional super-
+vised information for the classiﬁcation based methods such
+as gender information are also targeted to constrain the ex-
+ample space. In this paper, a novel voice anchored embed-
+ding learning method in l2-constrained metric space is pro-
+posed, which belongs to the pair-wise loss based methods.
+The proposed method can improve the performance of tra-
+ditional methods greatly.
+Network Structure. LResNet50 [6] and Thin ResNet34
+[30] with NetVLAD [1] are well-performed networks in
+face recognition and speaker recognition task respectively.
+These two networks as shown in table 2 are used in this
+paper for face feature extraction and voice feature extrac-
+tion respectively. The input of the embedding network is a
+
+ManuallylabelingseveralfaceimagesManually labeling a time rangewhen target person is talkingSpeechDetect(BasedonSlidingWindows)CollectingVideoThousandsofFaces…10-secondHundredsofAudioSegments…8-secondLittleBitManuallyLabeling.........…...…AudioEmbeddingsFaceEmbeddings...AudioEmbedding(Ground-Truth)...MeanFaceEmbedding(Ground-Truth)FaceDetect(MTCNN)SupervisedAutomaticalProcessing1.jpg0.712.jpg0.833.jpg0.624.jpg0.91...CalculatescoreswithGround-Truth1.wav0.762.wav0.893.wav0.884.wav0.91...CalculatescoreswithGround-TruthAudioDataFaceDataSetthresholdSortbyscoresSetthresholdSortbyscoresMOOCVideos…VGG-MVGGVOX(cid:1)(cid:13)(cid:6)(cid:19)(cid:19)(cid:12)(cid:10)(cid:12)(cid:7)(cid:6)(cid:20)(cid:12)(cid:16)(cid:15)SVHFMetricSpaceConcatCNN(similartoVGG)CNN(similartoVGG-M)(cid:1)(cid:13)(cid:6)(cid:19)(cid:19)(cid:12)(cid:10)(cid:12)(cid:7)(cid:6)(cid:20)(cid:12)(cid:16)(cid:15)DIMNetCommonVectorsVGG-MVGGVOX(cid:1)(cid:16)(cid:15)(cid:20)(cid:18)(cid:6)(cid:19)(cid:20)(cid:12)(cid:21)(cid:9)(cid:3)(cid:16)(cid:19)(cid:19)PinsPairVectorsVGG-MSoundNetKim’sTripleVectors(cid:5)(cid:18)(cid:12)(cid:17)(cid:13)(cid:9)(cid:20)(cid:3)(cid:16)(cid:19)(cid:19)ResNet50ResNet+NetVLADOursVFMR(cid:5)(cid:18)(cid:12)(cid:17)(cid:13)(cid:9)(cid:20)(cid:3)(cid:16)(cid:19)(cid:19)(cid:2)(cid:8)(cid:9)(cid:15)(cid:20)(cid:12)(cid:20)(cid:22)Based(cid:4)(cid:6)(cid:14)(cid:17)(cid:13)(cid:12)(cid:15)(cid:11)ClassificationBasedMethodsPair-wiseLossBasedMethodsTripleVectorsSingleInputwithModalSwitchTripleInputResNet50i-vectormodel(cid:1)(cid:16)(cid:19)(cid:12)(cid:15)(cid:9)(cid:4)(cid:12)(cid:14)(cid:12)(cid:13)(cid:6)(cid:18)(cid:12)(cid:20)(cid:22)Horiguchi’sPairVectorsPairInputPairInputPairInputFigure 4: Overview of Voice-face Embedding Learning Framework, which consists of three components. 1) Identity based
+data sampling method. 2) Face feature extraction based on LResNet50 and voice feature extraction based on Thin ResNet34
+with NetVLAD. 3) Using Triplet Loss upon L2 constrained metric space. After training, face embedding and voice embed-
+ding form their own regions and the distance between positive samples tends to be closer.
+
+triplet set. For a speciﬁc triplet < vi , fi , fj >, vi and fi
+are from same identity, vi and fj are from different identi-
+ties. The feature extraction functions for voice and face are
+deﬁned as F eaturev (v) and F eaturef (f ) respectively. A
+full connected layer is added to form the embedding vec-
+2 , and
+2 ), we add
+l2 constraints and scale variables s to the output of the net-
+work.
+
+tor as embv (v) = s × (cid:107)(Wv × F eaturev (v) + Bv )(cid:107)2
+embf (f ) = s × (cid:107)(Wf × F eaturev (f ) + Bf (cid:107)2
+
+Triplet loss upon l2-constrained metric space. Triplet
+
+loss is adopted in this paper for embedding learning. As il-
+lustrated in Figure 5a, embedding vectors from the same
+person in Euclidean space will be closer after long time
+training. Since there are billions of input triplets, it is difﬁ-
+cult to obtaining satisfactory results by directly training in
+the huge Euclidean space. Two strategies are adopted in this
+
+Thin ResNet34
+
+ × 2
+ × 3
+ × 3
+ × 3
+
+conv, 1 × 1, 48
+conv2d, 7 × 7,
+maxpool, 2 × 2
+64
+ conv, 1 × 1, 96
+conv, 3 × 3, 48
+conv, 1 × 1, 96
+conv, 1 × 1, 128
+conv, 3 × 3, 96
+conv, 1 × 1, 128
+conv, 1 × 1, 256
+conv, 3 × 3, 128
+conv, 1 × 1, 256
+conv, 3 × 3, 256
+conv, 1 × 1, 512
+maxpool, 3 × 1
+conv2d, 7 × 1, 512
+
+LResNet50
+
+64
+
+ × 3
+ × 4
+ × 6
+ × 3
+
+ conv, 1 × 1, 64
+conv2d, 3 × 3,
+conv, 1 × 1, 128
+conv, 3 × 3, 64
+conv, 1 × 1, 256
+ conv, 1 × 1, 256
+conv, 3 × 3, 128
+conv, 1 × 1, 512
+ conv, 1 × 1, 512
+conv, 3 × 3, 256
+conv, 1 × 1, 1024
+conv, 3 × 3, 512
+conv, 1 × 1, 2048
+FC2, 512
+BN + L2 norm
+
+Table 2: Structures of Thin ResNet34 and LResNet50.
+
+4
+
+paper to deal with this problem. First, L2 normalization is
+added to constrain the embedding vectors to be on a spher-
+ical space (Figure 5b). Second, voice anchored embedding
+learning is adopted. By freezing the pre-trained voice em-
+bedding network, feature vectors from voice are served as
+anchors and the goal of the model is to make the positives
+approach and keep negatives away (Figure 5c). Examples
+tend to be distinguished much better and faster in voice an-
+chored embedding learning process together with the L2
+constrained space. Suppose d(x) indicates Euclidean dis-
+tance, the loss function is deﬁned as Eq. 1, where m is a
+margin to control the distance between positive pairs and
+negative pairs.
+
+Loss =
+
+Batch(cid:88)
+vi ,fi ,fj ,i(cid:54)=j
+
+max [d(embv (vi ), embf (fi ))
+−d(embv (vi ), embf (fj )) + m, 0]
+
+(1)
+
+(a) Original
+
+(b) L2-Norm
+
+(c) Voice Anchored L2-
+Norm
+
+Figure 5: Visualization of three metric learning methods.
+
+(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)78f?f:(cid:5)(cid:5)(cid:5)MetricSpace(L2)InputdataVoice-FaceDataset111432754985(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)(cid:5)AllFacesAllAudiosIdentitiesBatchIdentitiesSampling00010002SelectFacesSelectAudiosIdentities78989:TripletLossonEmbeddingAfterTraining78989:VoiceRegionFaceRegionCloser(cid:5)(cid:5)(cid:5)GenerateThousandsTriplesIdentityBatchBasedSamplingGAPL2-NormFeaturemapFeaturemapFeaturemapGAPL2-NormNetVLADL2-NormSharedLResNet50FixedThin_ResNet34FCL2-NormFCL2-NormFCL2-Norm2.4. Using Embedding for Matching and Retrieval
+
+The embedding networks embv (v) and embf (f ) can be
+used to extract embeddings from voice audios and face im-
+ages. A similarity between a voice embedding and a face
+embedding is computed as an inner product of the two vec-
+tors. Voice-face matching and retrieval are conducted based
+on the computed similarities.
+Voice-Face Matching. A general form for voice-face
+cross-modal matching is 1:n matching. Given an audio v
+and n identities’ face images F =< f1 , f2 , ..., fn >, 1:n
+voice-face matching refers to ﬁnd the face who make this
+voice v . 1:2 matching is a special case of 1:n matching
+when n = 2 and it is a primary task for voice-face matching.
+Voice-Face Retrieval. Given a query voice, voice-face
+retrieval is to rank face images according their relevance
+with the voice query. The retrieval task is a supplement to
+the matching task. The retrieval candidates always contain
+multiple face pictures for one person. The position-related
+information of all the positive faces is more effective for
+analyzing the model performance. Up to date, there are
+still very rare results on this problem published by the re-
+lated works. The retrieval task is signiﬁcant for many prac-
+tical applications. For example, with the audio of a suspect,
+the police can retrieve the face of the suspect from a faces
+database based on the audio.
+
+Joint-voice or joint-face learning. Instead of single au-
+
+dio segment or single face for one identity, multiple audios
+and faces or videos can provide more information. Joint-
+voice or joint-face matching and retrieval task are deﬁned
+in this paper. The joint voice or joint face refers to com-
+bine the multiple audios or images by calculating the mean
+embeddings. This task can be used for video scenes.
+
+2.5. Identity Based Sampling for Training and Test
+Efﬁciency
+
+Identity based sampling v.s. Random tuple mining.
+
+f
+
+The input triplets for the voice-face embedding network
+need to be mined from the datasets, the number of which
+is extremely large. Suppose n identities are selected, the
+number of faces for per identity is nf , and the number of
+audios is nv , then there will be a total of n×(n−1)×nv ×n2
+triplets. Random tuples mining also named as ofﬂine min-
+ing will lead to training and test inefﬁciency. Identity based
+sampling named as online mining is adopted in this pa-
+per, which can greatly improve the training and testing efﬁ-
+ciency. In the identity based sampling, a batch of identities
+is randomly selected ﬁrst, and then certain number of face
+images and audios for each identity of the batch are sam-
+pled. Triplets are generated based on each batch of identi-
+ties. Triplet Loss is susceptible to noise which means direc-
+tion of network convergence is easy to change by few noise
+samples. Identity based training can effectively handle the
+disadvantage of Triplet Loss.
+
+5
+
+Testing conﬁdence coefﬁcient. It is important to guar-
+
+t =< vA , fA , fB > is
+
+antee the conﬁdence of testing results produced by example
+sampling. It should be discovered that how many triplets
+need to be sampled to qualify the conﬁdence of testing
+results. For random tuple mining method, suppose the
+test dataset contains N identities, the rate of two identi-
+ties A and B to be jointly selected to form a test tuple
+N ×(N −1) . The expected frequency
+of two identities A and B to be jointly selected as test tuples
+in the complete test process is denoted as K . Suppose to-
+tally n test tuples are mined. K =
+N ×(N −1) can be derived.
+By analyzing the quantitative relation among the shift of K ,
+N and testing conﬁdence, it can be derived that testing con-
+ﬁdence is proportional to N and ln K . We can introduce the
+coefﬁcient T to simply measure the conﬁdence.
+
+n
+
+1
+
+T = N × ln K = N × ln
+
+N ×(N −1)
+n
+
+(2)
+
+For identity based sampling method, suppose the number
+of identities in a batch is b, and r faces and q voices are
+assigned for each identity, the number of tuples formed by
+A and B in the batch is q × r2 .
+It can be derived K =
+N ×(N −1) × b × q × r2 . Since the total tuples number n
+equals q × r2 × 2C 2
+m , K is still valid in the case of identity
+based sampling.
+
+C 2
+
+m
+
+3. Experiments
+
+3.1. Training Settings and Details
+
+Training and test data split. Four models with different
+
+training and testing splits are setup in the experiments as
+VFMR1, VFMR2, VFMR3and VFMR4. The training and
+test split for these models are depicted in Table 3.
+Data preprocessing. Face images preprocessing in-
+cludes face detection and the stretching scale of detection
+box. Face detection based on MTCNN [31] is conducted on
+Vox-VGG-1 and Vox-VGG-2. For Chinese VF, face detec-
+tion based on 1.3 scale MTCNN has been conducted dur-
+ing the dataset collection process. All face images are then
+rescaled to 112 × 112 × 3 as the input for face embedding
+networks. Audio preprocessing consists of 512 point FFT,
+a short-time Fourier transform (STFT) for each frame and
+normalization. Though the voice embedding network based
+on Thin ResNet34 and NetVLAD can accept audio input
+with any length, training audios are uniformly cut to 2.5sec-
+ond for training efﬁciency and no clipping is conducted for
+testing audios. The input shape for a k-second audio clip is
+
+257 × (100 × k) × 1.
+
+Model settings. The voice embedding network and face
+embedding network are pre-trained by VoxCeleb2 and VG-
+GFace2 respectively. Margin m for Triplet Loss is set to
+1, and scale s for L2 normalization is set to 128. Adam
+Optimizer is adopted in this paper. The total number of
+
+Settings
+
+1:2 Matching
+
+Retrieval
+
+Methods
+SVHF [18]
+Pins [17]
+DIMNet [27]
+Kim’s [13]
+Horiguchi’s [10]
+VFMR1
+VFMR2
+VFMR3
+VFMR4
+Methods
+SVHF [18]
+Pins [17]
+DIMNet-I [27]
+DIMNet-IG [27]
+Kim’s [13]
+Horiguchi’s [10]
+VFMR1
+VFMR2
+VFMR3
+VFMR4
+Methods
+DIMNet-IG [27]
+Horiguchi’s [10]
+VFMR1
+VFMR2
+VFMR3
+VFMR4
+
+Train (#Identities) Nationality
+942
+US/UK
+901
+US/UK
+924
+US/UK
+1101
+US/UK
+862
+US/UK
+5994
+US/UK
+1000
+US/UK
+5994
+US/UK
+400
+China
+Test (#Identities)
+Nationality
+189
+US/UK
+100
+US/UK
+189
+US/UK
+189
+US/UK
+250
+US/UK
+216
+US/UK
+1251
+US/UK
+189
+US/UK
+500
+China
+100
+China
+Test (#Identities)
+Nationality
+189
+US/UK
+216
+US/UK
+1251
+US/UK
+189
+US/UK
+500
+China
+100
+China
+
+Face network
+VGG-M
+VGG-M
+DIMNet-face
+VGG-M
+ResNet50
+LResNet50
+LResNet50
+LResNet50
+LResNet50
+n triplets
+10k
+-
+678M
+678M
+-
+38B
+30.72M
+3.72M
+3.72M
+3.72M
+#query audios
+21k
+26k
+
+1251 × 40 = 50k
+189 × 40 = 7k
+500 × 40 = 20k
+100 × 40 = 4k
+
+Voice network
+VGG-Vox
+VGG-Vox
+DIMNet-voice
+VGG-Vox
+i-vector
+Thin ResNet34+NetVLAD
+Thin ResNet34+NetVLAD
+Thin ResNet34+NetVLAD
+Thin ResNet34+NetVLAD
+Conﬁdence T
+-239
+-
+992
+992
+-
+2188
+3725
+842
+2502
+823
+Chance (mAP%)
+1.07
+0.46
+2.15
+2.15
+2.15
+2.15
+
+Loss
+Softmax
+Contrastive
+Softmax
+Triplet
+Cosine
+Triplet
+Triplet
+Triplet
+Triplet
+Value (ACC%)
+81.0
+78.5(AUC%)
+83.45
+84.12
+78.2
+78.10
+
+84.48
+
+83.55
+71.52
+79.14
+mAP [3] (%)
+4.42
+1.96
+
+11.48
+
+9.61
+5.00
+7.06
+
+Table 3: Comparison with other models on 1:2 matching task and retrieval task. T is the conﬁdence coefﬁcient proposed
+in Section 2.5, which reﬂects the conﬁdence level of the 1:2 matching. We recommend that the value of T be given as a
+conﬁdence level when performing an incomplete 1:2 matching test and higher conﬁdence and generalization ability can be
+achieved with higher T .
+
+learning steps is 70k. The learning rate of FC layer for
+step<20k, 20k<step<40k, 40k<step<60k and step>60k
+is 10−3 , 10−4 , 10−5 , 10−6 respectively. The learning rate
+of face embedding network is ﬁxed to 10−6 .
+
+Settings for Different Task. 1) 1:2 matching settings.
+
+The identity number b of a batch is set to 4, the audios num-
+ber q and the faces number r to be selected in a batch per
+identity is set to 4 and 8 respectively. The number of triplets
+in one batch is (m × q) × r2 = 3072. A total of 10k steps
+(total of 30.72M triplets) are tested on VFMR1. As deﬁ-
+nited in Section 2.5 and Eq. 2, KV SM R1 = 19.65 as the
+number of calculations between any two identities, and the
+TV SM R1 = 3725 as the conﬁdence coefﬁcient. 1000 steps
+with 3M test triplets are tested for VSMR2 and other default
+
+tests. KV SM R2 = 86.46, TV SM R2 = 842. It should be
+
+noted that in order to balance the gender of the test triplets
+in 1:2 matching task, the gender ratio of test batch identi-
+ties should be 3:1 or 1:3. 2) 1:n matching settings. The
+sample number of tuples will be much higher than triplets
+in 1:2 matching, so we performed this test directly on the
+10k tuples, and the conﬁdence level will be lower, but it
+can reﬂect the comparison result. 3) Retrieval settings. The
+face database comprises 500 pictures, which come from
+randomly selected 100 identities. 40 audio queries are con-
+structed for each identity. 4) Joint matching and retrieval.
+Two variables m f and m v are respectively introduced to
+represent how many faces and audios are synthesized as a
+
+single face or audio. For joint-matching, various values of
+m f and m v are tested in experiments. For joint-retrieval,
+m v is set to 20 and m f is set to 5 directly.
+
+3.2. Performance Comparison
+
+Table 3 presents the comparison of the proposed method
+with other related works on 1:2 matching and retrieval
+tasks. VFMR1 achieves state-of-the-art performance on
+both matching and retrieval tasks. To compare with ex-
+isting approaches more directly, VFMR2 with almost the
+same training and testing data as related works is set up.
+VFMR2 outperforms the traditional pair-wise loss methods
+such as Kims [13] and Horiguchis [10] by more than 5 per-
+cent. The performance of pair-wise loss methods are always
+limited by small-scale training data. Identity based training
+and L2-norm based metric learning used by VFMR2 can
+greatly improve the training effectiveness of pair-wise loss
+based methods. Even though, training and testing on small
+datasets are not recommended. During the test process of
+VFMR1, when different subsets of 189 identities were se-
+lected instead of the total 1251 identities, we discovered the
+results obtained each time were very different. Small test
+dataset cant reﬂect the generalization ability of the model.
+The conﬁdence coefﬁcient T provided is for evaluating con-
+ﬁdence level of model generalization ability. VFMR1 is
+recommended as a benchmark for voice-face 1:2 matching
+task, since it achieves the best results on large training and
+
+6
+
+testing datasets.
+
+mf
+
+5
+10
+15
+20
+30
+
+Joint-Matching (VFMR1)
+ACC mv ACC mf + mv ACC
+85.55
+5
+85.13
+1+1
+84.48
+84.56
+10
+86.01
+5+5
+86.42
+86.28
+15
+85.49
+10+10
+86.53
+20
+86.16
+20+20
+84.71
+30
+85.63
+30+30
+
+89.54
+89.28
+
+89.66
+
+Joint-Retrieval
+Joint-Voice mAP
+12.53
+12.57
+5.29
+8.01
+2.15
+
+Joint-Face mAP
+21.65
+22.83
+10.39
+15.10
+5.25
+
+VFMR1
+VFMR2
+VFMR3
+VFMR4
+Random
+
+Table 4: Performance on joint-face and joint-voice match-
+ing and retrieval task.
+
+Model
+VFMR3
+VFMR4
+
+1:2
+71.52
+79.14
+
+1:3
+55.38
+67.10
+
+1:4
+45.12
+57.80
+
+Male
+55.57
+64.49
+
+Female mAP
+54.46
+5.00
+64.04
+7.06
+
+Table 5: Performance comparison of VFMR3 (Trained on
+Vox-VGG-2 and tested on Chinese VF) and VFMR4 (Five-
+fold cross validation on Chinese VF and the pre-training is
+the same as default settings).
+
+Model
+VFMR1(UU)
+VFMR1(SH)
+VFMR2(UU)
+VFMR2(SH)
+
+1:2
+84.48
+87.95
+83.55
+95.97
+
+1:3
+73.50
+78.75
+71.74
+92.16
+
+1:4
+64.43
+71.86
+62.88
+89.19
+
+Male
+69.85
+77.45
+66.89
+92.12
+
+Female mAP
+71.04
+11.48
+78.47
+19.21
+70.97
+9.61
+92.14
+38.39
+
+Table 6: Performance comparison of Unseen Unheard(UU)
+test and Seen Heard(SH) test on various tasks.
+
+only the ﬁne-tuning effort on Chinese identities. Better re-
+sults will be achieved after further expanding the data scale
+with the tools developed in this paper.
+
+3.5. Seen and Heard (SH) Test
+
+If test triplets are constructed from unused examples of
+seen and heard identities from training set, the testing is re-
+ferred as seen and heard (SH) test. As shown in table 6,
+95.97% accuracy can be obtained on seen and heard test of
+1:2 matching task. SH test, which has much higher accu-
+racy, presents its potential to be put into real applications.
+
+3.6. Individual Test
+
+Individual test on each identity is conducted to ﬁnd the
+bottleneck of the model. Every identity of Vox-VGG-1 is
+taken as a target identity successively, and each of the re-
+maining 1250 identities is in turn to form a pair with the
+target identity for 1:2 matching. The experiment is repeated
+ten times for each pair of identities. The average accuracy of
+the totally 12500 runs of every target identity is referred as
+the individual accuracy, the statistic of which is illustrated
+in the right part of Figure 8. The accuracy of most identities
+is above 75%. There are only 15 identities whose accuracy
+is lower than 60%. The left part of Figure 8 illustrates the
+audios and faces of some of these identities. We discover
+most of the low accuracies occur on examples with noisy
+audios and some abnormal associations of faces and voices.
+
+Figure 6: Comparison with other available results by exist-
+ing methods on 1:n matching task. Accuracy in all models
+decreases rapidly with n increases.
+
+Figure 6 shows the comparisons of VFMR with the cur-
+rently available results from other methods on 1:n matching
+task. VFMR1 still performs best on this task. Figure 7 vi-
+sualizes some retrieval results of VFMR1 with p@1 = 1.
+From the illustration, we can see the top ranked faces are
+very similar, which shows the potential of voice-face cross-
+modal retrieval to be applied in real applications.
+
+Figure 7: Qualitative analysis of retrieval results produced
+by VFMR1.
+
+3.3. Joint-matching and Joint-retrieval
+
+The results of joint-voice and joint-face matching are
+shown in Table 4. The accuracy of 1:2 matching can be
+improved further by synthesizing voices and faces. Espe-
+cially, synthesizing ten voices and ten faces can obtain the
+accuracy of 89.66%, which is 5 percent higher than that of
+single voice and single voice matching. On VFMR2, the
+retrieval mAP can be improved by 13 percent.
+
+3.4. Cross Language Transfer
+
+From the result of VFMR3, as shown in 6, we can see the
+model trained on dataset of English speakers obtains the ac-
+curacy of 71% on Chinese identities. Compared to VFMR3,
+VFMR4 can improve the accuracy by nearly 8 percent, with
+
+7
+
+𝐕𝐨𝐢ce𝐑𝐞𝐭𝐫𝐢𝐞𝐯𝐚𝐥	𝐫𝐞𝐬𝐮𝐥𝐭𝐬(P@10)Figure 8: Individual accuracy statistics of VFMR1 on 1:2
+matching task. Very low accuracies occur on some abnor-
+mal examples.
+
+3.7. Comparisons of Different Submodule Settings
+
+The effect of face detection. We need to study whether
+
+to use face detection and what size of detection box should
+be used. As shown in Table 7 and Table 8 without the use
+of face detection, too much noise will be introduced along
+with a few useful features and the performance of VFMR
+on all matching and retrieval tasks are declined. When the
+scale of detection box size is increased by 1.1 times, better
+performance can be obtained than the default settings.
+
+Effect of voice anchored embedding learning. By
+
+freezing the pre-trained voice embedding network, an-
+chored embedding learning is conducted in the training pro-
+cess. As shown in Table 8, freezing the face embedding
+network reduces the performance, while freezing the voice
+embedding network improves the performance slightly. Hu-
+man voices are related to some local features of human
+faces. Similar faces in traditional face recognition tasks do
+not necessarily have similar voices. Therefore, voice an-
+chored embedding learning outperforms face anchored em-
+bedding learning. Training efﬁciency is improved greatly
+by freezing the voice network.
+
+Effect of different network structures. Generally, the
+
+best performed network structures on speaker identiﬁca-
+tion and face recognition also perform well on the voice-
+face cross modal learning problem. As shown in Table
+8, much deeper structures of CNN such as SE-ResNet50
+and the structure used in DIMNet outperform traditional
+shallow structures such as VGG-M. SE-ResNet50 with the
+squeeze-and-excitation module [11] outperforms the orig-
+inal ResNet50 structure used in the default settings. The
+mean distances between the embeddings of positive faces
+and negative faces learned by the four networks on 1:2
+matching task are also illustrated in Figure 9. Compared
+to other structures, positives and negatives learnt by SE-
+ResNet50 are more distant.
+
+Pre-training for both face network and voice network
+
+are needed. As shown in Table 8, though the effect of
+pre-training with a larger data set MS1B [7] is not obvious,
+model performance is greatly reduced without pre-training
+(In this case, the voice network is not frozen).
+
+Figure 9: Illustration of average distances between positives
+and negatives when different CNN backbones are used.
+
+Conﬁg MTCNN Crop Audio Network(Face) Metric
+Default
+1.0
+Whole
+LResNet50
+L2
+
+Scale
+128
+
+Face Frozen Voice Frozen
+N
+Y
+
+Table 7: VFMR1 default conﬁg.
+
+Conﬁg
+Default
+
+Details
+Default Training Conﬁg
+MTCNN
+Crop Audio
+-
+Whole
+1.1
+Whole
+1.0
+2.5s
+Face Frozen Voice Frozen
+N
+N
+Y
+N
+
+1:2
+
+1:3
+
+1:4
+
+Male
+
+Female mAP
+
+84.48
+
+73.50
+
+64.43
+
+69.85
+
+71.04
+
+10.67
+
+Prepro-
+cessing
+
+83.04
+
+71.13
+
+62.02
+
+66.99
+
+69.69
+
+8.22
+
+84.27
+
+73.28
+
+65.55
+
+70.03
+
+71.65
+
+10.42
+
+83.11
+
+70.49
+
+61.41
+
+64.88
+
+69.45
+
+9.09
+
+CNN
+Frozen
+
+84.43
+
+73.56
+
+64.59
+
+68.27
+
+68.85
+
+9.77
+
+81.68
+
+68.52
+
+59.43
+
+64.87
+
+66.76
+
+8.33
+
+Network
+
+Network
+SE-ResNet50
+VGG-M
+DIMNet
+Pre-Face
+Pre-Voice
+MS1B
+VOX2
+None
+VOX2
+None
+None
+Metric
+Scale
+None
+128
+L2
+1
+L2
+512
+
+84.00
+
+72.62
+
+63.70
+
+69.22
+64.90
+
+69.49
+
+9.40
+8.06
+
+81.30
+83.88
+
+68.95
+72.06
+
+59.13
+62.93
+
+64.84
+68.98
+
+69.67
+
+10.05
+
+Pre-train
+
+84.13
+
+71.71
+
+64.74
+
+63.81
+
+74.70
+
+10.47
+
+73.29
+70.64
+
+58.20
+54.11
+
+48.72
+44.18
+
+54.26
+52.21
+
+58.90
+51.47
+
+5.56
+3.91
+
+Metric
+
+82.19
+81.71
+
+69.29
+69.09
+
+60.60
+59.61
+
+69.38
+62.62
+
+64.97
+67.49
+
+8.44
+7.58
+
+84.27
+
+72.48
+
+64.00
+
+69.43
+
+71.77
+
+10.02
+
+Table 8: Comparisons of different submodule training set-
+tings for VFMR1 on matching and retrieval tasks.
+
+Effect of metric learning. In the default conﬁguration,
+the size of the metric space is 128. The model performance
+descends when the scale is set to 1, which indicates that it
+is necessary to properly increase the size of metric space.
+
+4. Acknowledgement
+
+This work was supported by National Natural Science
+Foundation of China Grant Nos. U1711262 and 61472428.
+
+5. Conclusion
+
+A benchmark is established for voice-face matching and
+retrieval. Contributions of this paper involves the whole
+process of voice-face cross-modal learning, including:
+A dataset collection tool for type-speciﬁc videos is de-
+veloped. By taking advantage of the widely available
+MOOC videos, large scale dataset can be constructed ef-
+ﬁciently with minimum labeling effort using this tool. A
+
+8
+
+ToomuchnoiseMorelikeyoungmanLikeaman’svoiceLikeawoman’svoicevoice-face dataset of 500 Chinese speakers is constructed.
+By ﬁne-tuning the pre-trained model on 1:2 matching task,
+79% of accuracy can be obtained on Chinese speakers.
+Much better results can be achieved after further expand-
+ing the data scale with the data collection tool.
+A state-of-the-art voice-face matching and retrieval
+method is proposed, which is tested on large scale data set
+with high test conﬁdence. On 1:2 matching and retrieval
+tasks, VFMR1 achieves the accuracy of 84.48% and the
+mAP of 11%. Compared to the best results published so far,
+the improvement for mAP is 7 percent. For seen and heard
+test on 1:2 matching and retrieval task, 95% of accuracy and
+38 percent mAP can be obtained when small scale training
+and test set are used, which shows the potential to be applied
+in practical scenarios with pre-registered persons.
+
+References
+
+[1] R Arandjelovic, P Gronat, A Torii, T Pajdla, and J Sivic.
+Netvlad: Cnn architecture for weakly supervised place
+recognition. IEEE Transactions on Pattern Analysis & Ma-
+chine Intelligence, PP(99):1–1, 2017.
+[2] Qiong Cao, Li Shen, Weidi Xie, Omkar M Parkhi, and
+Andrew Zisserman. Vggface2: A dataset for recognising
+faces across pose and age. In 2018 13th IEEE International
+Conference on Automatic Face & Gesture Recognition (FG
+2018), pages 67–74. IEEE, 2018.
+[3] D Manning Christopher, Raghavan Prabhakar, and Sch ¨utze
+Hinrich. Introduction to information retrieval. An Introduc-
+tion To Information Retrieval, 151(177):5, 2008.
+[4] Joon Son Chung, Arsha Nagrani, and Andrew Zisserman.
+Voxceleb2: Deep speaker recognition. 2018.
+[5] Joon Son Chung and Andrew Zisserman. Learning to lip
+read words by watching videos. Computer Vision and Image
+Understanding, 173:76–85, 2018.
+[6] Jiankang Deng, Guo Jia, and Stefanos Zafeiriou. Arc-
+face: Additive angular margin loss for deep face recognition.
+2018.
+[7] Yandong Guo, Lei Zhang, Yuxiao Hu, Xiaodong He, and
+Jianfeng Gao. Ms-celeb-1m: A dataset and benchmark for
+large-scale face recognition.
+In European Conference on
+Computer Vision, pages 87–102. Springer, 2016.
+[8] Raia Hadsell, Sumit Chopra, and Yann LeCun. Dimensional-
+ity reduction by learning an invariant mapping. In 2006 IEEE
+Computer Society Conference on Computer Vision and Pat-
+tern Recognition (CVPR’06), volume 2, pages 1735–1742.
+IEEE, 2006.
+[9] Harry Hollien and G. Paul Moore. Measurements of the vo-
+cal folds during changes in pitch. Journal of Speech and
+Hearing Research, 3(2):157–165, 1960.
+[10] Shota Horiguchi, Naoyuki Kanda, and Kenji Nagamatsu.
+Face-voice matching using cross-modal embeddings.
+In
+2018 ACM Multimedia Conference on Multimedia Confer-
+ence, pages 1011–1019. ACM, 2018.
+[11] Hu Jie, Shen Li, and Sun Gang. Squeeze-and-excitation net-
+works. PP(99):1–1, 2017.
+
+[12] Miyuki Kamachi, Harold Hill, Karen Lander, and Eric
+Vatikiotis-Bateson. Putting the face to the voice’: Match-
+ing identity across modality. Current Biology, 13(19):1709–
+1714, 2003.
+[13] Changil Kim, Hijung Valentina Shin, Tae Hyun Oh, Alexan-
+dre Kaspar, Mohamed Elgharib, and Wojciech Matusik. On
+learning associations of faces and voices. 2018.
+[14] Chao Li, Xiaokong Ma, Bing Jiang, Xiangang Li, Xuewei
+Zhang, Xiao Liu, Ying Cao, Ajay Kannan, and Zhenyao Zhu.
+Deep speaker: an end-to-end neural speaker embedding sys-
+tem. arXiv preprint arXiv:1705.02304, 2017.
+[15] Weiyang Liu, Yandong Wen, Zhiding Yu, Ming Li, Bhiksha
+Raj, and Le Song. Sphereface: Deep hypersphere embedding
+for face recognition. In Proceedings of the IEEE conference
+on computer vision and pattern recognition, pages 212–220,
+2017.
+[16] Lauren W Mavica and Elan Barenholtz. Matching voice
+and face identity from static images.
+Journal of Experi-
+mental Psychology: Human Perception and Performance,
+39(2):307, 2013.
+[17] Arsha Nagrani, Samuel Albanie, and Andrew Zisserman.
+Learnable pins: Cross-modal embeddings for person iden-
+tity. 2018.
+[18] Arsha Nagrani, Samuel Albanie, and Andrew Zisserman.
+Seeing voices and hearing faces: Cross-modal biometric
+matching. 2018.
+[19] Arsha Nagrani, Joon Son Chung, and Andrew Zisserman.
+Voxceleb: a large-scale speaker identiﬁcation dataset. 2017.
+[20] Omkar M Parkhi, Andrea Vedaldi, Andrew Zisserman, et al.
+Deep face recognition. In bmvc, volume 1, page 6, 2015.
+[21] Florian Schroff, Dmitry Kalenichenko, and James Philbin.
+Facenet: A uniﬁed embedding for face recognition and clus-
+tering. In Proceedings of the IEEE conference on computer
+vision and pattern recognition, pages 815–823, 2015.
+[22] Harriet MJ Smith, Andrew K Dunn, Thom Baguley, and
+Paula C Stacey. Concordant cues in faces and voices: Test-
+ing the backup signal hypothesis. Evolutionary Psychology,
+14(1):1474704916630317, 2016.
+[23] Harriet MJ Smith, Andrew K Dunn, Thom Baguley, and
+Paula C Stacey. Matching novel face and voice identity us-
+ing static and dynamic facial images. Attention, Perception,
+& Psychophysics, 78(3):868–879, 2016.
+[24] Randy Thornhill and Anders Pape Møller. Developmen-
+tal stability, disease and medicine. Biological Reviews,
+72(4):497–548, 1997.
+[25] Quan Wang, Carlton Downey, Li Wan, Philip Andrew Mans-
+ﬁeld, and Ignacio Lopz Moreno. Speaker diarization with
+lstm. In 2018 IEEE International Conference on Acoustics,
+Speech and Signal Processing (ICASSP), pages 5239–5243.
+IEEE, 2018.
+[26] Timothy Wells, Thom Baguley, Mark Sergeant, and Andrew
+Dunn. Perceptions of human attractiveness comprising face
+and voice cues. Archives of sexual behavior, 42(5):805–811,
+2013.
+[27] Yandong Wen, Mahmoud Al Ismail, Weiyang Liu, Bhiksha
+Raj, and Rita Singh. Disjoint mapping network for cross-
+modal matching of voices and faces. 2018.
+
+9
+
+[28] Yandong Wen, Kaipeng Zhang, Zhifeng Li, and Yu Qiao. A
+discriminative feature learning approach for deep face recog-
+nition.
+In European conference on computer vision, pages
+499–515. Springer, 2016.
+[29] Xiang Wu, Ran He, Zhenan Sun, and Tieniu Tan. A light cnn
+for deep face representation with noisy labels. IEEE Trans-
+actions on Information Forensics and Security, 13(11):2884–
+2896, 2018.
+[30] Weidi Xie, Arsha Nagrani, Joon Son Chung, and Andrew
+Zisserman. Utterance-level aggregation for speaker recogni-
+tion in the wild. 2019.
+[31] Kaipeng Zhang, Zhanpeng Zhang, Zhifeng Li, and Qiao Yu.
+Joint face detection and alignment using multitask cascaded
+convolutional networks.
+IEEE Signal Processing Letters,
+23(10):1499–1503, 2016.
+
+10
+
+

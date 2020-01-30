@@ -1,0 +1,2408 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+8
+5
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+OB SERVE B E FORE P LAY: MU LT I -ARM ED BAND I T W I TH
+PR E -OB S ERVAT ION S
+
+Jinhang Zuo, Xiaoxi Zhang, Carlee Joe-Wong
+
+Carnegie Mellon University
+{jzuo,xiaoxiz2,cjoewong}@andrew.cmu.edu
+
+AB STRACT
+
+We consider the stochastic multi-armed bandit (MAB) problem in a setting where a player can pay to
+pre-observe arm rewards before playing an arm in each round. Apart from the usual trade-off between
+exploring new arms to ﬁnd the best one and exploiting the arm believed to offer the highest reward,
+we encounter an additional dilemma: pre-observing more arms gives a higher chance to play the best
+one, but incurs a larger cost. For the single-player setting, we design an Observe-Before-Play Upper
+Conﬁdence Bound (OBP-UCB) algorithm for K arms with Bernoulli rewards, and prove a T -round
+regret upper bound O(K 2 log T ). In the multi-player setting, collisions will occur when players select
+the same arm to play in the same round. We design a centralized algorithm, C-MP-OBP, and prove its
+T -round regret relative to an ofﬂine greedy strategy is upper bounded in O( K 4
+and M players. We also propose distributed versions of the C-MP-OBP policy, called D-MP-OBP
+and D-MP-Adapt-OBP, achieving logarithmic regret with respect to collision-free target policies.
+Experiments on synthetic data and wireless channel traces show that C-MP-OBP and D-MP-OBP
+outperform random heuristics and ofﬂine optimal policies that do not allow pre-observations.
+
+M 2 log T ) for K arms
+
+1
+
+Introduction
+
+Multi-armed bandit (MAB) problems have attracted much attention as a means of capturing the trade-off between
+exploration and exploitation [1] in sequential decision making. In the classical MAB problem, a player chooses one of
+a ﬁxed set of arms and receives a reward based on this choice. The player aims to maximize her cumulative reward over
+multiple rounds, navigating a tradeoff between exploring unknown arms (to potentially discover an arm with higher
+rewards) and exploiting the best known arm (to avoid arms with low rewards). Most MAB algorithms use the history of
+rewards received from each arm to design optimized strategies for choosing which arm to play. They generally seek to
+prove that the regret, or the expected difference in the reward compared to the optimal strategy when all arms’ reward
+distributions are known in advance, grows sub-linearly with the number of rounds.
+
+1.1 Introducing Pre-observations
+
+The classical MAB exploration-exploitation tradeoff arises because knowledge about an arm’s reward can only be
+obtained by playing that arm. In practice, however, this tradeoff may be relaxed. [2], for example, suppose that at the
+end of each round, the player can pay a cost to observe the rewards of additional un-played arms, helping to ﬁnd the
+best arm faster. In cascading bandits [3], players may choose multiple arms in a single round, e.g., if the “arms” are
+search results in a web search application.
+In both examples above, the observations made in each round do not inﬂuence the choice of arms in that round. In this
+paper, we introduce the MAB problem with pre-observations, where in each round, the player can pay to pre-observe
+the realized rewards of some arms before choosing an arm to play. For instance, one might play an arm with high
+realized reward as soon as it is pre-observed. Pre-observations can help to reconcile the exploration-exploitation tradeoff,
+but they also introduce an additional challenge: namely, optimizing the order of the pre-observations. This formulation
+is inspired by Cognitive Radio Networks (CRNs), where users can use wireless channels when they are unoccupied by
+primary users. In each round, a user can sense (pre-observe) some channels (arms) to check their availability (reward)
+before choosing a channel to transmit data (play). Sensing more arms leaves less time for data transmission, inducing a
+cost of making pre-observations.
+
+ 
+ 
+ 
+ 
+ 
+ 
+In this pre-observation example, there are negative network effects when multiple players attempt to play the same arm:
+if they try to use the same wireless channel, for instance, the users “collide” and all transmissions fail. In multi-player
+bandit problems without pre-observations, players generally minimize these collisions by allocating themselves so that
+each plays a distinct arm with high expected reward. In our problem, the players must instead learn ordered sequences
+of arms that they should pre-observe, minimizing overlaps in the sequences that might induce players to play the
+same arm. Thus, one user’s playing a sub-optimal arm may affect other users’ pre-observations, leading to cascading
+errors. We then encounter a new challenge of designing users’ pre-observation sequences to minimize collisions but
+still explore unknown arms. This problem is particularly difﬁcult when players cannot communicate or coordinate
+with each other to jointly design their observation sequences. To the best of our knowledge, such multi-player bandit
+problems with pre-observations have not been studied in the literature.
+
+1.2 Applications
+
+Although many MAB works take cognitive radios as their primary motivation [4, 5, 6], multi-player bandits with
+pre-observations could be applied to any scenario where users search for sufﬁciently scarce resources at multiple
+providers that are either acceptable (to all users) or not. We brieﬂy list three more applications. First, users may
+sequentially bid in auctions (arms) offering equally useful items, e.g., Amazon EC2 spot instance auctions for different
+regions, stopping when they win an auction. Since these resources are scarce, each region may only be able to serve one
+user (modeling collisions between users). Second, in distributed caching, each user (player) may sequentially query
+whether one of several caches (arms) has the required ﬁle (is available), but each cache can only send data to one user at
+a time (modeling collisions). Third, taxis (players) can sequentially check locations (arms) for passengers (availability);
+collisions occur since each passenger can only take one taxi, and most locations (e.g., city blocks that are not next to
+transit hubs) would not have multiple passengers looking for a taxi at the same time.
+
+1.3 Our Contributions
+
+Our ﬁrst contribution is to develop an Observe-Before-Play (OBP) policy to maximize the total reward of a single
+user via minimizing the cost spent on pre-observations. Our OBP policy achieves a regret bound that is logarithmic with
+time and quadratic in the number of available arms. It is consistent with prior results [7], and more easily generalizes to
+multi-player settings. In the rest of the paper, “user” and “player” are interchangeable.
+We next consider the multi-player setting. Unlike in the single-player setting, it is not always optimal to observe
+the arms with higher rewards ﬁrst. We show that ﬁnding the ofﬂine optimal policy to maximize the overall reward
+of all players is NP-hard. However, we give conditions under which a greedy allocation that avoids user collisions
+is ofﬂine-optimal; in practice, this strategy performs well. Our second research contribution is then to develop a
+centralized C-MP-OBP policy that generalizes the OBP policy for a single user. Despite the magniﬁed loss in reward
+when one user observes the wrong arm, we show that the C-MP-OBP policy can learn the arm rankings, and that
+its regret relative to the ofﬂine greedy strategy is logarithmic with time and polynomial in the number of available
+
+arms and users. Our third research contribution is to develop distributed versions of our C-MP-OBP policy, called
+
+D-MP-OBP and D-MP-Adapt-OBP. Both algorithms assume no communication between players and instead use
+randomness to avoid collisions. Despite this lack of communication, both achieve logarithmic regret over time with
+respect to the collision-free ofﬂine greedy strategies deﬁned in the centralized setting.
+
+Our ﬁnal contribution is to numerically validate our OBP, C-MP-OBP, and D-MP-OBP policies on synthetic
+
+reward data and channel availability traces. We show that all of these policies outperform both random heuristics
+and traditional MAB algorithms that do not allow pre-observations, and we verify that they have sublinear regret over
+time. We further characterize the effect on the achieved regret of varying the pre-observation cost and the distribution of
+the arm rewards.
+We discuss related work in Section 2 and consider the single-player setting in Section 3. We generalize these results to
+multiple players in centralized (Section 4) and distributed (Section 5) settings. We numerically validate our results in
+Section 6 and conclude in Section 7. Proofs are in Appendix.
+
+2 Related Work
+
+Multi-armed Bandit (MAB) problems have been studied since the 1950s [8, 1]. [9], for instance, propose a simple UCB1
+policy that achieves logarithmic regret over time. Recently, MAB applications to Cognitive Radio Networks (CRNs)
+have attracted attention [10, 11], especially in multi-player settings [12, 13, 14, 15, 6] where users choose from the same
+arms (wireless channels). None of these works include pre-observations, though some [16, 4, 5] consider distributed
+settings. [7, 17] study the single-player MAB problem with pre-observations, but do not consider multi-player settings.
+
+Figure 1: Illustration of Pre-observations
+
+The proposed MAB with pre-observations in a single-player setting is a variant on cascading bandits [3, 18, 19]. The
+idea of pre-observations with costs is similar to the cost-aware cascading bandits proposed in [20] and contextual
+combinatorial cascading bandits introduced in [21]. However, in [20], the reward collected by the player can be negative
+if all selected arms have zero reward in one round; in our model, the player will get zero reward if all selected arms
+are unavailable. Moreover, most cascading bandit algorithms are applied to recommendation systems, where there is
+only a single player. To the best of our knowledge, we are the ﬁrst to study MAB problems with pre-observations in
+multi-player settings.
+
+3 Single-player Setting
+
+We consider a player who can pre-observe a subset of K arms and play one of them, with a goal of maximizing
+the total reward over T rounds. Motivated by the CRN scenario, we assume as in [13] an i.i.d. Bernoulli reward
+iid∼ Bern(µk ) ∈ {0, 1} denote the
+reward of arm k at round t, with expected value µk ∈ [0, 1]. As shown in Figure 1, in each round, the player chooses
+of each arm to capture the occupancy/vacancy of each channel (arm). Let Yk,t
+a pre-observation list ot := (o(1)
+represents the ith arm to be observed at t and ot is a
+permutation of (1, 2, . . . , K ). The player observes from the ﬁrst arm o(1)
+to the last arm o(K )
+, stopping at and playing
+the ﬁrst good arm (reward = 1) until the list exhausts. We denote the index of the last observed arm in ot as I (t), which
+is the ﬁrst available arm in ot or K if no arms are available. Pre-observing each arm induces a constant cost τ ; in CRNs,
+The payoff received by the player at t then equals: (1 − I (t) τ )Yo(I (t))
+this represents a constant time τ for sensing each channel’s occupancy. We assume for simplicity that 0 < K τ < 1.
+,t ; if all the arms are bad (reward = 0) in round
+t, then the player will get zero reward for any ot . Given {ot}T
+t=1 , we can then deﬁne the total realized and expected
+rewards received by the player in T rounds:
+
+), where o(i)
+
+, . . . , o(K )
+
+, o(2)
+t
+
+t
+
+t
+
+t
+
+t
+
+t
+
+t
+
+(1 − k τ )µo(k)
+
+(1 − µo(i)
+
+(2)
+
+t
+
+t
+
+t
+
+,
+
+)
+
+i=1
+
+t=1
+
+k=1
+
+i=1 (1 − µo(i)
+
+where (cid:81)0
+) := 1. We next design an algorithm for choosing ot at each round t to maximize E[r(T )]. We
+assume µ1 ≥ µ2 ≥ · · · ≥ µK without loss of generality and ﬁrst establish the optimal ofﬂine policy:
+Lemma 3.1. The optimal ofﬂine policy o∗
+t that maximizes the expected total reward is observing arms in the descending
+order of their expected rewards, i.e., o∗
+(OBP-UCB), to maximize the cumulative expected reward without prior knowledge of the {µk }K
+Given this result, we propose an UCB (upper conﬁdence bound)-type online algorithm, Observe-Before-Play UCB
+k=1 . The OBP-UCB
+algorithm is formally described in Algorithm 1 and uses UCB values to estimate arm rewards as in traditional MAB
+algorithms [9]. Deﬁne µi (t) as the sample average of µi up to round t and ni (t) as the number of times that arm i has
+been observed. Deﬁne ˆµi (t) := µi (t) +
+ni (t) as the UCB value of arm i at round t. At each round, the player ranks
+all the arms i in descending order of ˆµi (t), and sets that order as ot . The player observes arms starting at o(1)
+, stopping
+
+(cid:113) 2 log t
+
+t = (1, 2, . . . , K ).
+
+t
+
+r(T ) :=
+
+(1 − I (t) τ )Yo(I (t))
+
+,t
+
+t
+
+T(cid:88)
+T(cid:88)
+K(cid:88)
+
+t=1
+
+(cid:40)
+
+E[r(T )] =
+
+k−1(cid:89)
+
+(cid:41)
+
+(1)
+
+Algorithm 1 Observe-Before-Play UCB (OBP-UCB)
+1: Initialization: Pull all arms once and update ni (t), µi (t), ˆµi (t) for all i ∈ [K ]
+
+2: while t do
+
+(t) + Yo(i)
+
+t
+
+,t )/no(i)
+
+t
+
+(t + 1);
+
+ot = argsort( ˆµ1 (t), ˆµ2 (t), . . . , ˆµK (t));
+
+for i = 1 : K do
+
+Observe arm o(i)
+t ’s reward Yo(i)
+
+,t ;
+
+t
+
+no(i)
+t
+µo(i)
+t
+
+(t + 1) = no(i)
+(t) + 1;
+(t + 1) = (µo(i)
+(t)no(i)
+
+t
+
+t
+
+t
+
+if Yo(i)
+
+,t = 1 then
+
+t
+
+Play arm i for this round;
+(t) for all j > i;
+(t) for all j > i;
+
+(t + 1) = no(j )
+(t + 1) = µo(j )
+
+no(j )
+t
+µo(j )
+t
+
+t
+
+t
+
+break;
+
+end if
+end for
+
+Update ˆµi (t) for all i ∈ [K ];
+
+3:
+4:
+5:
+6:
+7:
+8:
+9:
+10:
+11:
+12:
+13:
+14:
+15:
+16:
+
+t = t + 1;
+
+17: end while
+
+t
+
+at the ﬁrst good arm (Yo(i)
+,t = 1) or when the list exhausts. She then updates the UCB values and enters the next round.
+Since we store and update each arm’s UCB value, the storage and computing overhead grow only linearly with the
+number of arms K .
+We can deﬁne and bound the regret of this algorithm as the difference between the expected reward of the optimal
+policy (Lemma 3.1) and that of the real policy:
+k−1(cid:89)
+k−1(cid:89)
+
+R(T ) :=E[r∗ (T )] − E[r(T )]
+(1 − k τ )µk
+
+K(cid:88)
+
+(cid:40)
+
+(cid:41)
+
+(3)
+
+=
+
+.
+
+Theorem 3.2. The total expected regret can be bounded as:
+
+k=1
+
+i=1
+
+E[R(T )] ≤ (cid:80)K−1
+
+i=1
+
+(cid:40)
+
+i Wi
+
+j=i+1 [ 8 log T
+
+∆i,j
+
++(1+ π2
+
+3 )∆i,j ]
+
+(1 − µi ) − (1 − k τ )µo(k)
+(1 − µo(i)
+, where Wk := (1−k τ ) (cid:81)k−1
+i=1 (1−µi ) and ∆i,j := µi −µj .
+
+(cid:41)
+
+i=1
+
+)
+
+t
+
+t
+
+T(cid:88)
+(cid:80)K
+
+t=1
+
+The expected regret E[R(T )] is upper-bounded in the order of O(K 2 log T ), as also shown by [7]. However, our proof
+Wk converges to 0 as k → ∞, we expect that the constant in our O(K 2 log T ) bound will be small. Numerically, when
+method is distinct from theirs and preserves the dependence on the arm rewards (through the Wi in Theorem 3.2). Since
+there are more than 8 arms with expected rewards uniformly drawn from (0, 1), our new regret bound is tighter than
+the result from [7] in 99% of our experiments. Moreover, unlike the analysis in [7], our regret analysis can be easily
+generalized to multi-player settings, as we show in the next section.
+constant term (independent of T ), K 2 η2 , where η = (cid:81)K
+Algorithms with better regret order in T can be derived [17], but the regret bound of their proposed algorithm has a
+i=1 (1 − µi )−1 . This constant term is exponential in K so it can
+be signiﬁcant if K is large. The same work also provides a lower bound in the order of Ω(K log T ) when the player
+can only choose less than K arms to pre-observe in each round.
+
+4 Centralized Multi-player Setting
+
+In the multi-player setting, we still consider K arms with i.i.d Bernoulli rewards; Yk,t denotes the realized reward of
+arm k at round t, with an expected value µk ∈ [0, 1]. There are now M ≥ 1 players (M ≤ K ) making decisions on
+which arms to observe and play in each round. We deﬁne a collision as two or more users playing the same arm in
+the same round, forcing them to share that arm’s reward or even yielding zero reward for all colliding players, e.g., in
+CRNs. In this setting, simply running the OBP-UCB algorithm on all players will lead to severe collisions, since all
+users may tend to choose the same observation list and play the same arm. To prevent this from happening, we ﬁrst
+consider the case where a central controller can allocate different arms to different players.
+
+(a) Non-greedy optimal policy.
+
+(b) Assigning arms.
+
+Figure 2: Multi-player observation lists, with rewards in the boxes.
+
+o(i)
+
+At each round, the central controller decides pre-observation lists for all players; as in the single-player setting, each
+player sequentially observes the arms in its list and stops at the ﬁrst good arm. The players report their observation
+results to the central controller, which uses them to choose future lists. A policy consists of a set of pre-observation lists
+for all players. Deﬁne om,t := (o(1)
+m,t , . . . ) as the pre-observation list of player m at round t, where
+m,t represents the ith arm to be observed. The length of om,t can be less than K . Since collisions will always decrease
+the total reward, we only consider collision-free policies, i.e., those in which players’ pre-observation lists are disjoint.
+Policies that allow collisions are impractical in CRNs as they waste limited transmission energy and defeat the purpose
+of pre-observations (sensing channel availability), which allow users to ﬁnd an available channel without colliding with
+k−1(cid:89)
+primary users. The expected overall reward of all players is then:
+
+m,t , . . . , o(i)
+
+M(cid:88)
+
+T(cid:88)
+
+m,t , o(2)
+
+(cid:40)
+
+(cid:41)
+
+(4)
+
+E[r(T )] =
+
+(1 − kτ )µo(k)
+
+m,t
+
+(1 − µo(i)
+
+m,t
+
+)
+
+.
+
+t=1
+
+m=1
+
+i=1
+
+|om,t |(cid:88)
+k=1
+
+Unlike in the single-player setting, the collision-free requirement now makes the expected reward for one player
+dependent on the decisions of other players. Intuitively, we would expect that a policy of always using better arms in
+earlier steps would perform well. We can in fact generalize Lemma 3.1 from the single-player setting:
+Lemma 4.1. Given a pre-observation list om,t for time t, player m maximizes its expected reward at time t by observing
+the arms in descending order of their rewards.
+
+With Lemma 4.1, we can consider the ofﬂine optimization of the centralized multi-player bandits problem. With the full
+information of expected rewards of all arms, i.e., {µi }K
+i=1 , the central controller allocates disjoint arm sets to different
+players, aiming to maximize the expected overall reward shown in (4). We show in Theorem 4.2 that the ofﬂine problem
+is NP-hard.
+Theorem 4.2. The ofﬂine problem of our centralized multi-player setting is NP-hard.
+
+Proof. Deﬁne xij = 1 if the central controller allocates arm j to player i and 0 otherwise. The ofﬂine optimization
+problem can be formulated as:
+
+max
+
+(cid:110)(cid:2)1 − (
+
+(cid:88)
+
+xik + 1)τ (cid:3)xij µj
+
+k<j
+
+(cid:89)
+
+k<j
+
+(cid:111)
+
+(1 − xik µk )
+
+K(cid:88)
+
+j=1
+
+M(cid:88)
+M(cid:88)
+
+i=1
+
+s.t.
+where we deﬁne (cid:80)∅ := 0 and (cid:81)∅ := 1. We show the Weapon Target Assignment (WTA) problem [22] with identical
+targets, which is NP-hard [23], can be reduced in polynomial time to a special case of our problem with τ = 0: The
+
+xij ∈ {0, 1},
+xij ≤ 1, j = 1, . . . , K,
+
+i=1
+
+Algorithm 2 Centralized Multi-Player OBP (C-MP-OBP)
+1: Initialization: Pull all arms once and update ni (t), µi (t), ˆµi (t) for all i ∈ [K ]
+
+2: while t do
+
+3: α = argsort( ˆµ1 (t), ˆµ2 (t), . . . , ˆµK (t));
+si,t = α[(i − 1) ∗ M + 1 : i ∗ M ]
+
+for i = 1 : L do
+
+end for
+for m = 1 : M do
+for i = 1 : L do
+
+Observe arm si,t [m]’s reward Ysi,t [m],t ;
+
+nsi,t [m] (t + 1) = nsi,t [m] (t) + 1;
+
+(cid:16)
+
+µsi,t [m] (t + 1)
+µsi,t [m] (t) + Ysi,t [m],t
+
+=
+if Ysi,t [m],t = 1 then
+
+(cid:17)
+
+/nsi,t [m] (t + 1);
+
+4:
+5:
+6:
+7:
+8:
+9:
+10:
+11:
+
+12:
+13:
+14:
+15:
+16:
+17:
+18:
+19:
+20:
+21:
+22:
+
+Player m plays arm si,t [m] for this round;
+
+nsj,t [m] (t + 1) = nsj,t [m] (t) for all j > i;
+µsj,t [m] (t + 1) = µsj,t [m] (t) for all j > i;
+
+break;
+
+end if
+end for
+end for
+
+Update ˆµi (t) for all i ∈ [K ];
+
+t = t + 1;
+
+23: end while
+
+WTA problem with identical targets aims to maximize the sum of expected damage done to all targets (mapped to be
+players), each of which can be targeted by possibly multiple weapons (mapped to be channels), where each weapon can
+only be assigned to at most one target and weapons of the same type have the same probability (mapped to be µk ) to
+successfully destroy any target. Then, it is equivalent to maximizing the expected reward of all players when τ = 0 in
+our problem.
+
+Although it is hard to ﬁnd the exact ofﬂine optimal policy, Lemma 4.1 suggests that a collision-free greedy policy,
+which we also refer to as a greedy policy, might be closed to the optimal one. We ﬁrst deﬁne the ith observation step in
+a policy as the set of arms in the ith positions of the players’ observation lists, denoted by si,t := (o(i)
+for each round t. We deﬁne a greedy policy as one in which at each observation step, the players greedily choose
+the arms with highest expected rewards from all arms not previously observed. Formally, assuming without loss of
+generality that µ1 ≥ µ2 ≥ · · · ≥ µK , in the ith observation step, players should observe different arms from the
+set si,t = {(i − 1)M + 1, (i − 1)M + 2, . . . , iM }. In the simple greedy-sorted policy, for instance, player m will
+choose arm (i − 1)M + m in the ith observation step. A potentially better candidate is the greedy-reverse policy: at
+each observation step, arms are allocated to players in the reverse order of the probability they observe an available
+arm from previous observation steps. Formally, in the ith observation step, arm (i − 1)M + j is assigned to the player
+m with the j th highest value of Πi−1
+), or the probability player m has yet not found an available arm.
+Experiments show that when there are 3 players and 9 arms with expected rewards uniformly drawn from (0, 1), the
+greedy-reverse policy is the optimal greedy policy 90% of the time. In fact,
+Lemma 4.3. When K ≤ 2M , the optimal policy is the greedy-reverse policy.
+
+l=1 (1 − µo(l)
+
+2,t , . . . , o(i)
+
+1,t , o(i)
+
+M ,t )
+
+m,t
+
+In general, the optimal policy may not be the greedy-reverse one, or even a greedy policy. Figure 2a shows such a
+counter-intuitive example. In this example, player 1 should choose the arm with 0.15 expected reward, not the one with
+0.25 expected reward, in step 2. Player 1 should reserve the higher-reward arm for player 3 in a later step, as player 3
+has a lower chance of ﬁnding a good arm in steps 1 or 2. In practice, we expect these examples to be rare; they occur
+less than 30% of the time in simulation. Thus, we design an algorithm that allocates arms to players according to a
+speciﬁed greedy policy (e.g., greedy-sorted) and bound its regret.
+We propose an UCB-type online algorithm, Centralized Multi-Player Observe-Before-Play (C-MP-OBP), to learn
+a greedy policy without prior knowledge of the expected rewards {µk }K
+k=1 . The C-MP-OBP algorithm is described
+
+in Algorithm 1, generalizing the single-player setting. To simplify the discussion, we assume K/M = L, i.e., each
+player will have an observation list of the same length, L, when using a greedy policy. Note that if K is not a multiple
+of M , we can introduce virtual arms with zero rewards to ensure K/M = L. At each round t, the central controller
+ranks all the arms in the descending order of ˆµi (t), the UCB value of arm i at round t, and saves that order as α.
+Then it sets the ﬁrst M arms in α, α[1 : M ], as s1,t , the second M arms in α, α[M + 1 : 2M ] as s2,t , and so on,
+assigning the arms in each list to players according to the speciﬁed greedy policy. Each player m’s observation list is
+then om,t = (s1,t [m], . . . , sL,t [m]). At the end of this round, the central controller aggregates all players’ observations
+to update the UCB values and enter the next round.
+We deﬁne the regret, R(T ) := E[r∗ (T )] − E[r(T )], as the difference between the expected reward of the target policy
+and that of C-MP-OBP algorithm:
+k−1(cid:89)
+k−1(cid:89)
+
+(cid:40)
+
+(cid:41)
+
+(1 − kτ )µ(k−1)M +m
+
+(1 − µ(i−1)M +m ) − (1 − kτ )µo(k)
+
+R(T ) =
+
+(1 − µo(i)
+
+m,t
+
+)
+
+.
+
+m,t
+
+i=1
+
+T ,M ,L(cid:88)
+t,m,k=1
+
+i=1
+
+(cid:17)
+
+(5)
+
+µi − µj , ∆min = min
+
+i<j
+
+µi − µj .
+
+Deﬁning cµ := µmax
+
+, we show the following regret bound:
+Theorem 4.4. The expected regret of C-MP-OBP is
+
+∆min
+
+E[R(T )] ≤ cµK 2 (L2 + L)
+
+(cid:16) 8 log T
+
+∆min
+
++ (1 + π2
+
+3 )∆max
+
+, where ∆max = max
+
+i<j
+
+The expected regret E [R(T )] is upper bounded in the order of O(K 2L2 log T ), compared to O(K 2 log T ) in the
+single-player setting. Thus, we incur a “penalty” of L2 in the regret order, due to sub-optimal pre-observations’ impact
+on the subsequent pre-observations of other users. We note that, if pre-observations are not allowed, we can adapt the
+proof of Theorem 4.4 to match the lower bound of O(KM log T ) given by [5].
+
+5 Distributed Multi-player Setting
+
+We ﬁnally consider the scenario without a central controller or any means of communication between players. In the
+CRN setting, for instance, small Internet-of-Things devices may not be able to tolerate the overhead of communication
+with a central server. The centralized C-MP-OBP policy is then infeasible, and specifying a collision-free policy is
+difﬁcult, as the players make their decisions independently. We propose a Distributed Multi-Player Observe-Before-
+Play (D-MP-OBP) online algorithm in which each player distributedly learns a “good” policy that effectively avoids
+collisions with others. Speciﬁcally, it converges to one of the ofﬂine collision-free greedy policies that we deﬁned in
+Section 4; we then show that D-MP-OBP can be adapted to achieve a pre-speciﬁed greedy policy, e.g., greedy-reverse.
+To facilitate the discussion, we deﬁne η (t)
+k as an indicator that equals 1 if more than one player plays arm k in round t
+and 0 otherwise. As in the centralized setting, o(k)
+m,t denotes the k th arm in player m’s observation list at round t.
+The D-MP-OBP algorithm is shown in Algorithm 3. As in the C-MP-OBP algorithm, in each round, each player
+independently updates its estimate of the expected reward (µk ) for each arm k using the UCB of µk . Each player then
+sorts the estimated {µk }K
+k=1 into descending order and groups the K arms into L sets. We still use si,t to denote the
+list of arms that the players observe in step i at round t. Since users may have different lists si,t depending on their
+in each step i at round t. If there was a collision with another player on arm i at round t − 1 or the arm chosen in round
+prior observations, we cannot simply allocate the arms in si,t to users. Instead, the users follow a randomized strategy
+t − 1 does not belong to her own set si,t , then the player uniformly at random chooses an arm from her si,t to observe.
+Otherwise, the player observes the same arm as she did in step i in round t − 1. If the arm is observed to be available,
+the player plays it and updates the immediate reward and the UCB of the arm. Otherwise, she continues to the next
+observation step. Note that this policy does not require any player communication.
+To evaluate D-MP-OBP, we deﬁne a performance metric, Loss(T ), to be the maximum difference in total reward over
+T rounds between any collision-free greedy policy and the reward achieved by D-MP-OBP. Thus, unlike the regret
+E[R(T )] deﬁned for our C-MP-OBP policy, E[Loss(T )] does not target a speciﬁc greedy policy. Moreover, unlike
+C-MP-OBP, our D-MP-OBP algorithm provides fairness in expectation for all players, as they have equal opportunities
+to use the best arms in each observation step.
+Theorem 5.1. The total expected loss, E[Loss(T )], of our distributed algorithm D-MP-OBP is logarithmic in T .
+We ﬁnally deﬁne the D-MP-Adapt-OBP algorithm, which adapts Algorithm 3 to steer the players towards a speciﬁc
+policy by adding a small extra term for each player. We deﬁne a function f (·) for each player to map the arm chosen in
+the ﬁrst observation step to the arm chosen in the following steps given the predictions of each µk . With some abuse of
+
+Algorithm 3 Distributed Multi-Player OBP (D-MP-OBP)
+1: Initialization: Pull all arms once and update ni (t), µi (t), ˆµi (t) for all i ∈ [K ]
+
+2: while t do
+
+3: α = argsort( ˆµ1 (t), ˆµ2 (t), . . . , ˆµK (t));
+si,t = α[(i − 1) ∗ M + 1 : i ∗ M ]
+
+for i = 1 : L do
+
+end for
+for i = 1 : L do
+if m∗
+
+i = 0 OR m∗
+i /∈ si,t then
+
+The player uniformly at random selects an arm from si,t to observe and record the index of the chosen arm
+as m∗
+i ;
+
+4:
+5:
+6:
+7:
+8:
+9:
+
+10:
+11:
+12:
+13:
+
+14:
+15:
+16:
+17:
+18:
+19:
+20:
+21:
+22:
+23:
+24:
+25:
+26:
+
+end if
+
+Observe the reward Ysi,t [m∗
+
+i ],t ;
+
+(cid:16)
+
+i ] (t + 1)
+
+i ] (t + 1) = nsi,t [m∗
+
+nsi,t [m∗
+µsi,t [m∗
+µsi,t [m∗
+i ] (t) + Ysi,t [m∗
+i ],t
+if Ysi,t [m∗
+
+i ],t = 1 then
+
+=
+
+(cid:17)
+
+i ] (t) + 1;
+
+The player plays arm si,t [m∗] for this round;
+
+nsj,t [m∗] (t + 1) = nsj,t [m∗] (t) for all j > i;
+µsj,t [m∗] (t + 1) = µsj,t [m∗] (t) for all j > i;
+
+/nsi,t [m∗
+
+i ] (t + 1);
+
+break;
+
+end if
+end for
+
+if a collision occurs then
+Update m∗
+Update ˆµi (t) for all i ∈ [K ];
+
+i = 0;
+
+end if
+
+t = t + 1;
+
+27: end while
+
+m,t , { ˆµk (t)}K
+m,t = f (ol
+
+notation, we deﬁne ol
+m,t as the arm chosen by player m for step l in round t. The function f then steers the players to
+k=1 ), ∀l = 1, ..., L − 1 for each player m; we deﬁne
+the collision-free greedy policy given by ol+1
+the regret with respect to this policy.
+We can view the function f as replacing the player index in the centralized setting with the relative ranking of the arm
+chosen by this player in prior observation steps. As an example, the greedy-sorted policy used in Section 4 is equivalent
+to: (1) letting players choose different arms, and (2) the player that chooses the arm in position m continuing to choose
+the arm with the mth best reward of its set si,t in each subsequent step. Thus, we can steer the players to speciﬁc
+observation lists within a given collision-free greedy policy. Their decisions then converge to the speciﬁed policy.
+Theorem 5.2. The expected regret, E[R(T )] of our distributed algorithm D-MP-Adapt-OBP is logarithmic in T .
+
+We observe from the proof of Theorem 5.2 that the regret is combinatorial in M but logarithmic in T , unlike the
+centralized multi-player setting’s O(K 2L2 log T ) regret in Theorem 4.4. This scaling with M comes from the lack of
+coordination between players and the resulting collisions.
+
+6 Experiments
+
+We validate the theoretical results from Sections 3–5 with numerical simulations. We summarize our results as follows:
+Sublinear regret: We show in Figure 3 that our algorithms in the single-player, multi-player centralized, and multi-
+player distributed settings all achieve a sublinear regret, respectively deﬁned relative to the single-player ofﬂine optimal
+(Lemma 3.1), the greedy-sorted policy, and a collision-free-greedy-random policy that in each step greedily chooses the
+set of arms but randomly picks one collision-free allocation. Figure 3b shows our C-MP-OBP algorithm’s regret is
+even negative for a few runs: by deviating from the greedy-sorted policy towards the true optimum, the C-MP-OBP
+algorithm may obtain a higher reward. The regret of D-MP-OBP in Figure 3c is larger than that of C-MP-OBP, likely
+due to collisions in the distributed setting.
+
+(a) OBP-UCB.
+
+(b) C-MP-OBP.
+
+(c) D-MP-OBP.
+
+Figure 3: Sublinear regret in each setting. Each line represents an experiment run with randomly chosen reward
+distributions; the bold line is the average over 100 runs.
+
+τ
+
+single-opt
+random single-real
+random-real
+0.01
+102%
+5%
+76%
+6%
+0.05
+92%
+34%
+71%
+47%
+0.1
+78%
+140%
+63%
+245%
+Table 1: Average % reward improvements of OBP-UCB
+
+Superiority to baseline strategies: We show in Tables 1 and 2 that our algorithms consistently outperform two
+baselines, in both synthetic reward data (K = 9 arms with expected rewards uniformly drawn from [0, 0.5] and M = 3
+players for multi-player settings) and real channel availability traces [24]. Our ﬁrst baseline is a random heuristic
+(called random for synthetic data and random-real for real data trace) in which users pre-observe arms uniformly at
+random and play the ﬁrst available arm. Comparisons to this baseline demonstrate the value of strategically choosing the
+order of the pre-observations. Our second baseline is an optimal ofﬂine single-observation policy (single-opt), which
+allocates the arms with the M highest rewards to each player (in the single-player setting, M = 1). These optimal
+ofﬂine policies are superior to any learning-based policy with a single observation, so comparisons with this baseline
+demonstrate the value of pre-observations. When the rewards are drawn from a real data trace, they may no longer be
+i.i.d. Bernoulli distributed, so these ofﬂine policies are no longer truly “optimal.” Instead, we take a single-observation
+UCB algorithm (single-real) as the baseline; this algorithm allocates the arms with the top M (≥ 1) highest UCB
+values to different users, and each player still observes and plays one such arm in each round.
+Tables 1 and 2 show the average improvements in the cumulative reward achieved by our algorithms over the baselines
+after 5000 rounds over 100 experiment repetitions with different τ . In each setting, increasing τ causes the improvement
+over the random baseline to increase: when τ is small, there is little cost to mis-ordered observations, so the random
+algorithm performs relatively well. Conversely, increasing τ narrows the reward gap with the single-observation
+baseline: as pre-observations become more expensive, allowing users to make them does not increase the reward as
+much.
+Effect of µ: We would intuitively expect that increasing the average rewards µi would increase the reward gap with the
+random baseline: it is then more important to pre-observe “good” arms ﬁrst, to avoid the extra costs from pre-observing
+occupied arms. We conﬁrm this intuition in each of our three settings. However, increasing the µ’s does not always
+increase the reward gap with the single-observation baseline, since if the µ’s are very low or very high, pre-observations
+are less valuable. When the µ’s are small, the player would need to pre-observe several arms to ﬁnd an available one,
+decreasing the ﬁnal reward due to the cost of these pre-observations. When the µ’s are large, simply choosing the
+best arm is likely to yield a high reward, and the pre-observations would add little value. Figures 4a and 4b plot the
+reward gap with respect to x ( µ’s are drawn from U (0, x)) : an increase in x increases the reward gap with the random
+baseline, but has a non-monotonic effect compared to the single-observation baseline. Similar trends in multi-player
+settings are shown in the appendix.
+
+7 Discussion and Conclusion
+
+In this work, we introduce pre-observations into multi-armed bandit problems. Such pre-observations introduce new
+technical challenges to the MAB framework, as players must not only learn the best set of arms, but also the optimal
+order in which to pre-observe these arms. This challenge is particularly difﬁcult in multi-player settings, as each player
+must learn an observation set of arms that avoids collisions with other players. We develop algorithms for both the
+
+τ
+
+single-opt
+random
+single-real
+random-real
+0.1
+41%, 27% 7%, 39%
+35%, 198% 4%, 30%
+0.2
+33%, 20% 15%, 47% 28%, 183% 10%, 36%
+0.3
+22%, 11% 30%, 60% 19%, 165% 20%, 47%
+Table 2: Average C-MP-OBP, D-MP-OBP % improvement.
+
+(a) Single-observation baseline.
+
+(b) Random baseline.
+
+Figure 4: Average cumulative reward gaps in the single-player (OBP-UCB) setting after 5000 rounds over 100
+experiments, when τ = 0.1 and K = 9 arms with expected rewards µ’s uniformly drawn from the range [0, x].
+
+single- and multi-player settings and show that they achieve logarithmic regret over multiple rounds. As one of the ﬁrst
+works to consider pre-observations, however, we leave several problems open for future work. One might, for instance,
+consider user arrivals and departures, which would affect the ofﬂine optimal observation lists; or temporal reward
+correlations. Both of these would likely arise in our motivating scenario of cognitive radio networks, as devices move in
+and out of range and channel incumbents exhibit temporal behavior patterns. Another challenging extension would be
+to consider cases with more limited collisions, where one arm might serve multiple users (e.g., if an “arm” is a city
+block when users are searching for parking spaces). In such cases, we must learn not just the probability that the arm is
+available (i.e., its expected reward) but also the full distribution of the number of users that the arm can accommodate.
+
+References
+
+[1] Sébastien Bubeck and Nicolo Cesa-Bianchi. Regret analysis of stochastic and nonstochastic multi-armed bandit
+problems. Foundations and Trends R(cid:13) in Machine Learning, 5(1):1–122, 2012.
+[2] Donggyu Yun, Alexandre Proutiere, Sumyeong Ahn, Jinwoo Shin, and Yung Yi. Multi-armed bandit with
+additional observations. Proceedings of the ACM on Measurement and Analysis of Computing Systems, 2(1):13,
+2018.
+[3] Branislav Kveton, Csaba Szepesvari, Zheng Wen, and Azin Ashkan. Cascading bandits: Learning to rank in the
+cascade model. In International Conference on Machine Learning, pages 767–776, 2015.
+[4] Jonathan Rosenski, Ohad Shamir, and Liran Szlak. Multi-player bandits–a musical chairs approach. In Interna-
+tional Conference on Machine Learning, pages 155–163, 2016.
+[5] Lilian Besson and Emilie Kaufmann. Multi-player bandits revisited. In Algorithmic Learning Theory, pages
+56–92, 2018.
+[6] Rohit Kumar, A Yadav, Sumit Jagdish Darak, and Manjesh K Hanawal. Trekking based distributed algorithm
+for opportunistic spectrum access in infrastructure-less network. In International Symposium on Modeling and
+Optimization in Mobile, Ad Hoc, and Wireless Networks (WiOpt), pages 1–8. IEEE, 2018.
+[7] Bowen Li, Panlong Yang, Jinlong Wang, Qihui Wu, Shaojie Tang, Xiang-Yang Li, and Yunhao Liu. Almost
+optimal dynamically-ordered channel sensing and accessing for cognitive networks. IEEE Transactions on Mobile
+Computing, 13(10):2215–2228, 2014.
+
+[8] T.L Lai and Herbert Robbins. Asymptotically efﬁcient adaptive allocation rules. Adv. Appl. Math., 6(1):4–22,
+1985.
+[9] Peter Auer, Nicolò Cesa-Bianchi, and Paul Fischer. Finite-time analysis of the multiarmed bandit problem. Mach.
+Learn., 47(2-3):235–256, 2002.
+[10] Sahand Haji Ali Ahmad, Mingyan Liu, Tara Javidi, Qing Zhao, and Bhaskar Krishnamachari. Optimality of
+myopic sensing in multichannel opportunistic access. IEEE Transactions on Information Theory, 55(9):4040–4050,
+2009.
+[11] Lifeng Lai, Hesham El Gamal, Hai Jiang, and H Vincent Poor. Cognitive medium access: Exploration, exploitation,
+and competition. IEEE transactions on mobile computing, 10(2):239–253, 2011.
+[12] Keqin Liu and Qing Zhao. Distributed learning in multi-armed bandit with multiple players. IEEE Transactions
+on Signal Processing, 58(11):5667–5681, 2010.
+[13] Animashree Anandkumar, Nithin Michael, Ao Kevin Tang, and Ananthram Swami. Distributed algorithms for
+learning and cognitive medium access with logarithmic regret. IEEE Journal on Selected Areas in Communications,
+29(4):731 – 745, 2011.
+[14] Orly Avner and Shie Mannor. Multi-user lax communications: a multi-armed bandit approach. In IEEE INFOCOM
+2016-The 35th Annual IEEE International Conference on Computer Communications, pages 1–9. IEEE, 2016.
+[15] Rémi Bonnefoi, Lilian Besson, Christophe Moy, Emilie Kaufmann, and Jacques Palicot. Multi-armed bandit
+learning in iot networks: Learning helps even in non-stationary settings. In International Conference on Cognitive
+Radio Oriented Wireless Networks, pages 173–185. Springer, 2017.
+[16] Orly Avner and Shie Mannor. Concurrent bandits and cognitive radio networks. In Joint European Conference on
+Machine Learning and Knowledge Discovery in Databases, pages 66–81. Springer, 2014.
+[17] Richard Combes, Stefan Magureanu, Alexandre Proutiere, and Cyrille Laroche. Learning to rank: Regret lower
+bounds and efﬁcient algorithms. ACM SIGMETRICS Performance Evaluation Review, 43(1):231–244, 2015.
+[18] Branislav Kveton, Zheng Wen, Azin Ashkan, and Csaba Szepesvari. Combinatorial cascading bandits. In Advances
+in Neural Information Processing Systems, pages 1450–1458, 2015.
+[19] Shi Zong, Hao Ni, Kenny Sung, Nan Rosemary Ke, Zheng Wen, and Branislav Kveton. Cascading bandits
+for large-scale recommendation problems. In Proceedings of the Thirty-Second Conference on Uncertainty in
+Artiﬁcial Intelligence, pages 835–844. AUAI Press, 2016.
+[20] Ruida Zhou, Chao Gan, Jing Yan, and Cong Shen. Cost-aware cascading bandits. In International Joint Conference
+on Artiﬁcial Intelligence, 2018.
+[21] Shuai Li, Baoxiang Wang, Shengyu Zhang, and Wei Chen. Contextual combinatorial cascading bandits. In ICML,
+volume 16, pages 1245–1253, 2016.
+[22] Ravindra K Ahuja, Arvind Kumar, Krishna C Jha, and James B Orlin. Exact and heuristic algorithms for the
+weapon-target assignment problem. Operations research, 55(6):1136–1146, 2007.
+[23] Marzio De Biasi.
+Weapon-target assignment problem.
+http://www.nearly42.org/cstheory/
+weapon-target-assignment-problem/, 2013.
+[24] Shangxing Wang. https://github.com/ANRGUSC/MultichannelDQN-channelModel, 2018.
+[25] https://en.wikipedia.org/wiki/Absorbing_Markov_chain, 2018.
+[26] Miklos Bona. A Walk Through Combinatorics. World Scientiﬁc, 2011.
+
+Appendix
+
+A Proof of Lemma 3.1 and 4.1
+
+Proof. Assume there exists an observation list oold such that o(i)
+old = a, and i < j, µa > µb . In other words,
+the ith arm to be observed in oold has less expected reward than the j th arm. Now let us consider a new observation list
+onew , which switches arms a and b in oold and leaves the other arms unchanged. Deﬁne the one-round expected reward
+of oold and onew as rold and rnew . From (2), we can ﬁnd that the gap between rold and rnew is only caused by the ith to
+the j th arm in the observation list, so we get:
+k−1(cid:89)
+k−1(cid:89)
+
+old = b, o(j )
+
+rnew − rold =
+
+j(cid:88)
+
+k=i
+
+(cid:40)
+
+(1 − k τ )µo(k)
+(1 − µo(x)
+) − (1 − k τ )µo(k)
+(1 − i τ )(µa − µb ) − j−1(cid:88)
+(1 − µo(x)
+
+new
+
+x=1
+
+new
+
+old
+
+x=1
+
+(1 − µo(x)
+
+old
+
+)
+
+(cid:41)
+
+=
+
+i−1(cid:89)
+
+x=1
+
+(1 − µo(x)
+
+new
+
+)
+
+(cid:40)
+
+k=i+1
+
+(cid:110)
+
+(1 − k τ )(µa − µb )µo(k)
+
+new
+
+k−1(cid:89)
+
+x=i+1
+
+(1 − µo(x)
+
+new
+
+)
+
+(cid:111)−
+
+(1 − j τ )(µa − µb )
+
+j−1(cid:89)
+
+x=i+1
+
+new
+
+)
+
+(cid:41)
+
+>
+
+i−1(cid:89)
+
+x=1
+
+(1 − µo(x)
+
+new
+
+)
+
+(cid:40)
+
+(1 − i τ )(µa − µb ) − (1 − (i + 1) τ )(µa − µb )
+
+j(cid:88)
+
+k=i+1
+
+µo(k)
+
+new
+
+k−1(cid:89)
+
+x=i+1
+
+(1 − µo(x)
+
+new
+
+)−
+
+(1 − (i + 1) τ )(µa − µb )
+
+j−1(cid:89)
+
+x=i+1
+
+(1 − µo(x)
+
+new
+
+)
+
+(cid:41)
+
+≥ i−1(cid:89)
+≥ i−1(cid:89)
+
+x=1
+
+(1 − µo(x)
+
+new
+
+)
+
+(cid:40)
+(cid:40)
+
+(1 − i τ )(µa − µb ) − (1 − (i + 1) τ )(µa − µb )
+
+(cid:41)
+
+x=1
+
+(1 − µo(x)
+
+new
+
+)
+
+τ (µa − µb )
+
+(cid:41)
+
+≥ 0.
+
+(6)
+
+Thus, the expected reward of onew is always larger than that of oold . As a result, exchanging arms a and b in oold
+always improves the expected reward. We can then conclude that the optimal policy for the single-player setting is
+o∗
+t = (1, 2, . . . , K ), which is Lemma 3.1. For the centralized multi-player setting, similarly, the optimal ordering is
+where no arm has lower expected reward than any arm observed after it, which concludes the proof of Lemma 4.1.
+
+B Proof of Theorem 3.2
+
+Proof. To prove Theorem 3.2, let us ﬁrstly rewrite (3) as:
+k−1(cid:89)
+
+R(T ) =
+
+T(cid:88)
+
+t=1
+
+K(cid:88)
+K(cid:88)
+
+k=1
+
+(cid:40)
+(cid:40)
+
+(1 − k τ )µk
+
+i=1
+
+(1 − µi ) − (1 − k τ )µo(k)
+
+t
+
+k−1(cid:89)
+
+i=1
+
+(1 − µo(i)
+
+t
+
+)
+
+(cid:41)
+
+≤ T(cid:88)
+
+t=1
+
+k=1
+
+(1 − k τ )(µk − µo(k)
+
+t
+
+)
+
+k−1(cid:89)
+The last inequality holds since (cid:81)k−1
+i=1 (1 − µi ) is always not greater than (cid:81)k−1
+) for any ot when µ1 ≥ µ2 ≥
+· · · ≥ µK . Now let us focus on this inequality. At round t, if o(k)
+t > k (i.e., the k th pre-observed arm has better average
+reward than arm k), then µk − µo(k)
+≥ 0 and the regret for o(k)
+is nonnegative; if o(k)
+≤ 0, and
+the regret for o(k)
+those with higher expected rewards. Letting Wk := (1 − k τ ) (cid:81)k−1
+is non-positive. In order to upper bound R(T ), we can ignore the negative terms and only count the
+positive regrets for all o(k)
+t > k . These positive regrets come from observing arms with lower expected rewards before
+i=1 (1 − µi ) and ∆i,j := µi − µj , the total regret can
+
+i=1
+
+(1 − µi )
+
+(cid:41)
+
+.
+
+(7)
+
+i=1 (1 − µo(i)
+
+t
+
+t
+
+t
+
+t < k , then µk − µo(k)
+
+t
+
+t
+
+be bounded as:
+Deﬁne Ti,j as the number of times that the ith arm to be observed in ot is arm j , i.e., Ti,j := (cid:80)T
+then rewrite (8):
+K−1(cid:88)
+K−1(cid:88)
+K−1(cid:88)
+In order to bound E[R(T )], we need to bound E[Ti,j ] for all i < j .
+Lemma B.1. ∀ i, j ∈ [K ] with i < j , under Algorithm 1, E[Ti,j ] ≤ i ( 8 log T
+
+R(T ) ≤ T(cid:88)
+R(T ) ≤ T(cid:88)
+
+t=1
+
+K(cid:88)
+
+k=1
+
+(cid:40)
+
+Wk ∆k,o(k)
+
+t
+
+1{o(k)
+
+t > k}
+
+(cid:41)
+
+.
+
+(8)
+
+t=1
+
+1{o(i)
+
+t = j }. We
+
+t=1
+
+i=1
+
+K(cid:88)
+(cid:40)
+(cid:40)
+
+j=i+1
+
+(cid:40)
+
+Wi ∆i,j 1{o(i)
+
+t = j }
+
+(cid:41)
+(cid:41)
+
+=
+
+i=1
+
+K(cid:88)
+K(cid:88)
+
+j=i+1
+
+Wi ∆i,j
+
+T(cid:88)
+
+t=1
+
+1{o(i)
+
+t = j }
+
+=
+
+i=1
+
+j=i+1
+
+Wi ∆i,j Ti,j
+
+(cid:41)
+
+.
+
+(9)
+
+∆2
+
+i,j
+
++ 1 + π2
+3 ).
+
+Proof. Algorithm 1 sorts the UCB values to determine the pre-observation list ot , so Ti,j is equal to the number of times
+that ˆµj (t), the UCB value of arm j , is the ith largest one in ˆµ(t). In that case, at least one arm in the set {1, 2, . . . , i}
+has smaller UCB value than ˆµj (t), since at most i − 1 arms have larger UCB values than ˆµj (t). Thus, Ti,j can be
+bounded by the number of times that the minimum UCB value of arms {1, 2, . . . , i} is less than ˆµj (t):
+
+Ti,j ≤ T(cid:88)
+t=1
+
+1{min
+
+k∈[i]
+
+ˆµk (t) ≤ ˆµj (t)}
+
+≤ T(cid:88)
+≤ i(cid:88)
+
+t=1
+
+i(cid:88)
+T(cid:88)
+
+k=1
+
+1{ ˆµk (t) ≤ ˆµj (t)}
+
+k=1
+
+t=1
+
+1{ ˆµk (t) ≤ ˆµj (t)}.
+
+(10)
+
+Since i < j and k ∈ [i], we can bound (cid:80)T
+1{ ˆµk (t) ≤ ˆµj (t)} using the same idea to bound the number of times of
+choosing sub-optimal arms in traditional UCB1 algorithm [9]. We can get:
+
+t=1
+
+E[Ti,j ] ≤ i(cid:88)
+
+k=1
+
+E
+
+(cid:34) T(cid:88)
+
+t=1
+
+1{ ˆµk (t) ≤ ˆµj (t)}
+
+(cid:35)
+
+≤ i(cid:88)
+
+k=1
+
+(cid:40)
+
+8 log T
+∆2
+
+k,j
+
++ 1 +
+
+π2
+3
+
+(cid:41)
+
+≤ i (
+
+8 log T
+∆2
+
+i,j
+
++ 1 +
+
+π2
+3
+
+),
+
+(11)
+
+which concludes the proof.
+
+Combining Lemma B.1 and (9) gives the upper bound of the expected regret in Theorem 3.2:
+
+E[R(T )] ≤ K−1(cid:88)
+
+i=1
+
+K(cid:88)
+(cid:40)
+
+j=i+1
+
+(cid:40)
+K(cid:88)
+
+Wi ∆i,j E[Ti,j ]
+
+(cid:41)
+
+≤ K−1(cid:88)
+
+i=1
+
+i Wi
+
+j=i+1
+
+[
+
+8 log T
+
+∆i,j
+
++ (1 +
+
+π2
+3
+
+)∆i,j ]
+
+(cid:41)
+
+.
+
+(12)
+
+C Proof of Lemma 4.3
+
+Proof. When K ≤ 2M , there are at most two observation steps for each player. As shown in Figure 2b, we
+assume µa , µb is larger than µc , µd , and now the expected reward for player 1 and player 2 is rold = (1 − τ )(µa +
+If we switch arms with µa and µd , the expected reward becomes
+
+µb ) + (1 − 2τ )[(1 − µa )µc + (1 − µb )µd ].
+rnew = (1 − τ )(µd + µb ) + (1 − 2τ )[(1 − µd )µc + (1 − µb )µa ], so the gap between them is:
+rold − rnew = (1 − τ )(µa − µd ) − (1 − 2τ )(1 − µb + µc )(µa − µd )
+≥ (1 − τ )(µa − µd ) − (1 − 2τ )(µa − µd )
+≥ τ (µa − µd )
+≥ 0.
+
+(13)
+
+µo(i)
+m,t
+
+D Proof of Theorem 4.4
+
+So the expected reward will only decrease when switching an arm with lower expected reward from step 2 to step 1,
+which ensures the optimal ofﬂine policy to be a greedy policy.
+Proof. Unlike (7), we cannot directly upper bound (5) since (cid:81)k−1
+i=1 (1 − µ(k−1)M +m ) is not always less than (cid:81)k−1
+). Due to the correlation between different players’ expected rewards, the analysis of the regret is challenging.
+Our idea is to decompose the regret into two parts: the ﬁrst part is the regret caused by putting the arms into the wrong
+observation steps; the second part is the regret caused by different arm allocations within one observation step, where
+the set of arms to be allocated is correct. Deﬁne Rs
+i,k (T ) as the regret caused by putting arm i > kM into a wrong
+observation step k , when all previous observation steps are correct. In Figure 2b’s illustration, this corresponds to an
+arm being placed in the incorrect column, though the arms in prior columns are placed correctly. We will show why
+this is sufﬁcient to capture the ﬁrst part of the total regret. Deﬁne Ra
+i,k as the regret caused by arm i in the correct
+observation step k , i.e., (k − 1)M + 1 ≤ i ≤ kM , to capture the second part of the total regret. This regret corresponds
+to arm i being placed in the correct column k but incorrect row in Figure 2b. We can then rewrite the total regret as:
+
+i=1 (1 −
+
+R(T ) ≤ L(cid:88)
+
+k=1
+
+ K(cid:88)
+
+i>kM
+
+kM(cid:88)
+i=(k−1)M +1
+
+ .
+
+Rs
+i,k (T ) +
+
+Ra
+i,k (T )
+
+(14)
+
+In order to ﬁnd the upper bound of R(T ), we need to bound Rs
+i,k (T ) separately. Let us ﬁrst consider
+i,k as the number of times that arm i is in the k th observation step. Under algorithm 2, we can bound
+
+i,k (T ) and Ra
+
+Rs
+i,k (T ). Denote T s
+E[T s
+i,k ] for all i > kM .
+
+Lemma D.1. We have E[T s
+
+i,k ] ≤ kM ( 8 log T
+∆2
+
+kM,i
+
+3 ), ∀ i > kM .
++ 1 + π2
+
+Proof. Algorithm 2 sorts the UCB values to determine om,t , so T s
+i,k is equal to the number of times that ˆµi (t), the UCB
+value of arm i, should be at least the kM th largest one in ˆµ(t). In that case, at least one arm in the set {1, 2, . . . , kM }
+has smaller UCB value than ˆµi (t), since at most kM − 1 arms have larger UCB values than ˆµi (t). Thus, T s
+i,k can be
+bounded by the number of times that the minimum UCB value of arms {1, 2, . . . , kM } is less than ˆµi (t):
+
+i,k ≤ T(cid:88)
+t=1
+
+T s
+
+1{ min
+
+kM(cid:88)
+j∈[kM ]
+j=1
+
+T(cid:88)
+
+≤ T(cid:88)
+≤ kM(cid:88)
+
+t=1
+
+j=1
+
+t=1
+
+ˆµj (t) ≤ ˆµi (t)}
+
+1{ ˆµj (t) ≤ ˆµi (t)}
+
+1{ ˆµj (t) ≤ ˆµi (t)}.
+
+(15)
+
+Since i > kM and j ∈ [kM ], we can bound (cid:80)T
+1{ ˆµj (t) ≤ ˆµi (t)} using the same idea to bound the number of
+times of choosing sub-optimal arms in traditional UCB1 algorithm [9]. We can get:
+
+(cid:34) T(cid:88)
+
+E[T s
+
+i,k ] ≤ kM(cid:88)
+t=1
+j=1
+
+≤ kM(cid:88)
+
+E
+
+(cid:40)
+
+(cid:35)
+
+1{ ˆµj (t) ≤ ˆµi (t)}
+
+(cid:41)
+
+t=1
+
+8 log T
+∆2
+
+j,i
+
++ 1 +
+
+π2
+3
+
+8 log T
+∆2
+
+kM ,i
+
++ 1 +
+
+π2
+3
+
+),
+
+j=1
+
+≤ kM (
+
+which concludes the proof.
+
+(16)
+
+(17)
+
+In order to ﬁnd the upper bound of Rs
+i,k (T ), we also need to consider the value of regret in each round. Deﬁne Rmax
+as
+the maximum one-round regret for one player when he has a wrong arm in the k th observation step and all previous
+selected arms are correct. We consider the worst case to get this maximum regret, which puts this wrong arm i on the
+ﬁrst place in the k th observation step, i.e., o(k)
+get:
+k−1(cid:89)
+
+1,t = i, since µ1+(k−1)M > µ2+(k−1)M > · · · > µkM . From (4), we can
+
+(cid:40)
+
+(cid:41)
+
+k
+
+k ≤ L(cid:88)
+
+(1 − µ(x−1)M +1 )
+x=1
+
+Rmax
+
+(1 − j τ )µ(j−1)M +1
+≤ (L − k + 1) µ(k−1)M +1 .
+, where µmax = max
+µi and ∆min = min
+
+j=k
+
+i
+
+i<j
+
+Recall that α = µmax
+bound of Rs
+
+i,k (T ):
+
+∆min
+
+∆i,j . Combining Lemma D.1 and (17) gives the upper
+
+E[Rs
+i,k (T )] ≤ Rmax
+E[T s
+≤ kM (L − k + 1)(
+
+i,k ]
+
+k
+
+8 log T
+(cid:20) 8 log T
+∆2
++ 1 +
+≤ αkM (L − k + 1)
+
+kM ,i
+
++ (1 +
+
+π2
+3
+
+∆kM ,i
+
+(cid:21)
+
+)µ1+(j−1)M
+
+π2
+3
+
+)∆kM ,i
+
+(18)
+
+Let us move to the discussion of Ra
+i,k (T ). This part of the regret comes from the fact that, at the k th observation step,
+although players choose from the correct set of arms {(k − 1)M + 1, (k − 1)M + 2, . . . , kM }, there are M ! possible
+allocations, which might cause regret compared to the baseline policy. Now we need to consider the regret of putting
+arm i into the wrong place within the correct observation step k , where (k − 1)M + 1 ≤ i ≤ kM . Denote T a
+i,k as the
+number of times that arm i appears in a wrong place at the correct observation step k . Under Algorithm 2, we can
+bound E[T a
+
+i,k ] for all (k − 1)M + 1 ≤ i ≤ kM .
+
+Lemma D.2. For all (k − 1)M + 1 ≤ i ≤ kM , under Algorithm 2, E[T a
+
+i,k ] ≤ (i − 1) ( 8 log T
+
+∆2
+
+i−1,i
+
+3 ) + (K −
++ 1 + π2
+
+i) ( 8 log T
+∆2
+
+i,i+1
+
++ 1 + π2
+3 ).
+
+T a−
+
+Proof. Let us ﬁrst consider that arm i appears before its correct place and denote the number of times it happens as
+i,k . Algorithm 2 sorts the UCB values of arms, so T a−
+i,k is equal to the number of times that ˆµi (t), the UCB value
+of arm i, is at least the i − 1 largest one in ˆµ(t). In that case, at least one arm in the set {1, 2, . . . , i − 1} has smaller
+UCB value than ˆµi (t), since at most i − 2 arms have larger UCB values than ˆµi (t). Thus, T a−
+i,k can be bounded by the
+number of times that the minimum UCB value of arms {1, 2, . . . , i − 1} is less than ˆµi (t). On the other hand, if arm
+i appears after its correct place, denote the number of times it happens as T a+
+set {i + 1, i + 2, . . . , K } has larger UCB value than ˆµi (t), since at most K − i arms have smaller UCB values than
+i,k . In that case, at least one arm in the
+i,k can be bounded by the number of times that the maximum UCB value of arms {i + 1, i + 2, . . . , K }
+
+ˆµi (t). Thus, T a+
+
+is larger than ˆµi (t). We can get:
+
+T a−
+
+i,k ≤ T(cid:88)
+t=1
+
+≤ i−1(cid:88)
+
+1{ min
+
+1≤j≤i−1
+
+ˆµj (t) ≤ ˆµi (t)}
+
+1{ ˆµj (t) ≤ ˆµi (t)}.
+
+T(cid:88)
+
+t=1
+
+i,k ≤ T(cid:88)
+j=1
+T a+
+t=1
+
+≤ K(cid:88)
+
+T(cid:88)
+
+1{ max
+
+i+1≤j≤K
+
+ˆµj (t) ≥ ˆµi (t)}
+
+1{ ˆµj (t) ≥ ˆµi (t)}.
+
+Similar to Lemma D.1, we can bound both terms T a−
+
+j=i+1
+t=1
+i,k and T a+
+
+i,k , and T a
+
+i,k should be less than their sum:
+
+E[T a
+i,k ] ≤ E[T a−
+i,k ] + E[T a+
+1{ ˆµj (t) ≤ ˆµi (t)} +
+
+T(cid:88)
+
+≤ E
+
+i,k ]
+
+ i−1(cid:88)
+(cid:40)
+
+j=1
+
+≤ i−1(cid:88)
+
+j=1
+
+t=1
+
+8 log T
+∆2
+
+j,i
+
++ 1 +
+
+π2
+3
+
++
+
+j=i+1
+
+8 log T
+∆2
+
+i,j
+
++ 1 +
+
+π2
+3
+
+T(cid:88)
+
+t=1
+
+K(cid:88)
+K(cid:88)
+(cid:40)
+
+j=i+1
+
+(cid:41)
+
+1{ ˆµj (t) ≥ ˆµi (t)}
+
+(cid:41)
+
+
+
+≤ (K − 1) (
+
+8 log T
+∆2
+
+min
+
++ 1 +
+
+π2
+3
+
+),
+
+which concludes the proof.
+
+With Lemma D.2 and (17), we can write Ra
+i,k as:
+
+E[Ra
+i,k (T )] ≤Rmax
+E[T a
+≤(L − k + 1)(i − 1)(
+
+i,k ]
+
+k
+
+)µ1+(j−1)M
+
+)µ1+(j−1)M
+
+π2
+3
+π2
+3
+
+i−1,i
+
+8 log T
+∆2
++ 1 +
++(L − k + 1)(K − i)(
+8 log T
+(cid:20) 8 log T
++ 1 +
+∆2
+(cid:20) 8 log T
++cµ (L − k + 1)(K − i)
+
+≤cµ (L − k + 1)(i − 1)
+
+∆i−1,i
+
+i,i+1
+
+∆i,i+1
+
+π2
+3
+π2
+3
+
++ (1 +
+
+)∆i−1,i
+
+(cid:21)
+(cid:21)
+
++ (1 +
+
+)∆i,i+1
+
+.
+
+3 )∆max . Finally, with (4), (18) and (22), we can bound E[R(T )]:
+
+cµkM (L − k + 1)Tmax +
+
+cµ (L − k + 1)(K − 1)Tmax
+
+Deﬁne Tmax := 8 log T
+E[R(T )] ≤ L(cid:88)
++ (1 + π2
+
+∆min
+
+ K(cid:88)
+(cid:40) K(cid:88)
+
+i>kM
+
+k=1
+
+≤ L(cid:88)
+
+E[Rs
+i,k (T )] +
+
+kM(cid:88)
+i=(k−1)M +1
+
+
+
+E[Ra
+i,k (T )]
+
+kM(cid:88)
+i=(k−1)M +1
+
+k=1
+
+i>kM
+
+≤cµL2K 2 Tmax + αL2M K Tmax
+≤cµK 2 (L2 + L) Tmax .
+
+(19)
+
+(20)
+
+(21)
+
+(22)
+
+(cid:41)
+
+(23)
+
+E Proof of Theorem 5.1
+
+Proof. In order to prove Theorem 5.1, we ﬁrst consider the following lemma:
+
+Lemma E.1.
+
+E[Loss(T )] ≤ µmaxE[# of collisions] +
+
+L(cid:88)
+
+K(cid:88)
+
+k=1
+
+i>km
+
+Rs
+i,k (T )
+
+(24)
+
+Proof. Here Rs
+i,k is as deﬁned in (14). Lemma E.1 essentially upper-bounds Loss(T ) by the maximum regret caused
+by collisions and the total regret due to observing arms in the wrong steps. Whenever there are collisions at any given
+round t, the expected loss of reward compared to any ofﬂine policy is no larger than the highest regret at t over all
+observing arms in the wrong steps, i.e., which is at most (cid:80)L
+users who encounter a collision, i.e., every user gets zero reward in our policy while every user gets the highest reward
+in expectation in the ofﬂine policy. When there’s no collision, the loss compared to any greedy policy is caused by
+To further upper-bound E[Loss(T )], we proceed in the next lemma to upper-bound E[# of collisions] across all players.
+The basic idea of the proof is to consider the number of collisions in: (1) rounds where each player chooses from the
+satisﬁed in each round) and (2) bad rounds. The term K (cid:0)2M −1
+(cid:1) upper-bounds the number of collisions of each step in
+correct list of arms in each observation step and (2) rounds in which there exists at least one player having at least one
+arm in the wrong step. We respectively call these (1) good phases (i.e., sequential rounds where the ﬁrst condition is
+each good phase, and M upper-bounds that in each bad round. Since the number of non-sequential good phases is no
+larger than the number of bad rounds plus one, the lemma follows.
+Lemma E.2. The total expected number of collisions is at most
+
+(cid:80)K
+
+i>km Rs
+
+i,k (T ).
+
+k=1
+
+M
+
+(cid:18)
+
+K
+
+(cid:19)
+
+(cid:18)2M − 1
+M
+
++ M
+
+(cid:19)
+
+× L(cid:88)
+
+K(cid:88)
+
+k=1
+
+i>kM
+
+E[T s
+
+i,k ]
+
+(25)
+
+(cid:1)
+
+Proof. It is easy to verify the total number of collisions over all bad rounds are at most M times the total number of
+those rounds. Thus, in the following, we only need to consider the good phases. In a good phase, every user has the
+M arms in each step i. We ﬁrst consider a given round t where every user encounters a collision in round t − 1. In
+same (and also correct) set of arms to observe in each step i. We simply check how the M users are “assigned to” the
+this case, each user will uniformly at random select one out of those M arms in round t. We now consider the total
+two conﬁgurations. This random process is equivalent to assigning M balls into M boxes which has a total of (cid:0)2M −1
+number of distinct conﬁgurations of arms and users. Since in this lemma, we are calculating the number of collisions
+rather than the reward or regret of each user, we do not distinguish different users choosing the same arm. Thus, two
+conﬁgurations are distinct iff there exists at least one arm that has a different number of assigned users between these
+distinct conﬁgurations [25][26]. Now we consider the cases where γ out of M users (let M > γ > 0 will continue to
+of distinct user-arm conﬁgurations is at most (cid:0)2M −1−γ
+(cid:1), which is smaller than (cid:0)2M −1
+(cid:1). Since each user’s decision is
+choose the same arms as in the previous round, since there was no collision in the previous round. Similarly, the number
+time is a Markov chain with at most (cid:0)2M −1
+(cid:1) states. Moreover, it’s easy to verify that once the process enters a state
+only dependent on his decision and outcome in the previous round, this random process of assigning users to arms over
+where users choose different arms in a given step, it will stay in this state, as long as the good phase hasn’t transitioned
+(cid:1) rounds [13]. Thus, the total number of collisions of each step within each good phase is at most M (cid:0)2M −1
+to a bad round. Therefore, this stochastic process is an Absorbing Markov chain with an absorbing time no larger than
+a number of (cid:0)2M −1
+(cid:1) rounds, but the chosen arms of all users are realized to be unavailable. Thus, all of them have to
+However, we have to consider an extreme case where for any given observation step i, it enters an absorbing state with
+is at most K (cid:0)2M −1
+(cid:1). Combining the total number of bad rounds with the number of collisions in each good phase and
+enter observation step i + 1 and the process starts over from a possibly transient state. The worst case is that the above
+extreme case happens over all K/M observation steps. Therefore, the maximum number of collisions in a good phase
+bad round respectively, the lemma follows.
+Note that the multiplicative term in (25), E[T s
+i,k ], has been given in (16). Putting (25) and (18) into (24), we get
+Theorem 5.1. While this loss bound is logarithmic in the number of rounds T , like the O( K 3
+M L log(T )) regret bound
+given in Theorem 4.4 for the C-MP-OBP policy, it is combinatorial in M instead of being polynomial in K = LM .
+The lack of coordination in the distributed setting introduces an additional cost from possible collisions.
+
+(cid:0)2M −1
+M
+
+(cid:1).
+
+M −γ
+
+M
+
+M
+
+M
+
+M
+
+M
+
+M
+
+F Proof of Theorem 5.2
+
+Proof.
+Lemma F.1. The total expected regret,
+
+E[R(T )] ≤ µmaxE[# of collisions] +
+
+L(cid:88)
+
+ K(cid:88)
+
+k=1
+
+i>km
+
+Rs
+i,k (T ) +
+
+
+
+Ra
+i,k (T )
+
+KM(cid:88)
+i=1(k−1)M +1
+
+Proof. The total expected regret can be upper-bounded by the sum of the expected loss and the expected regret due to
+choosing the wrong arm from the right step over all users. Combining the proof in Theorem 5.1 and (22), this lemma
+follows.
+
+To further upper-bound R(T ), we upper-bound the expected number of collisions in the following lemma.
+
+Lemma F.2. We have:
+
+E[# of collisions] ≤ M
+
+(cid:18)(cid:18)2M − 1
+
+(cid:19)
+
++ 1
+
+M
+
+(cid:19)
+
+× L(cid:88)
+
+ K(cid:88)
+
+k=1
+
+i>kM
+
+KM(cid:88)
+i=(k−1)M +1
+
+E[T s
+
+i,k ] +
+
+
+
+E[T a
+
+i,k ]
+
+Proof. Interestingly, the ﬁrst term in (26) (the number of collisions in a good phase) is smaller than that of our fair
+strategy D-MP-OBP. This can be explained intuitively as follows. According to our D-MP-Adapt-OBP, the decisions
+of the steps 2, · · · , L are determined by the decisions of step 1 and f (·), given the reward estimations of all arms.
+Therefore, within a good phase, when the ﬁrst step becomes collision-free, the following steps will all be collision-free.
+In this sense, the number of collisions will not increase with the number of observation steps. Consistent with the
+terminologies used in the proof of Lemma E.2, we consider each round where there exists a user who either chooses
+an arm in the wrong observation step (a bad round) or chooses the wrong arm from the right observation step. The
+analysis for the collisions in the former event is the same as Lemma E.2. The latter event can be divided into three
+more user choose an unavailable arm j in step i − 1, and they both choose arm f (j, { ˆµk }K
+cases: (1) in the ﬁrst observation step, multiple users play the same arm; (2) in a later observation step i > 1, two or
+k=1 ) in step i; (3) in a later
+observation step i > 1, the user has a different order of arms with at least one other user, e.g., user 1 and user 2 are
+order of arms. For the ﬁrst observation step, there are at most M (cid:0)2M −1
+supposed to choose the arms in the second position and the third position respectively but they both choose arm 2 as
+(cid:1) rounds before entering an absorbing state.
+user 2 mistakenly ranks arm 2 in the third position. In any one of the above three cases, there is at most one collision
+encountered by each user in each round. Now we consider the good phases in which users have the same (and correct)
+a good phase over all steps is still M (cid:0)2M −1
+Since the positions of arms to choose in each step i > 1 are determined by the arms chosen in step 1, observing the
+(cid:1), which does not increase with the number of observation steps. Putting the
+arms in each observation step i > 1 (only when the arms chosen in the previous observation arm sets are unavailable)
+does not transition the state from an absorbing state to a transient state. Thus, the total expected number of collisions in
+above together, the lemma follows.
+
+M
+
+M
+
+Combining Lemma F.1, Lemma F.2, (18), and (22), the theorem directly follows.
+
+G Effect of µ
+
+We would intuitively expect that increasing the average rewards µ would increase the reward gap with the random
+baseline: it is then more important to pre-observe “good” arms ﬁrst, to avoid the extra costs from pre-observing occupied
+arms. We conﬁrm this intuition in each of our three settings. However, increasing µ does not always increase the reward
+gap with the single-observation baseline. If µ is very low or very high, pre-observations are less valuable and the reward
+gap is relatively small. When the µ are small, the player would need to pre-observe several arms to ﬁnd an available
+one, decreasing the ﬁnal reward due to the cost of these pre-observations. When the µ are large, simply choosing the
+best arm is likely to yield a high reward, and the pre-observations would usually be unnecessary.
+Figures 5a and 5b show the reward gap of the single-player OBP-UCB with the single-observation and random
+algorithms for different average rewards µ and a ﬁxed value of τ . As discussed above, a larger µ increases the reward
+gap with the random baseline, and ﬁrst increases but then decreases the reward gap with the single-observation baseline.
+In Figures 5c–5f, we plot the reward gap with respect to µ in the centralized and distributed multi-player settings. As in
+
+the single-player setting, an increase in µ increases the reward gap with the random baseline, but has a non-monotonic
+effect compared to the single-observation baseline.
+
+(a) OBP-UCB: single-opt.
+
+(b) OBP-UCB: random.
+
+(c) C-MP-OBP: single-opt.
+
+(d) C-MP-OBP: random.
+
+(e) D-MP-OBP: single-opt.
+
+(f) D-MP-OBP: random.
+
+Figure 5: Average cumulative reward gaps in the single-player (OBP-UCB), centralized multi-player (C-MP-OBP),
+and distributed multi-player (D-MP-OBP) settings after 5000 rounds over 100 experiment repetitions with τ = 0.1 and
+K = 9 arms and rewards uniformly drawn from [0, x], where x is the maximum value of the uniform distribution.
+
+

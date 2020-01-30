@@ -1,0 +1,5138 @@
+Revisiting and Evaluating Software Side-channel Vulnerabilities and
+Countermeasures in Cryptographic Applications
+
+Tianwei Zhang
+
+Nanyang Technological University
+tianwei.zhang@ntu.edu.sg
+
+Jun Jiang
+
+Two Sigma Investments, LP
+jiangcj@pathsec.org
+
+Yinqian Zhang
+
+The Ohio State University
+yinqian@cse.ohio-state.edu
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+R
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+2
+1
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract—We systematize software side-channel attacks with
+a focus on vulnerabilities and countermeasures in the cryp-
+tographic implementations. Particularly, we survey past re-
+search literature to categorize vulnerable implementations,
+and identify common strategies to eliminate them. We then
+evaluate popular libraries and applications, quantitatively
+measuring and comparing the vulnerability severity, re-
+sponse time and coverage. Based on these characterizations
+and evaluations, we offer some insights for side-channel
+researchers, cryptographic software developers and users.
+We hope our study can inspire the side-channel research
+community to discover new vulnerabilities, and more im-
+portantly, to fortify applications against them.
+
+1. Introduction
+
+Side-channel attacks have become a severe threat
+to computer applications and systems. They exploit the
+vulnerabilities in the implementations instead of the al-
+gorithms. Vulnerable implementations can exhibit input-
+dependent non-functional behaviors at runtime, which can
+be observed by an adversary to fully or partially recover
+the sensitive input. Over the past few years, numerous
+side-channel vulnerabilities were discovered and exploited
+to defeat modern cryptographic schemes, allowing adver-
+saries to break strong ciphers in a short period of time
+with very few trials.
+Defeating side-channel vulnerabilities has been a long-
+standing goal for providing robust cryptographic protec-
+tion. Although security-aware systems [1–6] and archi-
+tectures [7–11] were designed to mitigate side-channel
+attacks, a more efﬁcient and practical approach is to elimi-
+nate side-channel sources from software implementations.
+Various tools and methods were proposed to facilitate cre-
+ating software free of side channels [12, 13] or verifying
+their non-existence [14–19]. It is however still very chal-
+lenging to remove all side-channel vulnerabilities from
+critical implementations, since cryptographic applications
+usually have a large code base and high performance
+requirement. As such, the arms race between side-channel
+attacks and defenses remains heated.
+Past several decades have seen a large amount of
+literature about side-channel vulnerabilities. Meanwhile,
+various open-source libraries and commercial products
+have introduced different mitigation solutions. Thus, it
+becomes necessary to systematize the knowledge about
+the characteristics and evolution of these vulnerabilities
+
+A preprint of this paper is available on arXiv.
+
+and countermeasures. We are particularly interested in
+three questions: (1) What are the common and distinct
+features of various vulnerabilities? (2) What are common
+mitigation strategies? (3) What is the status quo of cryp-
+tographic applications regarding side-channel vulnerabili-
+ties? Past work only surveyed attack techniques and media
+[20–31], without offering uniﬁed summaries for software
+vulnerabilities and countermeasures that are more useful.
+This paper provides a comprehensive characterization
+of side-channel vulnerabilities and countermeasures, as
+well as evaluations of cryptographic applications related
+to side-channel attacks. We present this study in three di-
+rections. (1) Systematization of literature: we characterize
+the vulnerabilities from past work with regard to the im-
+plementations; for each vulnerability, we describe the root
+cause and the technique required to launch a successful
+attack. (2) Identiﬁcation and abstraction of key counter-
+measure techniques: we summarize the common strategies
+to mitigate different categories of vulnerabilities; we also
+explore and compare the effectiveness of each counter-
+measure implementation under different threat models. (3)
+Evaluation of cryptographic applications: we perform a
+timeline analysis of side-channel vulnerabilities and the
+corresponding patches in various libraries and products,
+and evaluate the vulnerability severity, patch release speed
+and coverage from a practical perspective.
+Scope. There are generally two types of side-channel
+attacks. In software attacks, an adversary interacts with
+the victim application through a local malicious program
+or over the network to collect information such as exe-
+cution time [32, 33] and memory access pattern [34] for
+recovering the victim’s secrets. Such vulnerabilities are
+usually caused by critical control ﬂow or data ﬂow leak-
+age. In physical attacks, an adversary physically interferes
+with the victim’s execution (e.g., fault injection [35]) or
+approaches the victim to collect physical signals such as
+acoustic emission [36], electromagnetic radiation [37, 38]
+and power trace [39, 40]. The adversary utilizes special
+analysis (e.g., power analysis [41, 42]) to obtain ﬁner
+grained information (e.g., intermediate values, Hamming
+weights) than control ﬂow or data ﬂow. In this paper,
+we mainly focus on software attacks, which are more ex-
+ploitable and common. Physical attacks and vulnerabilities
+are out of the scope of this paper.
+Contributions. The main purpose of this work is to help
+researchers, software developers and users better under-
+stand the status quo and future direction of side-channel
+research and countermeasure development. Based on our
+
+ 
+ 
+ 
+ 
+ 
+ 
+systematization, we: 1) propose three possible directions
+for researchers to consider in their future exploration; 2)
+provide three recommendations for developers to follow
+in security enhancement of their applications against side-
+channel attacks; 3) identify three indications for users
+to utilize in selecting libraries and implementations most
+suitable for their usage scenarios. The key contributions
+of this paper are:
+• Characterization of side-channel vulnerabilities in im-
+plementations of cryptographic operations (Sec. 3).
+• Identiﬁcation and dissection of common countermea-
+sure technique designs (Sec. 4).
+• Evaluation of cryptographic applications, and analysis
+of vulnerabilities and countermeasures (Sec. 5).
+• Insights and recommendations for side-channel re-
+searchers, software developers and users (Sec. 6).
+
+2. Background
+
+2.1. Basics of Cryptography
+
+2.1.1. Asymmetric Cryptography. Each user has a pub-
+
+1 and gcd(q − 1, e) = 1. Let N = pq and d = e−1
+
+lic key that is widely distributed and a private key that
+is kept to herself. This pair of keys can be used for data
+encryption/decryption and digital signature.
+RSA [43]. Two different large prime numbers, p and q ,
+and an integer e, are chosen to satisfy that gcd(p − 1, e) =
+mod (p− 1)(q − 1), then the public key is the tuple (N , e),
+and the private key is d. For a message m, the ciphertext
+is calculated as c ≡ me mod N . For a ciphertext c, the
+message is decrypted as m ≡ cd mod N . The security
+of RSA relies on the difﬁculty of factoring large integers.
+ElGamal [44]. A large cyclic group G is chosen. Let q be
+its order, g be its generator, x be a random positive integer
+smaller than q , and h = gx , then the public key is the tuple
+(G, q , g , h), and the private key is x. To encrypt a message
+denoted by y , and calculate the ciphertext as (gy , m · hy ).
+m, one chooses a random positive integer smaller than q ,
+To decrypt a ciphertext (c1 , c2 ), one can compute m =
+1 )−1 . The security of ElGamal relies on the difﬁculty
+of solving the Discrete Logarithm Problem.
+
+c2 · (cx
+
+Elliptic Curve Cryptography (ECC) [45, 46]. An ellip-
+
+tic curve group is chosen with prime order p and generator
+G. Let k be a random positive integer smaller than p, then
+k is the private key, and the public key is D = kG. To
+encrypt a message m, one encodes m to a point M on the
+curve, chooses a random positive integer r , and calculate
+the ciphertext as two points (M + rD , rG). To decrypt a
+ciphertext (C1 , C2 ), one can compute M = C1kC2 , and
+decode point M to message m. The security of ECC relies
+on the difﬁculty of solving the Elliptic Curve Discrete
+Logarithm Problem. Appendix A.1 has more details.
+
+2.1.2. Symmetric Cryptography. A single key is used
+
+in both data encryption and decryption, and is shared
+between two users. Digital signature cannot supported.
+AES-128. During key setup, a 16-byte secret key k =
+(k0 , ..., k15 ) is expanded into 11 round keys while the
+initial round key is just the original key itself. Given
+a 16-byte plaintext p = (p0 , ..., p15 ), encryption pro-
+ceeds by computing a 16-byte intermediate state x(r) =
+
+2
+
+(x(r)
+
+0 , ..., x(r)
+
+i = pi ⊕ ki (i = 0, ..., 15),
+
+15 ) at each round r as a 4 × 4 matrix. The
+initial state is computed as x(0)
+known as AddRoundKey. Each of
+the following 9
+rounds consists of SubBytes (byte substitution based
+on a lookup table), ShiftRows (transposition of bytes
+within each of the three last rows in the 4 × 4 matrix),
+MixColumns (matrix multiplication to make each byte
+represents a weighted sum of all bytes in its column)
+and AddRoundKey operations. The ﬁnal round has only
+
+SubBytes, ShiftRow and AddRoundKey operations,
+
+and its output is the ciphertext.
+
+q
+
+q
+
+· g
+
+2.1.3. Post-Quantum Cryptography. This cipher family
+
+mod q) mod p) · f −1
+
+was proposed to sustain attacks by a quantum computer.
+One popular scheme is lattice-based cryptography.
+NTRU [47]. It utilizes simple polynomial multiplication
+in the ring of truncated polynomials Zq [X ]/(X N − 1).
+For encryption,
+the private key consists of a pair of
+polynomials f and g , and the public key h = p · f −1
+mod q , where f −1
+denotes the inverse of f modulo q .
+To encrypt a message m, one needs to compute a hash
+function r = G(m) and m(cid:48) = m ⊕ H (r · h mod q). Then
+the ciphertext is e = (r · h + m(cid:48) ) mod q . To decrypt
+the message, one needs to ﬁrst recover m(cid:48) = ((f · e
+p mod p and then the plaintext is
+computed as M = m(cid:48) ⊕ H (e − m(cid:48) mod q). The security
+of NTRU relies on the difﬁculty of solving the shortest
+vector problem in a lattice.
+a key pair, one needs to create a polynomial a ∈ R(cid:113) with
+coefﬁcients chosen uniformly in Zq , sample two polyno-
+mials r1 , r2 ∈ Rq from χ and compute p = r1−a·r2 ∈ Rq .
+Then the public key is (a, p) and the private key is
+r2 . To encrypt a message m, one needs to ﬁrst encode
+m to a polynomial m, and sample three polynomials
+e1 , e2 , e3 ∈ Rq from χ. Then the ciphertext is (c1 , c2 ),
+where c1 = a · e1 + e2 and c2 = p · e1 + e3 + m. To decrypt
+the message, one needs to compute m(cid:48) = c1 · r2 + c2 ∈ Rq
+and decode the coefﬁcients of m(cid:48) to either 0 or 1.
+
+Ring Learning With Errors (RLWE) [48]. To generate
+
+Bimodal Lattice Signature Scheme (BLISS) [49]. The
+
+private key is S = (s1 , s2 ) where s1 , s2 ∈ Zq [X ]/(X N −
+
+1) and the corresponding public key is A = (2aq , q − 2)
+mod 2q where aq = s2 /s1 . To sign a message µ, two
+blinding values y1 , y2 ∈ R are sampled from a discrete
+Gaussian distribution. A hash value is computed as c =
+and ζ = (1/(q − 2)) mod 2q . The signature is then the
+
+H ((cid:98)u(cid:101)d mod p, µ), where u = ζ · 2aq y1 + y2 mod 2q ,
+triple (c, z1 , z2 ), with zi = yi + (−1)b si ·c mod 2q , where
+checking c = H ((cid:98)ζ · 2aq · z1 + ζ · q · c(cid:101)d + z2 mod p, µ).
+
+b is a random bit. Signature veriﬁcation is performed by
+
+2.1.4. Cryptographic Protocol. SSL/TLS allows a server
+
+and a client to use the handshake protocol to exchange
+a symmetric key K , which they use for later secure
+communications. More details about the protocol can be
+found in Appendix A.2.
+Key exchange. RSA is commonly adopted to exchange
+the symmetric key K , following Public Key Cryptography
+Standards (PKCS). The client generates a random non-
+zero padding string pad that is at least 8 bytes, creates a
+block 0x00||0x02||pad||0x00||K , encrypts it using RSA
+and sends the ciphertext to the server. When the server
+
+if s = 1 then
+
+r ← foo()
+r ← bar()
+
+else
+
+return r
+
+Pre-compute:
+
+· · ·
+
+T [0] = foo(0)
+T [m − 1] = foo(m − 1)
+
+r = T [s]
+
+return r
+
+(a) Control ﬂow vulnerability
+
+(b) Data ﬂow vulnerability
+
+Fig. 1: Side-channel vulnerabilities
+decrypts the ciphertext, she accepts this message only
+when the ﬁrst two bytes are 0x00 and 0x02, and next
+8 bytes are non-zero. Then she searches for 0x00 in the
+remaining data, and everything after that will be the key.
+Hash and encryption. After the key is established,
+standard network protocols adopt CBC-MAC to encrypt
+messages. (1) Message Authentication Code (MAC) is
+calculated over the sequence number SEQ, header HDR
+and message m. (2) The plaintext P is created by concate-
+nating m, the MAC from step (1), and a padding string
+pad, which is chosen to make the byte length of P a
+multiple of the block size b. (3) P is divided into blocks
+of b bytes, each block encrypted with key K . (4) The ﬁnal
+message is the concatenation of HDR and all encrypted
+blocks. The receiver decrypts the ciphertext in CBC mode
+and validates the padding format and the MAC. If both
+are correct, she accepts the original intact message m.
+
+2.2. Basics of Side-channel Attacks
+
+Side-channel attacks enable adversaries to steal secrets
+by exploiting observable information from the applica-
+tion’s execution. When the application takes a secret input
+X , the host system or application shows a runtime char-
+acteristic Y , which can be captured by an adversary. By
+identifying the correlation Y ∼ X , the adversary is able
+to infer the secret input via the side-channel information.
+
+2.2.1. Vulnerabilities. The root cause of side-channel at-
+tacks is that application’s runtime behavior depends on the
+secrets. Generally there are two types of leakage sources:
+
+Secret-dependent control ﬂow. When the secret s is
+
+different, the program executes a different code path and
+invokes a different function (Figure 1a). This yields dif-
+ferent runtime behaviors distinguishable by the adversary.
+
+Secret-dependent data ﬂow. A program may access data
+
+whose locations are determined by the secret s (Figure
+1b). The memory access pattern allows the adversary to
+make educated guesses about the secret value.
+
+2.2.2. Techniques. Another key factor for a successful
+side-channel attack is the technique to capture useful char-
+acteristics of the application or the system. We consider
+two types of software-based techniques and approaches.
+Network-level attacks. The remote adversary connects
+to the victim application via networks. Thus, side-channel
+information may exist in the responses from the victim
+such as message content [50, 51], packet size [52] and
+response time [53, 54].
+Host-level attacks. The malicious program and the victim
+application run on the same platform, and thus share the
+same micro-architectural units. Contention on these units
+
+can disclose the victim’s runtime behaviors to the adver-
+sary. Researchers have designed a large quantity of attack
+techniques based on various hardware units including CPU
+cache [34, 55], branch predictor [56] and TLB [57].
+
+3. Characterization of Vulnerabilities
+
+We systematically characterize side-channel vulner-
+abilities from past work based on different operations
+in different cryptographic ciphers and protocols. Table 1
+summarizes the vulnerabilities we will describe. For each
+vulnerability, we present the vulnerable operations, causes
+and the corresponding attacks (types, techniques, side-
+channel information granularities).
+
+3.1. Asymmetric Cryptography
+
+3.1.1. Modular Multiplication. Given three integers x,
+
+y and m, this operation is to calculate x ∗ y mod m.
+
+Naive and Karatsuba multiplications. Both OpenSSL
+
+and GnuPG implement two multiplication routines: naive
+multiplication and Karatsuba multiplication [105]. The
+routine is selected based on the size of the operands: the
+naive routine is adopted for multiplicands of small sizes,
+while Karatsuba routine is adopted for large multiplicands.
+Such implementation introduces control-ﬂow side
+channels about the operands: Karatsuba routine is typ-
+ically faster than the native routine. An adversary can
+measure the execution time to infer the sizes of the
+operands, and then recover the secret key [58].
+
+3.1.2. Modular Exponentiation/Scalar Multiplication.
+
+We consider the two operations together as they share
+similar implementations and vulnerabilities. Modular ex-
+ponentiation is to calculate xy mod m, where x, y and
+m are three integers. Scalar multiplication is to calculate
+yx where y is a scalar and x is a point on the elliptic
+curve. The implementations of these two operations can
+reveal the secret key y in RSA and ElGamal, or secret
+scalar y in ECC via side channels.
+
+Square-and-Multiply/Double-and-Add [106, 107]. The
+
+calculation of modular exponentiation is converted into
+a sequence of SQUARE and MULTIPLY operations. The
+binary representation of y is denoted as yn−1 yn−2 ...y0 .
+Then starting from n − 1 to 0, for each bit yi , SQUARE
+is called. If yi
+is 1, MULTIPLY is also called. Simi-
+larly, scalar multiplication is converted into a sequence
+
+of PointDouble and PointAdd based on each bit yi .
+
+Such implementations are vulnerable to control-ﬂow
+side-channel attacks:
+the execution of MULTIPLY or
+PointAdd depends on bit yi . By observing the traces of
+SQUARE and MULTIPLY in modular exponentiation, or
+PointDouble and PointAdd in scalar multiplication,
+an adversary can fully recover y . Successful attacks have
+been demonstrated against RSA in GnuPG via cache
+PR IM E -PROB E [60, 61] and F LU SH -R E LOAD [59] tech-
+niques, and against EdDSA via TLB side-channel [57].
+
+Square-and-Multiply-always/Double-and-Add-always
+
+[107]. For modular exponentiation, this implementation
+always executes both SQUARE and MULTIPLY operations
+for each bit. It selects the output of SQUARE if yi is 0,
+and the output of MULTIPLY following SQUARE if yi is
+
+3
+
+Modular Multiplication
+
+Asymmetric
+Cryptography
+
+Modular Exponentiation
+Scalar Multiplication
+
+Basic and Karatsuba multiplication
+Square-and-Multiply
+Double-and-Add
+Square-and-Multiply-always
+Double-and-Add-always
+
+Sliding window
+
+Fixed window
+Montgomery ladder
+
+Branchless montgomery ladder
+
+Modular Inverse
+
+Binary Extended Euclidean Algorithm
+
+Symmetric
+Cryptography
+
+Substitution-Permutation
+
+T-box lookup
+
+Post-Quantum
+Cryptography
+
+Distribution Sampling
+Failure Rate Reduction
+Message Randomization
+
+Cumulative Distribution Table sampling
+Rejection sampling
+Error Correcting Code
+Padding-Hash
+
+Error message
+
+RSA-PAD
+
+Uniform response message
+
+Cryptographic
+Protocol
+
+CBC-MAC-PAD
+
+Error message
+
+Uniform response message
+Dummy MAC checking
+
+Constant-time compression
+
+RSA
+RSA
+ElGamal
+EdDSA
+RSA
+RSA
+RSA
+RSA
+ECDSA
+ECDSA
+RSA
+ElGamal
+ECDSA
+RSA
+ECDSA
+ECDSA
+ECDH
+ECDH
+ECDH
+RSA
+RSA
+RSA
+AES
+AES
+AES
+AES
+BLISS
+BLISS
+BLISS
+Ring-LWE
+NTRU
+SSL
+SSLv3.0, TLSv1.0
+TLS
+IKE
+TLSv1.0
+SSLv2.0
+TLS
+TLS
+XML Encryption
+XML Encryption
+XML Encryption
+IPSec, WTLS, SSH2
+SSLv3.0
+IPSec
+Web apps
+ASP.NET
+TLSv1.0
+TLSv1.1
+TLSv1.0, TLSv1.1
+TLSv1.1, TLSv1.2
+TLS
+TLS
+
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+
+Execution time
+Cacheline (F LU SH -R ELOAD)
+Cacheline (PR IM E -PROB E)
+Memory Page (TLB)
+Branch
+Memory Page (TLB)
+Cacheline (PR IM E -PROB E)
+Cacheline (F LU SH -R ELOAD)
+Cacheline (F LU SH -R ELOAD)
+micro-operation (Execution Port)
+Cacheline (PR IM E -PROB E)
+Cacheline (PR IM E -PROB E)
+Cacheline (PR IM E -PROB E)
+Cache bank
+Cacheline (F LU SH -R ELOAD)
+Execution time
+Cacheline (F LU SH -R ELOAD)
+Cacheline (F LU SH -R ELOAD)
+Execution time
+Branch
+Memory Page (Controlled-channel)
+Cacheline (F LU SH -R ELOAD)
+Cacheline (PR IM E -PROB E)
+Cacheline (EV IC T-T IM E)
+Cache (F LU SH -R E LOAD)
+Execution time
+Cacheline (F LU SH -R ELOAD)
+Cacheline (F LU SH -R ELOAD)
+Branch
+Execution time
+Execution time
+Network message
+Network message
+Network message
+Network message
+Execution time
+Network message
+Page, Cacheline, Branch
+Cacheline (F LU SH -R E LOAD), Branch
+Network message
+Execution time
+Cacheline (F LU SH -R ELOAD)
+Network message
+Network message
+Network message
+Network message
+Network message
+Execution time
+Execution time
+Execution time
+Cacheline (F LU SH -R ELOAD)
+Page, Cacheline, Branch
+Cacheline (PR IM E -PROB E)
+
+Ref
+
+[58]
+[59]
+[60, 61]
+[57]
+[62]
+[57]
+[55]
+[63]
+[64–67]
+[68]
+[69]
+[61]
+[70]
+[71]
+[72]
+[73]
+[74]
+[75]
+[76]
+[56]
+[77]
+[78]
+[34]
+[34]
+[79, 80]
+[32, 33]
+[81, 82]
+[81, 82]
+[83, 84]
+[85]
+[86]
+[50, 87]
+[88]
+[89]
+[90]
+[53]
+[91]
+[92]
+[93]
+[94]
+[94]
+[95]
+[51]
+[96]
+[97, 98]
+[99]
+[100]
+[101]
+[54]
+[102]
+[103]
+[92]
+[104]
+
+Index
+
+1.1.1.a
+1.2.1.a
+1.2.1.b
+1.2.1.c
+1.2.2.a
+1.2.2.b
+1.2.3.a
+1.2.3.b
+1.2.3.c
+1.2.3.d
+1.2.3.e
+1.2.3.f
+1.2.3.g
+1.2.4.a
+1.2.6.a
+1.2.6.b
+1.2.6.a
+1.2.7.b
+1.2.7.c
+1.3.1.a
+1.3.1.b
+1.3.1.c
+2.1.1.a
+2.1.1.b
+2.1.1.c
+2.1.1.d
+3.1.1.a
+3.1.2.a
+3.1.2.b
+3.2.1.a
+3.3.1.a
+4.1.1.a
+4.1.1.b
+4.1.1.c
+4.1.1.d
+4.1.2.a
+4.1.2.b
+4.1.2.c
+4.1.2.d
+4.1.2.e
+4.1.2.f
+4.1.2.g
+4.2.1.a
+4.2.1.b
+4.2.1.c
+4.2.1.d
+4.2.1.e
+4.2.2.a
+4.2.2.b
+4.2.3.a
+4.2.4.a
+4.2.4.b
+4.2.4.c
+
+(cid:35)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:35)
+(cid:32)
+(cid:32)
+(cid:35)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:35)
+(cid:32)
+(cid:32)
+(cid:32)
+(cid:35)
+(cid:35)
+(cid:35)
+(cid:35)
+(cid:35)
+(cid:35)
+(cid:35)
+(cid:35)
+(cid:32)
+(cid:32)
+(cid:35)
+(cid:35)
+(cid:32)
+(cid:35)
+(cid:35)
+(cid:35)
+(cid:35)
+(cid:35)
+(cid:35)
+(cid:35)
+(cid:32)
+(cid:35)
+(cid:32)
+(cid:32)
+
+TABLE 1: Side-channel vulnerabilities. ((cid:4): control ﬂow, (cid:3): data ﬂow; (cid:32): host-level, (cid:35): network-level)
+
+Implementation
+
+Granularity
+
+Application
+
+Cause
+
+Type
+
+Category
+
+Operation
+
+1. Similarly, Double-and-Add-always was proposed for
+scalar multiplication in ECC.
+This implementation executes a ﬁxed number of
+SQUARE and MULTIPLY operations for modular expo-
+nentiation, or PointDouble and PointAdd operations
+for scalar multiplication, defeating remote timing attacks.
+However output selection still requires a secret-dependent
+branch, which is usually smaller than one cache line. If
+it ﬁts within the same cache line with preceding and
+succeeding code, then it is not vulnerable to host-level
+attacks. However, Doychev and K ¨opf [62] showed that
+for Libgcrypt, some compiler options can put this branch
+into separate cache lines, making this implementation
+vulnerable to cache-based attacks. Gras et al. [57] showed
+that
+this branch can put
+into separate pages, and the
+implementation is subject to TLB-based attacks.
+Sliding window [108]. For modular exponentiation, the
+exponent y is represented as a sequence of windows di .
+Each window starts and ends with bit 1, and the window
+length cannot exceed a ﬁxed parameter w . So the value
+of any window is an odd number between 1 and 2w − 1.
+This method pre-computes xv mod m for each odd value
+v ∈ [1, 2w − 1], and stores these results in a table indexed
+by i ∈ [0, (v − 1)/2]. Then it scans every window, squares
+and multiplies the corresponding entry in the table.
+Similarly, for scalar multiplication, the scalar y is rep-
+resented as a w-ary non-adjacent form (wNAF), with each
+window value di ∈ {0, ±1, ..., ±(2w−1 − 1)}. It ﬁrst pre-
+
+4
+
+computes the values of {1, 3, ..., 2w−1 − 1}x, and stores
+them into a table. Then it scans each window, doubles and
+adds dj x if dj > 0 or subtracts (−dj )x otherwise.
+Two types of vulnerabilities exist in such implemen-
+tations. The ﬁrst one is secret-dependent control ﬂow:
+different routines will be called depending on whether
+a window is zero. By monitoring the execution trace of
+those branches, the adversary learns if each window is
+zero, and further recovers the secret. Such attacks have
+been realized against RSA [55, 63] and ECDSA [64–68].
+The second one is secret-dependent data ﬂow: the
+access location in the pre-computed table is determined by
+each window value. By observing the access pattern, the
+adversary is able to recover each window value. Attacks
+exploiting this vulnerability have been mounted against
+RSA [69], ElGamal [61] and ECDSA [70].
+Fixed window [109]. This method was designed to
+approach true constant-time implementation. Similar to
+sliding window, it also divides the secret y into a set of
+windows, pre-computes the exponentiation or multiplica-
+tion of each window value, and stores the results in a
+table. The differences are that the window size is ﬁxed as
+w , and the table stores both odd and even (including zero)
+values. It removes the critical control ﬂow branch at the
+cost of more memory and slower run time.
+To remove critical data ﬂow, this approach can be com-
+bined with scatter-gather memory layout technique [110],
+which stores the pre-computed values in different cache
+
+lines instead of consecutive memory locations. Speciﬁ-
+cally, each window value is stored across multiple cache
+lines, and each cache line stores parts of multiple window
+values. When MULTIPLY or PointAdd is executed,
+multiple cache lines are fetched to reconstruct the window
+value, hiding the access pattern from the adversary.
+This implementation is still vulnerable to attacks [71]
+using cache bank, the minimal data access unit in caches.
+Concurrent requests can be served in parallel if they target
+different cache banks even in the same cache line, but have
+to be served sequentially if they target the same cache
+bank. The timing difference between the two cases enables
+the adversary to infer the window values accessed during
+the gathering phase, and then recover the secret bits.
+Masked window. This approach was derived from ﬁxed
+window implementation to further hide the cache bank
+access patterns. The idea is to access all window values
+instead of just the one needed, and then use a mask to
+ﬁlter out unused data. It performs a constant sequence
+of memory accesses, and has been proven secure against
+different types of cache-based attacks [62].
+
+Montgomery ladder [111, 112]. This is a variation
+
+of Double-and-Add-always for scalar multiplication. It
+also represents y in the binary form and conducts both
+PointAdd and PointDouble functions for each bit,
+irrespective of the bit value. The outputs of these func-
+tions are assigned to the intermediate variables determined
+by the bit value. A difference from Double-and-Add-
+always is that in Montgomery ladder, the parameter of
+PointDouble is also determined by the bit value.
+This implementation contains branches depending on
+the secret values. Yarom and Benger [72] adopted cache
+F LU SH -R E LOAD technique to identify the branch patterns
+and attack ECDSA in OpenSSL. Brumley and Tuveri
+[73] discovered that the implementation in OpenSSL 0.9.8
+loops from the most signiﬁcant non-zero bit in y to 0. So
+the number of iterations is proportional to log(y). This
+presents a vulnerability for remote timing attacks.
+
+Branchless Montgomery ladder [113]. This approach
+
+replaces branches in Montgomery ladder with a function
+that uses bitwise logic to swap two intermediate values
+only if the bit is 1, and thus removes the timing chan-
+nel. However, the implementations of PointAdd and
+PointDouble can still bring side channels.
+First, OpenSSL adopts a lookup table to accelerate the
+square operation in the two functions. The access pattern
+to the table can leak information about the secret in ECDH
+[74]. Second, the modulo operation of x mod m in the
+two functions adopted the early exit implementation: if
+x is smaller than m, x is directly returned. This branch
+can be exploited by the adversary to check whether x is
+smaller than m, and then deduce secrets in EDH [75].
+Third, Kaufmann et al. [76] discovered that in Windows
+OS, the multiplication function of two 64-bit integers has
+an operand-dependent branch: if both operands have their
+32 least signiﬁcant bits equal to 0, then the multiplication
+is skipped and the result will be 0. This early exit branch
+was exploited to attack ECDH.
+
+3.1.3. Modular Inverse. This operation is to calculate the
+integer x−1
+m such that xx−1
+m ≡ 1 mod m. It can also be
+used to check if two integers, p and q , are co-prime.
+
+Binary Extended Euclidean Algorithm [109]. This ap-
+
+proach uses arithmetic shift, comparison and subtraction
+to replace division. It
+is particularly efﬁcient for big
+integers, but suffers from control ﬂow vulnerabilities due
+to the introduction of operand-dependent branches. Branch
+prediction [56] attacks was demonstrated to recover the
+value of m in ECDSA and RSA. Page fault [77] and cache
+F LU SH -R ELOAD [78] techniques were adopted to attack
+the gcd operation in RSA key generation.
+
+Euclidean Extended Algorithm. This approach calcu-
+
+lates quotients and remainders in each step without intro-
+ducing secret-dependent branches. It is less efﬁcient but
+secure against control ﬂow side-channel attacks.
+
+3.2. Symmetric Cryptography
+
+In addition to asymmetric ciphers, symmetric ciphers,
+e.g., AES, can also be vulnerable to side-channel attacks.
+
+3.2.1. Substitution-Permutation. This is a series of
+
+linked mathematical operations used in block ciphers. It
+takes a block of the plaintext and the key as inputs, and ap-
+plies several alternating “rounds” of substitution boxes and
+permutation boxes to produce the ciphertext block. For
+AES, it consists of four basic operations: ShiftRows,
+
+MixColumns, SubBytes and AddRoundKey.
+
+1 , T 10
+2 , T 10
+3 , T 10
+0
+
+T-box lookup. This approach converts the algebraic oper-
+ations in each round into lookup table accesses. For AES,
+there are 8 pre-computed tables: T0 , T1 , T2 , T3 are used in
+the ﬁrst 9 rounds and T 10
+are used in the
+ﬁnal round. Each table contains 256 4-byte words. Then
+each round can be computed by updating the intermediate
+states with certain words from the corresponding tables.
+Since the accessed entries of the lookup tables are
+determined by the secret keys and plaintexts, an adversary
+can capture such access patterns to infer secrets. Local
+cache attacks were proposed using PR IM E -PROB E [34],
+EV ICT-T IM E [34] and F LU SH -R ELOAD [79, 80] tech-
+niques. Remote timing attacks were proposed [32, 33] due
+to cache access collisions.
+
+3.3. Post-Quantum Cryptography
+
+Although post-quantum cryptography is secure against
+quantum computer based attacks, the implementations of
+those algorithms can contain side-channel vulnerabilities,
+which can be attacked even by a conventional computer.
+
+3.3.1. Distribution Sampling. This operation is to sample
+
+an integer from a distribution. It is essential for BLISS
+[49] to make the signature statistically independent of
+the secrets. However, an adversary can adopt side-channel
+attacks to recover the sampled data, and hence the secrets.
+
+Cumulative Distribution Table (CDT) Sampling [114].
+
+BLISS needs to sample blinding values from a discrete
+Gaussian distribution, and add them to the signature. The
+CDT sampling approach pre-computes a table T[i] =
+P[x ≤ i|x ∼ Dσ ]. At the sampling phase, a random
+i is identiﬁed from T that satisﬁes r ∈ [T [i − 1], T [i]).
+number r is uniformly chosen from [0, 1), and the target
+Some implementations adopt a guide table I to restrict
+the search space and accelerate the search process.
+
+5
+
+Rejection Sampling [115]. This approach samples a
+
+The access pattern to the two tables reveals informa-
+tion about the sampled values. An adversary can adopt
+cache F LU SH -R E LOAD technique to recover the blinding
+values, and further the secret key in BLISS [81, 82].
+bit from a Bernoulli distribution B (exp(−x/2σ2 )). The
+implementation can bring side-channel opportunities for
+stealing the secret x:
+(1) a lookup table ET[i] =
+exp(−2i /(2σ2 )) is pre-computed to accelerate the bit
+sampling, causing a data ﬂow vulnerability; (2) the sam-
+pling process needs to iterate over each secret bit and
+different branches will be executed for different bit values,
+producing a control ﬂow vulnerability.
+Practical attacks were demonstrated exploiting those
+vulnerabilities. First, rejection sampling can replace CDT
+sampling for blinding value generation. An adversary
+could utilize cache [81, 82] or branch [83] based attacks
+to recover the sampled values in BLISS. Second, this
+approach can also be used to sample random bits to
+probabilistically determine whether the blinding value is
+positive or negative, and whether the signature should be
+accepted or rejected. An adversary can infer the secret
+from this process via cache or branch traces [83, 84].
+
+3.3.2. Failure Rate Reduction. Post-quantum schemes
+
+may have certain failure rate during encryption or de-
+cryption due to its statistic nature. Thus it is necessary
+to devise methods to reduce the possibililty of failure.
+
+Error Correcting Code (ECC). This approach can sig-
+
+niﬁcantly reduce the failure rate, but its implementation
+can reveal whether the ciphertext contains an error via
+timing channels: a ciphertext without an error is much
+faster to decode than one with errors. An adversary can
+exploit such information to recover the key [85].
+
+3.3.3. Message Randomization. Some post-quantum
+
+schemes require to randomize the message during encryp-
+tion and decryption. This process can also create side-
+channel vulnerabilities.
+Padding-Hash. In NTRU, encryption and decryption uti-
+lize hash functions to randomize the messages. However,
+the number of hash function calls highly depends on the
+input message. Thus, the total execution time of encryp-
+tion or decryption will also differ for different inputs. By
+measuring such time information, an adversary is able to
+recover the secret input [86].
+
+3.4. Cryptographic Protocol
+
+Side-channel attacks were proposed to target the cryp-
+tographic protocols, speciﬁcally, the padding mechanism.
+
+3.4.1. RSA-PAD. As introduced in Sec. 2.1.4, network
+protocols usually adopt RSA with PKCS. The padding
+mechanism can leak information about the plaintexts.
+Error message. In the handshake protocol in SSL 3.0,
+the receiver decrypts the message, and checks whether it
+is PKCS conforming. If so, she continues the handshake
+protocol. Otherwise she sends an error message back to
+the sender and aborts the connection. This message serves
+as a side channel to recover the plaintext. When the sender
+sends out a ciphertext, the adversary can intercept the
+
+message and send a modiﬁed one to the receiver. From
+the receiver’s response, the adversary learns if the ﬁrst
+two bytes of the plaintext corresponding to the modiﬁed
+ciphertext are 0x00||0x02 (valid PKCS conforming) or not
+(invalid PKCS conforming). This can reduce the scope
+of the original plaintext. The adversary can repeat this
+process until the scope of plaintext is narrowed down to
+one single value.
+This vulnerability was discovered by Bleichenbacher
+[50], followed by variants of such attacks [87, 88]. Large-
+scale evaluations showed that it still exists in many real-
+world websites, applications [89] and protocols [90].
+
+Uniform response message. A common defense is to
+
+unify the responses for valid and invalid paddings: if the
+decrypted message structure is not PKCS conforming, the
+receiver generates a random string as the plaintext, and
+performs all subsequent handshake computations on it.
+Thus, the adversary cannot distinguish valid ciphertexts
+from invalid ones based on the responses.
+This implementation can still incur side-channel vul-
+nerabilities. First, there can be other types of messages
+that reveal the validation of padding format. For instance,
+in XML encryption, the message is encrypted using CBC
+mode, and the symmetric key is encrypted using RSA.
+Jager et al. [94] discovered that the response of CBC
+encryption can leak whether the RSA padding is correct,
+enabling the adversary to recover the symmetric key.
+Second, there can be observable timing differences
+between valid and invalid padding cases. Meyer et al.
+[53] discovered that in OpenSSL and JSSE, the receiver
+needs more time to process the ill formatted message,
+due to generation of random numbers. Jager et al. [94]
+found that in XML encryption, invalid CBC decryption
+following valid RSA decryption takes longer time than
+invalid RSA decryption.
+Third, there can be control ﬂow branches that depend
+on whether the message is PKCS conforming, such as
+error logging, data conversion and padding veriﬁcation.
+They enable a host-based adversary to monitor the ex-
+ecution trace as the oracle. Attacks based on control-
+ﬂow inference and cache F LU SH -R ELOAD techniques
+[92, 93, 95] were designed against different applications.
+
+3.4.2. CBC-MAC-PAD. The CBC-MAC padding scheme
+(Sec. 2.1.4) can also incur side-channel vulnerabilities.
+Error message. When the receiver gets the ciphertext
+in CBC-MAC mode, she decrypts it and validates the
+padding format. (1) If the format is invalid, she rejects
+the message, and sends a decryption failed error message
+to the sender. Otherwise, she checks the MAC value. (2) If
+the MAC is incorrect, she returns a bad record mac error
+message. (3) Otherwise, the message passes the validation
+and is accepted by the receiver. These three conditions
+with three different responses create a side channel: an
+adversary can modify the ciphertext and send it to the
+receiver for decryption. Based on the response, he can
+learn whether the chosen ciphertext is decrypted into an
+incorrect padding. This oracle enables the adversary to
+learn each byte of an arbitrary plaintext block.
+This vulnerability was ﬁrst discovered by Vaudenay
+[51]. M ¨oller et al. [96] designed an variant attack, POO-
+DLE, to compromise SSL 3.0. Evaluations on different
+
+6
+
+applications [99, 100] and protocols [97, 98] were con-
+ducted to show its severity and pervasiveness.
+
+Uniform response message [116]. This solution uniﬁes
+
+the responses for both invalid padding format error and
+invalid MAC error, so the adversary cannot know whether
+the decrypted ciphertext has a valid padding or not.
+Timing channels exist in this approach: if the format
+is invalid,
+the receiver only needs to perform simple
+operations on the very end of the ciphertext; otherwise,
+she needs to further perform MAC validation throughout
+the whole ciphertext, which takes more time. Attacks
+exploiting such timing discrepancy between these two
+cases were demonstrated against TLS protocol in stunnel
+[101], and DTLS in OpenSSL and GnuTLS [54].
+Dummy MAC checking. This approach attempts to
+remove the timing channel by calling a dummy MAC
+validation even when the padding is incorrect. However,
+the calculation of MAC over a message M depends on the
+message length: it takes more time to compress longer M .
+Dummy MAC assumes the plaintext contains no padding,
+i.e., longest M . So an adversary can choose the ciphertext
+with short length of M to distinguish whether a real or
+dummy MAC is performed. AlFardan and Paterson [102]
+proposed lucky thirteen attacks, exploiting this vulnerabil-
+ity to recover plaintexts in TLS.
+
+Constant-time compression. Different strategies were
+
+designed to achieve constant-time compression implemen-
+tations: (1) dummy data can be appended to the padding
+for a maximum (i.e., constant) number of MAC compres-
+sion operations; (2) extra dummy compression operations
+can be added to make MAC validation constant time.
+These implementations still contain secret-dependent
+control ﬂows, making them vulnerable to host-level at-
+tacks. An adversary can obtain the padding validation
+results via cache F LU SH -R ELOAD [103], PR IM E -PROB E
+[104] or control-ﬂow inference [92] techniques.
+
+4. Summary of Countermeasures
+
+In this section, we summarize the cryptographic imple-
+mentations from the perspective of side-channel defenses.
+From Sec. 3 we observe that one implementation may
+be secure against one type of attack, but possibly vulnera-
+ble to another type of attack. The side-channel resistance
+of one implementation highly depends on the adversarial
+capabilities, i.e., type and granularity of observable side-
+channel information. Table 2 summarizes the effective-
+ness of different countermeasure implementations under
+different types of attacks, which serves as a reference for
+developers and users to select the optimal implementation
+based on their security demands and threat models.
+The goal of side-channel defenses is to eliminate the
+correlation between the application’s secrets and runtime
+behaviors. This can be achieved by either unifying or
+randomizing the side-channel information. Different ap-
+proaches may share common routines and features. Below
+we abstract the key features of these techniques.
+
+if s = 1 then
+
+r1 ← foo()
+r2 ← bar()
+r ← r1
+r ← r2
+
+else
+
+return r
+
+r1 ← foo()
+r2 ← bar()
+r ← (r1 & s) | (r2 & !s)
+
+return r
+
+(a) AlwaysExecute-ConditionalSelect
+
+(b) AlwaysExecute-BitwiseSelect
+
+Fig. 2: Remove control ﬂow vulnerability
+
+Pre-compute:
+
+· · ·
+
+T [0] = foo(0)
+T [m − 1] = foo(m − 1)
+
+r ← foo(s)
+
+return r
+
+for i ← 0 to m − 1 do
+
+r ← r | (T [i] & (s = i))
+
+return r
+
+(a) AlwaysAccess-BitwiseSelect
+
+(b) On-the-ﬂy calculation
+
+Fig. 3: Remove data ﬂow vulnerability
+
+code paths distinguishable by the adversary (Figure 1a).
+Two strategies can be used to remove such control ﬂow.
+
+AlwaysExecute-ConditionalSelect. Each possible rou-
+
+tine is always executed regardless of the condition. Based
+on the secret value, the correct result is assigned to the
+return variable (Figure 2a). This technique is adopted
+in modular exponentiation (Square-and-Multiply-always),
+scalar multiplication (Double-and-Add-always) and CBC-
+MAC-PAD (dummy MAC checking).
+This solution is effective against network-level attacks.
+However, control ﬂow in result selection can still be
+observed by an adversary via host-level attacks. Besides, if
+the values of each code path are pre-computed and stored
+in memory, the adversary can also infer the secret via data
+ﬂow, exempliﬁed by sliding window implementations in
+modular exponentiation and scalar multiplication.
+
+AlwaysExecute-BitwiseSelect. This strategy performs all
+
+possible computations, and then selects the correct result
+using bitwise operations of secret s (Figure 2b). This
+introduces no branches or access patterns. The branchless
+Montgomery ladder algorithm adopts this solution for
+constant-time conditional swap in scalar multiplication.
+
+4.1.2. Remove Data Flow. Data ﬂow vulnerabilities ex-
+ist when different values of the secret s cause different
+memory accesses that can be observed by the adversary
+(Figure 1b). Two strategies can remove such data ﬂow.
+
+AlwaysAccess-BitwiseSelect. This method accesses all
+
+critical locations, and selects the correct value based on
+the bitwise operation (Figure 3a). It is adopted in masked
+window modular exponentiation and scalar multiplication.
+On-the-ﬂy calculation. We can calculate the value every
+time it is used instead of pre-computing all values and
+storing them into a table, particularly when the calculation
+is not complex and does not introduce secret-dependent
+control ﬂows. Branchless Montgomery ladder adopts this
+method in the square operation of scalar multiplication.
+
+4.1. Side-channel Information Uniﬁcation
+
+4.2. Side-channel Information Randomization
+
+4.1.1. Remove Control Flow. Control ﬂow vulnerabilities
+exist when different values of the secret s lead to different
+
+4.2.1. Cryptographic Blinding. This solution does not
+
+focus on speciﬁc primitives or operations. Instead, it im-
+
+7
+
+TABLE 2: The effectiveness of implementations under different adversarial capabilities ((cid:4) = vulnerable, (cid:3) = secure)
+
+Category
+
+Operation
+
+Implementation
+
+Modular Multiplication
+
+Modular exponentiation
+Scalar multiplication
+
+Modular inverse
+RSA, ElGamal,
+ECDH, ECDSA
+Substitution-Permutation
+
+Distribution Sampling
+Failure Rate Reduction
+Message Randomization
+RSA-PAD
+
+CBC-MAC-PAD
+
+Basic and Karatsuba multiplication
+Square(Double)-and-Multiply(Add)
+Square(Double)-and-Multiply(Add)-always
+Sliding window
+Fixed window
+Masked window
+Montgomery ladder
+Branchless montgomery ladder
+Binary Extended Euclidean Algorithm
+Extended Euclidean Algorithm
+Key blinding
+Plaintext/ciphertext blinding
+T-box lookup
+AES-NI
+Cumulative Distribution Table Sampling
+Rejection Sampling
+Error Correcting Code
+Padding-Hash
+Error message
+Uniform response message
+Error message
+Uniform response message
+Dummy MAC checking
+Constant-time compression
+
+Asymmetric
+Cryptography
+
+Asymmetric
+Cryptography
+
+Post-Quantum
+Cryptography
+
+Protocol
+Padding
+
+proves the high-level asymmetric cipher algorithms. There
+are generally two types of blinding techniques.
+Key blinding. A random factor is blended into the secret
+key, but the original key and the randomized key generate
+the same cryptographic result. The adversary can only
+obtain the randomized key via side-channel attacks, which
+is useless without knowing the blended random factor.
+For ECDSA and ECDH, the randomized key is k + sr
+where r is a random number and s is the group order.
+The scalar multiplication generates (k + sr)G, the same
+as kG [39]. For RSA and ElGamal, the randomized key is
+d+rφ(n) where r is a random number and φ is the Euler’s
+totient function. The decryption gives cd+rφ(n) mod n,
+the same as cd mod n. In both cases, the true value of k
+is hidden from side-channel adversaries.
+
+Plaintext/ciphertext blinding. This approach randomizes
+
+the plaintexts or ciphertexts, adaptively chosen by the
+adversary. The randomized texts cause the adversary to
+recover a wrong key via side-channel analysis. This so-
+lution works only if correct ciphertexts can be produced
+from randomized plaintexts and vice versa.
+For ECDSA and ECDH, we can choose a random
+point R and use G(cid:48) = G + R in computation. The
+adversary cannot recover k from the side-channel obser-
+vation without the knowledge of R [39], but we can easily
+reproduce the correct result kG by subtracting kR from
+kG(cid:48) . For RSA and ElGamal, we can generate a random
+value r , and replace c with c ∗ re . Now the decryption
+process is randomized to be (c ∗ re )d mod n = cd ∗ red
+mod n. To get cd mod n we can simply multiply the
+result by r−1 , as red ∗ r−1 ≡ 1 mod n.
+
+5. Evaluation of Cryptographic Libraries
+
+From a practical perspective, we review, analyze
+and evaluate the development of side-channel attacks
+and defenses in two commonly used cryptographic li-
+braries: OpenSSL and GNU Crypto (GnuPG, Libgcrypt
+and GnuTLS). We collect side-channel related history
+(1999 – 2019) from Common Vulnerabilities and Ex-
+posures (CVE), changelogs and commit messages, and
+source code. Table 3 shows the evolution of the libraries.
+The full history is tabulated in Appendix D.
+
+Network-level
+Timing Message
+
+(cid:4)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:3)
+
+Page
+
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+
+Cacheline
+
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+
+Host-level
+CacheBank
+
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+
+Branch
+
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+
+µ-ops
+
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+(cid:4)
+
+Index
+
+1.1.1
+1.2.1
+1.2.2
+1.2.3
+1.2.4
+1.2.5
+1.2.6
+1.2.7
+1.3.1
+1.3.2
+–
+–
+2.1.1
+–
+3.1.1
+3.1.2
+3.2.1
+3.3.1
+4.1.1
+4.1.2
+4.2.1
+4.2.2
+4.2.3
+4.2.4
+
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:4)
+(cid:3)
+(cid:3)
+(cid:3)
+
+5.1. Vulnerability severity
+
+We examine the severity and practicality of side-
+channel attacks as well as the attention developers paid
+to them. We establish the measurements for these threats
+and compare them with other vulnerability categories.
+We adopt the Common Vulnerability Scoring System
+(CVSS)1 , an industry standard, to assess each CVE. The
+score ranges from 0 (least severe) to 10 (most severe).
+We consider the Base score that well represents the in-
+herent quality of a vulnerability. It comprises two sub-
+scores, Exploitability that deﬁnes the difﬁculty to attack
+the software and Impact that deﬁnes the level of damage
+to certain properties of the software under a successful
+attack. Appendix C details computation of these scores.
+For OpenSSL and GNU Crypto, the top vulnerabili-
+ties are denial-of-service, arbitrary code execution, buffer
+overﬂow, and memory corruption. Figure 4 compares
+the average scores and quantities of these vulnerability
+categories2 . We observe that side-channel vulnerabili-
+
+ties are regarded less severe than other types due to
+
+lower Exploitability and Impact sub-scores. Side-channel
+attacks usually require stronger adversarial capabilities, in-
+depth knowledge about underlying platforms, and a large
+amount of attack sessions, but only cause partial conﬁ-
+dentiality breach as they leak (part of) keys or plaintexts.
+In contrast, other vulnerabilities may be exploited by less-
+experienced attackers, but enable them to execute arbitrary
+code or disable the services entirely.
+Next we compare side-channel vulnerabilities in two
+categories: asymmetric ciphers and protocol padding (we
+skip symmetric ciphers and post-quantum cryptography as
+fewer vulnerabilities were identiﬁed in their libraries). Fig-
+ure 5a shows the average CVSS scores of each category.
+
+We observe that vulnerabilities in protocol padding are
+generally more severe that those in asymmetric ciphers
+
+1. The latest CVSS version is v3.0. In this paper, we adopt CVSS
+v2.0, as old vulnerabilities were not assigned CVSS v3.0 scores.
+2. There are some mistakes in CVEs: (1) all side-channel vulnerabil-
+ities should only have partial conﬁdentiality impact, while CVE-2003-
+0131, CVE-2013-1619 and CVE-2018-16868 were also assigned partial
+integrity or availability impact. (2) CVE-2018-10844, CVE-2018-10845
+and CVE-2018-10846 should have local access vector, but they were
+assigned network access vector. We corrected them in our analysis.
+
+8
+
+TABLE 3: Evolution of cryptographic libraries for side-channel activities
+
+Date
+
+Version
+
+Vulnerable Operations
+
+Vulnerable Implementation
+
+CVE
+
+Countermeasures
+
+Index
+
+2001/07/09
+2003/02/19
+2003/04/10
+2005/07/05
+2005/10/11
+2007/10/11
+2011/09/06
+
+0.9.6b
+0.9.6i, 0.9.7a
+0.9.6j, 0.9.7b
+0.9.8
+0.9.7h
+0.9.8f
+1.0.0e
+0.9.8s
+0.9.8s, 1.0.0f
+0.9.8u, 1.0.0h
+1.0.1
+0.9.8y, 1.0.0k, 1.0.1d
+1.0.1g
+0.9.8za, 1.0.0m
+0.9.8zc, 1.0.0o, 1.0.1j
+
+RSA-PAD
+CBC-MAC-PAD
+Modular multiplication
+RSA-PAD
+Modular exponentiation
+Modular inversion
+Scalar multiplication
+
+Uniform error message
+Uniform error message
+Basic and Karatsuba multiplication
+Uniform error message
+Sliding window
+Binary Extended Euclidean Algorithm
+Montgomery ladder
+Uniform error message
+Padding data initialization
+Error message
+Sliding window
+T-box lookup
+Dummy MAC checking
+Montgomery ladder
+Error message
+
+Fix bugs
+Dummy checking for TLS
+RSA blinding
+Uniform version error message
+Fixed window
+Euclidean Extended Algorithm
+Make the bit length of scalar constant
+Dummy checking for DTLS
+Fix bugs
+Uniform error message and dummy checking
+Masked window
+AES-NI support
+Dummy data padding
+Branchless Montgomery ladder
+Disable fallback of SSLv3.0
+
+CVE-2003-0078
+CVE-2003-0147
+CVE-2003-0131
+
+4.2.2.a
+1.1.1.a
+4.1.1.b
+
+CVE-2011-1945
+CVE-2011-4108
+CVE-2011-4576
+CVE-2012-0884
+
+1.2.6.b
+
+2012/01/04
+
+CBC-MAC-PAD
+RSA-PAD (PKCS #7 and CMS)
+Scalar multiplication
+Substitution-Permutation
+CBC-MAC-PAD
+Scalar multiplication
+CBC-MAC-PAD
+
+4.2.2.b
+
+2012/03/12
+2012/03/14
+2013/02/05
+2014/04/07
+2014/06/05
+2014/10/15
+
+CVE-2013-0169
+CVE-2014-0076
+CVE-2014-3566
+CVE-2015-3197
+CVE-2016-0703
+CVE-2016-0704
+CVE-2016-0800
+CVE-2015-3197
+CVE-2016-0703
+CVE-2016-0704
+CVE-2016-0800
+CVE-2016-0702
+CVE-2016-2107
+CVE-2016-2178
+
+4.2.3.a
+1.2.6.a
+
+4.2.1.b
+
+2016/01/28
+
+1.0.1r, 1.0.2f
+
+RSA-PAD
+
+Uniform error message
+
+Disable SSLv2 ciphers
+
+4.1.2.b
+
+2016/03/01
+
+1.0.1s, 1.0.2g
+
+RSA-PAD
+
+Uniform error message
+
+Disable SSLv2 protocols
+
+4.1.2.b
+
+Modular exponentiation
+CBC-MAC-PAD (AES-NI)
+Modular exponentiation
+Scalar multiplication
+Modular inversion
+Modulo
+Scalar multiplication
+
+Fixed window
+Dummy data padding
+Fixed window
+Branchless Montgomery ladder
+Binary Greatest Common Divisor
+Early exit
+Sliding window
+Branchless Montgomery ladder
+Masked window
+Sliding window
+Extended Euclidean Algorithm
+Sliding window
+Space preallocation
+Space preallocation
+Protocol error handling
+Binary Extended Euclidean Algorithm
+
+Masked window
+Fix bugs
+Fix bugs
+On-the-ﬂy calculation to replace lookup table
+Extended Euclidean Algorithm
+ECDSA and DSA blinding
+Branchless Montgomery ladder
+Differential addition-and-doubling
+Coordinate blinding
+Branchless Montgomery ladder
+Branchless Montgomery ladder
+Implementing new constant-time function for EC
+Input blinding
+Branchless Montgomery ladder
+Fix bugs
+Fix bugs
+Fix bugs
+EC-speciﬁc inversion function with input blinding
+
+1.2.4.a
+
+2016/05/03
+2016/09/22
+
+1.0.1t, 1.0.2h
+1.0.1u, 1.0.2i
+
+2018/08/14
+
+1.0.2p, 1.1.0i
+
+CVE-2018-0737
+
+1.3.1.c
+
+1.1.0i
+
+2018/09/11
+
+1.1.1
+
+Scalar multiplication
+
+Modular inversion
+Scalar multiplication (P-384)
+DSA sign setup
+Scalar multiplication
+CBC-MAC-PAD
+Modular inversion (EC)
+
+2018/11/20
+
+1.0.2q
+1.0.2q, 1.1.0j, 1.1.1a
+1.0.2r
+1.1.1b
+
+CVE-2018-5407
+CVE-2018-0734
+CVE-2018-0735
+CVE-2019-1559
+
+1.2.3.d
+
+2019/02/26
+
+(a) OpenSSL
+
+Date
+
+Version
+
+Vulnerable Operations
+
+Vulnerable Implementation
+
+CVE
+
+Countermeasures
+
+Index
+
+2006/09/08
+2006/09/21
+2011/06/29
+2012/01/06
+2013/02/04
+2013/07/25
+2013/12/16
+2013/12/18
+2014/08/07
+2015/02/27
+2016/02/09
+2016/02/18
+
+T1.4.3
+T1.5.1
+L1.5.0
+T3.0.11
+T2.12.23, T3.0.28, T3.1.7
+P1.4.14, L1.5.3
+L1.6.0
+P1.4.16
+L1.5.4
+P1.4.19, L1.6.3
+L1.6.5
+L1.5.5
+
+RSA-PAD
+Substitution-permutation
+CBC-MAC-PAD
+CBC-MAC-PAD
+Modular exponentiation
+Modular exponentiation
+Modular multiplication
+Modular multiplication
+Modular multiplication
+Modular exponentiation
+Scalar multiplication
+
+Error Message
+T-box lookup
+Uniform error message
+Dummy MAC checking
+Square-and-Multiply
+Square-and-Multiply
+Basic and Karatsuba multiplication
+Basic and Karatsuba multiplication
+Basic and Karatsuba multiplication
+Sliding window
+Sliding window
+
+Uniform error message
+AES-NI support
+Dummy checking for DTLS
+Dummy data padding
+Square-and-Multiply-always
+Square-and-Multiply-always
+Exponentiation blinding
+Exponentiation blinding
+ElGamal Blinding
+Remove control ﬂow of multiply operation
+Double-and-Add-always
+
+CVE-2012-0390
+CVE-2013-1619
+CVE-2013-4242
+CVE-2013-4242
+CVE-2013-4576
+CVE-2014-5270
+CVE-2014-3591
+CVE-2015-0837
+CVE-2015-7511
+
+4.2.2.b
+4.2.3.a
+1.2.1.a
+1.2.1.a
+
+1.2.1.b
+
+Modular multiplication
+Modular exponentiation
+Scalar multiplication
+
+Basic and Karatsuba multiplication
+Sliding window
+Sliding window
+
+CVE-2014-3591
+CVE-2015-0837
+CVE-2015-7511
+
+ElGamal Blinding
+Remove control ﬂow of multiply operation
+Double-and-Add-always
+
+2016/04/15
+
+L1.7.0
+
+1.2.1.b
+
+2017/06/29
+2017/07/18
+2017/07/19
+2017/08/27
+2018/06/13
+
+L1.7.8
+L1.8.0
+P1.4.22
+L1.7.9, L1.8.1
+L1.7.10, L1.8.3
+
+Modular exponentiation
+
+Sliding window
+
+CVE-2017-7526
+
+RSA exponentiation blinding
+
+1.2.3.b
+
+Scalar multiplication
+Modulo
+
+Branchless montgomery ladder
+Early exit
+
+CVE-2017-0379
+CVE-2018-0495
+CVE-2018-10844
+CVE-2018-10845
+CVE-2018-10846
+CVE-2018-16868
+
+Input validation
+ECDSA blinding
+New variant of pseudo constant time
+(Not fully mitigate the vulnerability))
+Hide access pattern and timing
+
+1.2.7.b
+
+2018/07/16
+
+T3.3.30, T3.5.19, T3.6.3
+
+CBC-MAC-PAD
+
+Pseudo constant time
+
+4.2.4.c
+
+2018/12/01
+
+T3.6.5
+
+RSA-PAD
+
+Pseudo constant time
+
+4.1.2.d
+
+(b) GNU crypto (For the version column, P: GnuPG; L: Libgcrypt; T: GnuTLS)
+
+Fig. 4: CVSS score of different software vulnerabilities.
+
+due to higher Exploitability. The underlying reason is
+that Exploitability is determined by access vector and
+access complexity (Appendix C). Figure 5b shows the
+breakdown of these two factors in each category. For
+
+(a) CVSS Scores
+
+(b) Access vector and complexity
+
+Fig. 5: Side-channel vulnerabilities in different operations
+
+access vector, network vector and local vector are neck
+and neck for vulnerabilities in asymmetric ciphers, but
+the former dominates access vectors of padding oracle
+attacks, rendering them more exploitable. For access com-
+
+9
+
+AllDoSOverflowSide-channelCode exeMem corruption0246810CVSSVulnerabilities Base  Exploitability  Impact0100200300400CountAsymmetricProtocol0246810CVSSCategories Base  Exploitability  Impact05101520CountAsymmetricProtocol0.00.20.40.60.81.0PercentageCategories Network LocalAsymmetricProtocol Low Medium High(a) Different libraries
+
+(b) Different access vectors
+
+(a) OpenSSL
+
+(b) GNU crypto
+
+Fig. 6: Cumulative distributions of vulnerability windows
+
+Fig. 7: Number of patches for cross-branch windows
+
+plexity, medium access complexity is a majority for both
+categories, and the difference between them is not large
+enough to signiﬁcantly affect the score.
+
+5.2. Vulnerability Response
+
+We evaluate the responses to discovered side-channel
+vulnerabilities from the cryptographic library developers.
+Response speed. For each vulnerability, we measure the
+vulnerability window, deﬁned as the duration from the
+vulnerability publication date3 to the patch release date.
+If the patch release date is earlier than the vulnerability
+publication date, the vulnerability window is negative.
+Obviously narrower vulnerability window leads to fewer
+chances of exploit and less damage.
+Figure 6a shows the cumulative distribution of vul-
+nerability windows for OpenSSL and GNU Crypto. We
+
+can see that both libraries responded to side-channel
+vulnerabilities very actively: 56% and 50% of vulnera-
+
+bilities were ﬁxed by the two libraries respectively before
+publication; more than 80% of vulnerabilities were ﬁxed
+within one month of their disclosure; each library has
+only one case that spanned more than 4 months,
+the
+longest duration being 198 days in GnuPG. Figure 6b
+compares the vulnerability windows of different access
+
+vectors. Although network attacks are more severe than
+local attacks, they were ﬁxed at similar speeds.
+Response coverage. We found that most discovered
+vulnerabilities were addressed in OpenSSL and GNU
+Crypto, except that host-based padding oracle vulnera-
+bilities [92, 104] still exist in both libraries at the time
+
+of writing. One possible reason is that such host attacks
+require stronger adversarial capabilities and can only work
+in limited contexts, and thus are less severe.
+
+5.3. Cross-branch Patch Consistency
+
+An application usually maintains different develop-
+ment branches concurrently. When a vulnerability is dis-
+covered, if the corresponding patch is not applied to all
+live branches at the same time, then an adversary gets
+an chance to attack the unpatched branches. For instance,
+OpenSSL replaced the vulnerable sliding window scalar
+multiplication with branchless Montgomery ladder in ver-
+sion 1.1.0i on August 14, 2018, but not in the 1.0.2 branch.
+This left a chance for port-based attacks [68] to work
+on the sliding window implementation in OpenSSL 1.0.2,
+
+3. A side-channel vulnerability may be published in different ways,
+including online archives, security conferences and journals, and the
+CVE system. We use the earliest of all such dates.
+
+10
+
+which urged the developers to apply the patch to 1.0.2q
+on November 20, 2018.
+For each vulnerability, we measure the cross-branch
+vulnerability window, deﬁned as the duration from the ﬁrst
+patch release date to the date when all live branches are
+patched. Figure 7 shows the number of patches in different
+vulnerability windows for both libraries. In most cases, a
+
+patch was applied to all live branches at the same time (0
+days). Some patches are however still missing in certain
+branches at the time of writing (unpatch). For example,
+
+OpenSSL 1.0.1 introduced masked-window multiplication
+and AES-NI support that were never ported to 0.9.8 and
+1.0.0 branches before their end of life. OpenSSL 1.0.2r
+includes a bug ﬁx for protocol error handling, but it is not
+applied to 1.1.0 and 1.1.1. Some new side-channel bug
+ﬁxes, not critical though, in OpenSSL 1.1.1 and 1.1.1b are
+not included in 1.0.2 and 1.1.0. For GNU Crypto, CVE-
+2015-0837 was ﬁxed in GnuPG 1.4.19 and Libgcrypt
+1.6.3, but not in Libgcrypt 1.5.x. Fortunately this branch
+has reached its end of life on December 31, 2016.
+
+5.4. Countermeasure Type
+
+We study the types of countermeasures commonly
+adopted by cryptographic libraries to ﬁx side-channel
+vulnerabilities. Four categories are considered: (1) intro-
+ducing brand new implementations; (2) selecting existing
+secure implementations; (3) ﬁxing software bugs; (4) en-
+hancing robustness of existing implementations. Classiﬁ-
+cation of countermeasures for OpenSSL and GNU Crypto
+is shown in Figure 8.
+In the earlier days, OpenSSL mainly introduced new
+implementations to ﬁx side-channel vulnerabilities. After
+
+many years’ evolution, each cryptographic operation
+has secure implementations, and brand new solutions
+
+become unnecessary. Recent patches were often minor
+bug ﬁxes. Besides, previously developers only patched the
+code upon revelation of new issues. Now they proactively
+fortify the library without the evidence of potential vul-
+nerabilities. This deﬁnitely improves the security of the
+library against side-channel attacks.
+GNU Crypto has fewer vulnerabilities and patches
+compared to OpenSSL, and prefers using traditional so-
+lutions for some common issues. For instance, to miti-
+gate the vulnerability in sliding window scalar multiplica-
+tion, OpenSSL adopted a new solution, masked-window
+multiplication, while Libgcrypt regressed to less efﬁcient
+Double-and-Add-always. Besides, development of GNU
+Crypto is generally several years behind OpenSSL.
+
+Probability00.20.40.60.81Duration (days)-80-4004080120160200OpensSLGNU cryptoProbability00.20.40.60.81Duration (days)-80-4004080120160200network attacklocal attackCount0246810121416Duration (days)05998120196unpatchCount0123456789Duration (days)091320232356unpatch(a) OpenSSL
+
+(b) GNU crypto
+
+Fig. 8: Countermeasure types of the two libraries
+
+(a) Vulnerable categories
+
+(b) Response speed
+
+Fig. 9: Comparisons between different applications
+
+5.5. Comparisons with Other Libraries
+
+Finally we summarize side-channel CVEs in other
+cryptographic applications (Table 4), and compare them
+with OpenSSL and GNU Crypto.
+Vulnerable Categories. Figure 9a shows the breakdown
+of vulnerabilities in different categories. We observe that
+
+side-channel vulnerabilities exist widely in many appli-
+cations, in addition to OpenSSL and GNU Crypto. We
+
+believe a lot of unrevealed side-channel vulnerabilities still
+exist in various applications, for two reasons.
+First, researchers tend to study common cryptographic
+libraries, encouraging their developers to continuously im-
+prove the code. Other less evaluated applications may still
+contain out-of-date vulnerabilities, but their developers are
+unaware or ignorant of them. For instance, Bleichenbacher
+attack was proposed 20 years ago and has been mitigated
+in common libraries like OpenSSL and GnuTLS, but it
+still exists in about one third of top 100 Internet domains
+including Facebook and PayPal, as well as widely used
+products from IBM, Cisco and so on [89].
+Second, some attacks such as those against crypto-
+graphic primitives or based on micro-architectural con-
+tention require the source code to be available, prohibiting
+researchers from discovering vulnerabilities in closed-
+source applications. For instance, Figure 9a shows that the
+majority of vulnerabilities found in closed-source appli-
+cations are padding oracles via remote timing or message
+side channels, likely because no source code is needed to
+experiment with these attacks. We do not know if they also
+suffer from padding oracle attacks via micro-architectural
+side channels, as current studies [92, 93, 103, 104] evalu-
+ated them only on open-source libraries. It is also unclear
+if they possess vulnerabilities related to modular or scalar
+operations for the similar reason.
+
+Response speed and coverage. Figure 9b compares the
+
+response speeds of different applications. Interestingly,
+
+they all responded to the vulnerabilities very fast. Most
+
+vulnerabilities were published only after the release of
+
+TABLE 4: Vulnerabilities in other applications
+
+Date
+Application
+2001/06/27
+OpenSSH, AppGate, ssh-1
+2004/12/31 MatrixSSL
+2009/08/31
+XySSL
+2010/10/20
+Apache MyFaces
+2010/10/20
+Oracle Mojarra
+2013/02/08
+Rack
+2013/02/08 Mozilla NSS
+2013/02/08
+wolfSSL CyaSSL
+2013/02/08
+Bouncy Castle
+2013/10/04
+PolarSSL
+2013/11/17
+OpenVPN
+2015/07/01
+Libcrypt++
+2016/04/07
+Erlang/OTP
+2016/05/13
+Botan
+2016/05/13
+Botan
+2016/07/26
+Cavium SDK
+2016/09/03
+jose-php
+2016/10/10
+Intel IPP
+2016/10/28
+Botan
+2016/12/13
+wolfSSL
+2017/01/23 Malcolm Fell jwt
+2017/02/13
+Crypto++
+2017/03/03 MatrixSSL
+2017/03/03 MatrixSSL
+2017/03/07
+Intel QAT
+2017/04/10
+Botan
+2017/04/14
+Nettle
+2017/07/27
+Apache HTTP
+2017/08/10
+Apache CXF
+2017/08/20
+Nimbus JOSE+JWT
+2017/09/25
+Botan
+2017/12/12
+Erlang/OTP
+2017/12/12
+Bouncy Castle
+2017/12/12
+wolfSSL
+2018/01/02
+Linaro OP-TEE
+2018/06/04
+Bouncy Castle
+2018/06/04
+Bouncy Castle
+2018/06/14
+LibreSSL
+2018/06/14
+Botan
+2018/06/14
+wolfssl
+2018/06/14
+LibTomCrypt
+2018/06/14
+LibSunEC
+2018/06/14 MatrixSSL
+2018/06/14
+BoringSSL
+2018/07/28
+ARM mbed TLS
+2018/07/28
+ARM mbed TLS
+2018/09/21
+Apache Mesos
+2018/12/03
+nettle
+2018/12/03
+wolfSSL
+2019/03/08
+Botan
+
+Vulnerable Operations
+RSA-PAD
+Modular Multiplication
+RSA-PAD
+Padding oracle attack
+Padding oracle attack
+HMAC comparison
+MAC-CBC-PAD
+MAC-CBC-PAD
+MAC-CBC-PAD
+RSA-CRT
+Padding oracle attack
+Rabin-WilliamsDSA
+MAC-CBC-PAD
+MAC-CBC-PAD
+Modular inversion
+RSA-CRT
+HMAC comparison
+RSA
+RSA-PAD
+AES T-table lookup
+Hash comparison
+
+RSA-CRT
+RSA-PAD
+RSA-CRT
+MAC-CBC-PAD
+Modular exponentiation
+Padding oracle attack
+MAC comparison
+Padding oracle attack
+Modular exponentiation
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA Montgomery
+DSA
+Padding oracle attack
+Modulo primitive
+Modulo primitive
+Modulo primitive
+Modulo primitive
+Modulo primitive
+Modulo primitive
+Modulo primitive
+MAC-CBC-PAD
+MAC-CBC-PAD
+HMAC comparison
+RSA-PAD
+RSA-PAD
+Scalar multiplication
+
+CVE
+CVE-2001-0361
+CVE-2004-2682
+CVE-2008-7128
+CVE-2010-2057
+CVE-2010-4007
+CVE-2013-0263
+CVE-2013-1620
+CVE-2013-1623
+CVE-2013-1624
+CVE-2013-5915
+CVE-2013-2061
+CVE-2015-2141
+CVE-2015-2774
+CVE-2015-7827
+CVE-2016-2849
+CVE-2015-5738
+CVE-2016-5429
+CVE-2016-8100
+CVE-2016-8871
+CVE-2016-7440
+CVE-2016-7037
+CVE-2016-3995
+CVE-2016-6882
+CVE-2016-6883
+CVE-2017-5681
+CVE-2015-7824
+CVE-2016-6489
+CVE-2016-0736
+CVE-2017-3156
+CVE-2017-12973
+CVE-2017-15533
+CVE-2017-1000385
+CVE-2017-13098
+CVE-2017-13099
+CVE-2017-1000413
+CVE-2016-1000341
+CVE-2016-1000345
+CVE-2018-12434
+CVE-2018-12435
+CVE-2018-12436
+CVE-2018-12437
+CVE-2018-12438
+CVE-2018-12439
+CVE-2018-12440
+CVE-2018-0497
+CVE-2018-0498
+CVE-2018-8023
+CVE-2018-16869
+CVE-2018-16870
+CVE-2018-20187
+
+(a) Open-source libraries
+
+Date
+Application
+2010/09/22 Microsoft IIS
+2013/02/08
+Opera
+2013/06/21
+IBM WebSphere Commerce
+2014/08/16
+IBM WebSphere DataPower
+2014/12/09
+F5 BIG-IP
+2015/08/02
+Siemens RuggedCom ROS
+2015/11/08
+IBM DataPower Gateways
+2016/04/12
+EMC RSA BSAFE
+2016/04/21
+CloudForms Management Engine
+2016/09/08
+HPE Integrated Lights-Out 3
+2016/12/15
+Open-Xchange OX Guard
+2017/02/03
+EMC RSA BSAFE
+2017/03/23
+Cloudera Navigator
+2017/06/30
+OSCI-Transport
+2017/08/02
+Citrix NetScaler
+2017/11/17
+F5 BIG-IP
+2017/12/13
+Citrix NetScaler
+2017/12/13
+Radware Alteon
+2017/12/15
+Cisco ASA
+2018/01/10
+Palo Alto Networks PAN-OS
+2018/02/05
+Cavium Nitrox and TurboSSL
+2018/02/07
+IBM GSKit
+2018/02/26
+Unisys ClearPath MCP
+2018/05/17
+Symantec SSL Visibility
+2018/05/17
+Symantec IntelligenceCenter
+2018/07/31
+Huawei products
+2018/08/15
+Clavister cOS Core
+2018/08/15
+ZyXEL ZyWALL/USG
+2018/08/21
+Huawei products
+2018/08/31
+RSA BSAFE Micro Edition Suite
+2018/09/11
+RSA BSAFE SSL-J
+2018/09/11
+RSA BSAFE Crypto-J
+2018/09/12
+Intel AMT
+2019/02/22
+Citrix NetScaler Gateway
+
+Vulnerable Operations
+Padding oracle attack
+MAC-CBC-PAD
+Padding oracle attack
+-
+MAC-CBC-PAD
+MAC-CBC-PAD
+Padding oracle attack
+RSA-CRT
+Padding oracle attack
+Padding oracle attack
+Padding oracle attack
+Padding oracle attack
+MAC-CBC-PAD
+Padding oracle attack
+MAC-CBC-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+Padding oracle attack
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+RSA-PAD
+Padding oracle attack
+
+CVE
+CVE-2010-3332
+CVE-2013-1618
+CVE-2013-0523
+CVE-2014-0852
+CVE-2014-8730
+CVE-2015-5537
+CVE-2015-7412
+CVE-2016-0887
+CVE-2016-3702
+CVE-2016-4379
+CVE-2016-4028
+CVE-2016-8217
+CVE-2015-4078
+CVE-2017-10668
+CVE-2015-3642
+CVE-2017-6168
+CVE-2017-17382
+CVE-2017-17427
+CVE-2017-12373
+CVE-2017-17841
+CVE-2017-17428
+CVE-2018-1388
+CVE-2018-5762
+CVE-2017-15533
+CVE-2017-18268
+CVE-2017-17174
+CVE-2018-8753
+CVE-2018-9129
+CVE-2017-17305
+CVE-2018-11057
+CVE-2018-11069
+CVE-2018-11070
+CVE-2018-3616
+CVE-2019-6485
+
+(b) Closed-source products
+
+Patch date
+2001/01/29
+2004/06/01
+
+(cid:63)
+
+2010/06/10
+2010/06/10
+2013/02/07
+2013/02/14
+2013/02/05
+2013/02/10
+2013/10/01
+2013/03/19
+2015/11/20
+2015/03/26
+2015/10/26
+2016/04/28
+
+(cid:63)(cid:63)
+
+2016/08/30
+
+(cid:63)(cid:63)
+
+2016/10/26
+2016/09/26
+2016/09/05
+2016/09/11
+2016/11/25
+2016/04/18
+
+(cid:63)(cid:63)
+
+2015/10/26
+2016/08/04
+2016/10/20
+
+(cid:63)(cid:63)
+
+2017/06/02
+2017/10/02
+2017/11/23
+2017/12/28
+2017/10/31
+2017/07/07
+2016/12/23
+2016/12/23
+2018/06/13
+2018/07/02
+2018/05/27
+
+(cid:63)
+
+(cid:63)
+
+2018/09/13
+
+(cid:63)
+
+2018/07/24
+2018/07/24
+2018/07/25
+
+(cid:63)
+
+2018/12/27
+2018/10/01
+
+Index
+
+4.2.2.b
+4.2.2.b
+4.2.2.b
+
+4.2.1.b
+
+1.2.3.e
+
+4.1.1.c
+4.1.1.c
+
+4.1.2.d
+4.1.2.d
+
+Patch date
+2010/09/27
+2013/02/13
+
+Index
+
+4.2.2.b
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)
+
+4.2.1.a
+
+2016/08/30
+2016/04/21
+2017/01/20
+
+4.1.1.c
+4.1.1.c
+4.1.1.c
+4.1.1.c
+4.1.1.c
+4.1.1.c
+
+4.1.1.c
+4.1.1.c
+4.1.1.c
+
+(cid:63)(cid:63)
+
+(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+2018/01/05
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+2018/01/12
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63)(cid:63)
+
+(cid:63) Whether and when this vulnerability is addressed is not revealed.
+(cid:63)(cid:63) This vulnerability is addressed, but the date is not revealed.
+
+corresponding patches, leaving no vulnerability windows
+for adversaries to exploit.
+
+Regarding the coverage, most discovered vulnerabil-
+ities were addressed, with a few exceptions (annotated
+
+with (cid:63) in Tables 4a and 4b) where too little public in-
+formation is available. For these cases, we are unable to
+ascertain whether these issues were solved or not.
+
+6. Insights and Lessons
+
+We draw some insights and suggestions based on the
+summarization and evaluation of side-channel vulnera-
+bilities and countermeasures. We hope they can beneﬁt
+cryptographic software developers, users and researchers.
+
+11
+
+Patch TypeDate2001200220032004200520062007200820092010201120122013201420152016201720182019Introduce New AlgorithmSelect Another AlgorithmFix bugEnhance AlgorithmPatch TypeDate2006200820092010201220132014201620172019Introduce New AlgorithmSelect Another AlgorithmFix bugEnhance AlgorithmOpenSSLGNU cryptoopen-sourceclosed-source01020304050CountSoftware Asymmetric Protocol Other-500-400-300-200-10001002000.00.20.40.60.81.0ProbabilityDuration (days) OpenSSL GNU crypto open-source closed-source6.1. Research Directions
+
+First, we propose several promising opportunities and
+directions for future side-channel research.
+
+D1: Identify new vulnerabilities in state-of-the-art
+cryptographic implementations, more likely in less-
+studied ciphers and operations.
+
+The discovery and exploitation of various side-channel
+vulnerabilities during the past decades inspired people
+to search for new secure solutions. Now each critical
+cryptographic primitive has secure algorithms and imple-
+mentations that are robust against different types of side-
+channel attacks. Thus, it is interesting to explore new
+fundamental vulnerabilities in current implementations.
+In addition to the cryptographic operations discussed in
+Sec. 3, researchers can focus on other ciphers and op-
+erations, and search for new critical vulnerabilities. For
+instance,
+the emerging post-quantum cryptography has
+drawn people’s attention for its resistance against quantum
+computer based attacks. Different types of post-quantum
+algorithms were designed for public key infrastructure,
+e.g., hash-based, lattice-based and multivariate cryptogra-
+phy. Currently researchers only focus on the side-channel
+vulnerabilities in lattice-based cryptography. It is interest-
+ing to explore if there are any chances to attack other
+types of post-quantum cryptography schemes.
+
+D2: Discover outdated vulnerabilities in less popular
+and closed-source applications.
+
+As discussed in Sec. 5.5, old vulnerabilities, espe-
+cially those against cryptographic primitives or via micro-
+architectural contention, can still exist in real-world appli-
+cations. It is worth the research effort to conduct a more
+comprehensive evaluation of various side-channel vulner-
+abilities on different open-source libraries and commercial
+products. This will raise public awareness on side-channel
+threats, and more importantly, encourage developers to
+secure these applications as a result.
+
+D3: Design new side-channel attack techniques that
+can capture ﬁner grained side-channel information,
+and study countermeasures for the new attacks.
+
+From Sec. 3 we observe that innovation in provid-
+ing adversaries with more detailed information usually
+exposes new vulnerabilities. For instance, ﬁxed window
+modular exponentiation with scatter-gather approach was
+designed to defeat attacks with the granularity of cache
+line. However, a new attack method that captures cache-
+bank level information [71] invalidated the approach. Pre-
+vious countermeasures for padding oracle attacks only
+considered remote attacks, and thus they focused on pro-
+ducing uniform responses in constant time. Later, host-
+based attack techniques were applied to padding oracle
+settings [92, 93, 103, 104], compromising such solutions.
+We hence propose this research direction so the security
+of cryptographic operations can be constantly enhanced.
+
+6.2. Development Recommendations
+
+We offer some suggestions for developers of crypto-
+graphic applications and systems to make the implemen-
+tations more secure and efﬁcient.
+
+R1: Different countermeasure strategies can have dif-
+ferent vulnerability coverages and performance costs.
+
+Developers need to carefully select the optimal strate-
+gies for critical operations.
+
+We summarized different countermeasures and their
+features in Sec. 4. To remove control ﬂow vulnerabilities,
+AlwaysExecute strategies introduce performance overhead
+due to execution of all possible code routines. Condition-
+alSelect can only defeat remote attacks since it still leaves
+a minor secret-dependent control ﬂow, while BitwiseSe-
+lect is secure against all known types of attacks.
+To remove data ﬂow vulnerabilities, AlwaysAccess-
+BitwiseSelect defeats all known types of attacks with the
+price of performance degradation from extra memory ac-
+cesses. On-the-ﬂy calculation is useful if the computation
+does not contain secret-dependent control ﬂows, while
+repeated computation causes slowdown.
+Cryptographic blinding is a technique dedicated for
+asymmetric cryptography such as RSA, ElGamal and
+ECC. It is particularly effective in cases where secret-
+dependent control ﬂow or data ﬂow is hard to remove
+(e.g., modular multiplication). Plaintext/ciphertext blind-
+ing can only defeat chosen-input side-channel attacks,
+while key blinding does not have this limitation.
+
+R2: Software bugs contribute a lot to side-channel
+vulnerabilities. Developers should verify the code cor-
+rectness of critical operations prior to release.
+
+Developers may accidentally leave software bugs that
+can be exploited to perform side-channel attacks. As
+critical cryptographic operations are designed to be more
+secure today, adversaries now tend to search such bugs to
+break the secure designs and implementations (Sec. 5.4).
+There are three common types of side-channel bugs. First,
+incorrect ﬂag propagation prevents some cryptographic
+operations from calling the securely implemented routine
+even though it is already introduced, exempliﬁed by mod-
+ular exponentiation [117] and inversion [118]. Second,
+some secure implementations are only partly applied to the
+operations or primitives, leaving the rest still vulnerable.
+For instance, in OpenSSL before version 1.0.2q, most
+curves (P-224, P-256 and P-521) adopted secure branch-
+less Montgomery ladder or masked window for scalar
+multiplication, but P-384 curve still used the insecure
+sliding window implementation, offering the adversary an
+opportunity to compromise ECDSA [68]. Third, some cor-
+ner cases were overlooked during implementation, giving
+rise to non-constant runtime behaviors in execution time
+[104, 119], message type [53] and format [91].
+To verify if the secure routines are selected properly
+and applied to all operations or primitives, developers can
+insert breakpoints inside the insecure routines and check if
+they are reached [78]. To verify if the implementation has
+expected constant behaviors, developers can measure the
+side-channel information under different cases and check
+if they are indistinguishable.
+
+R3: Developers should carefully handle the reported
+vulnerabilities. They should (1) prioritize the most
+severe vulnerabilities; (2) apply patches to all
+live
+branches at the same time; (3) apply patches to all
+vulnerable operations.
+
+From Sec. 5.1 we observe that different types of side-
+channel vulnerabilities are assigned with different severity
+scores. The network-level vulnerabilities are particularly
+severe as they are more exploitable, so developers should
+
+12
+
+pay special attention to those attacks and prioritize their
+ﬁxes. Besides, when a vulnerability is disclosed, de-
+velopers should apply the corresponding countermeasure
+patches to all live branches of the application immediately.
+Otherwise, the unpatched branch will remain vulnerable as
+the threat is disclosed to the public (Sec. 5.3). Developers
+should also check whether the application contains other
+implementations sharing the same vulnerability. If so they
+should also ﬁx them even though they are not reported.
+
+6.3. Indications in Practice
+
+We draw some conclusions for cryptographic applica-
+tion users about side-channel threats and countermeasures
+from a practical viewpoint.
+
+I1: Side-channel vulnerabilities are generally consid-
+ered less severe compared to other vulnerabilities,
+although their volume in CVE database is non-trivial.
+
+As discussed in Sec. 5.1,
+two reasons make side-
+channel
+threats less severe:
+the attacks require higher
+adversarial capabilities and more domain knowledge, and
+the damage is relatively smaller. Thus, the existence of
+these vulnerabilities in applications is by no means a
+catastrophe to the users and there is no need to panic.
+The world has not seen an occurrence of malicious side-
+channel attacks that could bring severe damages so far.
+
+I2: Although side-channel vulnerabilities are regarded
+as less severe, they are handled very actively, either
+in mainstream open-source libraries (Sec. 5.2),
+less
+popular libraries or closed-source products (Sec. 5.5).
+
+Such active attitude towards side-channel threats is
+reﬂected in several aspects. First, new side-channel vul-
+nerabilities were ﬁxed at a very fast speed to reduce users’
+potential damage. Second, most known side-channel vul-
+nerabilities to date were ﬁxed. Third, cryptographic li-
+braries are now shifting the countermeasures from brand
+new implementations to minor bug ﬁxes and enhancement,
+indicating that they are becoming more mature (Sec. 5.4).
+
+I3: It is unnecessary for users to always patch or
+upgrade the libraries for the most secure implementa-
+tions. They can adopt those suited to their scenarios.
+
+If a use case does not need to consider certain ad-
+versarial capabilities, countermeasures designed for them
+will not be necessary. For instance, if the application
+does not have network interfaces,
+then the user does
+not need to consider network-level side-channels. If the
+application does not share the computing platform with
+other untrusted parties, then the user does not need to
+consider host-level attacks.
+
+7. Related Work
+
+7.1. Physical Attacks
+
+are still able to deduce secrets via intermediate values
+[39]. Systematization of these attacks and vulnerabilities
+is however not relevant in this paper.
+
+7.2. Attacking Non-cryptographic Applications
+
+In addition to recovering keys in cryptographic opera-
+tions, side-channel attacks can also be used to steal other
+types of information. At the application level, attacks exist
+to identify keystrokes [52, 123–129], application states
+and activities [130–132], and websites [133, 134]. At the
+system level, adversaries may use side channels to infer
+host conﬁgurations [135] and memory layout information
+[136–139]. Meltdown [140] and Spectre [141] attacks
+were disclosed to bypass the isolation and protection
+schemes in operating systems, followed by variants of
+such attacks [142–147]. Systematization of these attacks
+is out of the scope of our work.
+
+7.3. Identiﬁcation of Vulnerabilities
+
+Various approaches and tools were designed to auto-
+matically identify potential side-channel vulnerabilities in
+commodity software. Some static methods utilize abstract
+interpretation to analyze the source code and measure the
+information leakage (bounds) [12, 62, 148–153], while
+others verify if a program always exhibits constant-time
+behavior by checking whether it contains secret-dependent
+control ﬂow or data ﬂow [14–17, 19]. Dynamic meth-
+ods proﬁle program execution and measure the correla-
+tion between critical secrets and runtime behaviors from
+execution traces to capture side-channel vulnerabilities
+[18, 74, 92, 154–158].
+
+7.4. Side-channel Surveys
+
+Past efforts summarized side-channel attacks and
+countermeasures in different contexts including smart card
+[25], networked systems [20, 24], hardware architecture
+[28, 29], cloud [26, 27], smartphone [21, 22, 30] and
+key logging [23, 31]. They mostly studied side-channel
+information collecting techniques for speciﬁc attack types
+in speciﬁc environments. In contrast, our work focuses on
+the vulnerabilities in cryptographic implementations.
+Closer to our work are efforts [159–161] that studied
+side-channel vulnerabilities and countermeasures in Ellip-
+tic Curve Cryptosystems (ECC). We distinguish our work
+from theirs by considering a wider range of cryptographic
+ciphers and protocols than ECC. We also systematically
+evaluate the vulnerabilities and countermeasures in differ-
+ent applications in addition to reviewing past literature.
+
+8. Conclusion
+
+Different from software side-channel attacks, physical
+side-channel attacks require the adversary to be local
+to the target system running the victim application to
+collect
+the side-channel signals during the application
+execution. Different attacks have been proposed against
+cryptographic applications [36–40, 120–122]. Some of
+them are so powerful that even the application does not
+contain secret-dependent control ﬂow or data ﬂow, they
+
+Side-channel attacks against cryptographic implemen-
+tations have been an enduring topic over the past 20 years.
+Many vulnerabilities have been discovered from previous
+cryptographic implementations, but unknown ones likely
+still exist in today’s implementations. The good news is
+that the community resolved these vulnerabilities very
+actively, and hence large-scale side-channel attacks caus-
+ing severe real-world damages haven’t happened so far.
+
+13
+
+Besides, years of efforts have fortiﬁed common cryp-
+tographic libraries and applications against side-channel
+attacks, and recently discovered vulnerabilities were less
+signiﬁcant or surprising.
+Looking ahead, we expect continuous arms race be-
+tween side-channel attacks and defenses. We encourage
+researchers to discover new vulnerabilities and attacks,
+evaluate them on a wider range of applications, and de-
+velop novel countermeasures for them.
+
+References
+
+[6]
+
+[7]
+
+[8]
+
+[9]
+
+[5]
+
+[4]
+
+[3]
+
+[2]
+
+[1]
+
+[11]
+
+[10]
+
+J. Shi, X. Song, H. Chen, and B. Zang, “Limiting cache-based
+side-channel in multi-tenant cloud using dynamic page coloring,”
+in IEEE/IFIP Intl. Conf. on Dependable Systems and Networks
+Workshops, 2011.
+T. Kim, M. Peinado, and G. Mainar-Ruiz, “Stealthmem: System-
+level protection against cache-based side channel attacks in the
+cloud,” in USENIX Conf. on Security Symposium, 2012.
+B. C. Vattikonda, S. Das, and H. Shacham, “Eliminating ﬁne
+grained timers in xen,” in ACM Workshop on Cloud Computing
+Security, 2011.
+Y. Zhang and M. K. Reiter, “D ¨uppel: Retroﬁtting commodity
+operating systems to mitigate cache side channels in the cloud,”
+in ACM Conf. on Computer and Communications Security, 2013.
+P. Li, D. Gao, and M. K. Reiter, “Stopwatch: A cloud architecture
+for timing channel mitigation,” ACM Trans. Inf. Syst. Secur., 2014.
+T. Zhang, Y. Zhang, and R. B. Lee, “Cloudradar: A real-time
+side-channel attack detection system in clouds,” in Intl. Symp. on
+Research in Attacks, Intrusions, and Defenses, 2016.
+Z. Wang and R. B. Lee, “New cache designs for thwarting
+software cache-based side channel attacks,” in ACM Intl. Symp.
+on Computer Architecture, 2007.
+Z. Wang and R. Lee, “A novel cache architecture with enhanced
+performance and security,” in IEEE/ACM Intl. Symp. on Microar-
+chitecture, 2008.
+L. Domnitser, A. Jaleel, J. Loew, N. Abu-Ghazaleh, and D. Pono-
+marev, “Non-monopolizable caches: Low-complexity mitigation
+of cache side channel attacks,” ACM Trans. Archit. Code Optim.,
+2012.
+F. Liu and R. B. Lee, “Random ﬁll cache architecture,” in
+IEEE/ACM Intl. Symp. on Microarchitecture, 2014.
+F. Liu, Q. Ge, Y. Yarom, F. Mckeen, C. Rozas, G. Heiser, and
+R. B. Lee, “Catalyst: Defeating last-level cache side channel
+attacks in cloud computing,” in IEEE Intl. Symp. on High Perfor-
+mance Computer Architecture, 2016.
+[12] D. Molnar, M. Piotrowski, D. Schultz, and D. Wagner, “The
+program counter security model: Automatic detection and removal
+of control-ﬂow side channel attacks,” in International Conference
+on Information Security and Cryptology, 2005.
+[13] B. Coppens, I. Verbauwhede, K. De Bosschere, and B. De Sutter,
+“Practical mitigations for timing-based side-channel attacks on
+modern x86 processors,” in IEEE Symposium on Security and
+Privacy, 2009.
+[14] G. Barthe, G. Betarte, J. Campo, C. Luna, and D. Pichardie,
+“System-level non-interference for constant-time cryptography,”
+in ACM Conference on Computer and Communications Security.
+ACM, 2014.
+J. B. Almeida, M. Barbosa, G. Barthe, F. Dupressoir, and
+M. Emmi, “Verifying constant-time implementations.” in USENIX
+Security Symposium, 2016.
+S. Blazy, D. Pichardie, and A. Trieu, “Verifying constant-time im-
+plementations by abstract interpretation,” in European Symposium
+on Research in Computer Security, 2017.
+[17] M. Dehesa-Azuara, M. Fredrikson, J. Hoffmann et al., “Verifying
+and synthesizing constant-resource implementations with types,”
+in IEEE Symposium on Security and Privacy, 2017.
+[18] O. Reparaz, J. Balasch, and I. Verbauwhede, “Dude, is my code
+constant time?” in IEEE Design, Automation & Test in Europe
+Conference & Exhibition (DATE), 2017.
+[19] B. Bond, C. Hawblitzel, M. Kapritsos, K. R. M. Leino, J. R.
+Lorch, B. Parno, A. Rane, S. Setty, and L. Thompson, “Vale:
+Verifying high-performance cryptographic assembly code,” in
+USENIX Security Symposium, 2017.
+
+[15]
+
+[16]
+
+[31]
+
+[27]
+
+[26]
+
+[20]
+
+[29]
+
+S. Zander, G. Armitage, and P. Branch, “A survey of covert
+channels and countermeasures in computer network protocols,”
+IEEE Communications Surveys & Tutorials, vol. 9, no. 3, 2007.
+[21] M. Xu, C. Song, Y. Ji, M.-W. Shih, K. Lu, C. Zheng, R. Duan,
+Y. Jang, B. Lee, C. Qian et al., “Toward engineering a secure
+android ecosystem: A survey of existing techniques,” ACM Com-
+puting Surveys, vol. 49, no. 2, 2016.
+[22] A. Nahapetian, “Side-channel attacks on mobile and wearable sys-
+tems,” in IEEE Annual Consumer Communications & Networking
+Conference.
+IEEE, 2016.
+[23] M. Hussain, A. Al-Haiqi, A. Zaidan, B. Zaidan, M. M. Kiah,
+N. B. Anuar, and M. Abdulnabi, “The rise of keyloggers on smart-
+phones: A survey and insight into motion-based tap inference
+attacks,” Pervasive and Mobile Computing, vol. 25, 2016.
+[24] A. K. Biswas, D. Ghosal, and S. Nagaraja, “A survey of tim-
+ing channels and countermeasures,” ACM Computing Surveys
+(CSUR), vol. 50, no. 1, 2017.
+[25] M. Tunstall, “Smart card security,” in Smart Cards, Tokens, Se-
+curity and Applications, 2017.
+J. Ullrich, T. Zseby, J. Fabini, and E. Weippl, “Network-based se-
+cret communication in clouds: A survey,” IEEE Communications
+Surveys & Tutorials, vol. 19, no. 2, 2017.
+J. Betz, D. Westhoff, and G. M ¨uller, “Survey on covert chan-
+nels in virtual machines and cloud computing,” Transactions on
+Emerging Telecommunications Technologies, vol. 28, no. 6, 2017.
+[28] Q. Ge, Y. Yarom, D. Cock, and G. Heiser, “A survey of microar-
+chitectural timing attacks and countermeasures on contemporary
+hardware,” Journal of Cryptographic Engineering, vol. 8, no. 1,
+2018.
+J. Szefer, “Survey of microarchitectural side and covert channels,
+attacks, and defenses,” Journal of Hardware and Systems Security,
+September 2018.
+[30] R. Spreitzer, V. Moonsamy, T. Korak, and S. Mangard, “System-
+atic classiﬁcation of side-channel attacks: A case study for mobile
+devices,” IEEE Communications Surveys Tutorials, vol. 20, no. 1,
+2018.
+J. Monaco, “Sok: Keylogging side channels,” in IEEE Symposium
+on Security and Privacy, 2018.
+[32] D. J. Bernstein, “Cache-timing attacks on aes,” Technical Report,
+2005.
+J. Bonneau and I. Mironov, “Cache-collision timing attacks
+against aes,” in International Workshop on Cryptographic Hard-
+ware and Embedded Systems, 2006.
+[34] D. A. Osvik, A. Shamir, and E. Tromer, “Cache attacks and
+countermeasures: the case of aes,” in Cryptographers’ Track at
+the RSA Conference, 2006, pp. 1–20.
+[35] A. Barenghi, L. Breveglieri, I. Koren, and D. Naccache, “Fault
+injection attacks on cryptographic devices: Theory, practice, and
+countermeasures,” Proceedings of the IEEE, 2012.
+[36] D. Genkin, A. Shamir, and E. Tromer, “Rsa key extraction via
+low-bandwidth acoustic cryptanalysis,” in International cryptol-
+ogy conference, 2014.
+[37] D. Genkin, I. Pipman, and E. Tromer, “Get your hands off
+my laptop: Physical side-channel key-extraction attacks on pcs,”
+Journal of Cryptographic Engineering, vol. 5, no. 2, 2015.
+[38] D. Genkin, L. Pachmanov, I. Pipman, and E. Tromer, “Stealing
+keys from pcs using a radio: Cheap electromagnetic attacks on
+windowed exponentiation,” in International workshop on crypto-
+graphic hardware and embedded systems, 2015.
+J.-S. Coron, “Resistance against differential power analysis for
+elliptic curve cryptosystems,” in International Workshop on Cryp-
+tographic Hardware and Embedded Systems, 1999.
+S. Aravamuthan and V. R. Thumparthy, “A parallelization of ecdsa
+resistant to simple power analysis attacks.” in COMSWARE, 2007.
+S. Mangard, “A simple power-analysis (spa) attack on implemen-
+tations of the aes key expansion,” in International Conference on
+Information Security and Cryptology, 2002.
+P. Kocher, J. Jaffe, and B. Jun, “Differential power analysis,” in
+Annual International Cryptology Conference, 1999.
+[43] R. L. Rivest, A. Shamir, and L. Adleman, “A method for obtaining
+digital signatures and public-key cryptosystems,” Commun. ACM,
+vol. 21, no. 2, Feb. 1978.
+[44] T. ElGamal, “A public key cryptosystem and a signature scheme
+based on discrete logarithms,” IEEE transactions on information
+theory, vol. 31, no. 4, 1985.
+[45] V. S. Miller, “Use of elliptic curves in cryptography,” in Confer-
+ence on the theory and application of cryptographic techniques,
+1985.
+
+[39]
+
+[40]
+
+[41]
+
+[42]
+
+[33]
+
+14
+
+[52]
+
+[61]
+
+[51]
+
+[47]
+
+[46] N. Koblitz, “Elliptic curve cryptosystems,” Mathematics of com-
+putation, vol. 48, no. 177, 1987.
+J. Hoffstein, J. Pipher, and J. H. Silverman, “Ntru: A ring-based
+public key cryptosystem,” in International Algorithmic Number
+Theory Symposium, 1998.
+[48] V. Lyubashevsky, C. Peikert, and O. Regev, “On ideal lattices
+and learning with errors over rings,” in Annual International
+Conference on the Theory and Applications of Cryptographic
+Techniques, 2010.
+[49] L. Ducas, A. Durmus, T. Lepoint, and V. Lyubashevsky, “Lattice
+signatures and bimodal gaussians,” in Annual Cryptology Confer-
+ence, 2013.
+[50] D. Bleichenbacher, “Chosen ciphertext attacks against protocols
+based on the rsa encryption standard pkcs# 1,” in Annual Inter-
+national Cryptology Conference, 1998.
+S. Vaudenay, “Security ﬂaws induced by cbc paddingapplications
+to ssl, ipsec, wtls...” in International Conference on the Theory
+and Applications of Cryptographic Techniques, 2002.
+S. Chen, R. Wang, X. Wang, and K. Zhang, “Side-channel leaks
+in web applications: A reality today, a challenge tomorrow,” in
+IEEE Symposium on Security and Privacy, 2010.
+[53] C. Meyer, J. Somorovsky, E. Weiss, J. Schwenk, S. Schinzel, and
+E. Tews, “Revisiting ssl/tls implementations: New bleichenbacher
+side channels and attacks.” in USENIX Security Symposium, 2014.
+[54] N. AlFardan and K. G. Paterson, “Plaintext-recovery attacks
+against datagram tls,” in Network and Distributed System Security
+Symposium, 2012.
+[55] C. Percival, “Cache missing for fun and proﬁt,” 2005.
+[56] O. Acıic¸mez, S. Gueron, and J.-P. Seifert, “New branch prediction
+vulnerabilities in openssl and necessary software countermea-
+sures,” in IMA International Conference on Cryptography and
+Coding, 2007.
+[57] B. Gras, K. Razavi, H. Bos, and C. Giuffrida, “Translation leak-
+aside buffer: Defeating cache side-channel protections with tlb
+attacks,” in USENIX Security Symposium, 2018.
+[58] D. Brumley and D. Boneh, “Remote timing attacks are practical,”
+Computer Networks, vol. 48, no. 5, 2005.
+[59] Y. Yarom and K. Falkner, “Flush+ reload: A high resolution,
+low noise, l3 cache side-channel attack.” in USENIX Security
+Symposium, 2014.
+[60] Y. Zhang, A. Juels, M. K. Reiter, and T. Ristenpart, “Cross-
+vm side channels and their use to extract private keys,” in ACM
+conference on Computer and communications security, 2012.
+F. Liu, Y. Yarom, Q. Ge, G. Heiser, and R. B. Lee, “Last-level
+cache side-channel attacks are practical,” in IEEE Symposium on
+Security and Privacy, 2015.
+[62] G. Doychev and B. K ¨opf, “Rigorous analysis of software coun-
+termeasures against cache attacks,” in ACM SIGPLAN Notices,
+vol. 52, no. 6, 2017.
+[63] D. J. Bernstein, J. Breitner, D. Genkin, L. G. Bruinderink,
+N. Heninger, T. Lange, C. van Vredendaal, and Y. Yarom, “Sliding
+right into disaster: Left-to-right sliding windows leak,” in Inter-
+national Conference on Cryptographic Hardware and Embedded
+Systems, 2017.
+[64] N. Benger, J. Van de Pol, N. P. Smart, and Y. Yarom, “”ooh aah...
+just a little bit”: A small amount of side channel can go a long
+way,” in International Workshop on Cryptographic Hardware and
+Embedded Systems, 2014.
+J. van de Pol, N. P. Smart, and Y. Yarom, “Just a little bit more,”
+in Cryptographers’ Track at the RSA Conference, 2015.
+S. Fan, W. Wang, and Q. Cheng, “Attacking openssl implemen-
+tation of ecdsa with a few signatures,” in ACM Conference on
+Computer and Communications Security, 2016.
+[67] T. Allan, B. B. Brumley, K. Falkner, J. van de Pol, and Y. Yarom,
+“Amplifying side channels through performance degradation,” in
+Annual Conference on Computer Security Applications, 2016.
+[68] A. C. Aldaya, B. B. Brumley, S. ul Hassan, C. P. Garc´ıa, and
+N. Tuveri, “Port contention for fun and proﬁt,” in IEEE Sympo-
+sium on Security and Privacy, 2019.
+[69] M. S. Inci, B. Gulmezoglu, G. Irazoqui, T. Eisenbarth, and
+B. Sunar, “Cache attacks enable bulk key recovery on the cloud,”
+in International Conference on Cryptographic Hardware and
+Embedded Systems, 2016.
+[70] B. B. Brumley and R. M. Hakala, “Cache-timing template at-
+tacks,” in International Conference on the Theory and Application
+of Cryptology and Information Security, 2009.
+[71] Y. Yarom, D. Genkin, and N. Heninger, “Cachebleed: a timing
+attack on openssl constant-time rsa,” Journal of Cryptographic
+
+[65]
+
+[66]
+
+[82]
+
+[77]
+
+Engineering, vol. 7, no. 2, 2017.
+[72] Y. Yarom and N. Benger, “Recovering openssl ecdsa nonces using
+the ﬂush+ reload cache side-channel attack.” IACR Cryptology
+ePrint Archive, vol. 2014, 2014.
+[73] B. B. Brumley and N. Tuveri, “Remote timing attacks are still
+practical,” in European Symposium on Research in Computer
+Security, 2011.
+[74] Y. Shin, H. C. Kim, D. Kwon, J. H. Jeong, and J. Hur, “Unveiling
+hardware-based data prefetcher, a hidden source of information
+leakage,” in ACM Conference on Computer and Communications
+Security, 2018.
+[75] D. Genkin, L. Valenta, and Y. Yarom, “May the fourth be with
+you: A microarchitectural side channel attack on several real-
+world applications of curve25519,” in ACM Conference on Com-
+puter and Communications Security, 2017.
+[76] T. Kaufmann, H. Pelletier, S. Vaudenay, and K. Villegas,
+“When constant-time source yields variable-time binary: Exploit-
+ing curve25519-donna built with msvc 2015,” in International
+Conference on Cryptology and Network Security, 2016.
+S. Weiser, R. Spreitzer, and L. Bodner, “Single trace attack
+against rsa key generation in intel sgx ssl,” in Asia Conference
+on Computer and Communications Security, 2018.
+[78] A. C. Aldaya, C. P. Garc´ıa, L. M. A. Tapia, and B. B. Brumley,
+“Cache-timing attacks on rsa key generation,” IACR Cryptology
+ePrint Archive, Tech. Rep., 2018.
+[79] D. Gullasch, E. Bangerter, and S. Krenn, “Cache games–bringing
+access-based cache attacks on aes to practice,” in IEEE Sympo-
+sium on Security and Privacy, 2011.
+[80] G. Irazoqui, M. S. Inci, T. Eisenbarth, and B. Sunar, “Wait a
+minute! a fast, cross-vm attack on aes,” in International Workshop
+on Recent Advances in Intrusion Detection, 2014.
+[81] L. G. Bruinderink, A. H ¨ulsing, T. Lange, and Y. Yarom, “Flush,
+gauss, and reload–a cache attack on the bliss lattice-based sig-
+nature scheme,” in International Conference on Cryptographic
+Hardware and Embedded Systems, 2016.
+P. Pessl, L. G. Bruinderink, and Y. Yarom, “To bliss-b or not to
+be: Attacking strongswan’s implementation of post-quantum sig-
+natures,” in ACM Conference on Computer and Communications
+Security, 2017.
+[83] T. Espitau, P.-A. Fouque, B. G ´erard, and M. Tibouchi, “Side-
+channel attacks on bliss lattice-based signatures: Exploiting
+branch tracing against strongswan and electromagnetic emana-
+tions in microcontrollers,” in ACM Conference on Computer and
+Communications Security, 2017.
+[84] M. Tibouchi and A. Wallet, “One bit is all it takes: A devastating
+timing attack on blisss non-constant time sign ﬂips,” Cryptology
+ePrint Archive, Report 2019/898, Tech. Rep., 2019.
+J.-P. D’Anvers, M. Tiepelt, F. Vercauteren, and I. Verbauwhede,
+“Timing attacks on error correcting codes in post-quantum secure
+schemes.” IACR Cryptology ePrint Archive, 2019.
+J. H. Silverman and W. Whyte, “Timing attacks on ntruencrypt via
+variation in the number of hash calls,” in Cryptographers Track
+at the RSA Conference, 2007.
+[87] R. Bardou, R. Focardi, Y. Kawamoto, L. Simionato, G. Steel,
+and J.-K. Tsay, “Efﬁcient padding oracle attacks on cryptographic
+hardware,” in Annual Cryptology Conference, 2012.
+[88] V. Kl´ıma, O. Pokorn `y, and T. Rosa, “Attacking rsa-based sessions
+in ssl/tls,” in International Workshop on Cryptographic Hardware
+and Embedded Systems, 2003.
+[89] H. B ¨ock, J. Somorovsky, and C. Young, “Return of bleichenbach-
+ers oracle threat ({ROBOT}),” in Usenix Security Symposium,
+2018.
+[90] D. Felsch, M. Grothe, J. Schwenk, A. Czubak, and M. Szymanek,
+“The dangers of key reuse: Practical attacks on ipsec {IKE},” in
+USENIX Security Symposium, 2018.
+[91] N. Aviram, S. Schinzel, J. Somorovsky, N. Heninger, M. Dankel,
+J. Steube, L. Valenta, D. Adrian, J. A. Halderman, V. Dukhovni
+et al., “Drown: Breaking tls using sslv2.” in USENIX Security
+Symposium, 2016.
+[92] Y. Xiao, M. Li, S. Chen, and Y. Zhang, “Stacco: Differentially
+analyzing side-channel traces for detecting ssl/tls vulnerabilities
+in secure enclaves,” in ACM Conference on Computer and Com-
+munications Security, 2017.
+[93] E. Ronen, R. Gillham, D. Genkin, A. Shamir, D. Wong, and
+Y. Yarom, “The 9 lives of bleichenbachers cat: New cache attacks
+on tls implementations,” in IEEE Symposium on Security and
+Privacy, 2019.
+[94] T. Jager, S. Schinzel, and J. Somorovsky, “Bleichenbachers attack
+
+[85]
+
+[86]
+
+15
+
+[99]
+
+[97]
+
+strikes again: breaking pkcs# 1 v1. 5 in xml encryption,” in
+European Symposium on Research in Computer Security, 2012.
+[95] Y. Zhang, A. Juels, M. K. Reiter, and T. Ristenpart, “Cross-
+tenant side-channel attacks in paas clouds,” in ACM Conference
+on Computer and Communications Security. ACM, 2014.
+[96] B. M ¨oller, T. Duong, and K. Kotowicz, “This poodle bites:
+exploiting the ssl 3.0 fallback,” Security Advisory, 2014.
+J. P. Degabriele and K. G. Paterson, “Attacking the ipsec stan-
+dards in encryption-only conﬁgurations,” in IEEE Symposium on
+Security and Privacy.
+IEEE, 2007.
+[98] ——, “On the (in) security of ipsec in mac-then-encrypt conﬁg-
+urations,” in ACM conference on Computer and communications
+security, 2010.
+J. Rizzo and T. Duong, “Practical padding oracle attacks.” in
+USENIX Workshop on Offensive Technologies, 2010.
+[100] T. Duong and J. Rizzo, “Cryptography in the web: The case of
+cryptographic design ﬂaws in asp. net,” in IEEE Symposium on
+Security and Privacy, 2011.
+[101] B. Canvel, A. Hiltgen, S. Vaudenay, and M. Vuagnoux, “Pass-
+word interception in a ssl/tls channel,” in Annual International
+Cryptology Conference, 2003.
+[102] N. J. Al Fardan and K. G. Paterson, “Lucky thirteen: Breaking
+the tls and dtls record protocols,” in IEEE Symposium on Security
+and Privacy, 2013.
+[103] G. Irazoqui, M. S. Inci, T. Eisenbarth, and B. Sunar, “Lucky 13
+strikes back,” in ACM Symposium on Information, Computer and
+Communications Security, 2015.
+[104] E. Ronen, K. G. Paterson, and A. Shamir, “Pseudo constant
+time implementations of tls are only pseudo secure,” in ACM
+Conference on Computer and Communications Security, 2018.
+[105] A. A. Karatsuba and Y. P. Ofman, “Multiplication of many-digital
+numbers by automatic computers,” in Doklady Akademii Nauk,
+vol. 145, no. 2, 1962.
+[106] D. M. Gordon, “A survey of fast exponentiation methods,” J.
+Algorithms, vol. 27, no. 1, Apr. 1998.
+[107] D. Hankerson, A. J. Menezes, and S. Vanstone, “Guide to elliptic
+curve cryptography,” Computing Reviews, vol. 46, no. 1, 2005.
+[108] J. Bos and M. Coster, “Addition chain heuristics,” in Conference
+on the Theory and Application of Cryptology, 1989.
+[109] J. Katz, A. J. Menezes, P. C. Van Oorschot, and S. A. Vanstone,
+Handbook of applied cryptography. CRC press, 1996.
+[110] E. Brickell, G. Graunke, and J.-P. Seifert, “Mitigating cache/tim-
+ing based side-channels in aes and rsa software implementations,”
+in RSA Conference 2006 session DEV-203, 2006.
+[111] P. L. Montgomery, “Speeding the pollard and elliptic curve meth-
+ods of factorization,” Mathematics of computation, vol. 48, no.
+177, 1987.
+[112] M. Joye and S.-M. Yen, “The montgomery powering ladder,” in
+International Workshop on Cryptographic Hardware and Embed-
+ded Systems, 2002.
+[113] A. Langley, M. Hamburg, and S. Turner, “Elliptic curves for
+security,” Tech. Rep., 2016.
+[114] C. Peikert, “An efﬁcient and parallel gaussian sampler for lat-
+tices,” in Annual Cryptology Conference, 2010.
+[115] C. Gentry, C. Peikert, and V. Vaikuntanathan, “Trapdoors for hard
+lattices and new cryptographic constructions,” in Annual ACM
+symposium on Theory of computing, 2008.
+[116] B. M ¨oller, “Security of cbc ciphersuites in ssl/tls: Problems
+and countermeasures,” http://www.openssl.org/∼bodo/tls- cbc.txt,
+2012.
+[117] C. Pereida Garc´ıa, B. B. Brumley, and Y. Yarom, “Make sure
+dsa signing exponentiations really are constant-time,” in ACM
+Conference on Computer and Communications Security, 2016.
+[118] C. P. Garc´ıa and B. B. Brumley, “Constant-time callees with
+variable-time callers.” IACR Cryptology ePrint Archive, vol. 2016,
+2016.
+[119] M. R. Albrecht and K. G. Paterson, “Lucky microseconds: A
+timing attack on amazons s2n implementation of tls,” in Annual
+International Conference on the Theory and Applications of Cryp-
+tographic Techniques, 2016.
+[120] D. Genkin, L. Pachmanov, I. Pipman, E. Tromer, and Y. Yarom,
+“Ecdsa key extraction from mobile devices via nonintrusive
+physical side channels,” in ACM Conference on Computer and
+Communications Security, 2016.
+[121] P. Belgarric, P.-A. Fouque, G. Macario-Rat, and M. Tibouchi,
+“Side-channel analysis of weierstrass and koblitz curve ecdsa
+on android smartphones,” in Cryptographers’ Track at the RSA
+Conference, 2016.
+
+[122] D. Genkin, L. Pachmanov, I. Pipman, and E. Tromer, “Ecdh key-
+extraction via low-bandwidth electromagnetic attacks on pcs,” in
+Cryptographers’ Track at the RSA Conference, 2016.
+[123] D. X. Song, D. A. Wagner, and X. Tian, “Timing analysis
+of keystrokes and timing attacks on ssh.” in USENIX Security
+Symposium, 2001.
+[124] K. Zhang and X. Wang, “Peeping tom in the neighborhood:
+Keystroke eavesdropping on multi-user systems.” in USENIX
+Security Symposium, 2009.
+[125] M. Lipp, D. Gruss, R. Spreitzer, C. Maurice, and S. Mangard,
+“Armageddon: Cache attacks on mobile devices,” in USENIX
+Security Symposium, 2016.
+[126] P. Vila and B. K ¨opf, “Loophole: Timing attacks on shared event
+loops in chrome,” in USENIX Security Symposium, 2017.
+[127] M. Lipp, D. Gruss, M. Schwarz, D. Bidner, C. Maurice, and
+S. Mangard, “Practical keystroke timing attacks in sandboxed
+javascript,” in European Symposium on Research in Computer
+Security, 2017.
+[128] D. Wang, A. Neupane, Z. Qian, N. B. Abu-Ghazaleh, S. V. Krish-
+namurthy, E. J. Colbert, and P. Yu, “Unveiling your keystrokes: A
+cache-based side-channel attack on graphics libraries.” in Network
+and Distributed System Security Symposium, 2019.
+[129] X. Liu, Y. Li, R. H. Deng, B. Chang, and S. Li, “When human
+cognitive modeling meets pins: User-independent inter-keystroke
+timing attacks,” Computers & Security, 2019.
+[130] W. Diao, X. Liu, Z. Li, and K. Zhang, “No pardon for the
+interruption: New inference attacks on android through interrupt
+timing analysis,” in IEEE Symposium on Security and Privacy,
+2016.
+[131] R. Spreitzer, G. Palﬁnger, and S. Mangard, “Scandroid: Auto-
+mated side-channel analysis of android apis,” in ACM Conference
+on Security & Privacy in Wireless and Mobile Networks, 2018.
+[132] R. Spreitzer, F. Kirchengast, D. Gruss, and S. Mangard, “Prochar-
+vester: Fully automated analysis of procfs side-channel leaks on
+android,” in Asia Conference on Computer and Communications
+Security, 2018.
+[133] Y. Oren, V. P. Kemerlis, S. Sethumadhavan, and A. D. Keromytis,
+“The spy in the sandbox: Practical cache attacks in javascript
+and their implications,” in ACM Conference on Computer and
+Communications Security, 2015.
+[134] A. Shusterman, L. Kang, Y. Haskal, Y. Meltser, P. Mittal, Y. Oren,
+and Y. Yarom, “Robust website ﬁngerprinting through the cache
+occupancy channel,” in USENIX Security Symposium, 2019.
+[135] M. Schwarz, F. Lackner, and D. Gruss, “Javascript
+template
+attacks: Automatically inferring host
+information for targeted
+exploits,” in Network and Distributed System Security Symposium,
+2019.
+[136] R. Hund, C. Willems, and T. Holz, “Practical timing side channel
+attacks against kernel space aslr,” in IEEE Symposium on Security
+and Privacy, 2013.
+[137] D. Evtyushkin, D. Ponomarev, and N. Abu-Ghazaleh, “Jump over
+aslr: Attacking branch predictors to bypass aslr,” in IEEE/ACM
+International Symposium on Microarchitecture, 2016.
+[138] Y. Jang, S. Lee, and T. Kim, “Breaking kernel address space
+layout randomization with intel
+tsx,” in ACM Conference on
+Computer and Communications Security, 2016.
+[139] D. Gruss, C. Maurice, A. Fogh, M. Lipp, and S. Mangard,
+“Prefetch side-channel attacks: Bypassing smap and kernel aslr,”
+in ACM Conference on Computer and Communications Security,
+2016.
+[140] M. Lipp, M. Schwarz, D. Gruss, T. Prescher, W. Haas, A. Fogh,
+J. Horn, S. Mangard, P. Kocher, D. Genkin, Y. Yarom, and
+M. Hamburg, “Meltdown: Reading kernel memory from user
+space,” in USENIX Security Symposium, 2018.
+[141] P. Kocher, J. Horn, A. Fogh, , D. Genkin, D. Gruss, W. Haas,
+M. Hamburg, M. Lipp, S. Mangard, T. Prescher, M. Schwarz, and
+Y. Yarom, “Spectre attacks: Exploiting speculative execution,” in
+IEEE Symposium on Security and Privacy, 2019.
+[142] J. V. Bulck, M. Minkin, O. Weisse, D. Genkin, B. Kasikci,
+F. Piessens, M. Silberstein, T. F. Wenisch, Y. Yarom, and
+R. Strackx, “Foreshadow: Extracting the keys to the intel SGX
+kingdom with transient out-of-order execution,” in USENIX Se-
+curity Symposium, 2018.
+[143] G. Chen, S. Chen, Y. Xiao, Y. Zhang, Z. Lin, and T. H. Lai,
+“Sgxpectre: Stealing intel secrets from sgx enclaves via specula-
+tive execution,” in IEEE European Symposium on Security and
+Privacy, 2019.
+[144] D. Evtyushkin, R. Riley, N. Abu-Ghazaleh, and D. Ponomarev,
+
+16
+
+“Branchscope: A new side-channel attack on directional branch
+predictor,” in International Conference on Architectural Support
+for Programming Languages and Operating Systems, 2018.
+[145] C. Trippel, D. Lustig, and M. Martonosi, “Meltdownprime
+and spectreprime: Automatically-synthesized attacks exploit-
+ing invalidation-based coherence protocols,” arXiv preprint
+arXiv:1802.03802, 2018.
+[146] S. Islam, A. Moghimi, I. Bruhns, M. Krebbel, B. G ¨ulmezoglu,
+T. Eisenbarth, and B. Sunar, “SPOILER: speculative load haz-
+ards boost
+rowhammer and cache attacks,” arXiv preprint
+arXiv:1903.00446, 2019.
+[147] C. Canella, J. V. Bulck, M. Schwarz, M. Lipp, B. von Berg,
+P. Ortner, F. Piessens, D. Evtyushkin, and D. Gruss, “A systematic
+evaluation of transient execution attacks and defenses,” arXiv
+preprint arXiv:1811.05441, 2018.
+[148] G. Doychev, B. K ¨opf, L. Mauborgne, and J. Reineke, “Cacheau-
+dit: A tool for the static analysis of cache side channels,” ACM
+Transactions on Information and System Security, vol. 18, no. 1,
+2015.
+[149] B. Rodrigues, F. M. Quint ˜ao Pereira, and D. F. Aranha, “Sparse
+representation of implicit ﬂows with applications to side-channel
+detection,” in ACM International Conference on Compiler Con-
+struction, 2016.
+[150] N. Bindel, J. Buchmann, J. Kr ¨amer, H. Mantel, J. Schickel, and
+A. Weber, “Bounding the cache-side-channel leakage of lattice-
+based signature schemes using program semantics,” in Interna-
+tional Symposium on Foundations and Practice of Security, 2017.
+[151] A. Facon, S. Guilley, M. Lec’Hvien, A. Schaub, and Y. Souissi,
+“Detecting cache-timing vulnerabilities in post-quantum cryptog-
+raphy algorithms,” in IEEE International Veriﬁcation and Security
+Workshop, 2018.
+[152] S. Wang, Y. Bao, X. Liu, P. Wang, D. Zhang, and D. Wu,
+“Identifying cache-based side channels through secret-augmented
+abstract interpretation,” in USENIX Security Symposium, 2019.
+[153] R. Brotzman, S. Liu, D. Zhang, G. Tan, and M. Kandemir,
+“Casym: Cache aware symbolic execution for side channel detec-
+tion and mitigation,” in IEEE Symposium on Security and Privacy,
+2019.
+[154] A. Zankl, J. Heyszl, and G. Sigl, “Automated detection of in-
+struction cache leaks in modular exponentiation software,” in
+International Conference on Smart Card Research and Advanced
+Applications, 2016.
+[155] S. Wang, P. Wang, X. Liu, D. Zhang, and D. Wu, “Cached:
+Identifying cache-based timing channels in production software,”
+in USENIX Security Symposium, 2017.
+[156] G. Irazoqui, K. Cong, X. Guo, H. Khattri, A. Kanuparthi, T. Eisen-
+barth, and B. Sunar, “Did we learn from llc side channel attacks?
+a cache leakage detection tool for crypto libraries,” arXiv preprint
+arXiv:1709.01552, 2017.
+[157] J. Wichelmann, A. Moghimi, T. Eisenbarth, and B. Sunar, “Mi-
+crowalk: A framework for ﬁnding side channels in binaries,” in
+ACM Annual Computer Security Applications Conference, 2018.
+[158] S. Weiser, A. Zankl, R. Spreitzer, K. Miller, S. Mangard, and
+G. Sigl, “Data–differential address trace analysis: ﬁnding address-
+based side-channels in binaries,” in USENIX Security Symposium,
+2018, pp. 603–620.
+[159] R. M. Avanzi, “Side channel attacks on implementations of curve-
+based cryptographic primitives.” IACR Cryptology ePrint Archive,
+vol. 2005, 2005.
+[160] J. Fan, X. Guo, E. De Mulder, P. Schaumont, B. Preneel, and
+I. Verbauwhede, “State-of-the-art of secure ecc implementations:
+a survey on known side-channel attacks and countermeasures,” in
+IEEE International Symposium on Hardware-Oriented Security
+and Trust, 2010.
+[161] J. Fan and I. Verbauwhede, “An updated survey on secure ecc
+implementations: Attacks, countermeasures and cost,” in Cryp-
+tography and Security: From Theory to Applications, 2012.
+
+Appendix
+
+1. Cryptographic Ciphers and Protocols
+
+1.1. Elliptic Curve Cryptography. In geometry, an el-
+
+liptic curve is a two-dimensional curve deﬁned by y2 =
+x3 + ax + b. When used in cryptography, we make a few
+
+modiﬁcations. We ﬁrst require 4a3 + 27b2 (cid:54)= 0 to exclude
+singularity. Additionally we apply the curve over a ﬁnite
+ﬁeld, usually with a prime or 2m order, and introduce a
+special inﬁnity point ∞. This forms a group of points,
+with ∞ as identity element and the + operation deﬁned
+as: 1) P + ∞ = P ; 2) if P is the reﬂection of Q over the
+x-axis, then P +Q = ∞; 3) if P and Q are different points
+not in case 2, then the line through P and Q intersects
+the curve with another point R, then P + Q = R(cid:48) where
+R(cid:48) is the reﬂection of R over the x-axis; 4) if P and Q
+are the same point, treat “the line through P and Q” as
+“the line tangent to the curve at P ” and use case 3. Case
+3 and 4 are non-trivial cases and can be computed with
+Equation 1. We usually write P + ... + P as nP , and name
+this operation “scalar multiplication”.
+
+ yq −yp
+
+xq −xp
+3x2
+p+a
+2yp
+
+λ =
+
+(1)
+
+if xq (cid:54)= xp
+
+,
+
+otherwise
+
+,
+xr = λ2 − xp − xq
+yr = λ(xp − xr ) − yp
+
+Elliptic curve can be used in cryptography [45, 46].
+Assuming the group has prime order p and generator G,
+choose a random integer k from [1, p − 1] as the private
+key, then D = kG will be the public key.
+
+Usage in Digital Signature (ECDSA) . To sign message
+
+m, Alice chooses a public hash function h and a secret
+nonce n. Compute R = nG mod p, r = Rx (cannot
+is the signature. To verify, Bob computes u1 = h(m)s−1
+The signature is valid if r ≡ z mod p holds.
+
+be zero), and s = k−1 (h(m) + kr) mod p, then (r, s)
+mod p, u2 = rs−1 mod p, Z = u1G+u2D , and z = Zx .
+
+Usage in Key Exchange (ECDH) . Assuming Alice uses
+
+private key kA and public key PA = kAG, and Bob
+similarly uses key pair (kB , PB ), the shared symmetric
+
+key is simply k = kB PA = kAPB = (kAkB )G.
+
+1.2. Key Exchange and Encryption Protocols. In the
+
+handshake protocol, the client ﬁrst sends a list of cipher
+suites csc and a nonce rc . The server responds with a list
+of cipher suites css , the server certiﬁcate, and a nonce rs .
+Then the client picks a cipher cs (e.g., RSA) supported
+by both the client and server.
+The client generates a random secret string k with byte
+length lk as the master key. We require lk (cid:54) ln −11, where
+ln is the byte length of n in the server’s public key (n, e).
+The client builds a message block m (Equation 2a) using
+a non-zero random padding string pad with byte length
+ln − 3lk , which is at least 8. Then she encrypts m to get
+the ciphertext (Equation 2b).
+
+m = 0x00||0x02||pad||0x00||k
+c ≡ me mod n
+
+(2a)
+(2b)
+
+The server decrypts the received ciphertext and vali-
+dates if the message format complies with Equation 2a.
+If yes, the server sends a ﬁnished message to the client,
+and the client replies a ﬁnished message, marking the
+completion of the key exchange of k .
+Equation 3 shows how to use CBC-MAC to encrypt
+message m with MAC built from a block cipher of block
+size b. (1) The MAC HM is calculated over the sequence
+
+17
+
+Algorithm 2: Square-and-Multiply Modular Exponentiation
+
+Input: x, m, y :yn−1 yn−2 ...y0
+
+Output: xy mod m
+
+1 begin
+for i ← n − 1 to 0 do
+
+r ← 1
+r ← SQUARE(r) mod m
+r ← MULTIPLY(r, x) mod m
+
+if yi = 1 then
+
+return r
+
+Algorithm 3: Square-and-Multiply-always Modular Exponentiation
+
+Input: x, m, y :yn−1 yn−2 ...y0
+
+Output: xy mod m
+
+1 begin
+for i ← n − 1 to 0 do
+
+r ← 1
+r ← SQUARE(r) mod m
+r(cid:48) ← MULTIPLY(r, x) mod m
+
+if yi = 1 then
+r ← r(cid:48)
+
+return r
+
+Algorithm 4: Sliding Window Modular Exponentiation
+
+Input: x, m, y :wn−1wn−2 ...w0
+
+Output: xy mod m
+
+1 begin
+
+for i ← 1 to 2L−1 − 1 do
+
+g [0] ← x mod m
+s ← SQUARE(g [0]) mod m
+g [i] ← MULTIPLY(g [i − 1], s) mod m
+r ← 1
+
+for i ← n − 1 to 0 do
+for j ← 0 to li − 1 do
+if wi (cid:54)= 0 then
+
+r ← SQUARE(r) mod m
+r ← MULTIPLY(r, g [(wi − 1)/2]) mod m
+
+return r
+
+Algorithm 5: Scatter and Gather method
+
+1 s ← 8
+2 m ← 32
+3 b ← 24
+function Scatter(mem, g [i])
+
+for j ← 0 to b − 1 do
+for k ← 0 to s − 1 do
+
+mem[s ∗ m ∗ j + i ∗ 8 + k] ← g [i][j ∗ s + k]
+function Gather(g [i], mem)
+
+for j ← 0 to b − 1 do
+for k ← 0 to s − 1 do
+
+g [i][j ∗ s + k] ← mem[s ∗ m ∗ j + i ∗ 8 + k]
+
+number SEQ, header HDR and message m (Equation 3a).
+(2) The plaintext P is created by concatenating m, HM ,
+and a padding string pad (Equation 3b) chosen so that the
+byte length of P is N b, where N is an integer. The most
+common way is to pad n+ 1 bytes with each byte value as
+n, e.g., 0x02||0x02||0x02. (3) P is divided into a sequence
+of blocks of b bytes, p1 , p2 , ..., pN , and encrypted with
+key K (Equation 3c). (4) The text T transmitted over the
+network is the concatenation of HDR and each ciphertext
+block (Equation 3d).
+
+HM = H ((K ⊕ opad)||H ((K ⊕ ipad)||SEQ||HDR||m))
+P = m||HM ||pad
+ci = EncK (ci−1 ⊕ pi ); i = 1, 2, ..., N
+T = HDR||c1 ||c2 ||..||cN
+
+(3a)
+(3b)
+(3c)
+(3d)
+
+The receiver decrypts T and accepts the message m
+only if the padding format and MAC are correct.
+
+2. Implementations of Cryptographic Operations
+
+We show the pseudo code of implementations for
+different cryptographic operations described in Section 3.
+
+Algorithm 1: Modular Multiplication
+
+Input: x:xk−1 xk−2 ...x0 , y :yn−1 yn−2 ...y0
+
+Output: x ∗ y
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+
+27
+28
+29
+30
+31
+32
+
+33
+34
+35
+36
+
+37
+38
+39
+
+while i ∗ n ≤ k do
+
+function MULTIPLY(x, y)
+if SIZE_OF_LIMBS(x) < KARATSUBA_THRESHOLD then
+r ← MUL_BASECASE(x, y)
+r ← 0
+i ← 1
+t ← MUL_KARATSUBA(xi∗n−1 ...x(i−1)∗n , y)
+r ← ADD_WITH_OFFSET(r, t, (i − 1) ∗ n)
+i ← i + 1
+t ← MULTIPLY(b, ak−1 ...a(i−1)∗n )
+r ← ADD_WITH_OFFSET(r, t, (i − 1) ∗ n)
+
+if i ∗ n > k then
+
+return r
+
+if y0 = 0 then
+
+function MUL_BASECASE(x, y)
+r ← 0
+r ← x
+r ← MUL_BY_SINGLE_LIMB(x, y0 )
+
+else if y0 = 1 then
+
+else
+for i ← 1 to n − 1 do
+if yi = 1 then
+
+else if yi > 1 then
+
+r ← ADD_WITH_OFFSET(r, x, i)
+r ← MUL_AND_ADD_WITH_OFFSET(r, x, yi , i)
+
+return r
+
+r ←
+
+if n mod 2 = 1 then
+
+function MUL_KARATSUBA(x, y)
+if n < KARATSUBA_THRESHOLD then
+return MUL_BASECASE(a, b)
+r ← MUL_KARATSUBA(xn−2 ...x0 , yn−2 ...y0 )
+MUL_AND_ADD_WITH_OFFSET(r, xn−2 ...x0 , yn−1 , n−
+1)
+r ← MUL_AND_ADD_WITH_OFFSET(r, y , xn−1 , n − 1)
+h ← MUL_KARATSUBA(xn−1 ...xn/2 , yn−1 ...yn/2 )
+t ← MUL_KARATSUBA(xn−1 ...xn/2 −
+xn/2−1 ...x0 , yn/2−1 ...y0 − yn−1 ...yn/2 )
+l ← MUL_KARATSUBA(xn/2−1 ...x0 , yn/2−1 ...y0 )
+r ← (22∗32∗n + 232∗n ) ∗ h + 232∗n ∗ t + (232∗n + 1) ∗ l
+
+else
+
+return r
+
+18
+
+2
+3
+4
+5
+6
+7
+
+2
+3
+4
+5
+6
+7
+8
+
+2
+3
+4
+5
+
+6
+7
+8
+9
+10
+11
+12
+
+4
+5
+6
+7
+
+8
+9
+10
+11
+
+4
+5
+6
+7
+8
+9
+
+2
+3
+4
+5
+6
+7
+
+v ← mem[s ∗ m ∗ j + l ∗ 8 + k]
+g [i][j ∗ s + k] ← g [i][j ∗ s + k]|(v&(m == l))
+
+Algorithm 6: Masked Window Gather method
+
+1 s ← 8
+2 m ← 32
+3 b ← 24
+function Gather(g [i], mem)
+
+for j ← 0 to b − 1 do
+for l ← 0 to m − 1 do
+for k ← 0 to s − 1 do
+
+Algorithm 7: Double-and-Add Scalar Multiplication
+
+Input: P , N :nm−1 nm−2 ...n0
+
+Output: N P
+
+1 begin
+for i ← m − 1 to 0 do
+
+r ← 0
+r ← PointDouble(r)
+r ← PointAdd(r, P )
+
+if ni = 1 then
+
+return r
+
+Algorithm 8: Double-and-Add-always Scalar Multiplication
+
+Algorithm 12: Binary Extended Euclidean Algorithm
+
+Input: P , N :nm−1 nm−2 ...n0
+
+Output: N P
+
+1 begin
+for i ← m − 1 to 0 do
+
+r ← 0
+r ← PointDouble(r)
+r(cid:48) ← PointAdd(r, P )
+
+if ni = 1 then
+r ← r(cid:48)
+
+return r
+
+Input: x, m
+Output: x−1 mod m
+1 begin
+
+v ← m
+u ← x
+p ← 1
+q ← 0
+
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+
+while u (cid:54)= 0 do
+while u mod 2 = 0 do
+
+while v mod 2 = 0 do
+
+if p mod 2 = 1 then
+
+if q mod 2 = 1 then
+
+u ← u/2
+p ← p + m
+p ← p/2
+v ← v/2
+q ← q + m
+q ← q/2
+u ← u − v
+p ← p − q
+v ← v − u
+q ← q − p
+
+if u ≥ v then
+
+else
+
+r ← q mod m
+
+return r
+
+while u (cid:54)= 0 do
+
+v ← m
+u ← x
+p ← 1
+q ← 0
+tmp1 ← v div u
+tmp2 ← q − tmp1 ∗ p
+tmp3 ← v − tmp1 ∗ u
+q ← p
+p ← tmp2
+v ← u
+u ← tmp3
+r ← q + m
+r ← q
+
+if q < 0 then
+
+else
+
+return r
+
+Algorithm 13: Extended Euclidean Algorithm
+
+Input: x, m
+Output: x−1 mod m
+1 begin
+
+3. CVSS Calculation (version 2.0)
+
+Equation 4 shows the formula of CVSS 2.0 base
+metrics. The Base score is determined by two sub-scores:
+Exploitability and Impact.
+Exploitability measures the difﬁculty to exploit this
+vulnerability. It is affected by three factors: (1) Access
+Vector (AV ) reﬂects the location that the attacker needs
+to exploit the vulnerability. A farther location is awarded
+a higher score. (2) Access Complexity (AC) embodies
+the difﬁculty of the attack required to exploit the vul-
+nerability once the adversary gains access to the target
+system. Lower complexity is awarded a higher score. (3)
+Authentication (AU ) measures the number of times the
+adversary must authenticate to the system in order to ex-
+ploit the vulnerability. Smaller amount of authentications
+is awarded a higher scores.
+Impact measures how much damage the vulnerability
+can incur to the target system. It is evaluated in terms
+of three security properties: (1) Conﬁdentiality (CImpact)
+refers to the amount of information leaked to the ad-
+versary. (2) Integrity (IImpact) refers to the amount of
+data that the adversary can tamper with. (3) Availability
+(AImpact) measures the loss of access to the system infor-
+mation, resources and services. The possible values of the
+
+19
+
+2
+3
+4
+5
+6
+7
+8
+
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+
+14
+15
+16
+
+17
+18
+19
+20
+21
+22
+23
+24
+25
+
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+
+2
+3
+4
+5
+6
+7
+8
+9
+
+Algorithm 9: Sliding Window Scalar Multiplication
+
+Input: P , N
+Output: N P
+
+1 begin
+
+i ← 0
+
+while N > 0 do
+
+else
+
+else
+
+if N mod 2 = 1 then
+if N mod 2w ≥ 2w−1 then
+
+di ← N mod 2w − 2w
+di ← N mod 2w
+N ← N − di
+di ← 0
+N ← N/2
+i ← i + 1
+g [0] ← P
+g [j ] ← g [j − 1] + P
+r ← 0
+r ← PointDouble(r)
+
+for j ← 1 to 2w−2 − 1 do
+
+for j ← i − 1 to 0 do
+if dj (cid:54)= 0 then
+if dj > 0 then
+
+r ← PointAdd(r, g [dj ])
+r ← PointAdd(r, Negative(g [−dj ]))
+
+else
+
+return r
+
+Algorithm 10: Montgomery ladder Scalar Multiplication
+
+Input: P , N :nm−1 nm−2 ...n0
+
+Output: N P
+
+r ← 0
+
+1 begin
+r(cid:48) ← P
+for i ← m − 1 to 0 do
+if ni = 0 then
+
+r(cid:48) ← PointAdd(r, r(cid:48) )
+r ← PointDouble(r)
+r ← PointAdd(r, r(cid:48) )
+r(cid:48) ← PointDouble(r(cid:48) )
+
+else
+
+return r
+
+Algorithm 11: Branchless montgomery ladder Scalar Multiplication
+
+Input: P , N :nm−1 nm−2 ...n0
+
+Output: N P
+
+r ← 0
+
+1 begin
+r(cid:48) ← P
+for i ← m − 1 to 0 do
+
+ConstSwap(r, r(cid:48) , ni )
+r(cid:48) ← PointAdd(r, r(cid:48) )
+r ← PointDouble(r)
+ConstSwap(r, r(cid:48) , ni )
+
+return r
+
+TABLE 5: Release history of OpenSSL and GNU Crypto (gray entries contain side-channel patches)
+
+Date
+
+0.9.6
+
+0.9.7
+
+0.9.8
+
+1.0.0
+
+1.0.1
+
+1.0.2
+
+1.1.0
+
+1.1.1
+
+2000/09/24
+2001/04/05
+2001/07/09
+2001/12/21
+2002/05/08
+2002/07/30
+2002/08/08
+2002/08/09
+2002/12/05
+2002/12/31
+2003/02/19
+2003/04/10
+2003/09/30
+2003/11/04
+2004/03/17
+2004/05/17
+2004/10/25
+2005/03/22
+2005/04/11
+2005/07/05
+2005/10/11
+2005/10/14
+2006/05/04
+2006/09/05
+2006/09/28
+2007/02/23
+2007/10/11
+2007/10/19
+2008/05/28
+2008/09/15
+2009/01/07
+2009/05/25
+2009/11/05
+2010/02/25
+2010/03/24
+2010/03/29
+2010/06/01
+2010/11/16
+2010/12/02
+2011/02/08
+2011/09/06
+2012/01/04
+2012/01/18
+2012/03/12
+2012/03/14
+2012/04/19
+2012/04/23
+2012/04/26
+2012/05/10
+2013/02/05
+2013/02/11
+2014/01/06
+2014/04/07
+2014/06/05
+2014/08/06
+2014/10/15
+2015/01/08
+2015/01/15
+2015/01/22
+2015/03/19
+2015/06/11
+2015/06/12
+2015/07/09
+2015/12/03
+2016/01/28
+2016/03/01
+2016/03/03
+2016/08/25
+2016/09/22
+2016/09/26
+2016/11/10
+2017/01/26
+2017/02/16
+2017/05/25
+2017/11/02
+2017/12/07
+2018/03/27
+2018/08/14
+2018/09/11
+2018/11/20
+2019/02/26
+
+0.9.6
+0.9.6a
+0.9.6b
+0.9.6c
+0.9.6d
+0.9.6e
+0.9.6f
+0.9.6g
+0.9.6h
+
+0.9.7
+0.9.7a
+0.9.7b
+0.9.7c
+
+0.9.6i
+0.9.6j
+0.9.6k
+0.9.6l
+
+0.9.7d
+
+0.9.6m
+
+0.9.7e
+0.9.7f
+0.9.7g
+
+0.9.8
+0.9.8a
+
+0.9.7h
+0.9.7i
+0.9.7j
+0.9.7k
+0.9.7l
+
+0.9.8b
+0.9.8c
+0.9.8d
+0.9.8e
+0.9.8f
+0.9.8g
+0.9.8h
+0.9.8i
+0.9.8j
+0.9.8k
+0.9.8l
+0.9.8m
+0.9.8n
+
+1.0.0
+1.0.0a
+1.0.0b
+1.0.0c
+1.0.0d
+1.0.0e
+1.0.0f
+1.0.0g
+1.0.0h
+
+0.9.8o
+0.9.8p
+0.9.8q
+0.9.8r
+
+0.9.8s
+0.9.8t
+0.9.8u
+
+1.0.1
+1.0.1a
+
+0.9.8v
+0.9.8w
+
+1.0.0i
+
+1.0.1b
+1.0.1c
+1.0.1d
+1.0.1e
+1.0.1f
+1.0.1g
+1.0.1h
+1.0.1i
+1.0.1j
+1.0.1k
+1.0.1l
+
+0.9.8x
+0.9.8y
+
+1.0.0j
+1.0.0k
+
+1.0.0l
+
+0.9.8za
+0.9.8zb
+0.9.8zc
+0.9.8zd
+0.9.8ze
+
+1.0.0m
+1.0.0n
+1.0.0o
+1.0.0p
+1.0.0q
+
+1.0.2
+1.0.2a
+1.0.2b
+1.0.2c
+1.0.2d
+1.0.2e
+1.0.2f
+1.0.2g
+1.0.2h
+
+0.9.8zf
+0.9.8zg
+
+1.0.0r
+1.0.0s
+
+1.0.1m
+1.0.1n
+1.0.1o
+1.0.1p
+1.0.1q
+1.0.1r
+1.0.1s
+1.0.1t
+
+0.9.8zh
+
+1.1.0
+1.1.0a
+1.1.0b
+1.1.0c
+1.1.0d
+1.1.0e
+1.0.2l
+1.1.0f
+1.0.2m 1.1.0g
+1.0.2n
+1.0.2o
+1.0.2p
+
+1.0.1u
+
+1.0.2i
+1.0.2j
+
+1.0.2k
+
+1.1.0h
+1.1.0i
+
+1.1.1
+1.1.1a
+1.1.1b
+
+1.0.2q
+1.0.2r
+
+1.1.0j
+
+(a) OpenSSL
+
+Date
+
+P1.4.x
+
+P2.0.x
+
+P2.1.x
+
+P2.2.x
+
+L1.5.x
+
+L1.6.x
+
+L1.7.x
+
+L1.8.x
+
+2011/06/29
+2012/12/20
+2013/03/18
+2013/04/18
+2013/05/10
+2013/07/25
+2013/08/19
+2013/10/04
+2013/12/16
+2013/12/18
+2014/01/29
+2014/06/03
+2014/06/23
+2014/06/24
+2014/06/30
+2014/08/07
+2014/08/12
+2014/08/21
+2014/11/06
+2014/12/16
+2015/02/11
+2015/02/18
+2015/02/27
+2015/04/11
+2015/05/12
+2015/06/02
+2015/06/11
+2015/07/01
+2015/08/11
+2015/09/08
+2015/09/10
+2015/10/09
+2015/12/04
+2015/12/20
+2016/01/26
+2016/02/09
+2016/02/18
+2016/03/31
+2016/04/15
+2016/05/04
+2016/06/15
+2016/06/16
+2016/07/14
+2016/08/17
+2016/08/18
+2016/11/18
+2016/12/09
+2016/12/15
+2016/12/20
+2017/01/18
+2017/01/23
+2017/03/01
+2017/04/03
+2017/05/15
+2017/06/02
+2017/06/29
+2017/07/18
+2017/07/19
+2017/07/28
+2017/08/09
+2017/08/27
+2017/08/28
+2017/09/19
+2017/11/07
+2017/11/20
+2017/12/13
+2017/12/20
+2017/12/29
+2018/02/22
+2018/04/09
+2018/05/02
+2018/06/08
+2018/06/11
+2018/06/13
+2018/07/12
+2018/08/30
+2018/10/26
+2018/11/06
+2018/12/14
+2019/02/12
+
+1.5.0
+
+1.4.13
+
+1.5.1
+1.5.2
+
+2.0.20
+
+1.4.14
+
+1.5.3
+
+2.0.21
+2.0.22
+
+1.4.15
+
+1.6.0
+
+1.4.16
+
+1.6.1
+
+2.0.23
+
+1.4.17
+
+2.0.24
+2.0.25
+
+1.4.18
+
+1.5.4
+
+2.0.26
+
+1.6.2
+
+2.1.0
+2.1.1
+2.1.2
+
+2.0.27
+
+1.4.19
+
+1.6.3
+
+2.1.3
+2.1.4
+
+2.0.28
+
+2.1.5
+2.1.6
+2.1.7
+
+2.0.29
+
+1.6.4
+
+2.1.8
+2.1.9
+2.1.10
+
+1.4.20
+
+2.1.11
+
+1.6.5
+
+1.5.5
+
+2.0.30
+
+1.7.0
+
+2.1.12
+
+1.7.1
+
+2.1.13
+2.1.14
+
+1.7.2
+1.7.3
+
+1.4.21
+
+1.5.6
+
+1.6.6
+
+2.1.15
+2.1.16
+
+1.7.4
+1.7.5
+
+2.1.17
+
+1.7.6
+
+2.1.18
+2.1.19
+2.1.20
+2.1.21
+
+1.7.7
+1.7.8
+
+1.8.0
+
+1.4.22
+
+2.1.22
+2.1.23
+
+1.7.9
+
+1.8.1
+
+2.2.0
+2.2.1
+2.2.2
+2.2.3
+
+1.8.2
+
+2.2.4
+
+2.0.31
+
+2.2.5
+2.2.6
+2.2.7
+2.2.8
+
+1.4.23
+
+1.7.10
+
+1.8.3
+
+2.2.9
+2.2.10
+
+1.8.4
+
+2.2.11
+2.2.12
+2.2.13
+
+(b) GNU Crypto
+
+three metrics can be none, partial breach, and complete
+breach.
+
+0,
+if Impact = 0
+Base =
+(0.6 ∗ Impact + 0.4 ∗ Exploitability − 1.5) ∗ 1.176, otherwise
+Exploitability = 20 ∗ AV ∗ AC ∗ AU
+Impact = 10.41 ∗ [1 − (1 − C Impact) ∗ (1 − I Impact) ∗ (1 − AImpact)]
+
+(cid:40)
+
+AV = 0.395 (local) /0.646 (adjacent network) /1 (network)
+AC = 0.35 (high) /0.61 (medium) /0.71 (low)
+AU = 0.45 (multiple) /0.56 (single) /0.704 (no)
+C Impact = 0 (none) /0.275 (partial) /0.66 (complete)
+I Impact = 0 (none) /0.275 (partial) /0.66 (complete)
+AImpact = 0 (none) /0.275 (partial) /0.66 (complete)
+
+(4)
+
+4. Release history of cryptographic libraries
+
+Table 5 shows the release history of OpenSSL and
+GNU Crypto libraries for the past years. We highlight the
+released versions containing side-channel patches in gray.
+For OpenSSL, we observe that it keeps maintaining
+about
+three live branches concurrently throughout
+the
+history. The patches of most vulnerabilities were applied
+to all live branches at the same time. Thus, OpenSSL
+has good cross-branch patch consistency for side-channel
+vulnerabilities.
+The case of GNU Crypto is more complicated. We
+ignore GnuTLS as it has too many branches and ver-
+sions. Libgcrypt was previously a module inside GnuPG
+for cryptographic primitives, but later detached itself to
+become an independent library. As a result, some GnuPG
+
+20
+
+branches (1.4) continued to keep this module, while others
+(2.0, 2.1) did not. Also, some implementations of the same
+operations in GnuPG and Libgcrypt differed signiﬁcantly.
+Thus, side-channel patches across libraries and branches
+appeared fairly inconsistent.
+
+21
+
+

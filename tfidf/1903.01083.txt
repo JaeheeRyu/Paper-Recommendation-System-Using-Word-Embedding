@@ -1,0 +1,2751 @@
+Stochastic Online Learning with Probabilistic Graph Feedback
+
+Shuai Li,1 Wei Chen,2 Zheng Wen,3 Kwong-Sak Leung4
+
+1Shanghai Jiao Tong University, 2Microsoft Research, 3DeepMind, 4The Chinese University of Hong Kong
+1 shuaili8@sjtu.edu.cn, 2weic@microsoft.com, 3 zhengwen@google.com, 4ksleung@cse.cuhk.edu.hk
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+3
+8
+0
+1
+0
+
+.
+
+3
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+We consider a problem of stochastic online learning with gen-
+eral probabilistic graph feedback, where each directed edge
+in the feedback graph has probability pij . Two cases are cov-
+ered. (a) The one-step case, where after playing arm i the
+learner observes a sample reward feedback of arm j with in-
+dependent probability pij . (b) The cascade case where af-
+ter playing arm i the learner observes feedback of all arms
+j in a probabilistic cascade starting from i – for each (i, j )
+with probability pij , if arm i is played or observed, then a
+reward sample of arm j would be observed with independent
+probability pij . Previous works mainly focus on deterministic
+graphs which corresponds to one-step case with pij ∈ {0, 1},
+an adversarial sequence of graphs with certain topology guar-
+antees, or a speciﬁc type of random graphs. We analyze the
+asymptotic lower bounds and design algorithms in both cases.
+The regret upper bounds of the algorithms match the lower
+bounds with high probability.
+
+1
+
+Introduction
+
+Stochastic online learning is a general framework of sequen-
+tial decision problem. At each time, the learner selects (or
+plays) an action from a given ﬁnite action set, receives some
+random reward and observes some random feedback. One
+simplest, though often unrealistic, feedback model is full-
+information feedback where the learning agent can observe
+the random rewards of all actions no matter which action
+is selected. Another popular feedback model is bandit feed-
+back where only the random reward of the selected action
+is revealed to the learner (Auer, Cesa-Bianchi, and Fischer
+2002). Recent studies further generalize them to graph feed-
+back where the feedback model is characterized by a (di-
+rected) graph (Mannor and Shamir 2011). Each edge (i, j )
+means the learner will observe the random reward of action
+j if playing action i. This problem is motivated by advertise-
+ments where the response for a vacation advertisement could
+provide side-information for a similar vacation place and so-
+cial networks where the response from a user to a promotion
+could infer her neighbors to similar offers.
+The problem of online learning with graph feedback
+has been extensively studied in both adversarial (Mannor
+and Shamir 2011; Alon et al. 2015a; Koc ´ak et al. 2014;
+Cohen, Hazan, and Koren 2016; Koc ´ak, Neu, and Valko
+
+2016b) and stochastic settings (Caron et al. 2012; Buccapat-
+nam, Eryilmaz, and Shroff 2014; Tossou, Dimitrakakis, and
+Dubhashi 2017; Wu, Gy ¨orgy, and Szepesv ´ari 2015). While
+many of them assume self-loops on the feedback graphs,
+some succeed to remove this assumption (Alon et al. 2015a;
+Wu, Gy ¨orgy, and Szepesv ´ari 2015) where the reward of
+the selected action might be invisible. This general setting
+would ﬁt into the partial monitoring framework (Bart ´ok et
+al. 2014; Komiyama, Honda, and Nakagawa 2015), but the
+literature on the latter mainly focus on ﬁnite case where the
+possible outcomes are ﬁnite. We also consider general feed-
+back graphs that do not assume self-loops.
+Though some studies assume feedback graphs could vary
+over time or even invisible to the learner before selecting
+actions (Koc ´ak et al. 2014; Tossou, Dimitrakakis, and Dub-
+hashi 2017), most works focus on deterministic graphs or
+an adversarial list of graphs with certain topology guaran-
+tees. To the best of our knowledge, only a few of them work
+on probabilistic graphs with (Koc ´ak, Neu, and Valko 2016a;
+Alon et al. 2017) on adversarial case and (Liu, Buccapat-
+nam, and Shroff 2018) on stochastic case and they only dis-
+cuss about Erd ¨os-R ´enyi random graphs (Erd ˝os and R ´enyi
+1960). Recall that an Erd ¨os-R ´enyi graph with parameter p
+is by random sampling the edge of every pair of nodes with
+probability p independently.
+We consider general probabilistic feedback graphs in both
+the one-step case and the cascade case. The one-step case is
+the usual one where the learner observes reward of j if edge
+(i, j ) exists in the random graph and i is selected. The cas-
+cade case assumes the learner observes reward of j if there
+is a (directed) path from i to j in the random graph and i
+is selected. The observations of the cascade case, in other
+words, follow a probabilistic cascading starting from the se-
+lected action — for each edge (i, j ) with probability pij , if
+action i is either played or observed, then with an indepen-
+dent probability pij a random reward sample of action j will
+be observed. As a motivating example, consider the infor-
+mation propagation in social networks. If selecting a user in
+a social network causes an information cascade in the social
+network, one may be able to observe further feedback from
+the cascade users.
+This paper makes three major contributions.
+
+ 
+ 
+ 
+ 
+ 
+ 
+1. We formalize the setting of stochastic online learning with
+general probabilistic graph feedback and consider both
+the one-step and the cascade cases.
+2. We derive asymptotic lower bounds for both the one-step
+and the cascade cases.
+3. We design algorithms for both the one-step and the cas-
+cade cases and analyze their regrets. Their asymptotic
+upper regret bounds match the asymptotic lower bounds
+with high probability.
+
+Related work The studies on online learning with graph
+feedback started from adversarial online learning with side
+observations where a decision maker can observe rewards
+of other actions as well as observe the reward of the se-
+lected action (Mannor and Shamir 2011). The observation
+structure can be encoded as a directed graph where there is
+an edge (i, j ) if the reward of action j is observed when
+i is selected. Their setting assumes that self-loops exist on
+every node. Alon et al. (2015a) then generalize to arbitrary
+directed graphs as long as each action is observable by se-
+lecting some action. They show the structure of feedback
+graph controls the inherent difﬁculty of the learning prob-
+lem and present a classiﬁcation over graphs. These works
+assume the feedback graph is ﬁxed over time and known
+to the learner. A follow-up (Alon et al. 2015b) extends to
+time-varying feedback graphs where the graphs are revealed
+either at the beginning of the round or at the end of the round
+but assumes good topology properties on the graphs. Kocak
+et al. (2014) also allow the feedback graph to vary over time
+and can be revealed to the learner at the end of the round.
+The results of (Koc ´ak, Neu, and Valko 2016b) depend on the
+topological properties of the feedback graphs. Cohen et al.
+(2016) assume the graph is not revealed in both adversarial
+and stochastic cases. All these works focus on the adversar-
+ial case.
+Besides (Cohen, Hazan, and Koren 2016), there are also
+other works on the stochastic case with deterministic feed-
+back graphs. Caron et al. (2012) ﬁrst study the stochastic
+case with side observations and design UCB-like algorithms
+with improved regret bound over the standard UCB with-
+out additional feedback. Buccapatnam et al. (2014) derive
+an asymptotic lower bound and design two algorithms that
+are near-optimal. Tossou et al. (2017) apply Thompson sam-
+pling and allow the feedback graph to be unknown and/or
+changing. They bound the Bayesian regret in terms of the
+size of minimum clique covering. Wu et al. (2015) con-
+sider general feedback graphs but assume different observa-
+tion variance from different choices of actions. They provide
+non-asymptotic problem-dependent regret lower bound and
+also design algorithms that achieve the problem-dependent
+lower bound and the minimax lower bounds. They are the
+ﬁrst to remove the self-loop assumption in stochastic case.
+There are several works on speciﬁc Erd ¨os-R ´enyi random
+feedback graphs where the feedback graph at each time is
+randomly generated by Erd ¨os-R ´enyi model. Kocak et al.
+(2016a) consider adversarial case with the unknown generat-
+ing probability of the feedback graphs. Liu et al. (2018) con-
+sider stochastic case and design a randomized policy with
+
+Bayesian regret guarantee. Also both of them assume self-
+observability. An updated version (Alon et al. 2017) of Alon
+et al. (2015b) extends one result to Erd ¨os-R ´enyi model in the
+adversarial case. We consider general probabilistic feedback
+graphs and provide gap-dependent regret bounds, which are
+also new in the setting of Erd ¨os-R ´enyi random feedback
+graphs.
+The setting of graph feedback can be ﬁt into a more gen-
+eral setting of partial monitoring (Rustichini 1999; Cesa-
+Bianchi and Lugosi 2006) where feedback matrix and re-
+ward matrix are given for each pair of the chosen action
+and the environment. Bartok et al. (2014) make a signiﬁcant
+progress on classifying ﬁnite adversarial partial monitor-
+ing games which is completed by Lattimore and Szepesvari
+(2019). Komiyama et al. (2015) derive a problem-dependent
+regret lower bound and design an algorithm with asymptoti-
+cally optimal regret upper bound in the stochastic case. Most
+studies on general partial monitoring framework focus on
+ﬁnite case where the number of actions and possible out-
+comes are ﬁnite. The algorithms for general partial monitor-
+ing games are not efﬁcient in our case since the feedback
+matrix might be inﬁnite or exponentially large.
+The cascade observation feedback resembles the inde-
+pendent cascade model in the context of inﬂuence max-
+imization studies (Kempe, Kleinberg, and Tardos 2003;
+Chen, Lakshmanan, and Castillo 2013), but the goal is dif-
+ferent: inﬂuence maximization aims at ﬁnding a set of k
+seeds that generates the largest expected cascade size, while
+our goal is to ﬁnd the best action (arm) utilizing the cas-
+cade feedback. Inﬂuence maximization has been combined
+with online learning in several studies (Vaswani et al. 2015;
+Chen et al. 2016; Wen et al. 2017; Wang and Chen 2017;
+Saritac¸ and Tekin 2017), but again their goal is to maximize
+inﬂuence cascade size while using online learning to gradu-
+ally learn edge probabilities.
+
+2 Settings
+
+Our considered problem is characterized by a quadruple
+(V , E , p, µ), where V = [K ] is a set of K actions, E ⊆
+V × V is a set of directed edges between actions, p :
+E → (0, 1] maps edges to their triggering probabilities,
+and µ = {µi }i∈V encodes the reward distributions of all
+actions. The set of all possible reward distributions is de-
+noted as C . Without loss of generality, we assume that each
+distribution candidate is 1-sub-Gaussian. The set of all fea-
+sible vectors of reward distributions is denoted as S . The
+(directed) probabilistic feedback graph is also denoted as
+G = (V , E , p). We assume that the learner knows G and the
+fact that µi ’s have 1-sub-Gaussian tail, but does not know
+the reward mean θi ’s.
+At each time step t = 1, 2, . . ., the environment ﬁrst draws
+a reward vector rt = (rt (i) : i ∈ V ) by independently sam-
+pling rt (i) ∼ µi , and a random graph Gt = (V , Et ) based
+on G. Speciﬁcally, Et = {(i, j ) ∈ E : otij = 1} ⊆ E ,
+where otij is an independent Bernoulli random variable with
+mean pij . Simultaneously, the learner adaptively chooses an
+action it ∈ V based on its past observations, without observ-
+ing rt or Gt . Then, the learner receives an instantaneous re-
+ward rt (it ), and depending on the speciﬁc feedback model,
+
+it might also observe part of rt . In this paper, we consider
+the following two feedback models:
+
+One-Step Triggering The learner will receive feedback
+
+(j, rt (j )) if and only if (it , j ) ∈ Et .
+
+Cascade Triggering The learner will receive feedback
+(j, rt (j )) if and only if there is a directed path from it to
+j in Gt .
+It is worth pointing out that though the learner receives
+the reward rt (it ), however, if (it , it ) is not in Gt in the one-
+step triggering case, or there is no directed circle from it
+to it in the cascade triggering case, (it , rt (it )) is not ob-
+served. In other words, the learner might not observe the re-
+ward of its chosen action. Also note that existing works with
+graph feedback (Caron et al. 2012; Buccapatnam, Eryilmaz,
+and Shroff 2014; Tossou, Dimitrakakis, and Dubhashi 2017;
+Alon et al. 2015a; Wu, Gy ¨orgy, and Szepesv ´ari 2015)
+are special cases of the one-step triggering case discussed
+above, with pij = 1 for all (i, j ) ∈ E . The work (Liu, Buc-
+capatnam, and Shroff 2018) is also a special case of the one-
+step triggering case but with pij having the same value.
+We assume the feedback graph is observable, that is each
+action has the chance to be observed by pulling some action.
+
+Assumption 1 (observability) For each action j , there is
+
+an edge (i, j ) ∈ E for some i.
+Next assumption states each feasible distribution vector
+is composed of distributions of “same type”. For example,
+distributions over a bounded interval will not be put together
+with Gaussian distributions.
+
+Assumption 2 (same type) For each µ ∈ S , KL(µi , µj )
+
+is well-deﬁned for any i, j ∈ V . For each µ ∈ C V , if
+KL(µi , µj ) is well-deﬁned for any i, j ∈ V , then µ ∈ S .
+The last assumption says the KL divergence of the reward
+distributions is continuous with respect to the their means.
+Assumption 3 (continuity) There exists some universal
+constant B > 0 such that for each µi , µj ∈ C and any
+ ∈ (0, 1), there exists µ(cid:48)
+i ∈ C satisfying KL(µj , µ(cid:48)
+is well-deﬁned, θ(µi ) +  ≤ θ(µ(cid:48)
+
+i )
+i ) < θ(µi ) + 2 and
+
+The learner’s objective is to maximize its expected cu-
+mulative reward, or equivalently, to minimize its expected
+cumulative regret
+
+|KL(µj , µ(cid:48)
+i ) − KL(µj , µi )| ≤ B .
+θ(µi ) − E (cid:104)(cid:80)T
+
+Rµ (T ; G) = T max
+
+(cid:105)
+
+t=1 θ(µit )
+
+,
+
+i∈V
+
+where the expectation is over the randomness of rt and Gt .
+Here θ : C → R is the mapping from the distributions to
+their means.
+We will omit G in the regret expression and write θ(µi )
+as θi if the context is clear. For simplicity, we assume there
+is only one best action and θ1 > θ2 ≥ θ3 ≥ · · · ≥ θK .
+Denote θ = (θi : i ∈ V ). Let ∆i (µ) = θ1 − θi be the reward
+gap between the best action and action i. Denote ∆(µ) =
+(∆i (µ) : i ∈ V ). We will omit µ in the above notations if
+the context is clear.
+
+Let V in (j ) = {i ∈ [K ] : (i, j ) ∈ E } be the set of incom-
+ing neighbors of action j . Let Ni (t) be the number of times
+the learner selects an action i and N (t) = (Ni (t) : i ∈ V )
+by the end of time t.
+For general µ, let ik (µ) be the k-th best action index for
+the distributions µ, which has the k-th largest mean. We
+will write ik for simplicity when the context is clear. Then
+
+θi1 (µ) > θi , ∀i (cid:54)= i1 (µ).
+
+3 Asymptotic Lower Bounds
+
+3.1 Lower Bound for One-Step Triggering
+
+(cid:40)
+
+Deﬁne
+
+C (µ) =
+
+(cid:88)
+
+i∈V in (1)
+
+c ∈ [0, ∞)V :
+
+(cid:88)
+
+i∈V in (j )
+
+pi1 ci ≥
+
+1
+KL(µ2 , µ1 )
+
+(cid:41)
+
+pij ci ≥
+
+1
+KL(µj , µ1 )
+
+, ∀j (cid:54)= 1;
+
+.
+
+(1)
+Each element in the set represents an asymptotic pulling
+“fraction” of arms that can be used to distinguish these arms
+from the best arm.
+Recall that an algorithm is consistent if Rµ (T ) = o(T a )
+for any a > 0 and any feasible µ ∈ S . Then the asymptotic
+lower bound for any consistent algorithm is provided in the
+following theorem.
+Theorem 1 For any consistent algorithm, the regret satis-
+ﬁes
+
+lim inf
+
+T →∞
+
+Rµ (T )
+log T
+
+≥ inf
+
+c∈C (µ)
+
+(cid:104)c, ∆(µ)(cid:105) .
+
+(2)
+
+Note this lower bound can easily recover the lower bound
+in (Wang and Chen 2017, Theorem 3) where they only con-
+sider a special probabilistic graph G.
+Proof. Fix any consistent algorithm and any distribution
+vector µ.
+For any j (cid:54)= 1 and n ≥ 1, by Assumption 3, there exists
+j ∈ C such that θ1 + 1
+and
+i = µi for any i (cid:54)= j . Then by Assumption 2,
+by setting µ(n)
+
+(cid:17) − KL(µj , µ1 )
+2n ≤ θ
+
+< θ1 + 1
+2n . Deﬁne µ(n) = µ
+
+(cid:16)
+(cid:12)(cid:12)(cid:12) ≤ B
+
+(cid:12)(cid:12)(cid:12)KL
+
+µj , µ(n)
+j
+
+a µ(n)
+
+µ(n)
+j
+
+(cid:17)
+
+(cid:16)
+
+2n−1
+
+µ(n) ∈ S .
+
+Let
+
+H = {i1 , {r1 (j ) : (i1 , j ) ∈ E1};
+i2 , {r2 (j ) : (i2 , j ) ∈ E2}; . . .}
+
+be the random variable of all outcomes, which is based on
+µ, the algorithm and the graph realizations. Let P and P(n)
+be the probability distribution over all possible realisations
+of outcomes when the distribution vector is µ and µ(n) re-
+spectively.
+By high-dimensional Pinsker’s inequality (Lattimore and
+Szepesvari 2017, Lemma 5),
+
+P [N1 (T ) < T /2] + P(n) [N1 (T ) ≥ T /2]
+
+≥ 1
+
+2
+
+exp
+
+(cid:16)−KL
+
+(cid:16)P, P(n)(cid:17)(cid:17)
+
+.
+
+Note that
+
+KL
+
+(cid:16)P, P(n)(cid:17)
+
+=
+
+(cid:88)
+(cid:16)
+
+i∈V in (j )
+µj , µ(n)
+j
+
+pij E [Ni (T )] KL
+
+(cid:16)
+
+µj , µ(n)
+j
+
+(cid:17)
+
+(3)
+
+≤ KL
+
+(cid:17) (cid:88)
+
+i∈V in (j )
+
+pij E [Ni (T )] .
+
+Then(cid:88)
+
+i∈V in (j )
+
+pij E [Ni (T )]
+
+≥
+
+1
+
+KL
+
+(cid:16)
+
+µj , µ(n)
+j
+
+(cid:17)
+
+· log
+
+1/2
+P [N1 (T ) < T /2] + P(n) [N1 (T ) ≥ T /2]
+Rµ (T )/(∆2 · T /2) + Rµ(n) (T )/ (cid:0) 1
+2n · T /2(cid:1)
+1/2
+(cid:17) log
+T /4
+,
+Rµ (T )/∆2 + Rµ(n) (T )/ 1
+
+≥
+
+1
+
+KL
+
+(cid:16)
+
+µj , µ(n)
+j
+
+(cid:17)
+
+· log
+
+=
+
+1
+
+KL
+
+(cid:16)
+
+µj , µ(n)
+j
+
+2n
+
+where the second inequality is due to
+
+Rµ (T ) ≥ P [N1 (T ) < T /2] ∆2 · T /2 ,
+Rµ (T ) ≥ P [N1 (T ) ≥ T /2]
+θ
+
+(cid:16)
+
+(cid:16)
+
+µ(n)
+j
+
+(cid:17) − θ1
+
+(cid:17)
+
+T /2 .
+
+Since the algorithm is consistent, Rµ (T ) = o(T a ) and
+Rµ(n) (T ) = o(T a ) for any a > 0, or equivalently
+
+lim sup
+
+Thus (cid:88)
+T →∞
+T →∞
+Next take n → ∞,(cid:88)
+T →∞
+For j = 1 and n ≥ 1,
+
+log Rµ (T )
+log T
+
+= 0 ,
+
+lim sup
+
+T →∞
+
+log Rµ(n) (T )
+log T
+
+= 0 .
+
+i∈V in (j )
+
+pij lim inf
+
+E [Ni (T )]
+log T
+
+≥
+
+1
+
+KL
+
+(cid:16)
+
+µj , µ(n)
+j
+
+(cid:17) .
+
+i∈V in (j )
+
+E [Ni (T )]
+pij lim inf
+log T
+(cid:17) − KL(µ2 , µ1 )
+(cid:54)= µ2 with θ1 + 1
+2n ≤ θ
+E [Ni (T )]
+log T
+
+≥
+
+1
+KL(µj , µ1 )
+
+.
+
+take µ(n) = µ except
+
+µ(n)
+2
+
+(cid:16)
+(cid:17)
+(cid:12)(cid:12)(cid:12) ≤ B
+
+µ(n)
+2
+
+< θ1 + 1
+
+2n−1 and
+
+(cid:12)(cid:12)(cid:12)KL
+
+(cid:16)
+
+µ2 , µ(n)
+2
+
+2n . Similar result fol-
+
+lows (cid:88)
+T →∞
+regret is Rµ (T ) = (cid:80)K
+Thus the vector lim inf T →∞
+log T ∈ C (µ). Recall the
+lows. (cid:3)
+E [Ni (T )] ∆i (µ). The result fol-
+
+i∈V in (1)
+
+pi1 lim inf
+
+≥
+
+1
+KL(µ2 , µ1 )
+
+.
+
+E[N (T )]
+
+i=1
+
+3.2 Lower Bound for Cascade Triggering
+
+Let p(cid:48)
+ij be the probability that there is a directed path from i
+to j in a random realization of G. Deﬁne
+
+C (cid:48) (µ) =
+
+(cid:40)
+
+c ∈ [0, ∞)V :
+
+(cid:88)
+
+i
+ij ci ≥
+
+p(cid:48)
+
+i1 ci ≥
+
+1
+KL(µ2 , µ1 )
+
+(cid:88)
+
+i
+
+p(cid:48)
+
+1
+KL(µj , µ1 )
+
+, ∀j (cid:54)= 1
+
+(cid:41)
+
+.
+
+Theorem 2 For any consistent algorithm, the regret satis-
+ﬁes
+
+lim inf
+
+T →∞
+
+Rµ (T )
+log T
+
+≥ inf
+
+c∈C (cid:48) (µ)
+
+(cid:104)c, ∆(µ)(cid:105) .
+
+This proof is similar to the above one by replacing (3)
+with the following formula
+p(cid:48)
+
+KL
+
+(cid:16)P, P(n)(cid:17)
+
+=
+
+(cid:88)
+
+i
+
+ij
+
+E [Ni (T )] KL
+
+(cid:16)
+
+µj , µ(n)
+j
+
+(cid:17)
+
+.
+
+Note that the computation of p(cid:48)
+ij is #P-hard for general
+graphs (Valiant 1979; Wang, Chen, and Wang 2012). Thus
+the lower bound is not efﬁciently computable even when µ
+is known.
+
+4 Algorithm and Analysis
+
+In this section, we design algorithms that can match the
+lower bounds with high probability asymptotically. The
+lower bounds in the last section are stated in terms of
+KL-divergence of distributions. Since the KL-divergence of
+a real distribution and its estimated empirical distribution
+might be undeﬁned, we assume the KL-divergence of distri-
+butions could be represented by their corresponding means
+and is also continuous in means, which is also a tradition
+in bandit area. For example, a previous work (Wu, Gy ¨orgy,
+and Szepesv ´ari 2015) assumes distributions to be Gaussian
+to make statement simpler. We will give more discussions
+in Section 4.4. In the following, we use mean vector θ to
+represent the vector of distributions µ for simplicity.
+Let ˆθt be the sample-mean estimates of θ by the end of
+time t. Let nij (t) be the number of times that action i is
+selected and reward for action j is observed by the end of
+
+time t. Then E [nij (t) | Ni (t)] = Ni (t)pij . Let mj (t) =
+
+(cid:80)
+
+i nij (t) be the number of observations for action j by the
+end of time t.
+
+4.1 One-Step Uniform Case
+
+The uniform case in which all pij ’s have the same value p
+is ﬁrst considered in this section. When E contains edges
+between every pair of actions, this graph reduces to Erd ¨os-
+R ´enyi random graph with parameter p.
+i∈V in (j ) Ni (t)p be the expected num-
+ber of observations for action j at the end of time t. Then
+
+Let Mj (t) = (cid:80)
+E [mj (t) | Mj (t)] = Mj (t).
+
+The pseudocode of the algorithm is provided in Algorithm
+1. It starts with the initialization of N e and the estimates of
+
+Algorithm 1 One-Step Uniform Case
+
+3:
+4:
+5:
+6:
+7:
+8:
+9:
+
+else if N (t−1)
+
+1: Set N e (0) = 0 and ˆθ0 = (1, 1, ..., 1).
+2: for t = 1, 2, . . . do
+if mj (t − 1) < Mj (t − 1)/2 for some j then
+Play it ∈ V in (j );
+N e (t) = N e (t − 1);
+16 log(t−1) ∈ C ( ˆθt−1 ) then
+N e (t) = N e (t − 1)
+Play it = i1 ( ˆθt−1 );
+else if Mj (t − 1) < 2β (N e (t − 1)) /K for some j
+Play it ∈ V in (j );
+N e (t) = N e (t − 1) + 1;
+Play it such that Ni (t−1) < 16 ci ( ˆθt−1 ) log(t−1);
+N e (t) = N e (t − 1) + 1;
+
+then
+
+else
+
+10:
+11:
+12:
+13:
+
+14:
+15:
+
+end if
+16: end for
+
+θ (line 1). Here N e is the number of exploration rounds for
+the learner to know more about unknown θ which will be
+clearer later. At each time t, if for some j the real observa-
+tion times of action j is less than half the expected observa-
+tion times (line 3), then the learner selects a parent of j to
+try to observe reward of j once more (line 4) and keeps N e
+unchanged (line 5). Note that E [mj (t) | Mj (t) = m] = m
+and mj (t) will concentrate at m as m goes to inﬁnity. The
+condition mj (t) < Mj (t)/2 means part of the realizations
+of graph G is far from the expectation and 2 can be changed
+to other larger-than-1 constant. This is one of the key differ-
+ences from deterministic graph feedback (Wu, Gy ¨orgy, and
+Szepesv ´ari 2015) where the number of observations is well
+controlled by just selecting actions. While under the proba-
+bilistic graph feedback, there is a gap between the number
+of real observations and expected number of observations.
+When mj (t) ≥ Mj (t)/2 for all j , then the realizations of
+G are good enough and the learner can rely on the quanti-
+ties of selections to control the accuracy of the estimates. If
+the selection vector is good enough for current ˆθ under cur-
+rent accuracy level (line 6), then the learner will exploit the
+current best action (line 7) and keep N e unchanged. Here
+C (·) is deﬁned as in (1) and represents the set of good se-
+lected “fractions” of actions that are able to identify the re-
+ward gaps between actions.
+If the current selection vector N is not good enough, then
+the learner will ﬁrst check if ˆθ is close enough to θ (line 9-
+11) and if yes, will explore according to current ˆθ . The num-
+ber N e of exploration rounds for the learner to know more
+about θ will increase in this part (line 11&14). The condition
+of line 9 has an auxiliary function β : N → [0, ∞) to guide
+the exploration such that ˆθ will be close to θ in the long run.
+This auxiliary function is also crucial in previous work (Wu,
+Gy ¨orgy, and Szepesv ´ari 2015) to control the regret bound in
+the asymptotic sense. The auxiliary function β can be any
+non-decreasing function satisfying 0 ≤ β (n) ≤ n/2 and the
+
+subadditivity β (m + n) ≤ β (m) + β (n). If some component
+of ˆθ has not been explored enough (line 9), then the learner
+selects a parent to try to get one more observation (line 10)
+and increases N e (line 11).
+When all components of ˆθ are close to θ , the learner se-
+lects an action according to the current ˆθ with minimal cost
+on the regret instructed by the asymptotic lower bound (2).
+Here ci (θ (cid:48) ) denotes any optimal solution of the linear pro-
+gramming problem that minimizes (cid:104)c, θ (cid:48) (cid:105) among all c ∈
+C (θ (cid:48) ). Since ˆθ is close enough to θ under current accuracy
+level, the vector ci ( ˆθt−1 ) is close enough to ci (θ) (which is
+part of the proof for the following theorem). There must be
+
+at least an i such that Ni (t − 1) < 16 ci ( ˆθt−1 ) log(t − 1) or
+
+else the condition of line 6 holds.
+The regret bound for the algorithm is stated as follows.
+Theorem 3 The regret of Algorithm 1 for one-step uniform
+case satisﬁes for any  > 0,
+
+Rθ (T ) ≤ 4 log(T )
+
+ci (θ , )∆i (θ)
+
++ 10 log(K T 2 )
+
+(cid:32)
+
+K(cid:88)
+
+∆i (θ)
+p
+
++ 4
+
+(cid:19)
+
+− β (s)2
+2K
+
+(cid:18)
+
+exp
+
+T(cid:88)
+(cid:33)
+
+s=0
+
+K(cid:88)
+
+i=1
+
+K(cid:88)
+
+i=1
+
+i=1
+
+(cid:17)
+
+lim sup
+
++ 15K ,
+
+(cid:16)− β (s)2
+2K
+
+Rθ (T )/ log(T ) ≤ 4 inf
+
++ 2β
+4
+ci (θ , ) log(T ) + K
+where ci (θ , ) = sup{ci (θ (cid:48) ) : (cid:12)(cid:12)θ (cid:48)
+j − θj
+s=0 exp
+
+(cid:12)(cid:12) ≤ , ∀j ∈ [K ]}.
+(4)
+Assume β (n) = o(n) and (cid:80)∞
+< ∞ for
+any  > 0. Then for any θ such that c(θ) is unique,
+Note that any β (n) = anb with a ∈ (cid:0)0, 1
+T →∞
+(cid:3) , b ∈ (0, 1) meets
+(5)
+holds with probability at least 1 − δ for any δ > 0.
+the requirements. The proof is by bounding the forced ex-
+ploration (line 9-11), the exploration by LP solutions (line
+13-14) and the exploitation (line 6-8). The main difference
+with previous works is to bound the difference of realized
+random graphs and the expected graph (line 3-5). The de-
+tailed proof is provided in Section A.
+
+(cid:104)c, ∆(θ)(cid:105)
+
+c∈C (θ)
+
+2
+
+4.2 One-Step General Case
+
+In the general case where pij can be different, Mj (t) =
+i∈V in (j ) Ni (t)pij . The algorithm follows as in Algorithm
+1 by only replacing line 4 with
+
+(4’) Play it ∈ argmaxi∈V in (j )pij .
+
+(cid:80)
+
+(cid:110)
+
+Let
+
+V e =
+
+i ∈ [K ] : i ∈ argmaxi(cid:48)∈V in (j )pi(cid:48) j for some j
+
+(6)
+be the set of exploration nodes that have the largest live prob-
+ability among all incoming edges to some j . Let
+
+pe
+i = min
+
+pij : i ∈ argmaxi(cid:48)∈V in (j )pi(cid:48) j for some j
+
+(7)
+
+(cid:110)
+
+(cid:111)
+
+(cid:111)
+
+be the minimal exploration probability for any i ∈ V e . With
+a modiﬁed proof to the uniform case, the theoretical guaran-
+tee for the general case follows.
+Theorem 4 The regret of the modiﬁed Algorithm 1’ for one-
+step general case satisﬁes for any  > 0,
+
+K(cid:88)
+
+i=1
+
+Rθ (T ) ≤ 4 log(T )
+
+ci (θ , )∆i (θ)
+
+(cid:88)
+
+i∈V e
+
+∆i (θ)
+pe
+
+i
+
+(cid:19)
+
+− β (s)2
+2K
+
+(cid:33)
+
++ 10 log(K T 2 )
+
+T(cid:88)
+(cid:32)
+
+s=0
+
+(cid:18)
+K(cid:88)
+
++ 4
+
+exp
+
+ˆV e =
+
+(8)
+
+ˆpe
+i = min
+
+the computation of p(cid:48)
+ij is #P-hard for general graphs, and
+thus the accurate graph G(cid:48) is unattainable, though it can be
+approximated within any accuracy by Monte Carlo simula-
+tions. Therefore, during the running of the algorithm, a rea-
+sonable approximation of G(cid:48) is needed.
+Deﬁne V e (cid:48) and pe
+(cid:48) similarly with (6) and (7) by replacing
+pij with p(cid:48)
+ij . Since the computation of p(cid:48)
+ij is #P-hard, we
+deﬁne an estimated version of V e (cid:48) and pe
+(cid:48) respectively:
+
+i
+
+i
+
+(cid:27)
+(cid:27)
+
+i(cid:48) p(cid:48)
+max
+i(cid:48) p(cid:48)
+max
+
+i(cid:48) j for some j
+
+i(cid:48) j for some j
+
+(cid:26)
+
+(cid:26)
+
+i ∈ [K ] : p(cid:48)
+ij ≥ 1
+2
+ij ≥ 1
+ij : p(cid:48)
+2
+i ≥ pe
+
+p(cid:48)
+
+i(cid:48)
+
+for any i ∈ ˆV e . Then ˆpe
+(cid:48)/2 for some i(cid:48) .
+functions η : N+ → [0, 1) to set up the tolerance of the ap-
+To overcome the stated challenge, we need an auxiliary
+proximation. At each time t, the path from i to j with prob-
+ability p(cid:48)
+ij ≤ η(t) can be treated as nonexistent (with prob-
+ability 0) and the estimation of p(cid:48)
+ij has noise at most η(t)/2
+if the real value p(cid:48)
+ij > η(t). Any non-increasing function
+with limit 0 can be chosen as η . The choice of η is to control
+the complexity of the graph with only focusing the path of a
+reasonable length.
+Let LP(θ (cid:48) , η) be the following linear programming prob-
+lem
+
+min(cid:104)∆(θ (cid:48) ), c(cid:105)
+
+(10)
+
+1
+
+ij
+
+∆2
+
+∆2
+
+i2 (θ(cid:48) )
+
+(θ(cid:48) ) .
+
+ij > η and bi (θ (cid:48) ) = 1
+i (θ(cid:48) ) for i (cid:54)=
+i1 (θ (cid:48) ) and bi1 (θ(cid:48) ) (θ (cid:48) ) =
+
+over all c ∈ RK satisfying P (cid:62) c ≥ b(θ (cid:48) ) and c ≥ 0
+(cid:12)(cid:12)Pij − p(cid:48)
+(cid:12)(cid:12) ≤ η/2 if p(cid:48)
+where P ∈ [0, 1]K×K satisﬁes Pij = 0 if p(cid:48)
+ij ≤ η and
+With the approximation Gt and the estimated value for re-
+ward vector ˆθt−1 , the linear programming problem consid-
+ered in time t is LPt = LP( ˆθt−1 , η(t)) and the correspond-
+ing P in (10) is denoted as Pt . Then the algorithm runs with
+LPt accordingly. The complete pseudocode is presented in
+Algorithm 2. In particular, the examination on the realiza-
+tion is performed on approximated graph Gt with probabil-
+ity matrix Pt (line 3). The exploitation condition is on the
+LPt (line 6). Here Sfeas (LPt ) is the feasible solution set of
+the linear programming problem LPt which is the set of all
+c ∈ RK satisfying P (cid:62)
+t c ≥ b, c ≥ 0. The exploration when
+all components of estimated ˆθ are accurate enough with min-
+imal cost instructed by linear programming solutions is also
+related to LPt (line 13). Here Sopt (LPt ) is the optimal so-
+lution set of LPt .
+Also M (cid:48)
+i Ni (t)(Pt )ij is changed accordingly.
+The regret of the Algorithm 2 is upper bounded in the
+following theorem.
+
+j (t) = (cid:80)
+
+Theorem 5 The regret of the Algorithm 2 for cascade case
+
+4
+
++ 2β
+
+ci (θ , ) log(T )
+
+Assume β (n) = o(n) and (cid:80)∞
+any  > 0. Then for any θ such that c(θ) is unique,
+
+(cid:16)− β (s)2
+2K
+
+s=0 exp
+
+(cid:17)
+
+i=1
+
++ 15K .
+
+< ∞ for
+
+lim sup
+
+Rθ (T )/ log(T ) ≤ 4 inf
+
+(cid:104)c, ∆(θ)(cid:105)
+
+T →∞
+holds with probability at least 1 − δ for any δ > 0.
+
+c∈C (θ)
+
+(9)
+
+4.3 Cascade Case
+
+Algorithm 2 Cascade Case
+
+1: Set N e (0) = 0 and ˆθ0 = (1, 1, ..., 1). η : N+ → [0, 1).
+2: for t = 1, 2, . . . do
+if mj (t − 1) < M (cid:48)
+Play it = i if (Pt )ij ≥ 1
+2 maxi(cid:48) (Pt )i(cid:48) j ;
+N e (t) = N e (t − 1);
+
+j (t − 1) /2 for some j then
+
+else if N (t−1)
+
+16 log(t−1) ∈ Sfeas (LPt ) then
+
+else if M (cid:48)
+then
+
+Play it = i1 ( ˆθt−1 );
+N e (t) = N e (t − 1)
+j (t − 1) < 2β (N e (t − 1))/K for some j
+Play it ∈ V in (j );
+N e (t) = N e (t − 1) + 1;
+Play it = i such that Ni (t − 1) < 16 ct,i log(t − 1)
+where ct ∈ Sopt (LPt );
+N e (t) = N e (t − 1) + 1;
+
+else
+
+3:
+4:
+5:
+6:
+7:
+8:
+9:
+
+10:
+11:
+12:
+13:
+
+14:
+15:
+
+end if
+16: end for
+
+For the deterministic graphs, there is no essential differ-
+ence between one-step case and cascade case — the cas-
+cade case on a deterministic graph would be equivalent to
+constructing a new graph where an edge exists if and only
+if there is a path on the original graph. For a probabilis-
+tic graph, one might try a similar solution for the cascade
+case by constructing a new graph G(cid:48) where the probability
+of an edge (i, j ) is just the probability p(cid:48)
+ij of i connecting
+to j in a random realization of the original graph. However
+
+satisﬁes for any  > 0,
+
+K(cid:88)
+
+i=1
+
+Rθ (T ) ≤4
+
+∆i (θ) max
+
+t∈[T ]
+
+{ci (θ , , η(t)) log(t)}
+
++ 10 log(K T 2 )
+
+K(cid:88)
+(cid:18)
+
+i=1
+
+(cid:32)
+T(cid:88)
+
+s=0
+
++ 2β
+
+4
+
+max
+
+t∈[T ]
+
+{ci (θ , , η(t)) log(t)} + K
+
++ 4
+
+exp
+
+− β (s)2
+2K
+
++ 15K ,
+
+(11)
+
+(cid:88)
+
+i∈ ˆV e
+
+∆i (θ)
+ˆpe
+
+i
+
+(cid:19)
+
+(cid:33)
+
+sup (cid:8)ci : c ∈ Sopt (LP(θ (cid:48) , η)) and (cid:12)(cid:12)θ (cid:48)
+ci (θ , , η) =
+j − θj
+s=0 exp
+
+where
+Assume β (n) = o(n) and (cid:80)∞
+any  > 0. Then for any θ such that c(θ) is unique,
+
+(cid:16)− β (s)2
+2K
+
+(cid:17)
+
+(cid:12)(cid:12) ≤ , ∀j ∈ [K ](cid:9) .
+
+< ∞ for
+
+(12)
+
+lim sup
+
+Rθ (T )/ log(T ) ≤ 4 inf
+
+(cid:104)c, ∆(θ)(cid:105)
+
+c∈C (cid:48) (θ)
+
+T →∞
+holds with probability at least 1 − δ for any δ > 0.
+The result depends on the robustness of the linear pro-
+gramming problems. The P matrix in the LP problem (10)
+is noisy, which is much different from one-step case and the
+case of deterministic graphs where the noise is only on θ (cid:48) .
+See discussions in the next section. The full proof is put in
+Section B.
+
+4.4 Discussions
+
+The assumptions on the reward distributions are mainly used
+to ensure that the learning algorithms are able to differen-
+tiate them in the worst case (or the regret lower bound).
+The Gaussian distribution, Bernoulli distribution and com-
+mon continuous random distribution on a common bounded
+interval like Beta distribution all satisfy the requirements.
+The assumption that the reward distribution can be repre-
+sented by its mean is commonly adopted in bandit literature.
+Since there is always gap between a continuous distribution
+with its discrete empirical estimate and the reward only cares
+about the mean, previous works hardly choose to estimate
+the real distribution but mainly choose to estimate the mean.
+The real mean can be well analysed by constructing a conﬁ-
+dence interval around the sample mean.
+The term O
+in the regret bound for
+one-step uniform case (same for other two cases) is due to
+the gap between the realizations and the expectations of the
+probabilistic graphs. Such a term can be removed in the
+asymptotic sense with high probability based on a different
+proof. With high probability, the connection between the re-
+alizations and the expectations of the probabilistic graphs
+can be guaranteed for large enough T , so the realizations
+of the probabilistic graphs are good enough and no regret
+
+log(T ) (cid:80)K
+
+∆i (θ)
+p
+
+(cid:16)
+
+(cid:17)
+
+i=1
+
+i
+
+i
+
+i
+
+i = p.
+
+i ≥ pe
+
+i = maxi(cid:48) pi(cid:48) j for some j ,
+
+would be caused from line 3 - 5 of Algorithm 1 for large
+also appears in the regret O((cid:112)T /p) of (Koc ´ak, Neu, and
+enough T . If we remove the high probability condition, such
+a 1/p term remains in the asymptotic sense. Such 1/p term
+Valko 2016a) on Erd ¨os-R ´enyi random graphs in adversarial
+setting, as compared with adversarial case on deterministic
+graphs. It is not clear whether this 1/p term represents hind-
+sight difﬁculty between the probabilistic graphs and deter-
+ministic graphs. This would be an interesting future direc-
+tion.
+The terms {pe
+: i ∈ [K ]} in the one-step general case
+describes the minimal exploration probabilities to observe
+every action. For each i ∈ [K ], pe
+that is pij is the largest live probabilities among all incoming
+edges for some j . These terms represent the problem com-
+plexities for the underlying probabilistic graph. When all pij
+are equal to p, pe
+The term pe
+(cid:48) in the cascade case is usually larger than pe
+since it takes the same operations on the connection prob-
+abilities of incoming paths which are larger than live prob-
+abilities of incoming edges. The term ˆpe
+i is an estimation
+(cid:48)/2 for some i(cid:48) .
+satisfying ˆpe
+Next we discuss the difference in proof of the cascade
+case. If the noise of the linear programming problems is on
+the b vector in (10), then by the standard results in statis-
+tics (Dontchev and Rockafellar 2009, §3C.5), the resulting
+optimal solution sets are Lipschitz continuous. The property
+of Lipschitz continuity is essential since actions are selected
+according to the optimal solution of a noisy LP problem (line
+13) and we need to guarantee this kind of selections is safe.
+The noise on ∆ vector in (10) is also easy to deal with by
+considering the dual problem. However, it is much different
+if the noise is on the P matrix. For example, consider the
+LP problem that minimizes x over all ax ≥ 1 and x ≥ 0
+with parameter a > 0. The optimal solution x∗ = 1/a is
+not Lipschitz continuous with respect to a. So the standard
+statistical tools could not apply here. We derive a novel prop-
+erty of the Lipschitz continuity when there is noise on P for
+our speciﬁc P matrix.
+Last we would like to stress that our regret bounds are the
+ﬁrst gap-dependent bounds even under the one-step uniform
+case, which contains the simple case of Erd ¨os-R ´enyi random
+graph feedback. The previous works on Erd ¨os-R ´enyi ran-
+dom graphs study gap free bound, no matter in the stochastic
+setting or the adversarial setting.
+
+i(cid:48)
+
+5 Conclusion and Future Work
+
+We are the ﬁrst to formalize the setting of stochastic on-
+line learning with probabilistic feedback graph. We derive
+asymptotic lower bounds for both one-step and cascade
+cases. The regret bounds of our designed algorithms match
+the lower bounds with high probability.
+This framework is new and we only provide asymp-
+totic lower bounds and ﬁnite-time problem-dependent up-
+per bounds. Finite-time lower bounds and minimax up-
+per/lower bounds are all interesting future directions. De-
+riving Bayesian regret bounds is also an interesting topic.
+
+Acknowledgement
+
+Thank Houshuang Chen for help on the experiments.
+
+References
+
+[Alon et al. 2015a] Alon, N.; Cesa-Bianchi, N.; Dekel, O.;
+and Koren, T. 2015a. Online learning with feedback graphs:
+Beyond bandits. In Conference on Learning Theory, 23–35.
+[Alon et al. 2015b] Alon, N.; Cesa-Bianchi, N.; Dekel, O.;
+and Koren, T. 2015b. Online learning with feedback graphs:
+Beyond bandits. arXiv preprint arXiv:1502.07617.
+[Alon et al. 2017] Alon, N.; Cesa-Bianchi, N.; Gentile, C.;
+Mannor, S.; Mansour, Y.; and Shamir, O.
+2017. Non-
+stochastic multi-armed bandits with graph-structured feed-
+back. SIAM Journal on Computing 46(6):1785–1826.
+[Auer, Cesa-Bianchi, and Fischer 2002] Auer,
+P.; Cesa-
+Bianchi, N.; and Fischer, P. 2002. Finite-time analysis
+of the multiarmed bandit problem. Machine Learning
+47(2-3):235–256.
+[Bart ´ok et al. 2014] Bart ´ok, G.; Foster, D. P.; P ´al, D.;
+Rakhlin, A.; and Szepesv ´ari, C. 2014. Partial monitoring-
+classiﬁcation, regret bounds, and algorithms. Mathematics
+of Operations Research 39(4):967–997.
+[Buccapatnam, Eryilmaz, and Shroff 2014] Buccapatnam,
+S.; Eryilmaz, A.; and Shroff, N. B. 2014. Stochastic bandits
+with side observations on networks. ACM SIGMETRICS
+Performance Evaluation Review 42(1):289–300.
+[Caron et al. 2012] Caron, S.; Kveton, B.; Lelarge, M.; and
+Bhagat, S. 2012. Leveraging side observations in stochastic
+bandits. In Proceedings of the Twenty-Eighth Conference on
+Uncertainty in Artiﬁcial Intelligence (UAI), 142–151. AUAI
+Press.
+[Cesa-Bianchi and Lugosi 2006] Cesa-Bianchi, N., and Lu-
+gosi, G. 2006. Prediction, learning, and games. Cambridge
+university press.
+[Chen et al. 2016] Chen, W.; Wang, Y.; Yuan, Y.; and Wang,
+Q. 2016. Combinatorial multi-armed bandit and its exten-
+sion to probabilistically triggered arms. The Journal of Ma-
+chine Learning Research (JMLR) 17(1):1746–1778.
+[Chen, Lakshmanan, and Castillo 2013] Chen, W.; Laksh-
+manan, L. V. S.; and Castillo, C. 2013.
+Information and
+Inﬂuence Propagation in Social Networks. Morgan & Clay-
+pool Publishers.
+[Cohen, Hazan, and Koren 2016] Cohen, A.; Hazan, T.; and
+Koren, T. 2016. Online learning with feedback graphs with-
+out the graphs.
+In International Conference on Machine
+Learning (ICML), 811–819.
+[Dontchev and Rockafellar 2009] Dontchev, A. L.,
+and
+Rockafellar, R. T. 2009.
+Implicit functions and solution
+mappings. Springer Monogr. Math.
+[Erd ˝os and R ´enyi 1960] Erd ˝os, P., and R ´enyi, A. 1960. On
+the evolution of random graphs. Publications of the Math-
+ematical Institute of the Hungarian Academy of Sciences
+5:17–61.
+[Hoeffding 1963] Hoeffding, W. 1963. Probability inequal-
+ities for sums of bounded random variables. Journal of the
+American statistical association 58(301):13–30.
+
+[Kempe, Kleinberg, and Tardos 2003] Kempe, D.; Klein-
+berg, J. M.; and Tardos, ´E. 2003. Maximizing the spread of
+inﬂuence through a social network. In Proceedings of the
+9th ACM SIGKDD International Conference on Knowledge
+Discovery and Data Mining (KDD), 137–146.
+[Koc ´ak et al. 2014] Koc ´ak, T.; Neu, G.; Valko, M.; and
+Munos, R. 2014. Efﬁcient learning by implicit exploration in
+bandit problems with side observations. In Advances in Neu-
+ral Information Processing Systems (NeurIPS), 613–621.
+[Koc ´ak, Neu, and Valko 2016a] Koc ´ak, T.; Neu, G.; and
+Valko, M. 2016a. Online learning with erd ˝os-r ´enyi side-
+observation graphs. In Uncertainty in Artiﬁcial Intelligence
+(UAI).
+[Koc ´ak, Neu, and Valko 2016b] Koc ´ak, T.; Neu, G.; and
+Valko, M. 2016b. Online learning with noisy side obser-
+vations. In Artiﬁcial Intelligence and Statistics (AISTATS),
+1186–1194.
+[Komiyama, Honda, and Nakagawa 2015] Komiyama,
+J.;
+Honda, J.; and Nakagawa, H. 2015. Regret lower bound and
+optimal algorithm in ﬁnite stochastic partial monitoring.
+In Advances in Neural Information Processing Systems
+(NeurIPS), 1792–1800.
+[Lattimore and Szepesvari 2017] Lattimore, T., and Szepes-
+vari, C. 2017. The end of optimism? an asymptotic analysis
+of ﬁnite-armed linear bandits. In Artiﬁcial Intelligence and
+Statistics (AISTATS), 728–737.
+[Lattimore and Szepesv ´ari 2019] Lattimore,
+T.,
+and
+Szepesv ´ari, C.
+2019. Cleaning up the neighborhood:
+A full classiﬁcation for adversarial partial monitoring.
+In
+Algorithmic Learning Theory (ALT), 529–556.
+[Liu, Buccapatnam, and Shroff 2018] Liu, F.; Buccapatnam,
+S.; and Shroff, N. 2018. Information directed sampling for
+stochastic bandits with graph feedback.
+In Thirty-Second
+AAAI Conference on Artiﬁcial Intelligence (AAAI).
+[Mannor and Shamir 2011] Mannor, S., and Shamir, O.
+2011.
+From bandits to experts: On the value of side-
+observations. In Advances in Neural Information Processing
+Systems (NeurIPS), 684–692.
+[Rustichini 1999] Rustichini, A. 1999. Minimizing regret:
+The general case. Games and Economic Behavior 29(1-
+2):224–243.
+[Saritac¸ and Tekin 2017] Saritac¸ , A. ¨O., and Tekin, C. 2017.
+Combinatorial multi-armed bandit problem with probabilis-
+tically triggered arms: A case with bounded regret. In 2017
+IEEE Global Conference on Signal and Information Pro-
+cessing (GlobalSIP), 111–115. IEEE.
+[Tossou, Dimitrakakis, and Dubhashi 2017] Tossou, A. C.;
+Dimitrakakis, C.; and Dubhashi, D. 2017. Thompson sam-
+pling for stochastic bandits with graph feedback. In Thirty-
+First AAAI Conference on Artiﬁcial Intelligence (AAAI).
+[Valiant 1979] Valiant, L. G. 1979. The complexity of enu-
+meration and reliability problems. SIAM Journal on Com-
+puting 8(3):410–421.
+[Vaswani et al. 2015] Vaswani,
+S.;
+Lakshmanan,
+L.;
+Schmidt, M.; et al.
+2015.
+Inﬂuence maximization
+with bandits. arXiv preprint arXiv:1503.00024.
+
+[Wang and Chen 2017] Wang, Q., and Chen, W.
+2017.
+Improving regret bounds for combinatorial semi-bandits
+with probabilistically triggered arms and its applications.
+In Advances in Neural Information Processing Systems
+(NeurIPS), 1161–1171.
+[Wang, Chen, and Wang 2012] Wang, C.; Chen, W.; and
+Wang, Y. 2012. Scalable inﬂuence maximization for inde-
+pendent cascade model in large-scale social networks. Data
+Mining and Knowledge Discovery 25(3):545–576.
+[Wen et al. 2017] Wen, Z.; Kveton, B.; Valko, M.; and
+Vaswani, S.
+2017. Online inﬂuence maximization un-
+der independent cascade model with semi-bandit feedback.
+In Advances in Neural Information Processing Systems
+(NeurIPS), 3025–3035.
+[Wu, Gy ¨orgy, and Szepesv ´ari 2015] Wu, Y.; Gy ¨orgy, A.; and
+Szepesv ´ari, C. 2015. Online learning with gaussian payoffs
+and side observations. In Advances in Neural Information
+Processing Systems (NeurIPS), 1360–1368.
+
+Proof. [of Theorem 3]
+Deﬁne events
+
+A Proofs of the Upper Bounds in One-Step Triggering
+
+for some j ∈ [K ](cid:9)
+for some j ∈ [K ]}
+
+(cid:41)
+
+∀i ∈ [K ]
+
+for some j ∈ [K ]}
+for any i ∈ [K ]
+
+(cid:111)
+
+,
+
+(cid:27)
+
+(cid:115)
+
+(cid:12)(cid:12)(cid:12) ≥
+(cid:12)(cid:12)(cid:12) ≤ ,
+
+At = (cid:8)Mj (t) < 10 log (cid:0)K t2 (cid:1) ,
+(cid:40)(cid:12)(cid:12)(cid:12) ˆθt,i − θi
+Bt = {mj (t) < Mj (t)/2,
+Ct =
+(cid:26) N (t)
+2 log(t)
+mi (t)
+Dt =
+∈ C ( ˆθt )
+(cid:110)(cid:12)(cid:12)(cid:12) ˆθt,i − θi
+16 log(t)
+Et = {Mj (t) < 2 β (N e (t)) / K,
+Ft =
+E [∆it (θ)1{Bt−1}] ≤ T(cid:88)
+E (cid:2)∆it (θ)1(cid:8)Bt−1 , Ac
+≤ ∆max (θ)π2/6 +
+
+(cid:20)
+
+t=1
+
+E
+
+T(cid:88)
+
+t=1
+
+(cid:9)(cid:3) +
+T(cid:88)
+(cid:26)
+
+t=1
+
+t−1
+
+E [∆it (θ)1{Bt−1 , At−1}]
+
+(cid:27)(cid:21)
+
+∆it (θ)1
+
+Nit (t − 1) <
+
+10
+p
+
+log(K t2 )
+
+T(cid:88)
+K(cid:88)
+
+t=1
+
+i=1
+
+Bound the regret under B Note
+
+(13)
+
+(14)
+
+≤ ∆max (θ)π2/6 +
+
+10∆i (θ)
+p
+
+log(K T 2 )
+
+where the ﬁrst term is by Lemma 9.
+
+Bound the regret under C
+
+T(cid:88)
+
+Then it remains to bound (cid:80)T
+
+t=1
+
+E (cid:2)∆it (θ)1(cid:8)Bc
+E [∆it (θ)1{Ct−1}] ≤ 2K∆max (θ)
+t−1 , C c
+
+(cid:9)(cid:3).
+
+t−1
+
+t=1
+
+t−1 hold. Then (cid:80)
+t−1 , C c
+
+Bound the regret under D Suppose Dt−1 and Bc
+
+j (cid:54)= i1 ( ˆθt−1 ) and (cid:80)
+i∈V in (j ) Ni (t − 1)p ≥
+
+32
+
+i∈V in (j ) Ni (t − 1)p ≥
+∆j ( ˆθt−1 )2 log(t − 1) for any
+∆i2 ( ˆθt−1 ) ( ˆθt−1 )2 log(t − 1) for j = i1 ( ˆθt−1 ). Or equivalently
+Mj (t − 1) ≥
+32
+log(t − 1)
+for j (cid:54)= i1 ( ˆθt−1 ) ,
+∆j ( ˆθt−1 )2
+32
+
+32
+
+log(t − 1)
+
+for j = i1 ( ˆθt−1 ) .
+
+Mj (t − 1) ≥
+
+∆2
+
+i2 ( ˆθt−1 )
+
+( ˆθt−1 )
+
+On Bc
+t−1 ,
+
+Then
+
+mj (t − 1) ≥
+
+mj (t − 1) ≥
+
+T(cid:88)
+
+t=1
+
+log(t − 1)
+
+log(t − 1)
+
+16
+∆j ( ˆθt−1 )2
+16
+∆2
+( ˆθt−1 )
+E (cid:2)∆it (θ)1(cid:8)Bc
+t−1 , C c
+
+i2 ( ˆθt−1 )
+
+t−1
+
+for j (cid:54)= i1 ( ˆθt−1 ) ,
+
+for j = i1 ( ˆθt−1 ) .
+(cid:3) = 0
+
+(cid:9) , Dt−1
+
+(15)
+
+since
+
+θi1 ( ˆθt−1 ) ≥ ˆθt−1,i1 ( ˆθt ) −
+
+(cid:115)
+
+2 log(t − 1)
+
+mi1 ( ˆθt−1 ) (t − 1)
+
+≥ ˆθt−1,i1 ( ˆθt−1 ) − ∆i2 ( ˆθt−1 ) ( ˆθt−1 )
+
+2
+≥ θi
+
+≥ ˆθt−1,i +
+
+∆i ( ˆθt−1 )
+2
+
+thus it = i1 ( ˆθt−1 ) = i1 (θ).
+
+Thus it remains to bound (cid:80)T
+Bound the regret under Bc , C c , Dc Similar to (Wu, Gy ¨orgy, and Szepesv ´ari 2015, Proposition 17) where the statement
+
+t=1
+
+E (cid:2)∆it (θ)1(cid:8)Bc
+t−1 , C c
+t−1 , Dc
+i∈V in (j ) Nij ≥ β (s)/K is replaced by Mj (t) ≥ β (s)/K ,
+(cid:9) ≤ 1 + β
+t−1 , Dc
+t−1 , Et−1
+
+t−1
+
+(cid:9)(cid:3).
+(cid:32) T(cid:88)
+
+(cid:80)
+
+T(cid:88)
+
+t=K
+
+1(cid:8)Bc
+
+t=K+1
+
+1(cid:8)Bc
+
+t−1 , Dc
+
+t−1
+
+(cid:9)(cid:33)
+
+.
+
+Then
+
+T(cid:88)
+
+t=K+1
+
+1(cid:8)Bc
+
+t−1 , C c
+t−1 , Dc
+t−1 , Et−1
+
+(cid:9)
+
+≤ 2 +
+
+T(cid:88)
+
+t=K+1
+
+1{Ct−1 } +
+
+T(cid:88)
+
+t=K+1
+
+1(cid:8)Bc
+
+t−1 , C c
+t−1 , Dc
+t−1 , E c
+t−1 , F c
+
+t−1
+
+(cid:9) + 2β
+
+(cid:32) n(cid:88)
+
+t=K+1
+
+1(cid:8)Bc
+
+t−1 , C c
+t−1 , Dc
+t−1 , E c
+t−1 , Ft−1
+
+(cid:9)(cid:33)
+
+.
+
+(16)
+
+Next by (Wu, Gy ¨orgy, and Szepesv ´ari 2015, Lemma 19),
+
+T(cid:88)
+T(cid:88)
+T(cid:88)
+
+t=1
+
+E (cid:2)∆it (θ)1(cid:8)Bc
+t−1 , C c
+t−1 , Dc
+t−1 , E c
+t−1 , F c
+(cid:9) ≤ K + 4
+t−1 , C c
+t−1 , Dc
+t−1 , E c
+t−1 , Ft−1
+E (cid:2)∆it (θ)1(cid:8)Bc
+t−1 , C c
+t−1 , Dc
+t−1 , E c
+t−1 , Ft−1
+E (cid:2)∆it (θ)1(cid:8)Bc
+t−1 , Dc
+t−1 , Et−1
+E [∆it (θ)1{Ct−1 }] + K∆max (θ) +
+
+t−1
+
+(cid:9)(cid:3) ≤ T(cid:88)
+K(cid:88)
+
+s=0
+
+2 exp
+
+(cid:18)
+
+− β (s)2
+2K
+
+(cid:19)
+
+,
+
+(17)
+
+t=1
+
+1(cid:8)Bc
+
+i=1
+
+ci (θ , ) log(T ) ,
+
+(18)
+
+t=1
+
+(cid:9)(cid:3) ≤ K + 4
+
+K(cid:88)
+
+i=1
+
+ci (θ , )∆i (θ) log(T ) .
+
+(19)
+
+Thus by (16), (14), (17) and (18),
+
+T(cid:88)
+
+t=1
+
+(cid:9)(cid:3)
+
+≤ T(cid:88)
+
+t=1
+
+T(cid:88)
+
+t=K+1
+
+E (cid:2)∆it (θ)1(cid:8)Bc
+t−1 , C c
+t−1 , Dc
+t−1 , Et−1
+≤2K∆max (θ) + K∆max (θ) + 2 + 2K∆max (θ) +
+− β (s)2
+2K
+
+(cid:9)(cid:3)
+
+T(cid:88)
+(cid:32)
+
+s=0
+
+2 exp
+
+(cid:18)
+K(cid:88)
+(cid:18)
+
+(cid:19)
+
++ 2β (1 + 4ci (θ , ) log(T ))
+
+≤2 + 5K∆max (θ) + 2
+
+T(cid:88)
+(cid:18)
+
+s=0
+
+exp
+
+(cid:18)
+
+− β (s)2
+2K
+
+(cid:19)
+
++ 2β
+
+K + 4
+
+i=1
+
+ci (θ , ) log(T )
+
+(cid:33)
+
+.
+
+(20)
+
+Putting (13), (14), (15), (17), (19), (20) together, the regret satisﬁes
+
+Rθ (T ) ≤3 + K +
+
+7K +
+
+π2
+3
+
+(cid:19)
+
+∆max (θ) + 4
+
+T(cid:88)
+K(cid:88)
+
+s=0
+
+exp
+
+− β (s)2
+2K
+
+(cid:19)
+
++ 10
+
+K(cid:88)
+
+i=1
+
+∆i (θ)
+p
+
+log(K T 2 )
+
++ 2β
+
+(cid:32)
+
+K + 4
+
+K(cid:88)
+
+i=1
+
+ci (θ , ) log(T )
+
+(cid:33)
+
++ 4
+
+i=1
+
+ci (θ , )∆i (θ) log(T ) .
+
+Next prove the asymptotic behavior of the regret upper bound.
+Claim: Mj (t) → ∞ as t → ∞ for any j ∈ [K ].
+Suppose not. There exists j ∈ [K ] such that Mj (t), or Ni (t) for all i ∈ V in (j ), stops increasing when t ≥ T1 for some
+T1 > 0. Then the condition on line 6 is not satisﬁed when t ≥ T2 ≥ T1 for some T2 > 0. By the condition on line 9, N e (t) also
+stops increasing and the condition on line 9 for any j (cid:48) is not satisﬁed any more when t ≥ T3 ≥ T2 for some T3 > 0. Also line
+14 will not be performed since N e (t) stops increasing. Therefore the condition on line 3 always holds, which is impossible.
+For any δ ∈ (0, 1), the probability that the condition on line 3 does not hold when Mj (t) > 10 log K
+δ for some j ∈ [K ](cid:9) and (13) is
+δ is at least 1 − δ/K .
+replaced by (cid:80)T
+There exists T4 > 0 such that when t ≥ T4 , Mj (t) > 10 log K
+δ for any j since Mj (t) → ∞. Then with probability at least
+1 − δ , line 4-5 are not called any more. The events At is modiﬁed by A(cid:48)
+log(K/δ). All other parts stay the same. Then the
+regret satisﬁes
+
+t = (cid:8)Mj (t) < 10 log K
+
+Nit (t − 1) < 10
+p log K
+
+E (cid:104)
+
+10∆i (θ)
+p
+
+∆it (θ)1
+
+(cid:110)
+
+t=1
+
+δ
+
+7K +
+
+∆max (θ) + 4
+
+exp
+
+− β (s)2
+2K
+
++ 10
+
+∆i (θ)
+p
+
+log(K/δ)
+
+(cid:18)
+
+(cid:19)
+
+K(cid:88)
+
+i=1
+
+Rθ (T ) ≤3 + K +
+
+(cid:32)
+
+(cid:18)
+
+(cid:19)
+
+π2
+3
+
+K(cid:88)
+
+i=1
+
+i=1
+
+(cid:111)(cid:105) ≤ (cid:80)K
+T(cid:88)
+K(cid:88)
+
+(cid:33)
+
+s=0
+
+i=1
+
++ 2β
+
+K + 4
+
+ci (θ , ) log(T )
+
++ 4
+
+ci (θ , )∆i (θ) log(T ) .
+
+For any η > 0, there exists an  = (θ) > 0 such that the distance between the optimal solution set of c(θ) and c(θ (cid:48) ) for
+any θ (cid:48) such that |θ (cid:48)
+i − θi | ≤  for all i ∈ [K ] is at most η . Here the distance is Pompeiu-Hausdorff distance of sets. This is
+because the Lipschitz continuity of the optimal set mapping (see (Dontchev and Rockafellar 2009, §3C.5)) and the duality of
+linear programming problems. Since c(θ) is unique, ci (θ , ) is upper bounded by ci (θ) + η . Then divide Rθ (T ) by log(T ) and
+let T go to ∞,
+For instance, η can be chosen as (cid:104)c(θ), ∆(θ)(cid:105)/ (cid:80)K
+T →∞
+The proof of Theorem 4 is similar to Theorem 3 by modifying (13) with
+
+(cid:104)c, ∆(θ)(cid:105) + η
+
+Rθ (T )
+log(T )
+
+≤ 4 inf
+
+K(cid:88)
+
+∆i (θ) .
+
+c∈C (θ)
+
+lim sup
+
+(21)
+
+(cid:3)
+
+i=1
+
+T(cid:88)
+
+t=1
+
+i=1 ∆i (θ).
+E [∆it (θ)1{Bt−1}] ≤ T(cid:88)
+E (cid:2)∆it (θ)1(cid:8)Bt−1 , Ac
+≤ ∆max (θ)π2/6 +
+
+(cid:20)
+
+t=1
+
+E
+
+(cid:9)(cid:3) +
+T(cid:88)
+(cid:26)
+
+t=1
+
+t−1
+
+E [∆it (θ)1{Bt−1 , At−1}]
+
+(cid:27)(cid:21)
+
+∆it (θ)1
+
+it ∈ V e , Nit (t − 1) <
+
+log(K t2 )
+
+10
+pe
+
+it
+
+≤ ∆max (θ)π2 /6 +
+
+10∆i (θ)
+pe
+
+i
+
+log(K T 2 ) .
+
+(22)
+
+T(cid:88)
+(cid:88)
+
+t=1
+
+i∈V e
+
+B Proof of Theorem 5
+
+First we prove a useful lemma on the robustness of linear programming problem where the coefﬁcient matrix is of a speciﬁc
+form.
+Lemma 6 Denote the linear programming problem of the form
+minimize (cid:104)c, x(cid:105) over all x ∈ Rn satisfying Ax ≥ b and x ≥ 0
+(23)
+by LP(A, b, c) where A ∈ Rn×n , b ∈ Rn , c ∈ Rn and all entries in A, b, c are non-negative. Let the feasible set mapping, the
+optimal value mapping and the optimal set mapping be
+
+Sfeas (A; b) = {x | Ax ≥ b, x ≥ 0}
+{(cid:104)c, x(cid:105) | x ∈ Sfeas (A, b)}
+Sval (A; b, c) = inf
+Sopt (A; b, c) = {x ∈ Sfeas (A, b) | (cid:104)c, x(cid:105) = Sval (A, b, c)}
+
+x
+
+respectively. Note that Sval (A, b, c) is always ﬁnite with the A, b, c of positive (or even non-negative) entries.
+Fix a pair (i, j ), assume A(i, j ) > 0. Let A(cid:48) = A except A(cid:48) (i, j ) = A(i, j ) + . Then
+
+dH (Sopt (A), Sopt (A(cid:48) )) ≤ α ||
+
+(24)
+
+for some α depending on A, b, c and i, j .
+
+Proof. By (Dontchev and Rockafellar 2009, Theorem 3C.3), the mapping
+
+G : t (cid:55)→ {x ∈ Sfeas (A, b) | (cid:104)c, x(cid:105) ≤ t}
+
+(25)
+
+is Lipschitz continuous. Recall that the distance on sets is Pompeiu-Hausdorff distance dH .
+First assume  > 0. Then
+
+Sfeas (A) ⊂ Sfeas (A(cid:48) ), Sval (A) ≥ Sval (A(cid:48) ) .
+If Sopt (A(cid:48) ) ⊂ Sfeas (A), then Sval (A) = Sval (A(cid:48) ). Suppose not and let x(cid:48) ∈ Sopt (A(cid:48) ) \ Sfeas (A). Then
+0 < b − n(cid:88)
+A(i, j (cid:48) )x(cid:48)
+j (cid:48) ≤ x(cid:48)
+j .
+j , then x ∈ Sfeas (A) and
+Sval (A) ≤ (cid:104)c, x(cid:105) = (cid:104)c, x(cid:48) (cid:105) +
+
+Let x = x(cid:48) except xj = x(cid:48)
+
+cj x(cid:48)
+j ≤ Sval (A(cid:48) ) + α1 
+
+A(i,j ) x(cid:48)
+j + 
+
+j (cid:48)=1
+
+
+A(i, j )
+
+for some α1 depending on A, b, c and i, j . Thus
+
+Sopt (A(cid:48) ) ⊂ G(Sval (A(cid:48) ) + α1 ) + α2 B1 ⊂ G(Sval (A)) + α3 B1 = Sopt (A) + α3 B1
+
+for some α2 , α3 depending on A, b, c, where B1 is the unit ball in Rn and the second inequality is due to the Lipshitz continuity
+of G in (25). Also
+
+Sopt (A) ⊂ Sfeas (A) ⊂ Sfeas (A(cid:48) ) ⊂ G(cid:48) (Sval (A))
+
+(∗)⊂ G(cid:48) (Sval (A(cid:48) )) + β4 B1 = Sopt (A(cid:48) ) + β4 B1
+
+where (*) is by by the Lipshitz continuity of G(cid:48) : t (cid:55)→ {x ∈ Sfeas (A(cid:48) , b) | (cid:104)c, x(cid:105) ≤ t}.
+The case of  < 0 follows similarly. (cid:3)
+Proof. [of Theorem 5]
+The ﬁnite-time regret is similar to the previous proof. The main difference is on the bound for line 13. In particular, the results
+of (18) and (19) are changed to be
+
+T(cid:88)
+T(cid:88)
+
+t=1
+
+1(cid:8)Bc
+
+(cid:9) ≤ K + 4
+t−1 , C c
+t−1 , Dc
+t−1 , E c
+t−1 , Ft−1
+E (cid:2)∆it (θ)1(cid:8)Bc
+t−1 , C c
+t−1 , Dc
+t−1 , E c
+t−1 , Ft−1
+
+K(cid:88)
+
+max
+
+i=1
+
+t∈[T ]
+
+(cid:9)(cid:3) ≤ K + 4
+
+K(cid:88)
+
+t=1
+
+i=1
+
+{ci (θ , , η(t)) log(t)} ,
+
+∆i (θ) max
+
+t∈[T ]
+
+{ci (θ , , η(t)) log(t)}
+
+since ci (θ , , η(t)) can bound Sopt (LPt ). The proof of other parts follow the proof of 4 similarly.
+By the non-increasing property of η(t) whose limit is 0, η(t) would be smaller than minij :p(cid:48)
+ij when t ≥ T1 for some
+T1 > 0. Then Pt only has small noise on the nonzero entries of P (cid:48) = (p(cid:48)
+ij )ij . By Lemma 6, Sopt (θ (cid:48) , η(t)) is Lipschitz
+continuous in η(t) for any θ (cid:48) . Thus
+
+ij >0 p(cid:48)
+
+t→∞ ci (θ , , η(t)) = ci (θ , ) .
+lim
+
+The remaining discussion on  is similar. (cid:3)
+i=1 Xi and E (cid:2) ¯X (cid:3) = µ. Then for all a ≥ 0,
+Lemma 7 (Hoeffding’s Inequality (Hoeffding 1963)) Let X1 , . . . , Xn be independent random variable with common support
+Lemma 8 (Bernstein’s Inequality) Let X1 , . . . , Xn be independent zero-mean random variables. Suppose that |Xi | ≤ M
+almost surely for all i. Then for all a ≥ 0,
+
+P (cid:2) ¯X − µ ≥ a(cid:3) ≤ exp(−2na2 ), P (cid:2) ¯X − µ ≤ −a(cid:3) ≤ exp(−2na2 ).
+
+C Technical Lemmas
+
+[0, 1]. Let ¯X = 1
+
+(cid:80)n
+
+n
+
+(cid:34) n(cid:88)
+
+i=1
+
+P
+
+(cid:35)
+
+(cid:18)
+
+(cid:80)n
+
+Xi ≥ a
+
+≤ exp
+
+−
+
+a2/2
+E [X 2
+i ] + M a/3
+
+i=1
+
+(cid:19)
+
+.
+
+A
+
+0.7
+
+0.1
+
+F
+
+0.9
+
+E
+
+B
+
+0.4
+
+C
+
+0.7
+
+0.3
+
+D
+
+(a) Cycle feedback graph
+
+0.2
+
+B
+
+0.2
+
+0.4
+
+0.4
+
+0.5
+
+A
+
+0.3
+
+C
+
+0.4
+
+0.7
+
+E
+
+0.3
+
+0.5
+0.5
+
+0.5
+
+D
+
+0.6
+
+F
+
+0.6
+
+(b) A random feedback graph
+
+Figure 1: Two feedback graphs on 6 nodes
+
+Figure 2: Regrets on two feedback graphs
+
+Lemma 9 Let x1 , x2 , . . . , xt be independent Bernoulli random variables with mean p1 , p2 , . . . , pt ∈ (0, 1) respectively.
+if (cid:80)t
+
+s=1 ps ≥ 10 log (cid:0) 1
+
+t(cid:88)
+
+(cid:1).
+
+≤ δ
+
+xs <
+
+1
+2
+
+s=1
+
+s=1
+
+ps
+
+δ
+
+(cid:34) t(cid:88)
+
+(cid:35)
+
+Proof.
+
+P
+
+(cid:34) t(cid:88)
+
+s=1
+
+t(cid:88)
+
+s=1
+
+1
+2
+
+pi
+
+xs <
+
+P
+
+(cid:35)
+
+(cid:34) t(cid:88)
+(cid:32)
+(cid:32)
+
+s=1
+
+= P
+
+≤ exp
+
+≤ exp
+
+(cid:35)
+
+s=1
+
+t(cid:88)
+
+ps − t(cid:88)
+((cid:80)t
+1
+xs >
+2
+ps
+s=1 ps (1 − ps ) + ((cid:80)t
+((cid:80)t
+s=1 ps )/6
+s=1 ps )/6
+
+s=1
+s=1 ps )2 /8
+s=1 ps + ((cid:80)t
+s=1 ps )2/8
+
+(cid:80)t
+(cid:80)t
+
+(cid:33)
+
+−
+
+−
+
+(cid:33)
+
+(26)
+
+0100k200k300k400k500kTime t05k10k15k20k25kRegret(a)Δ=0.1Δ=0.2Δ=0.3Δ=0.4Δ=0.50100k200k300k400k500kTime t01k2k3k4k5k6k7kRegreti*=Ai*=Bi*=Ci*=Di*=Ei*=F(b)(cid:32)
+
+− ((cid:80)t
+
+s=1 ps )/8
+7/6
+
+(cid:33)
+
+≤ exp
+
+≤ δ
+
+t(cid:88)
+
+ps ≥ 10 log
+
+(27)
+
+.
+
+(cid:18) 1
+
+(cid:19)
+
+δ
+
+where (26) is by Bernstein’s inequality (Lemma 8) and (27) holds when
+
+(cid:3)
+
+s=1
+
+D Experiments
+
+This section demonstrates two simple experiments for the cascade case with 6 nodes and the reward random variables are
+Gaussian with unit variance. The ﬁrst uses a cycle graph (see Figure 1(a)) where the probabilities on the edges are generated
+randomly. We set the reward mean vector for the 6 nodes A, B , . . . , F to be θ = (0.5 + ∆, 0.5, . . . , 0.5). We run our Algorithm
+2 with different ∆’s. The results are shown in Figure 2(a) and each regret curve is averaged over 10 random runs.
+The second uses a random graph (see Figure 1(b)) where both the edges and the probabilities on the edges are generated
+randomly. We test our Algorithm 2 for 6 cases, each selects a best arm i∗ = O (O can be A, B , . . . , F ), where the reward mean
+for O is 0.6 and the reward mean for others is 0.5. The regret results are shown in Figure 2(b) with each taking average of 10
+random runs.
+
+

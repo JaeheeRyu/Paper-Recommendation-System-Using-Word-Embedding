@@ -1,0 +1,1290 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+8
+5
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+JOURNAL OF LATEX CLASS FILES, VOL. XX, NO. XX, SEPTEMBER 2019
+
+1
+
+Gliding ver tex on the horizontal bounding box for
+multi-oriented object detection
+
+Yongchao Xu, Mingtao Fu, Qimeng Wang, Yukang Wang, Kai Chen,
+Gui-Song Xia Senior Member, IEEE , Xiang Bai Senior Member, IEEE
+
+Abstract—Object detection has recently experienced substantial progress. Yet, the widely adopted horizontal bounding box represen-
+tation is not appropriate for ubiquitous oriented objects such as objects in aerial images and scene texts. In this paper, we propose a
+simple yet effective framework to detect multi-oriented objects. Instead of directly regressing the four ver tices, we glide the ver tex of the
+horizontal bounding box on each corresponding side to accurately describe a multi-oriented object. Speciﬁcally, We regress four length
+ratios characterizing the relative gliding offset on each corresponding side. This may facilitate the offset learning and avoid the confusion
+issue of sequential label points for oriented objects. To fur ther remedy the confusion issue for nearly horizontal objects, we also introduce
+an obliquity factor based on area ratio between the object and its horizontal bounding box, guiding the selection of horizontal or oriented
+detection for each object. We add these ﬁve extra target variables to the regression head of fast R-CNN, which requires ignorable extra
+computation time. Extensive experimental results demonstrate that without bells and whistles, the proposed method achieves superior
+performances on multiple multi-oriented object detection benchmarks including object detection in aerial images, scene text detection,
+pedestrian detection in ﬁsheye images.
+
+Index Terms—Object detection, R-CNN, multi-oriented object, aerial image, scene text, pedestrian detection.
+
+!
+
+1 IN TRODUC T ION
+
+O B JEC T detection has achieved a considerable progress
+thanks to convolutional neural networks (CNNs). The
+state-of-the-art methods [1], [2], [3] usually aim to detect
+objects via regressing horizontal bounding boxes. Yet multi-
+oriented objects are ubiquitous in many scenarios. Examples
+are objects in aerial images and scene texts. Horizontal
+bounding box does not provide accurate orientation and
+scale information, which poses problem in real applications
+such as object change detection in aerial images and recog-
+nition of sequential characters for multi-oriented scene texts.
+Recent advances in multi-oriented object detection are
+mainly driven by adaption of classical object detection
+methods using rotated bounding boxes [4], [5] or quad-
+rangles [6], [7], [8] to represent multi-oriented objects.
+Though these existing adaptions of horizontal object de-
+tection methods to multi-oriented object detection have
+achieved promising results, they still face some limitations.
+For detection using rotated bounding boxes, the accuracy of
+angle prediction is critical. A minor angle deviation leads to
+important IoU drop, resulting in inaccurate object detection.
+This problem is more prominent for detecting long oriented
+objects such as bridges and harbors in aerial images and
+Chinese text lines in scene images. The methods based on
+quadrangle regression usually have ambiguity in deﬁning
+the ground-truth order of four vertices, yielding unexpected
+
+• Y. Xu, M. Fu, Q. Wang, Y. Wang, and X. Bai are with the School of
+Electronic Information and Communications, Huazhong University of
+Science and Technology (HUST), Wuhan, 430074, China.
+E-mail:
+{yongchaoxu,
+mingtaofu,
+qimengwang,
+xbai}@hust.edu.cn.
+• G. S. Xia is with LIEMARS, Wuhan University.
+E-mail: guisong.xia@whu.edu.cn.
+• K. Chen is with Shanghai Jiaotong University; Onyou Inc.
+E-mail: kchen@sjtu.edu.cn.
+
+wangyk,
+
+Fig. 1. Pipeline of the proposed method. An image is fed into a CNN,
+which outputs a classiﬁcation score (blue value), a horizontal bounding
+box, four length ratios between each segment si and corresponding
+side, and an obliquity factor (green value) for each detection. Based on
+obliquity factor, we select horizontal box (in purple) or oriented detection
+(in orange) as the ﬁnal result. Best viewed in electronic version.
+
+detection results for objects of some orientations.
+Some other methods [9], [10], [11] alternatively detect
+horizontal object parts followed by a grouping process. Yet,
+such grouping process step is usually heuristic and time-
+consuming. Describing an oriented object as its segmenta-
+tion mask [12] is another alternative solution. However, this
+often results in split and/or merged components, requiring
+a heavy and time-consuming post-processing.
+In this paper, we propose a simple yet effective frame-
+
+Cls.scoreObliquityfactor0.950.98Selection ImageFinal resultCNNThreshold 0.80.89 /0.950.36 /0.98!"!#!$!%!"!#!$!% 
+ 
+ 
+ 
+ 
+ 
+JOURNAL OF LATEX CLASS FILES, VOL. XX, NO. XX, SEPTEMBER 2019
+
+work to deal with multi-oriented object detection. Specif-
+ically, we propose to glide each vertex of the horizon-
+tal bounding box on the corresponding side to accurately
+describe a multi-oriented object. This results in a novel
+representation by adding four gliding offset variables to
+classical horizontal bounding box representation. Put it
+simply, we regress four length ratios that characterize the
+relative gliding offset (see Fig. 1) on each side of horizontal
+bounding box. Such representation may be less sensitive to
+offset prediction error than angle prediction error in rotated
+bounding box representation. By limiting the offset on the
+corresponding side of horizontal bounding box, we may
+facilitate offset learning and also avoid the confusion for
+sequential label points in directly regressing the four ver-
+tices of oriented objects. To further get rid of confusion issue
+for nearly horizontal objects, we also introduce an obliquity
+factor based on area ratio between the multi-oriented object
+and its horizontal bounding box. As depicted in Fig. 1, this
+obliquity factor guides us to select the horizontal detection
+for nearly horizontal objects and oriented detection for
+oriented objects. It is noteworthy that the proposed method
+only introduces ﬁve additional target variables, requiring
+ignorable extra computation time.
+In summary, the main contribution of this paper are three
+folds: 1) We introduce a simple yet effective representation
+for oriented objects, which is rather robust to offset pre-
+diction error and does not have the confusion issue. 2) We
+propose an obliquity factor that effectively guides the selec-
+tion of horizontal detection for nearly horizontal objects and
+oriented detection for others, remedying the confusion issue
+for nearly horizontal objects. 3) Without bells and whistles
+(e.g., cascade reﬁnement or attention mechanism), the pro-
+posed method outperforms some state-of-the-art methods
+on multiple multi-oriented object detection benchmarks.
+The rest of this paper is organized as follows. We shortly
+review some related works in Section 2. We then detail
+the proposed method in Section 3, followed by extensive
+experimental results in Section 4. Finally, we conclude and
+give some perspectives in Section 5.
+
+2 RE LATED WORK
+
+We ﬁrst review some representative general object detection
+methods in Section 2.1. The interested readers can refer
+to [13] for a more complete review. Some speciﬁc and
+related tasks of object detection are then shortly reviewed
+in Section 2.2, 2.3, and 2.4. The comparison of the proposed
+method with some related works is discussed in Section 2.5.
+
+2.1 Deep general object detection
+Object detection aims to detect general objects in images
+with horizontal bounding boxes. Recently, many CNN-
+based methods have been proposed, and can be roughly
+summarized into top-down and bottom-up methods.
+Top-down methods directly detect entire objects. They
+can be further categorized into two classes: two-stage and
+single-stage methods. R-CNN and its variances [1], [14],
+[15] are representative two-stage methods. They ﬁrst gen-
+erate proposals with selective search [16] or RPN [1] and
+then use the features of these proposals to predict object
+
+2
+
+categories and reﬁne the bounding boxes. Dai et al. [17]
+propose position-sensitive score maps to address a dilemma
+between translation-invariance in image classiﬁcation and
+translation-variance in object detection. Lin et al. [3] focus on
+the scale variance of objects in images and propose Feature
+Pyramid Network (FPN) to handle objects at different scales.
+YOLO and its variances [2], [18], [19], SSD [20], and Reti-
+naNet [21] are representative single-stage methods. They
+predict bounding boxes directly from deep feature maps
+instead of region proposals, resulting in improved efﬁciency.
+Bottom-up methods rise recently by predicting object
+parts followed by a grouping process. CornerNet [22], Ex-
+tremeNet [23], and CenterNet [24] are recently proposed
+in succession. They attempt to predict some keypoints of
+objects such as corners or extreme points, which are then
+grouped into bounding boxes. Center points are also used
+by [23], [24] as supplemental information for grouping.
+
+2.2 Object detection in aerial images
+
+Object detection in aerial images is chanllenging because of
+huge scale variations and arbitrary orientations. Extensive
+studies have been devoted to this task. The baselines on
+the popular dataset DOTA [25] replace horizontal box re-
+gression of faster R-CNN with regression of four vertices of
+quadrangle representation. Many methods resort to rotated
+bounding box representation. Rotated RPN is exploited
+in [26], [27], which involves more anchors and thus requires
+more runtime. Ding et al. [5] propose an RoI transformer that
+transforms horizontal proposals to rotated ones, on which
+the rotated bounding box regression is performed. Azimi et
+al. [28] adopt an image-cascade network to extract multi-
+scale features. Yang et al. [29] employ multi-dimensional
+attention to extract robust features, better coping with com-
+plex backgrounds. Zhang et al. [30] propose to learn global
+and local contexts together to enhance the features.
+
+2.3 Oriented scene text detection
+
+Oriented scene text detection has attracted great attention.
+It is a challenging problem due to arbitrary orientations
+and long text lines in particular for non-Latin texts such as
+Chinese. CNN-based detectors are the mainstream methods
+which can be roughly divided into regression-based and
+segmentation-based [12], [31] methods. We shortly review
+related regression-based methods in the following.
+Most multi-oriented scene text detectors directly predict
+entire texts using rotated bounding box or quadrangle rep-
+resentation. Ma et al. [32] employ rotated RPN in the frame-
+work of faster R-CNN [1] to generate rotated proposals
+and further perform rotated bounding box regression. Liu et
+al. [33] propose to use quadrangle sliding windows to match
+texts with perspective transformation. TextBoxes++ [6]
+adopts vertex regression on SSD [20]. RRD [34] further
+improves TextBoxes++ [6] by decoupling classiﬁcation and
+bounding box regression on rotation-invariant and rotation-
+sensitive features, respectively, making the regression more
+accurate for long texts. Both EAST [4] and Deep direct
+regression [7] perform rotated bounding box regression
+and/or vertex regression at each location.
+
+JOURNAL OF LATEX CLASS FILES, VOL. XX, NO. XX, SEPTEMBER 2019
+
+2.4 Pedestrian detection in ﬁsheye images
+
+Pedestrian detection in ﬁsheye images is different from the
+general pedestrian detection because pedestrians in ﬁsheye
+images are commonly multi-oriented. Seidel et al. [35] pro-
+pose to transform omnidirectional images into perspective
+ones, on which the detection is applied. Such transforma-
+tion introduces extra computation time. Based on the prior
+knowledge that objects in ﬁsheye images are radial, Tamura
+et al. [36] propose to train a general object detector with
+rotated images and then determine the orientations with the
+centers of objects and image.
+
+2.5 Comparison with related works
+
+Compared with the related works, the proposed method
+targets on general and ubiquitous multi-oriented object de-
+tection with a simple yet effective framework. By gliding the
+vertex of horizontal bounding box on each corresponding
+side and a novel divide-and-conquer selection scheme for
+nearly horizontal and oriented objects, the proposed method
+may better learn the offset for accurate multi-oriented ob-
+ject detection and does not suffer from confusion issue.
+Furthermore, the proposed method may be complementary
+and easily plugged into many existing methods focusing
+on enhancing features. To equip them with the proposed
+approach, we only need to replace rotated bounding box
+or vertex regression by regressing the four length ratios
+and obliquity factor in addition to horizontal bounding box.
+Such modiﬁcation requires ignorable extra runtime.
+
+3 PROPOSED ME THOD
+
+3.1 Overview
+
+CNN-based object detectors perform well on detecting hor-
+izontal objects but struggle on oriented ones, in particular
+for long and dense oriented objects. Direct adaption using
+rotated bounding box Br regression tends to produce in-
+accurate results due to high sensitivity to angle prediction
+error. Regressing the four vertices of quadrangle representa-
+tion does not suffer from this problem, but also fails on some
+cases because of the ambiguity in deﬁning the order of four
+ground truth vertices to be regressed. We attempt to solve
+the general multi-oriented object detection by introducing
+a simple representation for oriented objects and a novel
+detection scheme that divides and conquers nearly horizon-
+tal and oriented object detection, respectively. Speciﬁcally,
+we propose to glide the vertex of horizontal bounding box
+Bh on each corresponding side to accurately describe an
+oriented object. Put it simply, in addition to Bh , we compute
+four length ratios that characterize the relative gliding offset
+on each side of Bh . Besides, We also introduce an obliquity
+factor based on area ratio between multi-oriented object and
+its horizontal bounding box Bh . Based on the estimated
+obliquity factor, we select the horizontal (resp. oriented)
+detection for a nearly horizontal (resp. oriented) object.
+This simple yet effective framework only introduces ﬁve
+target variables compared with classical horizontal object
+detectors, requiring ignorable extra computation time.
+
+3
+
+Fig. 2. Illustration of proposed representation for an oriented object
+O based on four intersecting points {vi } between O and its hori-
+zontal bounding box Bh = (v (cid:48)
+(x, y , w, h, α1 , α2 , α3 , α4 ) to represent oriented objects.
+
+1 , v (cid:48)
+2 , v (cid:48)
+3 , v (cid:48)
+4 ) = (x, y , w, h). We adopt
+
+3.2 Multi-Oriented object representation
+The proposed method relies on a simple representation
+for oriented objects and an effective selection scheme. An
+intuitive illustration of the proposed representation is de-
+picted in Fig. 2. For a given oriented object O (blue box in
+Fig. 2) and its corresponding horizontal bounding box Bh
+(black box in Fig. 2), let vi , i ∈ {1, 2, 3, 4} denote top, right,
+bottom, left intersecting point with its horizontal bounding
+i , i ∈ {1, 2, 3, 4}, respectively. The
+box Bh denoted by v (cid:48)
+horizontal bounding box Bh is also usually represented by
+(x, y , w, h), where (x, y) is the center, and w and h are the
+width and height, respectively. We propose to represent the
+underlying oriented object by (x, y , w, h, α1 , α2 , α3 , α4 ). The
+extra variables αi , i ∈ {1, 2, 3, 4} are deﬁned as follows:
+
+α{1,3} = (cid:107)s{1,3} (cid:107)/w,
+α{2,4} = (cid:107)s{2,4} (cid:107)/h,
+
+(1)
+where (cid:107)si (cid:107) = (cid:107)vi − v (cid:48)
+i (cid:107) denotes the distance between vi and
+v (cid:48)
+i , i.e., the length of segment si = (vi , v (cid:48)
+i ) representing the
+gliding offset from v (cid:48)
+i to vi . It is noteworthy that all αi is set
+to 1 for horizontal objects.
+In addition to the simple representation in terms of
+(x, y , w, h, α1 , α2 , α3 , α4 ) for an oriented object O , we also
+introduce an obliquity factor characterizing the tilt degree
+of O . This is given by the area ratio r between O and Bh :
+
+r = |O| / |Bh |,
+
+(2)
+where | · | denotes the cardinality. Nearly horizontal objects
+have a large obliquity factor r being close to 1, and the obliq-
+uity factor r for extremely slender and oriented objects are
+close to 0. Therefore, we can select the horizontal or oriented
+detection as the ﬁnal result based on such obliquity factor r .
+Indeed, it is reasonable to represent nearly horizontal objects
+with horizontal bounding boxes. However, oriented detec-
+tions are required to accurately describe oriented objects.
+
+3.3 Network architecture
+The network architecture (see Fig. 3) is almost the same as
+faster R-CNN [1]. We simply add ﬁve extra target variables
+(normalized to [0, 1] using the sigmoid funciton) to the head
+of faster R-CNN [1]. Speciﬁcally, The input image is ﬁrst
+fed into a backbone network to extract deep features and
+generate bounding box proposals with RPN [1]. Then the
+regional features extracted via RoIAlign [37] on proposals
+
+!"!"#!$#!$!%#!&#!%!&'"'$'%'&(,*ℎ,-./(,*,,,ℎ,0"='",,0$='$ℎ,0%='%,,0&='&ℎJOURNAL OF LATEX CLASS FILES, VOL. XX, NO. XX, SEPTEMBER 2019
+
+4
+
+3.6 Inference
+
+During testing phase, for a given image, the forward pass
+generates a set of (x, y , w, h, α1 , α2 , α3 , α4 , r) representing
+horizontal bounding boxes, four length ratios, and obliquity
+factors. For each candidate, if its obliquity factor r is larger
+than a threshold tr , indicating that the underlying object
+is nearly horizontal, we select the horizontal bounding box
+(x, y , w, h) as the ﬁnal detection. Otherwise, we select the
+oriented one given by (x, y , w, h, α1 , α2 , α3 , α4 ). An ori-
+ented non-maximum suppression (NMS) is also performed.
+
+4 EXPER IMENTS
+
+We evaluate the proposed method on multiple benchmarks:
+DOTA [25] and HRSC2016 [38] for object detection in aerial
+images, MSRA-TD500 [39] and RCTW-17 [40] for long and
+oriented scene text detection, and MW-18Mar [41] for pedes-
+trian detection in ﬁsheye images. The ablation study is
+conducted on DOTA [25], which is a challenging dataset
+for multi-oriented object detection.
+
+4.1 Datasets and evaluation protocols
+
+DOTA [25] is a large-scale and challenging dataset for object
+detection in aerial images with quadrangle annotations. It
+contains 2806 4000 × 4000 images and 188, 282 instances of
+15 object categories: plane, baseball diamond (BD), bridge,
+ground ﬁeld track (GTF), small vehicle (SV), large vehicle
+(LV), ship, tennis court (TC), basketball court (BC), storage
+tank (ST), soccer-ball ﬁeld (SBF), roundabout (RA), harbor,
+swimming pool (SP) and helicopter (HC). The ofﬁcial eval-
+uation protocol of DOTA in terms of mAP is used.
+HRSC2016 [38] is dedicated for ship detection in aerial
+images, containing 1061 images annotated with rotated rect-
+angles. We conduct experiments for the level-1 task which
+detects ship from backgrounds. The standard evaluation
+protocol of HRSC2016 in terms of mAP is used.
+MSRA-TD500 [39] is proposed for detecting long and ori-
+ented texts. It contains 300 training and 200 test images
+annotated in terms of text lines. Since the training set is
+rather small, following other methods, we also use HUST-
+TR400 [42] during training. The standard evaluation proto-
+col of MSRA-TD500 based on F-measure is used.
+RCTW-17 [40] is also a long text detection dataset, consist-
+ing of 8034 training images and 4229 test images annotated
+with text lines. This dataset is very challenging due to very
+large text scale variances. We evaluate the proposed method
+via the online evaluation platform in terms of F-measure.
+MW-18Mar
+[41]
+is a multi-target pedestrian tracking
+dataset, in which images are taken with ﬁsheye cameras. For
+each video, we extract 1 of every 17 frames and manually
+annotate the pedestrians with rotated rectangles. We also
+randomly rotate four times the test images, generating 524
+training and 1216 test images. The standard miss rates at
+every false positive per image (FPPI) and log average miss
+rates (LAMRs) [43] are adopted for benchmarking.
+
+Fig. 3. Network architecture. We simply add ﬁve extra target variables
+(normalized to [0, 1] using the sigmoid funciton) to the head of faster
+R-CNN [1]. K : number of classes; k: a cer tain class.
+
+are passed through a modiﬁed R-CNN head to generate ﬁ-
+nal results, including a horizontal bounding box (x, y , w, h),
+four variables (α1 , α2 , α3 , α4 ) characterizing the oriented
+bounding box, and obliquity factor r that indicates whether
+the object is nearly horizontal or not.
+
+3.4 Ground-truth generation
+The ground-truth for each object is composed of three com-
+ponents: classical horizontal bounding box representation
+( ˜x, ˜y , ˜w, ˜h), four extra variables ( ˜α1 , ˜α2 , ˜α3 , ˜α4 ) representing
+the oriented object, and the obliquity factor ˜r . The horizon-
+tal bounding box ground-truth follows the pioneer work
+in [14], which is relative to the proposal. The ground-truth
+for the four extra variables ( ˜α1 , ˜α2 , ˜α3 , ˜α4 ) and obliquity
+factor ˜r depend only on the underlying ground-truth object,
+and are directly computed by Eq. (1) and (2), respectively.
+
+3.5 Training objective
+The proposed method involves loss for RPN stage and R-
+CNN stage. The loss of RPN is the same as that in [1]. The
+loss L for R-CNN head contains a classiﬁcation loss term
+Lcls and a regression loss term Lreg . The R-CNN loss L is
+given by
+
+L =
+
+1
+
+Ncls
+
+Lcls +
+
+p∗
+
+i × Lreg ,
+
+(3)
+
+(cid:88)
+
+i
+
+(cid:88)
+
+1
+
+Nreg
+
+i
+
+where Ncls and Nreg are the number of total proposals
+and positive proposals in a mini-batch fed into the head,
+respectively, and i denotes the index of a proposal in a mini-
+batch. If the i-th proposal is positive, p∗
+is 1, otherwise
+it is 0. The regression loss Lreg contains three terms for
+horizontal bounding box, four length ratios (α1 , α2 , α3 , α4 ),
+and obliquity factor r regression, respectively. Put it simply,
+the regression loss Lreg is given by
+
+i
+
+4(cid:88)
+
+Lreg = λ1 × Lh + λ2 × Lα + λ3 × Lr ,
+smoothL1 (αi − ˜αi ),
+Lα =
+Lr = smoothL1 (r − ˜r),
+
+i=1
+
+(4)
+
+where Lh is the loss for horizontal box regression, which
+is the same as that in [1], and λ1 , λ2 , and λ3 are hyper-
+parameters that balance the importance of each loss term.
+
+BackboneFeature mapRPNcls.reg.RoIAlignFC×2102410240+1……0×9-4ℎ45"45(45)45*464$4&4JOURNAL OF LATEX CLASS FILES, VOL. XX, NO. XX, SEPTEMBER 2019
+
+5
+
+Fig. 4. Some detection results of the proposed method on DOTA [25]. The arbitrary-oriented objects are correctly detected.
+
+(a)
+(b)
+(c)
+(d)
+Fig. 5. Some detection results of the proposed method on HRSC2016 [38] in (a), MSRA-TD500 [39] in (b-c), and RCTW-17 [40] in (d-e).
+
+(e)
+
+4.2 Implementation Details
+The proposed method is implemented based on the project
+of “maskrcnn benchmark” 1 using 3 Titan Xp GPUs.
+For a fair comparison with other methods, we adopt
+ResNet101 [44] for object detection in aerial images, where
+the batch size is set to 6 due to limited GPU memory. For
+the other experiments, ResNet50 is adopted, and the batch
+size is set to 12. In all experiments, the network is trained by
+SGD optimizer with momentum and weight decay set to 0.9
+and 5 × 10−4 , respectively. The learning rate is initialized
+with 7.5 × 10−3 and divided by 10 at each learning rate
+decay step. The hyper-parameters λ1 , λ2 , and λ3 in Eq. (4)
+are set to 1, 1, and 16, respectively. Without explicitly spec-
+ifying, the hyper-parameter tr on obliquity factor guiding
+the selection of horizontal or oriented detection is set to 0.8.
+Some other application related settings are depicted in the
+corresponding sections.
+
+4.3 Object detection in aerial images
+For the experiments on DOTA [25], we train the model
+for 50k steps, and the learning rate decays at {38k , 46k}
+
+1. https://github.com/facebookresearch/maskrcnn-benchmark
+
+steps. Random rotation with angle among {0, π/2, π , 3π/2}
+and class balancing are adopted for data augmentation. For
+the experiments on HRSC2016 [38], we train the model
+for 3.2k steps and decay the learning rate at 2.8k steps.
+Horizontal ﬂipping is applied for data augmentation. For
+a fair comparison, the size of training/test images and the
+anchor settings on both datasets are kept the same as [5].
+
+Overall results. Some qualitative results on DOTA and
+HRSC2016 are shown in Fig. 4 and Fig. 5(a), respectively.
+We show all detected objects with classiﬁcation scores above
+0.6. As illustrated, the proposed method accurately detects
+both horizontal and oriented objects even under dense dis-
+tribution and/or being long. The quantitative comparisons
+with other methods on DOTA [25] and HRSC2016 [38] are
+depicted in Tab. 1 and Tab. 2, respectively. Without any extra
+network design such as cascade reﬁnement and attention
+mechanism, the proposed method outperforms some state-
+of-the-art methods on both DOTA and HRSC2016 and is
+more efﬁcient in runtime. Speciﬁcally, For the experiment
+on DOTA, the proposed method without FPN [3] achieves
+73.39% mAP, outperforming the state-of-the-art method [5]
+by 5.65% mAP. FPN [3] that exploits better multi-scale
+features is also beneﬁcial for the proposed method, boosting
+
+BCSTSBFRAHarborSPHCPlaneBDBridgeGTFSVLVShipTCPlaneBDBridgeGTFSVLVShipTCBCSTSBFRAHarborSPHCJOURNAL OF LATEX CLASS FILES, VOL. XX, NO. XX, SEPTEMBER 2019
+
+6
+
+TABLE 1
+Quantitative comparison with other methods on DOTA. Ours-r means that the divide and conquer detection scheme based on obliquity factor r is
+not used. ∗ indicates that the backbone network is light-head R-CNN [45]. † stands for evaluation using IoU threshold 0.7.
+
+Methods
+FPN Plane
+BD Bridge GTF
+SV
+LV
+Ship
+TC
+BC
+ST
+SBF
+RA Harbor
+FR-O [25]
+-
+79.42 77.13
+17.70
+64.05 35.30 38.02 37.16 89.41 69.64 59.28 50.30 52.91
+47.89
+RoI Trans.∗ [5]
+-
+88.53 77.91
+37.63
+74.08 66.53 62.97 66.57
+90.5
+79.46 76.75 59.04 56.73
+62.54
+Ours∗
+-
+89.95 86.37
+45.79
+73.44 71.44 68.20 75.96 90.72 79.63 85.03 58.56 70.19
+68.28
+Ours-r
+-
+89.93 85.78
+45.90
+73.66 70.07 69.10 76.78 90.62 79.08 83.94 57.75 67.57
+67.53
+Ours
+-
+89.89 85.99
+46.09
+78.48 70.32 69.44 76.93 90.71 79.36 83.80 57.79 68.35
+72.90
+Azimi et al. [28] (cid:88) 81.36 74.30
+47.70
+70.32 64.89 67.82 69.98 90.76 79.06 78.20 53.64 62.90
+67.02
+RoI Trans.∗ [5] (cid:88) 88.64 78.52
+43.44
+75.92 68.81 73.68 83.59 90.74 77.27 81.46 58.39 53.54
+62.83
+(cid:88) 87.80 82.40
+R2 CNN++ [29] (cid:88) 89.66 81.22
+CADNet [30]
+49.40
+73.50 71.10 63.50 76.60 90.90 79.20 73.30 48.40 60.90
+62.00
+45.50
+75.10 68.27 60.17 66.83 90.90 80.69 86.15 64.05 63.48
+65.34
+(cid:88) 89.37 75.96
+RBox reg.
+35.43
+69.57 68.35 63.78 74.92 90.76 84.70 85.26 62.43 62.40
+52.97
+(cid:88) 80.16 76.77
+Vertex reg.
+(cid:88) 90.02 84.41
+43.31
+69.38 55.71 56.52 72.25 88.10 28.95 86.31 63.66 62.23
+61.62
+Ours∗
+49.80
+77.93 72.23 72.52 85.81 90.85 79.21 86.61 59.01 69.15
+66.30
+(cid:88) 89.40 85.08
+Ours-r
+52.00
+77.40 72.68 72.89 86.41 90.74 78.80 86.79 57.84 70.42
+67.73
+(cid:88) 89.64 85.00
+Ours
+52.26
+77.34 73.01 73.14 86.82 90.74 79.02 86.81 59.55 70.91
+72.94
+RBox reg.†
+(cid:88) 42.52 21.76
+10.47
+36.53 26.57 26.91 32.39 63.20 36.56 33.54 33.04 15.63
+11.16
+Vertex reg.†
+(cid:88) 67.94 50.51
+(cid:88) 77.98 53.21
+14.28
+47.46 29.79 27.92 40.66 72.75 14.29 67.59 33.47 40.87
+22.04
+Ours∗ †
+12.52
+68.87 47.25 46.07 54.83 90.45 68.00 68.45 56.44 40.12
+28.59
+Ours-r†
+(cid:88) 67.66 50.37
+17.07
+60.60 48.74 49.00 61.59 88.98 68.84 74.83 48.30 48.03
+32.58
+Ours†
+(cid:88) 77.32 59.75
+15.95
+67.63 50.02 50.25 63.62 90.38 69.04 74.56 51.58 50.16
+32.73
+
+SP
+HC mAP FPS
+47.40 46.30 54.13
+-
+61.29 55.56 67.74
+5.9
+71.34 54.45 72.49
+8.4
+70.85 56.46 72.33
+9.8
+71.03 59.78 73.39
+9.8
+64.17 50.23 68.16
+-
+58.93 47.67 69.56
+-
+67.00 62.20 69.90
+-
+68.01 62.05 71.16
+-
+60.32 54.61 68.72
+9.2
+68.18 41.65 63.65
+9.8
+71.22 55.67 74.05
+7.1
+71.64 56.63 74.43 10.0
+70.86 57.32 75.02 10.0
+10.05 12.98 27.56
+9.2
+17.91 15.13 37.51
+9.8
+22.47 19.13 50.29
+7.1
+23.78 23.75 50.94 10.0
+24.19 25.18 53.49 10.0
+
+TABLE 2
+Quantitative comparison with some state-of-the-ar t methods on
+HRSC2016. ∗ indicates that Light-head R-CNN is adopted.
+
+Methods RC2 [46] R2 PN [27] RRD [34] RoI Trans.∗ [5] Ours∗ Ours
+mAP
+75.7
+79.6
+84.3
+86.2
+87.4
+88.2
+
+the performance to 75.02%. The proposed method using
+FPN [3] improves the state-of-the-art method [29] by 3.86%
+mAP. For HRSC2016 dataset, the proposed method achieves
+88.2% mAP, improving state-of-the-art methods by 2%.
+Experiments on different network architectures. To fur-
+ther demonstrate the versatility of the proposed method,
+we evaluate the proposed method on different networks.
+Concretely, we replace the faster R-CNN head by light-head
+R-CNN [45] head. As depicted in Tab. 1, using the same
+network on DOTA [25], the proposed method improves [5]
+by 4.49% and 4.75% mAP with and without FPN, respec-
+tively. The proposed method outperforms [5] by 1.2% mAP
+on HRSC2016 [38].
+Ablation study. To further verify the effectiveness of the
+proposed method, we compare with two baseline meth-
+ods using rotated bounding box representation (denoted
+by RBox reg.) and quadrangle representation (denoted by
+Vertex Reg.) on DOTA [25]. Some qualitative comparison
+can be found in Fig. 6. We rotate an image with several
+different angles and test the proposed method and two
+baseline methods on the rotated images. Rotated bounding
+box representation produces inaccurate results due to the
+imprecise angle regression. The baseline method based on
+regression of four vertices have difﬁculty for tilted objects
+at some orientations due to the confusion in deﬁning the
+vertex order in training. The proposed method is able to
+accurately detect objects of any orientations.
+The quantitative comparison with baseline methods is
+depicted in the middle of Tab. 1. The proposed method
+outperforms the two baseline methods by a large margin.
+Speciﬁcally, the proposed method outperforms the baseline
+using rotated bounding box regression and quadrangle re-
+gression by 6.30% and 11.37% mAP at the cost of ignorable
+runtime. In fact, as depicted in Tab. 1, the proposed method
+is more efﬁcient than both baseline methods producing
+
+.
+
+x
+o
+g
+B
+R
+
+e
+
+r
+
+x
+e
+
+t
+
+r
+
+.
+
+g
+
+e
+e
+
+V
+
+r
+
+s
+r
+
+u
+
+O
+
+0◦
+
+40◦
+
+Fig. 6. Qualitative comparison with baseline methods in detecting ob-
+jects of different orientations (by rotating an input image with different
+angles). The meaning of colors is the same as that in Fig. 4.
+
+80◦
+
+120◦
+
+more false detections. To further demonstrate the accuracy
+of the proposed method, we also conduct a benchmark
+using larger IoU threshold 0.7 in the evaluation system. As
+shown in Tab. 1, the improvement is even more signiﬁcant,
+changing from 6.30% (resp. 11.37%) to 25.93% (resp. 15.98%).
+We also assess the individual contribution of the pro-
+posed representation for oriented objects and the divide-
+and-conquer detection scheme in the proposed method. To
+this end, we evaluate an alternative of the proposed method
+by discarding the divide-and-conquer detection scheme
+based on obliquity factor r . As depicted in Tab. 1, the pro-
+posed representation in terms of (x, y , w, h, α1 , α2 , α3 , α4 )
+contributes a lot to the improvement. The proposed detec-
+tion scheme brings 0.59% and 1.06% mAP improvement
+with and without FPN [3], respectively. When larger IoU
+threshold 0.7 is used, the selection scheme yields 2.55% mAP
+improvement.
+
+4.4 Long text detection in natural scenes
+For oriented scene text detection on MSRA-TD500 [39] and
+RCTW-17 [40], we apply the same data augmentation as
+
+JOURNAL OF LATEX CLASS FILES, VOL. XX, NO. XX, SEPTEMBER 2019
+
+TABLE 3
+Quantitative comparison with other methods on MSRA-TD500 [39]. MS
+stands for multi-scale test.
+
+Methods
+Zhang et al. [12]
+SegLink [9]
+RRD [34]
+EAST [4]
+Border MS [49]
+TextField [31]
+Lyu et al. [10]
+MCN [11]
+Wang et al. [48]
+Direct MS [7]
+Ours
+
+Precision Recall F-measure FPS
+83.0
+67.0
+74.0
+0.5
+86.0
+70.0
+77.0
+8.9
+87.0
+73.0
+79.0
+10.0
+87.3
+67.4
+76.1
+13.2
+83.0
+73.3
+76.8
+-
+87.4
+75.9
+81.3
+5.2
+87.6
+76.2
+81.5
+5.7
+88.0
+79.0
+83.0
+-
+85.2
+82.1
+83.6
+10.0
+91.0
+81.0
+86.0
+-
+88.8
+84.3
+86.5
+15.0
+
+TABLE 4
+Quantitative comparison with other methods on RCTW-17 [40]. MS
+stands for multi-scale test.
+
+Methods
+Ofﬁcial baseline [40]
+RRD [34]
+RRD MS
+Direct MS [7]
+Border MS [49]
+LOMO [8]
+LOMO MS
+Ours
+Ours MS
+
+Precision Recall F-measure FPS
+76.0
+40.4
+52.8
+8.9
+72.4
+45.3
+55.7
+10.0
+77.5
+59.1
+67.0
+-
+76.7
+57.9
+66.0
+-
+78.2
+58.8
+67.1
+-
+80.4
+50.8
+62.3
+4.4
+79.1
+60.2
+68.4
+-
+77.0
+61.0
+68.1
+7.8
+77.6
+62.7
+69.3
+-
+
+SSD [20]. Besides, we also randomly rotate the images with
+π/2 to better handle vertical texts. The training images are
+randomly cropped and resized to some speciﬁc sizes. For
+images to {512, 768, 864}. For RCTW-17 [40] containing
+MSRA-TD500, we randomly resize the short side of cropped
+many small texts, the short side is randomly resized to
+{960, 1200, 1400}. We ﬁrst pre-train the model on Synth-
+Text [47] for one epoch. Then we ﬁne-tune the model for 4k
+(resp. 14k) and decay the learning rate at 3k (resp. 10k) steps
+for MSRA-TD500 (resp. RCTW-17). During test, the short
+side of MSRA-TD500 images is resized to 768. For RCTW-
+17, the short side is set to 1200 for single scale test. We add
+extra scales of {512, 1024, 1280, 1560} for multi-scale test.
+Some qualitative illustrations are given in Fig. 5(b-e). The
+proposed method correctly detect texts of arbitrary orienta-
+tions. The quantitative comparisons with some state-of-the-
+art methods on MSRA-TD500 and RCTW-17 are depicted in
+Tab. 3 and Tab. 4, respectively. The proposed method out-
+performs other competing methods and is more efﬁcient on
+both datasets. Speciﬁcally, on MSRA-TD500, the proposed
+method under single scale test outperforms the multi-scale
+version of [7] using larger extra training images by 0.5%, and
+improves [48] by 2.9%. On RCTW-17, the proposed method
+outperforms the state-of-the-art method [8] by 5.8% (resp.
+0.9%) under single-scale (resp. multi-scale) test while being
+much more efﬁcient.
+
+4.5 Pedestrian detection in ﬁsheye images
+We compare the proposed method with baseline methods
+using quadrangle regression and classical horizontal box
+regression on MW-18Mar [41]. All images are resized to
+1024 × 1024. We randomly rotate the images during training
+phase for data augmentation. The model is trained in total
+for 4k steps and the learning rate decays at 3k steps.
+
+7
+
+(a) HBox
+(b) Ver tex reg.
+(c) Ours
+Fig. 7. Qualitative illustrations of different methods on MW-18Mar [41].
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+e
+
+t
+
+a
+
+r
+
+g
+n
+
+i
+
+s
+s
+
+i
+
+M
+
+HBox/0.79
+Vertex reg./0.25
+Ours/0.17
+
+0.001
+
+0.01
+0.1
+False positives per image
+
+1
+
+Fig. 8. Evaluation on MW-18Mar [41]. The numbers are the LAMRs.
+
+Some qualitative results are illustrated in Fig. 7. Hori-
+zontal pedestrian detection denoted by HBox does not ac-
+curately enclose pedestrians. the proposed method achieves
+more accurate results than the baseline methods. The curve
+of missing rate with respect to number of false positives per
+image is depicted in Fig. 8. The proposed method achieves
+lower missing rate.
+
+5 CONCLUS ION
+
+In this paper, we propose a simple yet effective representa-
+tion for oriented objects and a divide-and-conquer strategy
+to detect multi-oriented objects. Based on this, we build a
+robust and fast multi-oriented object detector. It accurately
+detects ubiquitous multi-oriented objects such as objects
+in arial
+images, scene texts, and pedestrians in ﬁsheye
+images. Extensive experiments demonstrate that the pro-
+posed method outperforms some state-of-the-art methods
+on multiple benchmarks while being more efﬁcient. In the
+future, we would like to explore the complementary of the
+proposed method with other approaches focusing on feature
+enhancement. One-stage multi-oriented object detector is
+also another direction which is worthy of exploitation.
+
+RE FERENCES
+
+[1]
+
+[2]
+
+S. Ren, K. He, R. Girshick, and J. Sun, “Faster R-CNN: Towards
+real-time object detection with region proposal networks,” IEEE
+Trans. on Pattern Anal. and Mach. Intell., no. 6, pp. 1137–1149, 2017.
+J. Redmon and A. Farhadi, “YOLOv3: An incremental improve-
+ment,” arXiv preprint arXiv:1804.02767, 2018.
+[3] T.-Y. Lin, P. Doll ´ar, R. Girshick, K. He, B. Hariharan, and S. Be-
+longie, “Feature pyramid networks for object detection,” in Proc.
+of IEEE Intl. Conf. on Computer Vision and Pattern Recognition, 2017,
+pp. 2117–2125.
+
+JOURNAL OF LATEX CLASS FILES, VOL. XX, NO. XX, SEPTEMBER 2019
+
+[5]
+
+[4] X. Zhou, C. Yao, H. Wen, Y. Wang, S. Zhou, W. He, and J. Liang,
+“EAST: An efﬁcient and accurate scene text detector,” in Proc. of
+IEEE Intl. Conf. on Computer Vision and Pattern Recognition, 2017,
+pp. 2642–2651.
+J. Ding, N. Xue, Y. Long, G.-S. Xia, and Q. Lu, “Learning roi
+transformer for oriented object detection in aerial images,” in Proc.
+of IEEE Intl. Conf. on Computer Vision and Pattern Recognition, 2019,
+pp. 2849–2858.
+[6] M. Liao, B. Shi, and X. Bai, “Textboxes++: A single-shot oriented
+scene text detector,” IEEE Trans. on Image Processing, vol. 27, no. 8,
+pp. 3676–3690, 2018.
+[7] W. He, X.-Y. Zhang, F. Yin, and C.-L. Liu, “Multi-oriented and
+multi-lingual scene text detection with direct regression,” IEEE
+Trans. on Image Processing, vol. 27, no. 11, pp. 5406–5419, 2018.
+[8] C. Zhang, B. Liang, Z. Huang, M. En, J. Han, E. Ding, and X. Ding,
+“Look more than once: An accurate detector for text of arbitrary
+shapes,” Proc. of IEEE Intl. Conf. on Computer Vision and Pattern
+Recognition, pp. 10 552–10 561, 2019.
+[9] B. Shi, X. Bai, and S. Belongie, “Detecting oriented text in natural
+images by linking segments,” in Proc. of IEEE Intl. Conf. on Com-
+puter Vision and Pattern Recognition, 2017, pp. 3482–3490.
+[10] P. Lyu, C. Yao, W. Wu, S. Yan, and X. Bai, “Multi-oriented scene
+text detection via corner localization and region segmentation,” in
+Proc. of IEEE Intl. Conf. on Computer Vision and Pattern Recognition,
+2018, pp. 7553–7563.
+[11] Z. Liu, G. Lin, S. Yang, J. Feng, W. Lin, and W. L. Goh, “Learning
+markov clustering networks for scene text detection,” in Proc. of
+IEEE Intl. Conf. on Computer Vision and Pattern Recognition, 2018,
+pp. 6936–6944.
+[12] Z. Zhang, C. Zhang, W. Shen, C. Yao, W. Liu, and X. Bai, “Multi-
+oriented text detection with fully convolutional networks,” in Proc.
+of IEEE Intl. Conf. on Computer Vision and Pattern Recognition, 2016,
+pp. 4159–4167.
+[13] Z.-Q. Zhao, P. Zheng, S.-t. Xu, and X. Wu, “Object detection with
+deep learning: A review,” IEEE Trans. on Neural Networks and
+Learning Systems, 2019.
+[14] R. Girshick, J. Donahue, T. Darrell, and J. Malik, “Rich feature
+hierarchies for accurate object detection and semantic segmenta-
+tion,” in Proc. of IEEE Intl. Conf. on Computer Vision and Pattern
+Recognition, 2014, pp. 580–587.
+[15] R. Girshick, “Fast R-CNN,” in Proc. of IEEE Intl. Conf. on Computer
+Vision, 2015, pp. 1440–1448.
+[16] J. R. Uijlings, K. E. Van De Sande, T. Gevers, and A. W. Smeulders,
+“Selective search for object recognition,” International Journal of
+Computer Vision, vol. 104, no. 2, pp. 154–171, 2013.
+[17] J. Dai, Y. Li, K. He, and J. Sun, “R-FCN: Object detection via region-
+based fully convolutional networks,” in Proc. of Advances in Neural
+Information Processing Systems, 2016, pp. 379–387.
+[18] J. Redmon, S. Divvala, R. Girshick, and A. Farhadi, “You only look
+once: Uniﬁed, real-time object detection,” in Proc. of IEEE Intl. Conf.
+on Computer Vision and Pattern Recognition, 2016, pp. 779–788.
+[19] J. Redmon and A. Farhadi, “YOLO9000: Better, faster, stronger,” in
+Proc. of IEEE Intl. Conf. on Computer Vision and Pattern Recognition,
+2017, pp. 7263–7271.
+[20] W. Liu, D. Anguelov, D. Erhan, C. Szegedy, S. Reed, C.-Y. Fu,
+and A. C. Berg, “SSD: Single shot multibox detector,” in Proc. of
+European Conference on Computer Vision, 2016, pp. 21–37.
+[21] T.-Y. Lin, P. Goyal, R. Girshick, K. He, and P. Doll ´ar, “Focal loss
+for dense object detection,” in Proc. of IEEE Intl. Conf. on Computer
+Vision, 2017, pp. 2980–2988.
+[22] H. Law and J. Deng, “CornerNet: Detecting objects as paired
+keypoints,” in Proc. of European Conference on Computer Vision, 2018,
+pp. 734–750.
+[23] X. Zhou, J. Zhuo, and P. Krahenbuhl, “Bottom-up object detection
+by grouping extreme and center points,” in Proc. of IEEE Intl. Conf.
+on Computer Vision and Pattern Recognition, 2019, pp. 850–859.
+[24] K. Duan, S. Bai, L. Xie, H. Qi, Q. Huang, and Q. Tian, “Cen-
+terNet: Object detection with keypoint triplets,” arXiv preprint
+arXiv:1904.08189, 2019.
+[25] G.-S. Xia, X. Bai, J. Ding, Z. Zhu, S. Belongie, J. Luo, M. Datcu,
+M. Pelillo, and L. Zhang, “DOTA: A large-scale dataset for object
+detection in aerial images,” in Proc. of IEEE Intl. Conf. on Computer
+Vision and Pattern Recognition, 2018, pp. 3974–3983.
+[26] L. Liu, Z. Pan, and B. Lei, “Learning a rotation invariant detector
+with rotatable bounding box,” arXiv preprint arXiv:1711.09405,
+2017.
+
+8
+
+[27] Z. Zhang, W. Guo, S. Zhu, and W. Yu, “Toward arbitrary-oriented
+ship detection with rotated region proposal and discrimination
+networks,” IEEE Geoscience and Remote Sensing Letters, no. 99, pp.
+1–5, 2018.
+[28] S. M. Azimi, E. Vig, R. Bahmanyar, M. K ¨orner, and P. Reinartz,
+“Towards multi-class object detection in unconstrained remote
+sensing imagery,” in Asian Conference on Computer Vision, 2018, pp.
+150–165.
+[29] X. Yang, K. Fu, H. Sun, J. Yang, Z. Guo, M. Yan, T. Zhan, and
+S. Xian, “R2CNN++: Multi-dimensional attention based rotation
+invariant detector with robust anchor strategy,” arXiv preprint
+arXiv:1811.07126, 2018.
+[30] G. Zhang, S. Lu, and W. Zhang, “CAD-Net: A context-aware
+detection network for objects in remote sensing imagery,” arXiv
+preprint arXiv:1903.00857, 2019.
+[31] Y. Xu, Y. Wang, W. Zhou, Y. Wang, Z. Yang, and X. Bai, “Textﬁeld:
+Learning a deep direction ﬁeld for irregular scene text detection,”
+IEEE Trans. on Image Processing, 2019.
+[32] J. Ma, W. Shao, H. Ye, L. Wang, H. Wang, Y. Zheng, and X. Xue,
+“Arbitrary-oriented scene text detection via rotation proposals,”
+IEEE Trans. on Multimedia, 2018.
+[33] Y. Liu and L. Jin, “Deep matching prior network: Toward tighter
+multi-oriented text detection,” in Proc. of IEEE Intl. Conf. on Com-
+puter Vision and Pattern Recognition, 2017, pp. 3454–3461.
+[34] M. Liao, Z. Zhu, B. Shi, G. Xia, and X. Bai, “Rotation-sensitive
+regression for oriented scene text detection,” in Proc. of IEEE Intl.
+Conf. on Computer Vision and Pattern Recognition, 2018, pp. 5909–
+5918.
+[35] R. Seidel, A. Apitzsch, and G. Hirtz, “Omnidetector: With neural
+networks to bounding boxes.” arXiv preprint arXiv:1805.08503,
+2018.
+[36] M. Tamura, S. Horiguchi, and T. Murakami, “Omnidirectional
+pedestrian detection by rotation invariant training,” in Proc. of
+IEEE Winter Conf. on Applications of Computer Vision, 2019, pp.
+1989–1998.
+[37] K. He, G. Gkioxari, P. Doll ´ar, and R. Girshick, “Mask R-CNN,” in
+Proc. of IEEE Intl. Conf. on Computer Vision, 2017, pp. 2980–2988.
+[38] Z. Liu, H. Wang, L. Weng, and Y. Yang, “Ship rotated bounding
+box space for ship extraction from high-resolution optical satellite
+images with complex backgrounds,” IEEE Geoscience and Remote
+Sensing Letters, vol. 13, no. 8, pp. 1074–1078, 2016.
+[39] C. Yao, X. Bai, W. Liu, Y. Ma, and Z. Tu, “Detecting texts of
+arbitrary orientations in natural images,” in Proc. of IEEE Intl. Conf.
+on Computer Vision and Pattern Recognition, 2012, pp. 1083–1090.
+[40] B. Shi, C. Yao, M. Liao, M. Yang, P. Xu, L. Cui, S. Belongie, S. Lu,
+and X. Bai, “ICDAR2017 competition on reading chinese text in the
+wild (RCTW-17),” in Proc. of International Conference on Document
+Analysis and Recognition, vol. 1, 2017, pp. 1429–1434.
+[41] Mirror worlds challenge. [Online]. Available: https://icat.vt.edu/
+mirrorworlds/challenge/index.html
+[42] C. Yao, X. Bai, and W. Liu, “A uniﬁed framework for multioriented
+text detection and recognition,” IEEE Trans. on Image Processing,
+vol. 23, no. 11, pp. 4737–4749, 2014.
+[43] P. Dollar, C. Wojek, B. Schiele, and P. Perona, “Pedestrian detection:
+An evaluation of the state of the art,” IEEE Trans. on Pattern Anal.
+and Mach. Intell., vol. 34, no. 4, pp. 743–761, 2011.
+[44] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for
+image recognition,” in Proc. of IEEE Intl. Conf. on Computer Vision
+and Pattern Recognition, 2016, pp. 770–778.
+[45] Z. Li, C. Peng, G. Yu, X. Zhang, Y. Deng, and J. Sun, “Light-Head
+R-CNN: In defense of two-stage object detector,” arXiv preprint
+arXiv:1711.07264, 2017.
+[46] Z. Liu, J. Hu, L. Weng, and Y. Yang, “Rotated region based cnn
+for ship detection,” in Proc. of IEEE Intl. Conf. on Image Processing,
+2017, pp. 900–904.
+[47] A. Gupta, A. Vedaldi, and A. Zisserman, “Synthetic data for text
+localisation in natural images,” in Proc. of IEEE Intl. Conf. on
+Computer Vision and Pattern Recognition, 2016, pp. 2315–2324.
+[48] X. Wang, Y. Jiang, Z. Luo, C.-L. Liu, H. Choi, and S. Kim,
+“Arbitrary shape scene text detection with adaptive text region
+representation,” in Proc. of IEEE Intl. Conf. on Computer Vision and
+Pattern Recognition, 2019, pp. 6449–6458.
+[49] C. Xue, S. Lu, and F. Zhan, “Accurate scene text detection through
+border semantics awareness and bootstrapping,” in Proc. of Euro-
+pean Conference on Computer Vision, 2018, pp. 355–372.
+
+

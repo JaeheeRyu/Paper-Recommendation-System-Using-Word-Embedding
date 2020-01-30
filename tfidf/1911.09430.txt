@@ -1,0 +1,1799 @@
+Visual Tactile Fusion Object Clustering
+
+Tao Zhang,1,2 Yang Cong,1 ∗ Gan Sun,1,2 † Qianqian Wang,3 Zhenming Ding4
+
+1State Key Laboratory of Robotics, Shenyang Institute of Automation, Chinese Academy of Sciences.‡
+2University of Chinese Academy of Sciences, 3Xidian University, 4 Indiana University-Purdue University Indianapolis, USA
+zhangtaosia@gmail.com, congyang81@gmail.com, sungan1412@gmail.com, qianqian174@foxmail.com, zd2@iu.edu
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+0
+3
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Object clustering, aiming at grouping similar objects into one
+cluster with an unsupervised strategy, has been extensively-
+studied among various data-driven applications. However,
+most existing state-of-the-art object clustering methods (e.g.,
+single-view or multi-view clustering methods) only explore
+visual information, while ignoring one of most important
+sensing modalities, i.e., tactile information which can help
+capture different object properties and further boost the per-
+formance of object clustering task. To effectively beneﬁt both
+visual and tactile modalities for object clustering, in this pa-
+per, we propose a deep Auto-Encoder-like Non-negative Ma-
+trix Factorization framework for visual-tactile fusion cluster-
+ing. Speciﬁcally, deep matrix factorization constrained by an
+under-complete Auto-Encoder-like architecture is employed
+to jointly learn hierarchical expression of visual-tactile fusion
+data, and preserve the local structure of data generating dis-
+tribution of visual and tactile modalities. Meanwhile, a graph
+regularizer is introduced to capture the intrinsic relations of
+data samples within each modality. Furthermore, we propose
+a modality-level consensus regularizer to effectively align the
+visual and tactile data in a common subspace in which the gap
+between visual and tactile data is mitigated. For the model op-
+timization, we present an efﬁcient alternating minimization
+strategy to solve our proposed model. Finally, we conduct ex-
+tensive experiments on public datasets to verify the effective-
+ness of our framework.
+
+Introduction
+
+Grouping a set of objects in an unsupervised way that ob-
+jects in the same group (called a cluster) are more similar to
+each other than these in other groups (i.e., object clustering)
+has attracted a lot attention in both academic and industrial
+communities in the past decades. Most current object clus-
+tering works (Cao et al. 2015; Zhao, Ding, and Fu 2017;
+Zhang et al. 2018a; Zhang et al. 2018b; Yang et al. 2019;
+Gan et al. 2020) aim at recognizing “similar behavior” based
+on visual information captured by a visual camera (e.g.,
+RGB or Depth camera) or represented by different descrip-
+tion methods (e.g., SURF, LBP or deep features). These
+
+∗The corresponding author is Prof. Yang Cong.
+†The author contributed equally to this work.
+‡This work is supported by NSFC (61821005, 61722311,
+U1613214, 61533015), and LiaoNing Revitalization Talents Pro-
+gram(XLYC1807053).
+
+Figure 1: Illustration of the proposed visual-tactile fu-
+sion object clustering framework, where an under-complete
+Auto-Encoder-like structure is used to preserve the local
+structure of data generating distribution of visual and tac-
+tile modalities. With the consensus regularization, the gap
+between visual and tactile modalities can be well mitigated.
+
+above methods have been successfully applied into statistics,
+computer vision, biology or psychology (Wu et al. 2013;
+Li, Kong, and Fu 2017; Li and Liu 2017; Liu et al. 2018;
+Sun et al. 2019).
+However, most existing object clustering works ignore
+one of the important sensing modality, i.e., tactile informa-
+tion (e.g., hardness, force, and temperature), which casts a
+light in compensating visual information on many practi-
+cal manipulation tasks (Liu et al. 2016; Yuan et al. 2017).
+For example, in the practical situation that a robot grasps
+an apple, the visual information of the apple becomes unob-
+servable due to the occlusion of a robot hand while the tac-
+tile information can be easily obtained. Some objects whose
+appearance are visually similar can be hardly distinguished
+via merely using visual information (e.g., ripe versus unripe
+fruits). However, the ripe versus unripe fruits can be eas-
+ily distinguished by tactile properties (e.g., hardness). Be-
+sides, some objects cannot be well distinguished only by ei-
+ther visual information or tactile information. For instance,
+it is hard to differentiate three visually similar bottles, where
+two bottles are empty and the remaining one is full of wa-
+
+ 
+ 
+ 
+ 
+ 
+ 
+ter. Hence, it is beneﬁcial from each other to perform object
+clustering by fusing visual and tactile modalities.
+To integrate visual with tactile information, a naive solu-
+tion is to treat visual or tactile data as single view data, and
+directly perform the existing multi-view clustering methods
+on the visual-tactile object clustering task. However, the gap
+between visual and tactile modalities is very large (Liu and
+Sun 2018). On the one hand, the devices which are used to
+collect tactile and visual data are different. Tactile sensor ob-
+tains tactile data through constant physical contact, while the
+visual modality can simultaneously generate multiple differ-
+ent features of an object at a distance. Moreover, the for-
+mat, frequency and receptive ﬁeld is diverse since visual sen-
+sor usually perceives color, global shape and rough texture,
+while touch sensor is usually used to acquire detailed tex-
+ture, hardness and temperature. Therefore, how to establish
+a novel visual-tactile fusion object clustering model, which
+can tackle intrinsic gap challenge across visual and tactile
+data, is our focus in this work.
+To address the challenges mentioned above, in this pa-
+per, we propose a deep Auto-Encoder-like Non-negative
+Matrix Factorization (NMF) framework for visual-tactile
+fused object clustering. More speciﬁcally, deep NMF con-
+strained with an under-complete Auto-Encoder-like struc-
+ture is adopted to learn the hierarchical semantics, while pre-
+serving the local data structure among visual and tactile data
+in a layer-wise manner. Then, we introduce a graph regu-
+larizer to reduce the differences between similar points in-
+side each modality. Furthermore, as a non-trivial contribu-
+tion, we carefully design a sparse consensus regularizer to
+tackle the intrinsic gap problems between visual and tactile
+data. We explore a consensus constraint to interact the in-
+dividual component between different modalities with ﬁnal
+consensus representation to align two modalities. Thus, it
+plays as the modality-level constraint to supervise the gen-
+eration of a common subspace, in which the mutual informa-
+tion on visual and tactile data is maximized. To optimize our
+proposed framework, an efﬁcient alternating minimization
+strategy is present. To the end, we conduct extensive experi-
+ments on public datasets to evaluate the effectiveness of our
+framework, wherein ours outperforms the state-of-the-arts.
+The contributions are summarized as:
+• We propose a deep Auto-Encoder-like Nonnegative Ma-
+trix Factorization framework for visual-tactile fusion ob-
+ject clustering. To our best knowledge, this is a pioneering
+work to incorporate visual modality with tactile modality
+in the object clustering task.
+• We develop an under-complete Auto-Encoder-like struc-
+ture to jointly learn the hierarchical semantics and pre-
+serve the local data structure. Meanwhile, we design a
+sparse consensus regularization to seek a common sub-
+space, in which the gap between visual and tactile modali-
+ties is mitigated and the mutual information is maximized.
+• To solve our proposed framework, an efﬁcient solution
+based on an alternating direction minimization method is
+provided. Extensive experiment results verify the effec-
+tiveness of our proposed framework.
+
+Related Work
+
+The work in this paper lies in the tasks of visual-tactile sens-
+ing and multi-view clustering. We thus introduce the related
+work including visual-tactile sensing and multi-view clus-
+tering in this section.
+
+Visual-Tactile Sensing
+
+Vision and touch are the most important sensing modalities
+both for robots and humans, and they are widely-applied in
+robot tasks (Ilonen, Bohg, and Kyrki 2014; Liu et al. 2016;
+Yuan et al. 2017; Dong et al. 2019). Generally, visual-tactile
+sensing can be mainly divided into three categories includ-
+ing object recognition, 3D reconstruction and cross-modal
+matching.
+Amongst the ﬁelds mentioned above, Liu et al. propose a
+visual-tactile fusion framework to recognize household ob-
+jects based on kernel sparse coding method (Liu et al. 2016).
+Yuan and Luo et al. propose a deep learning framework for
+clothing material perception by fusing visual and tactile in-
+formation (Yuan et al. 2018). Ilonen et al. develop to recon-
+struct 3D model of unknown symmetric objects by fusing vi-
+sual and tactile information (Ilonen, Bohg, and Kyrki 2014).
+Wang et al. present to perceive accurate 3D object shape
+with a monocular camera and a high-resolution tactile sen-
+sor (Wang et al. 2018). Yuan et al. propose a multi-input net
+to connect the visual and tactile properties of fabrics (Yuan
+et al. 2017). Li et al. introduce a conditional generative ad-
+versarial network based prediction model to connect visual
+and tactile measurement (Li et al. 2019). Although the pre-
+vious models have been successfully applied in supervised
+learning in the visual-tactile sensing ﬁelds, its application in
+object clustering is still under insufﬁcient exploration.
+
+Multi-View Clustering
+
+Multi-view clustering has shown remarkable successes in
+many real-world applications. Based on standard spectral
+clustering (Ng, Jordan, and Weiss 2002), co-training (Ku-
+mar and Daum ´e 2011) and co-regularizer (Kumar, Rai, and
+Daume 2011) are performed to enforce consistence of dif-
+ferent views. Based on the subspace clustering strategy, Cao
+and Zhang et al. try to capture complementary information
+from different views in the manner of subspace representa-
+tions (Cao et al. 2015; Zhang et al. 2018a) . Based on the
+framework of non-negative matrix factorization and its vari-
+ants (Trigeorgis et al. 2014), Li et al. propose a consensus
+clustering and semi-supervised clustering method based on
+Semi-NMF (Li, Ding, and Jordan 2007). Zhao et al. propose
+a deep Semi-NMF method for multi-view clustering (Zhao,
+Ding, and Fu 2017).
+
+The Proposed Method
+
+NMF Revisit
+
+NMF and its variants (Lee, Seung, and Sebastian 2001; Liu
+et al. 2011) have previously shown to be promising in the
+ﬁeld of multi-view clustering. The objective of NMF can be
+deﬁned as:
+
+min
+
+Z≥0,H≥0
+
+(cid:107)X − ZH (cid:107)2
+F ,
+
+(1)
+
+where X is the input feature matrix, Z is the basis matrix and
+H is the compact representation, respectively. We can ob-
+tain the ﬁnal clustering result by performing standard spec-
+tral clustering (Ng, Jordan, and Weiss 2002) on H . How-
+ever, in real-world applications, it is not enough to learn in-
+trinsic data structure with single-layer NMF due to complex
+data structure and data noise. Zhao et al. show that a deep
+NMF model has an appealing performance in data represen-
+tation (Zhao, Ding, and Fu 2017). The deep NMF can be
+formulated as:
+
+X ≈ Z1H1 ,
+
+· · · , X ≈ Z1 . . . ZmHm ,
+
+(2)
+where Zi and Hi represent the basis matrix and representa-
+tion for the i-th layer, respectively. Inspired by this idea, we
+intend to explore the deep NMF architecture into our visual-
+tactile object clustering framework.
+
+The Proposed Framework
+
+In the setting of visual-tactile fusion object clustering frame-
+
+work, we use X = {X (1) , . . . , X (v) , . . . , X (V ) } as the in-
+
+put data, where V is the number of modalities (V is deﬁned
+as 2 for the visual-tactile clustering task in this work), and
+v represents the v -th modality. X (v) ∈ Rdv ×n denotes the
+feature matrix for the v -th modality, dv represents the di-
+mension of the feature, n denotes the number of data sam-
+ples. Then, we propose our deep visual-tactile fused object
+clustering model as follows:
+
+V(cid:88)
+
+v=1
+
+(cid:0)(cid:107)X (v) − Z (v)
+1 Z (v)
+2
+m − (Z (v)
+
+m )
+
+(cid:62)
+
+min
+
+Z
+
+(v)
+(v)
+,H
+i
+i
+m ,H ∗
+(v)
+H
+
+(cid:62)
+
+(Z (v)
+
++ (cid:107)H (v)
+
+)(cid:1)+λ
+. . . (Z (v)
+m−1 )
+1 )
+m )
+s.t., H (v)
+i ≥ 0, Z (v)
+i ≥ 0, i = 1, 2 . . . m,
+
+m L(v) (H (v)
+
++β tr(H (v)
+
+V(cid:88)
+
+v=1
+
+(cid:62)
+
+(cid:62)
+
+X (v) (cid:107)2
+F
+(cid:107)H (v)
+m −G(v)H
+
+∗ (cid:107)2,1
+
+(3)
+
+where m is the number of layer, β ≥ 0 and λ ≥ 0 are the
+regularization parameters. H (v)
+m represents the high hierar-
+chical semantics of the v -th modality.
+Moreover, the ﬁrst and second terms denote the NMF con-
+strained by an under-complete Auto-Encoder-like structure,
+which is designed to learn the hierarchical semantics while
+preserving the local structure of the input visual and tactile
+data. The ﬁrst term denotes an under-complete decoder pro-
+cess controlling the dimension of H (v)
+m lower than X (v) and
+further force NMF to learn more salient features represen-
+tation of X (v) . The second term denotes an encoder process
+which implicitly maintains the local data structure via recov-
+ering X (v) from H (v)
+m . Furthermore, we have the following
+Remarks for the used regularization.
+Remark 1 The graph regularization in the third term is
+designed to pull the similarities of nearby points inside
+each modality. L(v) denotes the graph Laplacian ma-
+trix for the v -th modality, constructed in k-nearest neigh-
+bor manner. By using the Eigen-decomposition technique
+(cid:62)
+, we obtain:
+
+i.e., L(v) = Q(v)P (v) (Q(v) )
+
+on L(v) ,
+
+. . . Z (v)
+
+m (cid:107)2
+m H (v)
+F
+
+Z
+
+(cid:13)(cid:13)(cid:13)H (v)
+
+m A(v)(cid:13)(cid:13)(cid:13)2
+F
+
+, where A(v) =
+
+tr(H (v)
+
+m L(v) (H (v)
+
+m )(cid:62) ) =
+
+1
+
+Q(v)P (v)
+
+2 . However, the process of collecting tactile or vi-
+sual data is easily contaminated by environmental change,
+which leads to noise and outliers in the source data. Mean-
+while, Frobenius norm is sensitive to the noises and outliers.
+We thus replace Frobenius norm by the (cid:96)2,1 -norm, which can
+jointly remove outliers and uncover more shared represen-
+tation across the nearby points inside each modality.
+
+Remark 2 The last item is the consensus regularization,
+which is designed to tackle the intrinsic gap problem be-
+tween visual and tactile data. This term directly measures
+the similarity between H ∗ and H (v)
+m in a utility way, where
+G(v) is the best mapping matrix to align H (v)
+m to H ∗ . After
+aligning H (v)
+m to H ∗ , the (cid:96)2,1 -norm constraint is to calculate
+the dissimilarity between H (v)
+m and H ∗ in an efﬁcient way.
+Therefore, this term plays as a modality-level constraint and
+learn a project matrix G(v) , which projects H (v)
+m into the
+common subspace H ∗ . In this subspace, the mutual informa-
+tion on each modality is maximized, which ultimately con-
+tributes to the object clustering.
+
+Then the objective function Eq. (3) is further reformulated
+as:
+
+min
+
+(v)
+(v)
+,H
+i
+i
+m ,H ∗
+(v)
+
+H
+
+v=1
+
+V(cid:88)
+
+. . . Z (v)
+
+m (cid:107)2
+m H (v)
+F
+
+(cid:0)(cid:107)X (v) − Z (v)
+1 Z (v)
+2
+m − (Z (v)
+(Z (v)
+m A(v) (cid:107)2,1 + λ(cid:107)H (v)
+m − G(v)H
+
++ (cid:107)H (v)
++ β (cid:107)H (v)
+i ≥ 0, Z (v)
+i ≥ 0, i = 1, 2 . . . m.
+s.t., H (v)
+
+m−1 )
+
+. . . (Z (v)
+1 )
+
+m )
+
+(cid:62)
+
+(cid:62)
+
+(cid:1)
+
+(cid:62)
+
+X (v) (cid:107)2
+F
+∗ (cid:107)2,1
+
+(4)
+
+Optimization
+
+i
+
+H (v)
+i
+
+To efﬁciently solve the optimization problem Eq. (4), we
+propose a solution based on alternating direction minimiza-
+tion algorithm. To reduce the training time, we pre-train
+each layer to approximate the factor matrices Z (v)
+and
+. For the pre-training process, we decompose the in-
+put data matrix X (v) ≈ Z (v)
+by minimizing (cid:107)X (v) −
+F ﬁrst, where Z (v)
+1 ∈ Rp1×n . Then we decompose H (v)
+as
+2 ∈ Rp2×n .
+2 , where Z (v)
+p1 is the dimension of layer 1 and p2 is the dimension of
+layer 21 . Repeating the process until all layers have been
+pre-trained. Then each layer is ﬁne-tuned by alternating min-
+imization of the proposed framework in Eq. (4). Speciﬁcally,
+the update rules for each variable are as follows.
+
+1 H (v)
+1 (cid:107)2
+F + (cid:107)H (v)
+1 − (Z (v)
+1 )(cid:62)X (v)(cid:107)2
+1
+Z (v)
+1 H (v)
+Rdv ×p1 and H (v)
+1 ≈ Z (v)
+2 H (v)
+2 ∈ Rdv ×p2 and H (v)
+
+1 ∈
+
+H v
+
+1
+
+1The layer size for layer 1 to m is denoted as [p1 . . . pm ] in this
+paper
+
+Update rule for Z (v)
+
+i
+
+: With other variables ﬁxed, we can
+have the following Lagrangian objective function:
+
+min
+
+Z
+
+(v)
+i
+
+V(cid:88)
+
+v=1
+
+((cid:107)X (v) −ΦZ (v)
+
+i (cid:107)2
+F + (cid:107)H (v)
+i − (Z (v)
+i H (v)
+i
+
+)
+
+(cid:62)
+
+Φ
+
+(cid:62)
+
+X (v) (cid:107)2
+F
+
+− ηZ (v)
+
+i
+
+),
+
+(5)
+
+where Φ = [Z (v)
+
+1 Z (v)
+(cid:0)ΦT X (v) (X (v) )(cid:62)ΦZ (v)
+2
+(cid:0)Z (v)
+(cid:0)Z (v)
+i + ΦT ΦZ (v)
+i H (v)
+(H (v)
+i
+i
+i
+kl
+i
+i
+
+. . . Z (v)
+
+i−1 ], and Φ is set as I when
+i = 1. Taking the derivative to zero and applying the Karush-
+Kuhn-Tucker (KKT) conditions, we can have:
+)(cid:62) (cid:1)
+This process converges because this is a ﬁxed point equation.
+Then we obtain the update rule as:
+
+)(cid:62)−
+
+2Φ(cid:62)X (v) (H (v)
+
+(cid:1)
+
+kl − (cid:0)η(cid:1)
+
+kl
+
+(cid:1)
+
+kl = 0.
+
+(6)
+
+i ← Z (v)
+Z (v)
+
+i (cid:12)
+
+2Φ(cid:62)X (v) (H (v)
+Φ(cid:62)X (v) (X (v) )(cid:62)ΦZ (v)
+i +Φ(cid:62)ΦZ (v)
+
+i
+
+)(cid:62)
+
+i H (v)
+i (H (v)
+
+i )(cid:62) .
+
+(7)
+
+where (cid:12) represents the element-wise product.
+(i < m): By utilizing a similar
+proof as (Zhao, Ding, and Fu 2017), we can formulate the
+update rule for H (v)
+as follows:
+
+Update rule for H (v)
+
+i
+
+i
+
+i )kl ← (H (v)
+i )kl (cid:12)
+(H(v)
+
+(cid:118)(cid:117)(cid:117)(cid:116)[2Φ(cid:62)X (v)]p
+kl + [Φ(cid:62)ΦH (v)
+[2Φ(cid:62)X (v)]n
+kl + [Φ(cid:62)ΦH (v)
+
+i
+
+]n
+]p
+
+kl + [H (v)
+i
+kl + [H (v)
+i
+
+]n
+]p
+
+kl
+
+i
+
+kl
+
+.
+
+(8)
+
+Update rule for H (v)
+
+m (i = m), G(v) and H ∗ : Solving
+these variables is a challenging problem since it is hard to di-
+rectly get the explicit solutions. We thus introduce two auxil-
+iary variables M (v)
+to transform the optimization
+Eq. (4), and obtain the following objective function:
+
+1
+
+and M (v)
+
+2
+
+min
+
+H (v)
+m
+
+V(cid:88)
+
+v=1
+
+((cid:107)X (v) − ΦH (v)
+
+m (cid:107)2
+F + (cid:107)H (v)
+1 (cid:107)2,1 + λ(cid:107)M (v)
+2 (cid:107)2,1 )
+1 = H (v)
+m A(v) , M (v)
+2 = H (v)
+
+m − Φ(cid:62)X (v)(cid:107)2
+
+F
+
++ β (cid:107)M (v)
+m ≥ 0, M (v)
+s.t., H (v)
+
+m −G(v)H ∗ .
+
+(9)
+After converting Eq. (9) to an augmented Lagrangian func-
+tion, we obtain the following expression:
+
+L =
+
+V(cid:88)
+
+v=1
+
+((cid:107)X (v) − ΦH (v)
+
+m (cid:107)2
+F + (cid:107)H (v)
+1 (cid:107)2,1+ < Λ(v)
+1 − H (v)
+1 , M (v)
+m A(v) >
+(cid:107)M (v)
+1 − H (v)
+m A(v) (cid:107)2
+2 (cid:107)2,1
+2 , M (v)
+2 + G(v)H ∗ − H (v)
+(cid:107)M (v)
+2 − H (v)
+3 , −H (v)
+1 = H (v)
+m A(v) , M (v)
+2 = H (v)
+
+m − Φ(cid:62)X (v)(cid:107)2
+
+F
+
++ β (cid:107)M (v)
+µ1
++
+2
++ < Λ(v)
+µ2
+2
++ < Λ(v)
+m + s > +
+m ≥ 0, M (v)
+s.t., H (v)
+
+F + λ(cid:107)M (v)
+m >
+m + G(v)H ∗ (cid:107)2
+µ3
+(cid:107) − H (v)
+m + s(cid:107)2
+2
+m −G(v)H ∗ ,
+
++
+
+F
+
+F
+
+(10)
+
+where Λ(v)
+are the Lagrangian multipli-
+ers,initialized with zero matrix; µ1 , µ2 and µ3 are the pa-
+rameters for penalty; s > 0 is the slackness variable to sat-
+isfy the non-negative constraint for H (v)
+m . We then employ
+the alternating direction method of multipliers to solve this
+equation, and the update rules are as follows.
+m : With other variables ﬁxed, we can
+have the following Lagrangian objective function:
+
+1 , Λ(v)
+2
+
+and Λ(v)
+
+3
+
+Update rule for H (v)
+
+min
+
+H
+
+(v)
+m
+
+V(cid:88)
+
+v=1
+
+((cid:107)X (v) − ΦH (v)
+
+m (cid:107)2
+F + (cid:107)H (v)
+1 − H (v)
+1 , M (v)
+m A(v) > +
+2 , M (v)
+2 + G(v)H
+3 , −H (v)
+F + < Λ(v)
+
+m − Φ
+
+(cid:62)
+
+X (v) (cid:107)2
+F
+(cid:107)M (v)
+1 −H (v)
+m A(v) (cid:107)2
+F
+(cid:107)M (v)
+2 − H (v)
+m
+
++ < Λ(v)
+
+µ1
+2
+∗ − H (v)
+µ2
+m > +
+2
+µ3
+(cid:107)−H (v)
+m + s(cid:107)2
+m + s > +
+2
+
++ < Λ(v)
+
++ G(v)H
+
+∗ (cid:107)2
+
+F
+
+(11)
+
+Taking the derivative respect of H (v)
+m to zero, we obtain:
+
+[2Φ(cid:62)Φ + (µ2 + µ3 + 2)I ]H (v)
+
+m A(v) (A(v) )(cid:62) =
+m + µ1H (v)
+1 (A(v) )(cid:62) + Λ(v)
+[Λ(v)
+2 + Λ(v)
+3 + µ1M (v)
+1
+
+(A(v) )(cid:62)
+
+2 − G(v)H ∗ ) + µ3 s].
++ µ2 (M (v)
+
+(12)
+Since Eq. (12) is a standard Sylvester equation, it can be
+effectively solved by Bartels-Stewart algorithm.
+Update rule for G(v) and H ∗ : With other variables ﬁxed
+except for G∗ , we can have the following Lagrangian objec-
+tive function:
+
+min
+
+G(v)
+
+V(cid:88)
+
+2 + G(v)H ∗ − H (v)
+< Λ(v)
+2 , M (v)
+v=1
+(cid:107)M (v)
+2 − H (v)
+
+m > +
+
+µ2
+2
+
+m + G(v)H ∗ (cid:107)2
+F .
+
+(13)
+
+Taking the derivative to zero, we obtain the following update
+rule:
+
+m −M (v)
+G(v) = ((H (v)
+2
+
+)(H
+
+∗
+
+)
+
+(cid:62) −Λ(v)
+2 (H
+
+∗
+
+)
+
+(cid:62)
+
+)(H
+
+∗
+
+(H
+
+∗
+
+)
+
+(cid:62)
+
+))
+
+†
+(14)
+
+,
+
+where † denotes the Moore-Penrose pseudo-inverse.
+Similarly, H ∗ can be updated with the following rule:
+
+H
+
+∗
+
+= ((G(v) )
+
+(cid:62)
+
+G(v) )
+
+†
+
+((G(v))
+
+(cid:62)
+
+m −M (v)
+(H (v)
+2
+
+)− (G(v) )
+
+(cid:62)
+
+Λ(v)
+
+2 ).
+
+(15)
+
+Update rule for M (v)
+
+1
+
+and M (v)
+
+2
+
+: M (v)
+1
+
+and M (v)
+
+2
+
+are
+solved in a similar way as that to solve G(v) , and we thus
+obtain the following update rules. The update rule for M (v)
+is written as follows:
+
+1
+
+M (v)
+
+1 = (βΣ1 + µ1 I )† (µ1H (v)
+
+m A(v) − Λ(v)
+
+1 ),
+
+(16)
+where Σ1 is a diagonal matrix with the i-th diagonal element
+as (Σ1 )ii = 1(cid:107)mi (cid:107)2 . mi is the i-th row of the matrix M (v)
+. I
+is the identity matrix.
+The update rule for M (v)
+
+1
+
+2
+
+can be written as follows:
+
+M (v)
+
+2 = (λΣ2 + µ2 I )† (µ2 (H (v)
+
+m − G(v)H ∗ − Λ(v)
+
+2 ).
+
+(17)
+
+Algorithm 1 Optimization of Problem (4)
+Require: Visual-tactile data {X (v)}V
+v=1 , layer size pi ,
+hyper-parameter β , λ, µ1 , µ2 , µ3 , the number of clusters
+
+k
+
+1: Initialize:
+
+2: for all layers in each modality do
+
+(Z (v)
+i
+
+, H (v)
+i
+
+) ← NMF(H (v)
+i−1 )
+
+L(v) ← k-NN graph construction on X (v)
+
+5: end for
+
+6: while not converged do
+for all layers in each modality do
+
+if i < m then
+
+Update H (v)
+
+i
+
+else
+
+via Eq. (8).
+
+i
+
+Update H (v)
+m (i.e., H (v)
+(i = m)) via Eq. (12).
+Update G(v) via Eq. (14).
+Update H ∗ via Eq. (15).
+Update M (v)
+via Eq. (16).
+Update M (v)
+via Eq. (17).
+Update Lagrangian multipliers Λ(v)
+
+1
+
+2
+
+1 , Λ(v)
+2 , Λ(v)
+
+3 .
+
+end if
+
+Update Z (v)
+
+i
+
+according to Eq. (7).
+
+3:
+4:
+
+7:
+8:
+9:
+10:
+11:
+12:
+13:
+14:
+15:
+16:
+17:
+18:
+19:
+
+end for
+20: end while
+21: return H ∗ .
+
+Until now, we have obtained all the update rules. We sum-
+marize the overall update process of the proposed frame-
+work in Algorithm 1. After obtaining the optimized H ∗ , we
+could obtain the ﬁnal clustering result by performing a stan-
+dard spectral clustering on H ∗ .
+
+Time Complexity
+
+For the computational complexity, our proposed model con-
+sists of two steps, i.e., the pre-trained stage and the ﬁne-
+tuned stage. In order to simplify the analysis, we suppose
+that all the layers are with the same size of hidden units.
+In the pre-trained stage, the computational complexity τp =
+O(V mtp (dnp + pd2 + dn2 )), where V is the number of
+modalities, m is number of layers, p is the layer size, d is
+the feature dimension, n is the number of samples and tp is
+the number of iterations to achieve convergence in the pre-
+training process. In the ﬁne-tuned stage, the computational
+
+complexity is τf = O(V mtf (dnp+pd2 +dn2 +p3 )), where
+
+tf is the number of iterations. Thus, the total time complex-
+
+ity is τtotal = τp + τf .
+
+Experiments
+
+In this section, we evaluate the performance of our proposed
+model via several empirical comparisons. We ﬁrst provide
+the used datasets and experiment results, followed by some
+analyses about our model.
+
+Experimental Setting
+
+Extensive experiments are conducted on two visual-tactile
+fusion datasets and one benchmark dataset to evaluate our
+proposed model: 1) PHAC-22 dataset: it contains 8 color
+images and 10 tactile signals of 53 household objects. In
+this paper, we utilize all images and the ﬁrst 8 tactile sig-
+nals. 4096-D visual and 2048-D tactile features are extracted
+in a similar way as (Gao et al. 2016). 2) GelFoldFabric3
+dataset: it contains 10 color images and 10 tactile images
+of 118 kinds of fabrics. More details about this dataset can
+be found in (Yuan et al. 2017). In this paper, we use the
+pre-trained VGG-19 net to extract 4096-D features both for
+tactile and visual images. 3) Yale4 dataset: it is employed to
+evaluate the performance of the proposed framework when
+the modality number of the input data is more than 2, which
+contains 165 images of 15 subjects. Similar to (Zhao, Ding,
+and Fu 2017), three kinds of features (i.e., 3304-D LBP,
+4096-D intensity, 6750-D Gabor) are extracted as different
+views.
+
+Comparison Models and Evaluation
+
+We compare our proposed framework with the follow-
+ing models including 7 multi-view baselines and 4 related
+
+single-view baselines. Related single-view clustering com-
+
+petitors: Vision (Touch) performs standard spectral clus-
+tering (Ng, Jordan, and Weiss 2002) on the visual (tactile)
+features; ConcatFea concatenates all features ﬁrst and then
+carries out standard spectral clustering; ConcatPCA con-
+catenates all the features and does PCA to project the con-
+catenated features into a low dimensional subspace, then
+performs standard spectral clustering on the projected fea-
+
+tures; Multi-view clustering competitors: Co-Reg (Ku-
+
+mar, Rai, and Daume 2011) enforces the number shape be-
+tween different views via co-regularizing the clustering hy-
+potheses; Co-Training (Kumar and Daum ´e 2011) works on
+the hypothesis that the true underlying clustering would as-
+sign a point to the same cluster irrespective of the view;
+Min-D (De Sa 2005) creates a bipartite graph basing on
+the “minimizing-disagreement” idea; Multi-NMF (Liu et
+al. 2013) utilizes non-negative matrix factorization to seek
+the common latent subspace for multi-view input data;
+DiMsc (Cao et al. 2015) utilizes a diversity term to ex-
+plore the complementary information of multi-view data;
+DNMF-MVC (Zhao, Ding, and Fu 2017) proposes a deep
+non-negative matrix factorization framework to capture the
+mutual information of multi-view data; GLMSC (Zhang et
+al. 2018a) simultaneously seeks the underlying representa-
+tion and explores complementary information of multi-view
+data.
+Similar to (Cao et al. 2015; Zhao, Ding, and Fu 2017), six
+different metrics i.e., accuracy (ACC), normalized mutual
+
+information (NMI), Precision, F-score, Recall, adjusted
+
+rand index (AR) are adopted to evaluate the clustering per-
+formance. Higher value indicates the better performance for
+all metrics. We run all algorithms 10 times and report the
+
+2 http://people.eecs.berkeley.edu/ yg/icra2016
+3 http://people.csail.mit.edu/yuan wz/fabric-perception.htm
+4 http://vision.ucsd.edu/content/yale-face-database
+
+Table 1: Performance (%) comparison of 6 different metrics (mean ± standard deviation) on PHAC-2 dataset.
+
+Method
+ACC
+35.14±1.89
+Vision
+Touch
+26.25±1.03
+46.93±1.28
+ConcatFea
+ConcatPCA 47.19±0.81
+50.98±0.20
+Co-Reg
+52.30±1.70
+Co-Training
+47.98±2.77
+Min-D
+51.98±0.82
+Multi-NMF
+36.99±1.17
+DiMSC
+DMF-MVC 55.02±0.96
+GLMSC
+37.50±3.34
+Ours
+Table 2: Performance (%) comparison of 6 different metrics (mean ± standard deviation) on GelFabric dataset.
+
+F-score
+13.18±2.49
+9.34±0.72
+26.66± 1.26
+27.41±0.67
+16.81±0.62
+32.30±3.00
+26.47±5.10
+32.13±0.92
+17.86±0.92
+35.53±0.53
+17.83±2.81
+
+AR
+10.81±2.68
+7.52±0.80
+25.35±0.25
+26.13±0.69
+15.31±0.63
+32.37±1.90
+25.14±5.20
+30.12±0.94
+18.21±0.97
+34.39±0.55
+16.37±2.87
+
+NMI
+64.73±1.35
+55.97±0.79
+68.06±0.39
+68.01±0.33
+61.05±0.51
+72.36±1.30
+67.85±3.50
+70.81±0.32
+65.69±0.77
+72.96±0.31
+61.97±1.84
+
+Precision
+8.35±0.24
+7.91±0.85
+25.10±0.98
+26.06±0.78
+15.75±0.58
+33.52±2.90
+24.51±5.00
+30.67±0.93
+15.63±1.10
+33.86±0.66
+16.97±2.77
+
+Recall
+13.24±1.48
+11.48±0.63
+27.94±1.01
+28.92±0.59
+18.04±0.66
+36.74±2.90
+28.80±4.60
+33.74±1.00
+19.02±0.70
+37.83±0.53
+18.79±2.86
+
+38.97±1.13
+
+40.03±1.11
+
+59.17±1.40
+
+75.27±0.54
+
+38.12±1.29
+
+42.15±0.96
+
+Method
+ACC
+35.46±1.08
+Vision
+Touch
+33.92±1.05
+36.56±0.82
+ConcatFea
+ConcatPCA 37.15±1.20
+45.80±1.28
+Co-Reg
+37.85±0.78
+Co-Training
+43.13±2.49
+Min-D
+52.01±0.99
+Multi-NMF
+37.73±0.77
+DiMSC
+DMF-MVC 53.03±0.82
+GLMSC
+55.92±1.49
+Ours
+Table 3: Performance (%) comparison of 6 different metrics (mean ± standard deviation) on Yale dataset.
+
+AR
+17.30±1.26
+15.71±0.92
+18.53±0.58
+19.13±1.35
+36.09±0.68
+35.14±1.70
+34.94±2.30
+34.69±0.17
+18.35±0.77
+36.50±0.98
+39.70±0.52
+
+F-score
+17.96±1.25
+16.39±0.91
+19.19±0.58
+19.78±1.34
+36.54±0.70
+35.59±1.74
+35.39±2.28
+35.18±0.95
+18.03±0.76
+36.61±0.76
+40.19±0.51
+
+Precision
+16.87±1.17
+15.42±0.85
+18.02±0.48
+18.57±1.18
+33.39±0.88
+32.43±2.00
+32.47±2.21
+33.27±1.17
+17.08±0.85
+34.71±0.87
+37.56±0.29
+
+Recall
+19.21±1.34
+17.48±1.00
+20.53±0.77
+21.15±1.55
+39.63±0.78
+39.27±1.62
+38.73±2.30
+37.08±0.72
+20.11±0.62
+39.02±0.92
+43.22±0.81
+
+NMI
+65.91±0.70
+65.00±0.52
+66.95±0.27
+67.28±0.61
+55.33±0.47
+45.85±0.78
+45.92±0.98
+75.30±0.36
+66.97±0.47
+76.60±0.36
+78.35±0.28
+
+45.86±0.65
+
+46.25±1.02
+
+44.13±0.93
+
+49.49±0.66
+
+62.19±0.55
+
+80.73±0.24
+
+Method
+ACC
+61.60±3.00
+BestSV
+ConcatFea
+54.40±3.80
+ConcatPCA 57.80±3.80
+56.40±0.20
+Co-Reg
+63.00±0.10
+Co-Training
+61.50±4.30
+Min-D
+67.30±0.10
+Multi-NMF
+70.90±0.30
+DiMSC
+DMF-MVC 74.50±1.10
+75.45±3.86
+GLMSC
+Ours
+
+80.73±0.63
+
+NMI
+65.40±0.90
+64.10±0.60
+66.50±3.70
+64.80±0.20
+67.20±0.60
+64.50±0.50
+69.00±0.10
+72.70±1.00
+78.20±1.00
+78.43±2.93
+
+82.09±0.94
+
+AR
+44.00±1.10
+39.20±0.90
+39.60±1.10
+43.60±0.20
+45.20±1.00
+43.30±0.60
+49.50±0.10
+53.50±0.10
+57.90±0.20
+54.00±0.50
+
+64.51±0.69
+
+F-score
+47.50±1.10
+43.10±0.80
+43.40±1.10
+46.60±0.00
+48.70±0.09
+47.00±0.60
+52.70±0.00
+56.40±0.20
+60.10±0.20
+57.09±0.95
+
+63.35±0.66
+
+Precision
+45.70±1.10
+41.50±0.70
+41.90±1.20
+45.50±0.40
+47.00±1.00
+44.60±0.50
+51.20±0.03
+54.30±0.10
+59.80±0.10
+51.81±2.23
+
+62.25±0.73
+
+Recall
+49.50±1.00
+44.80±0.80
+45.00±0.90
+49.10±0.30
+50.50±1.62
+49.60±0.60
+54.30±0.02
+58.60±0.30
+61.30±0.20
+63.76±3.60
+
+65.09±1.17
+
+mean values along with standard deviations. Table 1 and Ta-
+ble 2 show the object clustering results on PHAC-2 dataset
+and GelFabric dataset, respectively. Table 3 shows the re-
+sults on Yale dataset. BestSV performs standard spectral
+clustering on the features in each view and reports the best
+performance. For avoiding overﬁtting, the maximum num-
+ber of iterations is set to 150 for all experiments.
+From the presented results, we obtain the following ob-
+servations: our framework achieves very competitive per-
+
+formance when comparing with all the competing models,
+which reveals the remarkable effectiveness of our frame-
+work in object clustering task. Speciﬁcally, the results shown
+in Table 1 and Table 2 reveal the importance of fusing visual
+and tactile information when comparing with the models us-
+ing visual (or tactile) information alone. This observation
+also reveals that our framework is able to utilize the visual
+and tactile information more effectively, when comparing
+with state-of-the-arts. The results in Table 3 also reveal that
+
+Figure 2: Effects of the Auto-Encoder-like structure, graph
+regularization and consensus regularization. “None” denotes
+that all items are not used while “Ours” denotes that all items
+are used. “AE”, “GR” and “CR” denote the models which
+only use the Auto-Encoder-like structure, the graph regular-
+ization, and the consensus regularization term, respectively.
+
+our framework is not limited to the 2-modality (i.e., visual-
+tactile fusion) case, and it can be applied into other applica-
+tions whose modality number is more than 2.
+
+Ablation Study & Convergence Analysis
+
+In this subsection, we analyze the proposed framework from
+three perspectives. Firstly, we analyze the effectiveness of
+the proposed Auto-Encoder-like structure, graph regulariza-
+tion and the consensus regularization. Then, we analyze the
+parameter setting, followed by the convergence analysis.
+
+Effectiveness of Auto-Encoder-like Structure, Graph
+Regularization and Consensus Regularization: Figure 2
+
+presents the effectiveness of the used items. We can draw
+the following conclusion. Overall, “Ours” achieves the best
+performance revealing that all the regularization and the
+Auto-Encoder-like structure proposed in this paper con-
+tribute to learn the rich information between multi-modality
+data which further boost the performance of clustering tasks.
+Speciﬁcally, “AE” achieve better performance than “None”
+denotes that via the proposed Auto-Encoder-like structure
+which takes data local structure preservation into account
+could result better representation for the source data. “GR”
+achieve better performance than “None” reveal the effective-
+ness of the graph regularization which can pull the similari-
+ties of nearby points and remove outliers inside each modal-
+ity. “CR” achieve better performance than “None” reveal
+that the proposed consensus regularization could ﬁll the gap
+between visual and tactile data and ultimately boost the clus-
+tering tasks.
+Parameter Analysis: To explore the effect of our used
+parameters, i.e, control parameters λ and β and the layer
+size pi , we use PHAC-2 dataset in this subsection. Speciﬁ-
+cally, Figure 3 shows the inﬂuence of ACC and NMI results
+w.r.t. the parameter β under different layer sizes. As can be
+seen, under three different layer sizes, the framework per-
+forms best both in ACC and NMI when β is set as 0.01.
+We thus set β = 0.01 as default in this paper. Figure 4 ex-
+
+(a) ACC(%) curves w.r.t β
+
+(b) NMI(%) curves w.r.t β
+
+Figure 3: ACC(%) and NMI (%) curves w.r.t parameter β on
+PHAC-2 dataset with different layer sizes. λ is set as 0.1.
+
+(a) ACC(%) curves w.r.t λ
+
+(b) NMI(%) curves w.r.t λ
+
+Figure 4: ACC(%) and NMI (%) curves w.r.t parameter λ on
+PHAC-2 dataset with different layer sizes. β is set as 0.1.
+
+plores the parameter sensitivity of the proposed framework
+w.r.t. the parameter λ under different layer sizes. In this ex-
+periment, β is set as 0.01. Notice that the framework per-
+form best both in ACC and NMI when λ is set as 0.01.
+So λ = 0.01 is set as default. Figure 3 and Figure 4 also
+explore the inﬂuence of model performance w.r.t. the layer
+sizes. We ﬁnd that the setting of [500, 50] always leads to
+best performance. When the layer size is small, the frame-
+work is insufﬁcient to learn the rich information behind the
+input data. And when the layer size is too large, it might in-
+troduce undesirable noise. This might be the possible reason
+why red curves perform better (i.e, layer size is [500, 50]
+) than the blue curves (i.e.,[100, 50])and the green curves
+
+(i.e.,[500, 250]).
+
+(a) PHAC-2 Dataset
+
+(b) GelFabric Dataset
+
+Figure 5: Convergence analysis on PHAC-2 dataset (a) and
+GelFabric dataset (b). ACC(%) (blue line) and objective
+function value (red line) w.r.t. iteration time, respectively.
+
+Convergence Analysis: Even though we have not proved
+that the proposed framework theoretically converges, we
+
+present the convergence property empirically in Figure 5.
+The objective value and ACC are plotted and we choose
+the default parameters, i.e., β = 0.01, λ = 0.1 and layer
+size = [500, 50] in this experiments. Notice that the objec-
+tive value gradually decreases until it converges after 100
+iterations. ACC has two stages: in the ﬁrst stage, ACC in-
+creases rapidly; in the second stage, ACC grows slowly and
+sightly bumps until reaching the best performance.
+
+Conclusion
+
+In this paper, we propose a deep Auto-Encoder-like NMF
+framework for visual-tactile fusion object clustering. By
+constraining the deep NMF architecture by an under-
+complete Auto-Encoder-like structure, our framework can
+jointly learn the hierarchical semantics of visual-tactile data
+and maintain the local structure of the source data. For each
+modality, a graph regularization is adopted to pull the sim-
+ilarities of nearby points and remove outliers inside each
+modality. To create a common subspace in which the gap be-
+tween visual and tactile data is ﬁlled, a sparse consensus reg-
+ularization is developed in this paper, while the mutual infor-
+mation amongst visual and tactile data is maximized. Exten-
+sive experiment results on two visual-tactile fusion datasets
+and one benchmark dataset conﬁrm the effectiveness of our
+framework, comparing with existing state-of-the-art works.
+
+References
+
+[Cao et al. 2015] Cao, X.; Zhang, C.; Fu, H.; Liu, S.; and
+Zhang, H. 2015. Diversity-induced multi-view subspace
+clustering. In CVPR, 586–594.
+[De Sa 2005] De Sa, V. R. 2005. Spectral clustering with
+two views. In ICML Workshop, 20–27.
+[Dong et al. 2019] Dong, J.; Cong, Y.; Sun, G.; and Hou, D.
+2019. Semantic-transferable weakly-supervised endoscopic
+lesions segmentation. In ICCV, 2304–2310.
+[Gan et al. 2020] Gan, S.; Yang, C.; Qianqian, W.; Jun, L.;
+and Fu, Y. 2020. Lifelong spectral clustering. In AAAI.
+[Gao et al. 2016] Gao, Y.; Hendricks, L. A.; Kuchenbecker,
+K. J.; and Darrell, T. 2016. Deep learning for tactile un-
+derstanding from visual and haptic data. In ICRA, 536–543.
+IEEE.
+[Ilonen, Bohg, and Kyrki 2014] Ilonen, J.; Bohg, J.; and
+Kyrki, V. 2014. Three-dimensional object reconstruction
+of symmetric objects by fusing visual and tactile sensing.
+IJRR 33(2):321–341.
+[Kumar and Daum ´e 2011] Kumar, A., and Daum ´e, H. 2011.
+A co-training approach for multi-view spectral clustering. In
+ICML, 393–400.
+[Kumar, Rai, and Daume 2011] Kumar, A.; Rai, P.; and
+Daume, H. 2011. Co-regularized multi-view spectral clus-
+tering. In NeurlPS, 1413–1421.
+[Lee, Seung, and Sebastian 2001] Lee, Daniel, D.; Seung,
+H.; and Sebastian. 2001. Algorithms for non-negative ma-
+trix factorization. In NeurlPS, 556–562.
+
+[Li and Liu 2017] Li, J., and Liu, H. 2017. Projective low-
+rank subspace clustering via learning deep encoder. In IJ-
+CAI.
+[Li et al. 2019] Li, Y.; Zhu, J.-Y.; Tedrake, R.; and Torralba,
+A. 2019. Connecting touch and vision via cross-modal pre-
+diction. In CVPR, 10609–10618.
+[Li, Ding, and Jordan 2007] Li, T.; Ding, C.; and Jordan,
+M. I. 2007. Solving consensus and semi-supervised clus-
+tering problems using nonnegative matrix factorization. In
+ICDM, 577–582.
+[Li, Kong, and Fu 2017] Li, J.; Kong, Y.; and Fu, Y. 2017.
+Sparse subspace clustering by learning approximation 0
+codes. In AAAI.
+[Liu and Sun 2018] Liu, H., and Sun, F.
+2018. Robotic
+Tactile Perception and Understanding: A Sparse Coding
+Method. Springer.
+[Liu et al. 2011] Liu, H.; Wu, Z.; Li, X.; Cai, D.; and Huang,
+T. S. 2011. Constrained nonnegative matrix factorization for
+image representation. TPAMI 34(7):1299–1311.
+[Liu et al. 2013] Liu, J.; Wang, C.; Gao, J.; and Han, J. 2013.
+Multi-view clustering via joint nonnegative matrix factoriza-
+tion. In ICDM, 252–260.
+[Liu et al. 2016] Liu, H.; Yu, Y.; Sun, F.; and Gu, J.
+2016. Visual–tactile fusion for object recognition. TASE
+14(2):996–1008.
+[Liu et al. 2018] Liu, L.; Nie, F.; Wiliem, A.; Li, Z.; Zhang,
+T.; and Lovell, B. C. 2018. Multi-modal joint clustering
+with application for unsupervised attribute discovery. TIP
+27(9):4345–4356.
+[Ng, Jordan, and Weiss 2002] Ng, A. Y.; Jordan, M. I.; and
+Weiss, Y. 2002. On spectral clustering: Analysis and an
+algorithm. In NeurlPS, 849–856.
+[Sun et al. 2019] Sun, G.; Cong, Y.; Wang, Q.; Zhong, B.;
+and Fu, Y. 2019. Representative task self-selection for ﬂex-
+ible clustered lifelong learning. ARKIV.
+[Trigeorgis et al. 2014] Trigeorgis, G.; Bousmalis, K.;
+Zafeiriou, S.; and Schuller, B. 2014. A deep semi-nmf
+model for learning hidden representations.
+In ICML,
+1692–1700.
+[Wang et al. 2018] Wang, S.; Wu, J.; Sun, X.; Yuan, W.;
+Freeman, W. T.; Tenenbaum, J. B.; and Adelson, E. H.
+2018. 3d shape perception from monocular vision, touch,
+and shape priors. In IROS, 1606–1613.
+[Wu et al. 2013] Wu, B.; Zhang, Y.; Hu, B.-G.; and Ji, Q.
+2013. Constrained clustering and its application to face clus-
+tering in videos. In CVPR, 3507–3514.
+[Yang et al. 2019] Yang, X.; Deng, C.; Zheng, F.; Yan, J.; and
+Liu, W. 2019. Deep spectral clustering using dual autoen-
+coder network. In CVPR, 4066–4075.
+[Yuan et al. 2017] Yuan, W.; Wang, S.; Dong, S.; and Adel-
+son, E. 2017. Connecting look and feel: Associating the
+visual and tactile properties of physical materials. In CVPR,
+5580–5588. IEEE.
+[Yuan et al. 2018] Yuan, W.; Mo, Y.; Wang, S.; and Adelson,
+
+E. H. 2018. Active clothing material perception using tactile
+sensing and deep learning. In ICRA, 1–8.
+[Zhang et al. 2018a] Zhang, C.; Fu, H.; Hu, Q.; Cao, X.; Xie,
+Y.; Tao, D.; and Xu, D. 2018a. Generalized latent multi-view
+subspace clustering. TPAMI.
+[Zhang et al. 2018b] Zhang, Z.; Liu, L.; Shen, F.; Shen,
+H. T.; and Shao, L. 2018b. Binary multi-view clustering.
+TPAMI 41(7):1774–1782.
+[Zhao, Ding, and Fu 2017] Zhao, H.; Ding, Z.; and Fu, Y.
+2017. Multi-view clustering via deep matrix factorization.
+In AAAI, 11108–1113.
+
+

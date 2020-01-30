@@ -1,0 +1,575 @@
+Towards Safety Veriﬁcation of Direct Perception
+Neural Networks
+
+Chih-Hong Cheng∗ , Chung-Hao Huang† , Thomas Brunner† and Vahid Hashemi‡
+
+∗DENSO AUTOMOTIVE Deutschland GmbH
+† fortiss - Research Institute of the Free State of Bavaria
+‡Audi AG
+
+Contact: c.cheng@denso-auto.de
+
+“road strongly bends to the right” and represent them as
+
+5
+
+1 In training neural networks, the value for each pixel in an image is
+commonly re-scaled such that the re-scaled value is in the interval [0, 1].
+Starting veriﬁcation using an input domain of [0, 1]dl0 with dl0 being the
+number of input image pixels, the result of formal veriﬁcation always creates
+counter-examples in formal veriﬁcation where counter-example images are
+so distant from what can be observed in practice (such as images without
+textures) and are rejected by experts.
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+E
+
+S
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+6
+0
+7
+4
+0
+
+.
+
+4
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract—We study the problem of safety veriﬁcation of direct
+perception neural networks, where camera images are used as
+inputs to produce high-level features for autonomous vehicles to
+make control decisions. Formal veriﬁcation of direct perception
+neural networks is extremely challenging, as it is difﬁcult to
+formulate the speciﬁcation that requires characterizing input as
+constraints, while the number of neurons in such a network
+can reach millions. We approach the speciﬁcation problem by
+learning an input property characterizer which carefully extends
+a direct perception neural network at close-to-output layers, and
+address the scalability problem by a novel assume-guarantee
+based veriﬁcation approach. The presented workﬂow is used to
+understand a direct perception neural network (developed by
+Audi) which computes the next waypoint and orientation for
+autonomous vehicles to follow.
+Index Terms—formal veriﬁcation, neural network, dependabil-
+ity, autonomous driving
+
+I . IN TRODUC T ION
+
+Using deep neural networks has been the de facto choice
+for developing visual object detection function in automated
+driving. Nevertheless, in the autonomous driving workﬂow,
+the neural networks can also be used more extensively. An
+example is direct perception [2]; one trains a neural network
+to read high-dimensional inputs (such as images from camera
+or point clouds from lidar) and produce low-dimensional
+information called affordances (e.g., safe maneuver regions or
+the next waypoint to follow) which could be used to program
+a controller for the autonomous vehicle. One may use direct
+perception as a hot standby system for a classical mediated
+perception system that extracts objects and identiﬁes lane
+markings before affordances are produced.
+In this paper, we study the safety veriﬁcation problem for a
+neural network implementing direct perception, where the goal
+is to ensure that under certain input conditions, the undesired
+output values never occur. An example of such a kind can
+
+be the following: “For every input image where the road in
+the image strongly bends to the right, the output of the neural
+network should never suggest to strongly steer to the left”.
+
+Overall, the safety veriﬁcation problem for direct perception
+networks is fundamentally challenging due to two factors:
+• (Speciﬁcation) To perform safety veriﬁcation, one
+premise is to have the undesired property formally
+speciﬁed. Nevertheless,
+it
+is practically impossible to
+characterize input speciﬁcations from images such as
+
+n17
+1 , n17
+2 , n17
+3 , n17
+4
+
+constraints over input variables.
+• (Scalability) Neural networks for direct perception often
+take images with millions of pixels, and the internal
+structure of the network can have many layers. This
+challenges any state-of-the-art formal analysis framework
+in terms of scalability.
+Towards these issues, we present a workﬂow for safety veri-
+ﬁcation of direct perception neural networks by simultaneously
+addressing the speciﬁcation and the scalability problem. For
+the ease of understanding, we use Figure 1 to explain the con-
+cept. First, we address the speciﬁcation problem by learning
+an input property characterizer network, where the input of
+the network is connected to close-to-output layer neurons of
+the original direct perception network. In Figure 1, the input
+property characterizer takes output values from the neurons
+and n17
+in the original deep perception
+network. For the previously mentioned speciﬁcation, the input
+property characterizer outputs true if an input image has “road
+strongly bending to the right”. By doing so, the characterization
+of input features is aggregated to an output of a neural network.
+Subsequently, the safety veriﬁcation problem is approached by
+asking if it is possible for the input-characterizing network to
+output true, but the output of the direct perception network
+demonstrates undesired values. As both the deep perception
+network and the input-characterizing network have shared
+neuron values, safety veriﬁcation can be approached by only
+verifying close-to-output layers without losing soundness. In
+Figure 1, safety veriﬁcation only analyzes the sub-network
+colored grayed, and examines if any assignment of n17
+2 ,
+4 , and n17
+leads to undesired output. The bounds
+of the neurons n17
+4 , and n17
+can be decided
+by static analysis (which guarantees an overly conservative
+bound). However, using such a bound allows to have input
+images that are not possible to be seen in the operating
+design domain (ODD)1 . Thus we are advocating an alternative
+
+5
+1 , n17
+2 , n17
+3 , n17
+
+n17
+3 , n17
+
+1 , n17
+
+5
+
+ 
+ 
+ 
+ 
+ 
+ 
+Fig. 1. High-level illustration how to perform safety veriﬁcation while tackling speciﬁcation and scalability issues.
+
+assume-guarantee based approach where one ﬁrst creates an
+outer polyhedron by aggregating all visited neuron values
+computed by the training set. We use the created polyhedron
+as a starting point to perform formal veriﬁcation, by assuming
+that for every possible input data in the ODD, the computed
+neuron activation pattern is contained in this polyhedron.
+The assumption thus requires to be monitored in runtime
+by checking if any computed neuron value falls outside the
+polyhedron. As an example, we consider the bound of n17
+1 to
+be used in veriﬁcation in Figure 1. By observing the minimum
+and the maximum of all visited values {0, 0.1, −0.1, . . . , 0.6},
+[−0.1, 0.6] is an over-approximation over all visited values,
+and one shall monitor in runtime whether the computed value
+1 has fallen outside [−0.1, 0.6].2
+The rest of the paper is organized as follows. Section II
+presents the required deﬁnitions as well as the workﬂow for
+veriﬁcation. Section III discusses extensions to a statistical
+setup when the input property characterizer is not perfect.
+Lastly, we summarize related work in Section IV and conclude
+with our preliminary evaluation in Section V.
+
+of n17
+
+I I . V ER I FICAT ION WORK FLOW
+
+A deep neural network is comprised of L layers where
+operationally, the l-th layer for l ∈ {1, . . . , L} of the net-
+work is a function g (l) : Rdl−1 → Rdl , with dl being the
+dimension of layer l. Given an input in ∈ Rd0 , the output
+
+2Note that such a monitoring is needed regardless of formal veriﬁcation,
+as neurons at close-to-output
+layers represent high-level features, so an
+image in operation that leads to unexpectedly high or low neuron feature
+intensity (indicated by falling outside the monitored interval) can be hints for
+incomplete data collection or indicators for the system stepping out from the
+ODD.
+
+of the l-th layer of the neural network f (l) is given by the
+functional composition of the l-th layer and the previous layers
+
+f (l) (in) := ◦(l)
+i=1 g (i) (in) = g (l) (g (l−1) . . . g (2) (g (1) (in))).
+
+A. Characterizing Input Speciﬁcation from Examples
+Let Inφ ⊆ Rd0 be the set of inputs of a neural network
+that satisﬁes the property φ. We assume that both φ and Inφ
+are unknown (e.g., the road is bending left in an image), but
+there exists an oracle (e.g., human) that can answer for a given
+input in ∈ Rd0 , whether in ∈ Inφ .
+Let (In, Cφ ) be the list of training data and their associated
+labels (generated by the oracle) related to the input property φ,
+where for every (in, c) ∈ (In, Cφ ), in ∈ Rd0 , c ∈ {0, 1}, we
+
+have (in, 1) ∈ (In, Cφ ) if in ∈ Inφ and (in, 0) ∈ (In, Cφ ) if in (cid:54)∈
+
+(In, Cφ ), hφ
+
+Inφ . The perfect input property characterizer extending the l-th
+l which guarantees that for every (in, c) ∈
+layer is a function hφ
+l (f (l) (in)) = c. The generation of hφ
+l can be done
+by training a neural network as a binary classiﬁer, with 100%
+success rate on the training data. The following assumption
+states that as long as function hφ
+l performs perfectly on the
+training data, hφ
+l will also perfectly generalize to the complete
+input space. In other words, we can use hφ
+to characterize φ.
+Assumption 1 (Perfect Generalization). Assume that hφ
+l also
+perfectly characterizes φ, i.e., ∀in ∈ Rd0 : hφ
+
+l
+
+l (f (l) (in)) = 1 iff
+
+in ∈ Inφ .
+
+Deﬁnition 1 (Safety Veriﬁcation). The safety veriﬁcation
+problem asks if there exists an input in ∈ Inφ such that f (L) (in)
+satisﬁes ψ , where the risk condition ψ is a conjunction of
+linear inequalities over the output of the neural network. If
+no such input in exists, we say that the neural network is safe
+under the input constraint φ and the output risk constraint ψ .
+
+InputOutput (vehicle direction)Deep layers with convolution𝑛117𝑛217𝑛317𝑛417𝑛517Image1{0, 0.1, -0.1, …., 0.6}Abstraction: [-0.1, 0.6]{-0.3, 0.2, 1.1, …., 0.8}Abstraction: [-0.3, 1.1]𝑛319𝑛219𝑛119𝑛419𝑛519Input property characterizer networkCharacterizing “road bending” conditionsLayers and neurons that are considered in safety verification(from ODD)When Assumption 1 holds, for safety veriﬁcation it
+is
+equivalent to ask whether there exists an input in ∈ Rd0 such
+that hφ
+l (f (l) (in)) = 1 and f (L) (in) satisﬁes ψ . From now on,
+unless explicitly speciﬁed, we consider only situations where
+Assumption 1 holds.
+
+B. Practical Safety Veriﬁcation
+a) Abstraction by omitting neurons before the l-th layer.:
+The following result states that one can retain soundness for
+safety veriﬁcation, by considering all possible neuron values
+that can appear in the l-th layer.
+Lemma 1 (Veriﬁcation by Layer Abstraction).
+
+exists no ˆnl ∈ Rdl such that g (L) (g (L−1) . . . (g (l+1) ( ˆnl ))
+
+there
+
+If
+
+satisﬁes ψout and hφ
+l ( ˆnl ) = 1, then the neural network is
+safe under input constraint φ and output risk constraint ψ .
+Proof. The lemma holds because for every input in ∈ Rd0 of
+the network, f (l) (in) ∈ Rdl .
+Obviously, the use of Rdl in Lemma 1 is overly conservative,
+and we can strengthen Lemma 1 without losing soundness,
+if we ﬁnd S ⊆ Rdl which guarantees that f (l) (in) ∈ S for
+every input in ∈ Rd0 of the network. Obtaining such a set S
+can be achieved by abstract interpretation techniques [6], [21]
+which perform symbolic reasoning over the neural network in
+a layer-wise manner.
+Lemma 2 (Abstraction via Input Over-approximation). Let
+S ⊆ Rdl guarantee that f (l) (in) ∈ S for every input in ∈
+Rd0 of the network. If there exists no ˆnl ∈ S such that
+
+g (L) (g (L−1) . . . (g (l+1) ( ˆnl )) satisﬁes ψout and hφ
+l ( ˆnl ) = 1,
+
+then the neural network is safe under input constraint φ and
+output risk constraint ψ .
+
+b) Assume-guarantee Veriﬁcation via Monitoring.: If the
+computed S , due to over-approximation, is too coarse to prove
+safety, one practical alternative is to generate ˜S which only
+guarantees f (l) (in) ∈ ˜S for every input in ∈ In in the training
+data. In other words, ˜S over-approximates the neuron values
+computed based on the samples in the training data.
+If using ˜S is sufﬁcient to prove safety and if for any input
+in, checking whether f (l) (in) ∈ ˜S can be computed efﬁciently,
+one can conditionally accept the proof by designing a run-
+time monitor which raises a warning that
+the assumption
+f (l) (in) ∈ ˜S used in the proof is violated. Admittedly, ˜S can
+be an under-approximation over {f (l) (in) | in ∈ Rd0 }, but
+practically creating an over-approximation only based on the
+training data is useful and can avoid unstructured input such
+as noise which is allowed when using Rd0 .
+
+I I I . TOWARD S S TAT I ST ICAL R EA SON ING
+
+The results in Section II are based on two assumptions of
+perfection, namely
+• (perfect training) the input property characterizer per-
+fectly decides whether property φ holds, for each sample
+in the training data, and
+
+hφ
+l (f (l) (in)) = 1
+hφ
+l (f (l) (in)) = 0
+
+in ∈ Inφ
+
+α
+γ
+
+in (cid:54)∈ Inφ
+
+β
+1 − α − β − γ
+
+TABLE I
+
+PROBAB I L I TY BY CON S ID ER ING A LL PO S S IB LE CA SE S DUE TO DEC I S ION S
+MAD E BY TH E IN PU T CHARACT ER I Z ER (WH ETH ER hφ
+l (f (l) ( IN)) = 1 )
+AND TH E GROUND TRU TH (WH ETH ER IN ∈ INφ ) .
+
+• (perfect generalization) the input property characterizer
+generalizes its decision (whether property φ holds) also
+perfectly to every data point in the complete input space.
+One important question appears when the above two as-
+sumptions do not hold, meaning that it is possible for the
+input property characterizer to make mistakes. By considering
+all four possibilities in Table I, one realizes that even when
+a safety proof is established by considering all inputs where
+l (f (l) (in)) = 1, there exists a probability γ where an input in
+should be analyzed, but in is omitted in the proof process due
+to hφ
+Therefore, one can only establish a statistical guarantee with
+(1 − γ ) probability over the correctness claim3 , provided that
+all data points used in training hφ
+l are also safe4 .
+
+l (f (l) (in)) being 0 (i.e., in ∈ Inφ and hφ
+
+l (f (l) (in)) = 0).
+
+hφ
+
+IV. R E LATED WORK
+
+Formal veriﬁcation of neural networks has drawn huge
+attention with many results available [13], [8], [3], [5], [9],
+[11], [6], [4], [1], [14], [20], [19], [21]. Although speciﬁcations
+used in formal veriﬁcation of neural networks are discussed
+in recent reviews [7], [15], the speciﬁcation problem in terms
+of characterising an image set is not addressed, so research
+results largely use inherent properties of a neural network such
+as local robustness (as output invariance) or output ranges
+where one does not need to characterize properties over a
+set of input images. Not being able to properly characterizing
+input conditions (one possibility is to simply consider every
+input to be bounded by [−1, 1]) makes it difﬁcult for formal
+static analysis to achieve any useful results on deep perception
+networks, regardless of the type of abstraction domain being
+used (box, octagon, or zonotope). Lastly, our work is motivated
+by zero shot learning [12] which trains additional features
+apart from a standard neural network. The feature detector is
+commonly created by extending the network from close-to-
+output layers.
+
+V. EVALUAT ION AND CONC LUD ING R EMARK S
+
+We have applied this methodology to examine a direct
+perception neural network developed by Audi. The network
+acts as a hot standby system and computes the next waypoint
+
+3Note that for parts where in (cid:54)∈ Inφ and hφ
+problem occurs as the safety analysis guarantees the desired property when
+4 In other words, for every (in, c) ∈ (In, Cφ ), if hφ
+c = 1, then f (L) (in) does not satisfy ψ .
+
+l (f (l) (in)) = 0, no
+
+l (f (l) (in)) = 0 and
+
+hφ
+l (f (l) (in)) = 1.
+
+and orientation for autonomous vehicles to follow. As the
+close-to-output
+layers of the network are either ReLU or
+Batch Normalization, and as ψ is a conjunction of linear
+constraints over output, it is feasible to use exact veriﬁcation
+methods such as ReLUplex [8], Planet [5] or MILP-based
+approaches [3], [9] as the underlying veriﬁcation method. We
+developed a variation of nn-dependability-kit5 to read models
+from TensorFlow6 and to perform formal veriﬁcation via a
+reduction to MILP. Using assume-guarantee based techniques
+that take an over-approximation from neuron values produced
+by the training data7 , it is possible to conditionally prove some
+properties such as “impossibility to suggest steering to the far
+left, when the road image is bending to the right”. However,
+under the current setup, it is still impossible to prove intriguing
+properties such as “impossibility to suggest steering straight,
+when the road image is bending to the right”. We suspect that
+the main reason is due to the inherent limitation of the neural
+network under analysis.
+In our experiment, we also found that for some input
+properties such as trafﬁc participants in adjacent lanes, it is
+very difﬁcult to construct the corresponding input property
+characterizers by taking neuron values from close-to-output
+layers (i.e., the trained classiﬁer almost acts like fair coin
+ﬂipping). Based on the theory of information bottleneck for
+neural networks [18], [16], a neural network from high di-
+mensional input to low dimensional output naturally eliminates
+unrelated information in close-to-output layers. Therefore, the
+input property can be unrelated to the output of the network.
+Although we are unable to prove that the output of the network
+is safe under these input constraints, it should be possible to
+construct a counter example either by capturing more data or
+by using adversarial perturbation techniques [17], [10].
+To achieve meaningful formal veriﬁcation, in our experi-
+ments, we also realized that it is commonly not sufﬁcient to
+only record the minimum and maximum value for each neuron,
+as boxed abstraction can lead to huge over-approximation. In
+certain circumstances, we also record the minimum and max-
+imum difference between two adjacent neurons in a layer (in
+i where i ∈ {1, 2, 3, 4}). Modern
+Figure 1, we record n17
+training frameworks such as TensorFlow support computing
+differences of adjacent neurons with GPU parallelization8 ,
+thereby making monitoring possible.
+Overall, our initial result demonstrates the potential of using
+formal methods even on very complex neural networks, while
+it provides a clear path to engineers to resolve the problem
+related to how to characterize input conditions for veriﬁcation
+(by also applying machine learning techniques). Our approach
+of looking at close-to-output
+layers can be viewed as an
+abstraction which can, in future work, leads to layer-wise
+
+i+1 −n17
+
+5 https://github.com/dependable- ai/nn- dependability- kit/
+6 https://www.tensorﬂow.org/
+7 The data is taken from a particular segment of the German A9 highway,
+by considering variations such as weather and the current lane.
+8Computing the neuron difference, when neuron values are stored in an 1D
+tensor n can be done in numpy using a single instruction diff(n), and in
+TensorFlow using n[1 :] − n[: −1].
+
+incremental abstraction-reﬁnement techniques. Although our
+practical motivation is to verify direct perception networks, the
+presented technique is equally applicable to any deep network
+for vision and lidar systems where input constraints are hard
+to characterize. It opens a new research direction of using
+learning to assist practical veriﬁcation of learning systems.
+Acknowledgement The research work is conducted during
+the ﬁrst author’s service at the fortiss research institute and
+is supported by the following projects: “Audi Veriﬁable AI ”
+from Audi AG, Germany and “Dependable AI for automotive
+systems” from DENSO Corporation, Japan.
+
+R E FER ENC E S
+[1] R. R. Bunel, I. Turkaslan, P. Torr, P. Kohli, and P. K. Mudigonda. A
+uniﬁed view of piecewise linear neural network veriﬁcation. In NIPS,
+pages 4795–4804, 2018.
+[2] C. Chen, A. Seff, A. Kornhauser, and J. Xiao. Deepdriving: Learning
+affordance for direct perception in autonomous driving. In ICCV, pages
+2722–2730. IEEE, 2015.
+[3] C.-H. Cheng, G. N ¨uhrenberg, and H. Ruess. Maximum resilience of
+artiﬁcial neural networks. In ATVA, pages 251–268. Springer, 2017.
+[4] S. Dutta, S. Jha, S. Sankaranarayanan, and A. Tiwari. Output range
+analysis for deep feedforward neural networks.
+In NFM, pages 121–
+138. Springer, 2018.
+[5] R. Ehlers. Formal veriﬁcation of piece-wise linear feed-forward neural
+networks. In ATVA, pages 269–286. Springer, 2017.
+[6] T. Gehr, M. Mirman, D. Drachsler-Cohen, P. Tsankov, S. Chaudhuri, and
+M. Vechev. Ai2: Safety and robustness certiﬁcation of neural networks
+with abstract interpretation. In Oakland, pages 3–18. IEEE, 2018.
+[7] X. Huang, D. Kroening, M. Kwiatkowska, W. Ruan, Y. Sun, E. Thamo,
+M. Wu, and X. Yi. Safety and trustworthiness of deep neural networks:
+A survey. arXiv:1812.08342, 2018.
+[8] G. Katz, C. W. Barrett, D. L. Dill, K. Julian, and M. J. Kochenderfer.
+Reluplex: An efﬁcient SMT solver for verifying deep neural networks.
+In CAV, pages 97–117, 2017.
+[9] A. Lomuscio and L. Maganti. An approach to reachability analysis for
+feed-forward ReLU neural networks. arXiv:1706.07351, 2017.
+[10] S.-M. Moosavi-Dezfooli, A. Fawzi, O. Fawzi, and P. Frossard. Universal
+adversarial perturbations.
+In Proceedings of the IEEE Conference on
+Computer Vision and Pattern Recognition, pages 1765–1773, 2017.
+[11] N. Narodytska, S. Kasiviswanathan, L. Ryzhyk, M. Sagiv, and T. Walsh.
+Verifying properties of binarized deep neural networks. In AAAI, pages
+6615–6624, 2018.
+[12] M. Palatucci, D. Pomerleau, G. E. Hinton, and T. M. Mitchell. Zero-shot
+learning with semantic output codes. In NIPS, pages 1410–1418, 2009.
+[13] L. Pulina and A. Tacchella. An abstraction-reﬁnement approach to
+veriﬁcation of artiﬁcial neural networks.
+In CAV, pages 243–257.
+Springer, 2010.
+[14] W. Ruan, X. Huang, and M. Kwiatkowska. Reachability analysis of deep
+neural networks with provable guarantees. In IJCAI, pages 2651–2659,
+2018.
+[15] S. A. Seshia, A. Desai, T. Dreossi, D. J. Fremont, S. Ghosh, E. Kim,
+S. Shivakumar, M. Vazquez-Chanlatte, and X. Yue. Formal speciﬁcation
+for deep neural networks. In ATVA, pages 20–34. Springer, 2018.
+[16] R. Shwartz-Ziv and N. Tishby. Opening the black box of deep neural
+networks via information. arXiv:1703.00810, 2017.
+[17] C. Szegedy, W. Zaremba, I. Sutskever, J. Bruna, D. Erhan, I. Good-
+fellow, and R. Fergus.
+Intriguing properties of neural networks.
+arXiv:1312.6199, 2013.
+[18] N. Tishby and N. Zaslavsky. Deep learning and the information
+bottleneck principle. In ITW, pages 1–5. IEEE, 2015.
+[19] S. Wang, K. Pei, J. Whitehouse, J. Yang, and S. Jana. Formal security
+analysis of neural networks using symbolic intervals. In USENIX, pages
+1599–1614, 2018.
+[20] T.-W. Weng, H. Zhang, H. Chen, Z. Song, C.-J. Hsieh, D. Boning, I. S.
+Dhillon, and L. Daniel. Towards fast computation of certiﬁed robustness
+for ReLU networks. In ICML, pages 5276–5285, 2018.
+[21] P. Yang, J. Liu, J. Li, L. Chen, and X. Huang. Analyzing deep neural
+networks with symbolic propagation: Towards higher precision and
+faster veriﬁcation. arXiv:1902.09866, 2019.
+
+

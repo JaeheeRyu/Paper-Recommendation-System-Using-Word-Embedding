@@ -1,0 +1,829 @@
+Machine Learning based detection of multiple
+Wi-Fi BSSs for LTE-U CSAT
+
+Vanlin Sathya†*, Adam Dziedzic†*, Monisha Ghosh† , and Sanjay Krishnan†
+
+†University of Chicago, Illinois, USA.
+Email: vanlin@uchicago.edu, ady@uchicago.edu, monisha@uchicago.edu, skr@uchicago.edu.
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+I
+
+N
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+2
+9
+2
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+1 Abstract—According to the LTE-U Forum speciﬁcation, a
+LTE-U base-station (BS) reduces its duty cycle from 50% to
+33% when it senses an increase in the number of co-channel
+Wi-Fi basic service sets (BSSs) from one to two. The detection
+of the number of Wi-Fi BSSs that are operating on the channel
+in real-time, without decoding the Wi-Fi packets, still remains
+a challenge. In this paper, we present a novel machine learning
+(ML) approach that solves the problem by using energy values
+observed during LTE-U OFF duration. Observing the energy
+values (at LTE-U BS OFF time) is a much simpler operation than
+decoding the entire Wi-Fi packets. In this work, we implement
+and validate the proposed ML based approach in real-time
+experiments, and demonstrate that there are two distinct patterns
+between one and two Wi-Fi APs. This approach delivers an
+accuracy close to 100% compared to auto-correlation (AC) and
+energy detection (ED) approaches.
+
+I . IN TRODUC T ION
+
+The inherent challenge of Wi-Fi and Long Term Evolution
+(LTE) coexisting fairly in the unlicensed bands at 5 GHz
+has been addressed by recent standardization efforts: LTE-
+LAA developed by 3GPP [1] and LTE-U developed by the
+LTE-U Forum [2]. These two standardization entities differ
+in the way coexistence is implemented. LTE-LAA [3] uses
+a mechanism similar to CSMA/CA as used in Wi-Fi, also
+known as Listen Before Talk (LBT), while LTE-U leverages a
+duty cycle approach (i.e., repeating ON and OFF intervals)
+and an adaptation technique called Carrier Sense Adaptive
+Transmission (CSAT). During an ON period, the LTE-U BS
+transmits its data normally. In the OFF period, it observes
+the channel and dynamically adjusts its duty cycle based on
+the number of detected Wi-Fi basic service sets (BSSs) or
+access points (APs). The detection method of Wi-Fi BSSs is
+arguably still a point of contention. Table I shows different
+types of possible CSAT approaches: directly decoding the
+Wi-Fi MAC header of Wi-Fi BSSs or spectrum sensing using
+energy detection (ED), auto-correlation (AC), or machine
+learning (ML) models. Each method has its own pros and
+cons as listed in the Table I. In our previous work [5][6] 2 ,
+we studied ED and AC based detection of Wi-Fi APs, and
+demonstrated algorithms that performed reasonably well under
+different scenarios.
+Of late, machine learning (ML) approaches are beginning to
+be used in wireless networks to solve problems such as agile
+management of network resources using real-time analytics
+
+1 *Equal contribution.
+2 The latest version can be found here: http://bit.ly/2LDVWWo
+
+TABLE I
+
+D I FFER EN T TY PE S O F CSAT.
+
+CSAT Types Method
+
+Header De-
+coding (HD)
+
+the
+MAC
+the
+
+Decodes
+Wi-Fi
+header
+at
+LTE-U BS
+Based
+on
+the
+change
+in
+the
+energy level of
+the air medium
+LTE-U BS per-
+forms correlation
+on the Wi-Fi L-
+STF symbol
+in
+the preamble
+Train the model
+based on energy
+values
+on
+the
+channel
+
+Pros
+
+100% accurate
+
+Cons
+
+Additional
+Complexity [4],
+high cost
+
+Low-cost,
+complexity
+
+low-
+
+Low-accuracy
+[5]
+
+Low-cost,
+complexity
+
+low-
+
+Much more ac-
+curate than ED
+and AC meth-
+ods
+
+Medium
+accuracy
+(more accurate
+than ED) [6]
+
+Requires gath-
+ering data and
+training models
+
+Energy De-
+tection (ED)
+
+Auto-
+correlation
+(AC)
+
+Machine
+Learning
+(ML)
+
+based on data. ML models enable us to replace heuristics with
+more robust and general alternatives. In this paper, we collect
+the Wi-Fi AP energy values during LTE-U OFF duration and
+use the data to train different ML models [7]. We also apply
+the models in an online experiment to detect the number of
+Wi-Fi APs. Finally, we demonstrate signiﬁcant improvement
+in the performance of the ML approach as compared to the
+ED and AC detectors.
+
+Fig. 1. LTE Wi-Fi Co-existence Deployment Setup.
+
+Fig. 1 illustrates an example LTE-U/Wi-Fi coexistence sce-
+nario, where two Wi-Fi APs and one LTE-U BS are operating
+on the same channel, with multiple clients associated with each
+AP and BS. According to 3GPP, it is expected that the LTE-U
+BS will adjust its duty cycle from 33% to 50% when one of
+the APs is turned off, and vice versa. Hence, a robust and
+accurate detection method is needed to guarantee the efﬁcient
+adaptation of the duty cycle. We aim to exploit the collected
+
+ 
+ 
+ 
+ 
+ 
+ 
+energy level data by using the ML approach at the LTE-U
+BS to infer the presence of one or two Wi-Fi BSSs and make
+the decision to adapt the duty cycle appropriately. In order
+to accomplish this, we create realistic experimental scenarios
+using a National Instruments (NI) USRP RIO board with a
+LTE-U module, two Netgear Wi-Fi APs, and two Wi-Fi clients.
+The rest of the paper is organized as follows. Section II
+presents a brief overview of existing literature on Wi-Fi LTE
+coexistence. Section III describes the experimental measure-
+ment set-up used to gather statistics on the energy values in
+the presence of one or two Wi-Fi APs which are then used to
+develop the ML adaptation algorithm described in Section IV.
+The experimental results are presented in Section V. Finally,
+Section VII concludes the paper.
+
+I I . R E LATED WORK
+
+The coexistence of LTE and Wi-Fi in the unlicensed spec-
+trum gives rise to several challenges in terms of Wi-Fi client
+association, interference management, scheduling/resource al-
+location, fair coexistence, imperfect carrier sensing, etc. There
+has been a signiﬁcant amount of research, both from academia
+and industry on LTE/Wi-Fi coexistence. This is mainly driven
+by the strong intention both from 3GPP and LTE-U forum to
+implement the technology as soon as possible. Both License
+Assisted Access (LAA)/Wi-Fi and LTE-U/Wi-Fi coexistence
+scenarios and throughput fairness have been well studied as
+a function of detection threshold and duty-cycle [4], [8], [9].
+However, the energy based and auto-correlation based tech-
+niques proposed in the existing literature are still under-utilized
+in the area of spectrum sensing for LTE-U/Wi-Fi coexistence.
+In our recent work, [5] and [10], [11], we performed rigorous
+theoretical and experimental analyses of the performance of an
+energy-based CSAT. We proposed an algorithm that can adjust
+the duty cycle of LTE-U based on the presence of Wi-Fi APs
+inferred by the detected energy in the medium. We believe that
+this is the ﬁrst work that proved the feasibility of stand-alone
+energy detection, without the need of packet decoding. We are
+able to reliably distinguish the presence between one or two
+Wi-Fi APs, using a threshold of -42 dBm which produced a
+successful detection probability PD of greater than 80% and
+false positive probability PF A (false alarm) of less the 5%. To
+further improve the performance of energy based approach in
+PD and PF A , we propose a novel algorithm that solves the
+problem by using an auto correlation (AC) function [6] on the
+Wi-Fi preamble and setting appropriate detection thresholds
+to infer the number of Wi-Fi BSSs operating on the channel.
+Performing auto-correlation on the Wi-Fi preamble is more
+accurate than the energy-based approach. We show that using
+an AC threshold of NE = 0.8, we can achieve a probability
+of detection (PD ) of 0.9 with a probability of false alarm
+(PF A ) of less than 0.02. In this paper, we aim to further
+improve the performance of AC detection by introducing
+an alternative efﬁcient approach i.e., ML based decision to
+distinguish between one and two Wi-Fi BSSs on the same
+channel.
+
+Fig. 2. LTE Wi-Fi Co-existence Experimental Setup.
+
+TABLE II
+
+EX PER IM EN TA L S ET-U P PARAM E TER S
+
+Parameter
+
+Available Spectrum and Frequency
+Maximum Tx power for both LTE
+and Wi-Fi
+Wi-Fi sensing protocol
+Trafﬁc
+Wi-Fi & LTE-U Antenna Type
+LTE-U data and control channel
+
+Value
+
+20 MHz and 5.825 GHz
+23 dBm
+
+CSMA/CA
+Full Buffer (Saturation Case)
+MIMO & SISO
+PDSCH and PDCCH
+
+I I I . EX PER IM EN TA L S E TU P FOR MACH IN E L EARN ING
+BA SED D ET EC T ION
+
+We set up our experimental test-bed according to Fig. 2 and
+the experiment parameters are described in Table II. An exper-
+iment is set up to evaluate the duty cycle adaptation algorithm
+performance considering LTE-U and Wi-Fi coexistence on the
+same unlicensed 20 MHz channel in the 5 GHz band. LTE-U
+utilizes the unlicensed spectrum only for the downlink and all
+uplink transmissions use the licensed spectrum. The LTE-U
+BS operates at maximum power by enabling all its resource
+blocks with the highest modulation coding scheme (i.e., 64-
+QAM). There are three cells, with two cells (A and C) acting
+as Wi-Fi cells and one cell (i.e., Cell B) acting as the LTE-
+U BS. We also ensure that there is no additional interference
+from other Wi-Fi APs on a particular channel. Each Wi-Fi
+cell consists of 1 AP and 1 client, and each AP transmits full
+buffer downlink data and beacon frames, with occasional probe
+responses if any nearby Wi-Fi clients transmit probe requests.
+An NI USRP platform is conﬁgured as the LTE-U BS and
+operates at 50% duty cycle during the experiment. During the
+LTE-U OFF duration, it listens to the conﬁgured co-channel
+for signals and measures its indicator RF power. The RF power
+function is conﬁgured in the LTE block control module of the
+NI LTE application framework, and it outputs energy value as
+deﬁned above. Using the energy measurement, we identify the
+number of Wi-Fi APs in the following scenarios:
+• Scenario 0: Measure the energy at the LTE-U BS during
+the LTE-U OFF period when no Wi-Fi APs are deployed.
+• Scenario 1: Measure the energy at the LTE-U BS during
+the LTE-U OFF period when only one Wi-Fi AP (i.e.,
+
+Cell A) and LTE-U (i.e., Cell B) is deployed with full
+buffer downlink transmission.
+• Scenario 2: Measure the energy at the LTE-U BS during
+the LTE-U OFF period when two Wi-Fi APs (i.e., Cell
+A & Cell C) and LTE-U (i.e., Cell B) are deployed with
+full buffer downlink transmission.
+In each scenario, Cell B measures the energy values during
+the LTE-U OFF period, while other cells are transmitting
+full buffer downlink transmission. Also, these scenarios are
+carried out at different distances in both LOS and NLOS
+environment. Similar to our previous work [5], [6], we focus
+only on Scenario 1 and 2 (i.e., 1 and 2 Wi-Fi). The Scenario 0
+(i.e., no Wi-Fi) can be easily detected when there is a change
+in the energy values [11].
+
+IV. MACH IN E L EARN ING A P PROACH
+
+ML models enable us to replace heuristics with more robust
+and general alternatives. For the problem of distinguishing
+between zero, one, two Wi-Fi BSSs, we train a model to detect
+a pattern in the signals instead of ﬁnding a speciﬁc energy
+threshold in a heuristic manner. The state-of-the-art ML mod-
+els leverage heavily the unprecedented performance of neural
+networks models that are able to surpass human performance
+on many tasks, for example, image recognition [12], and help
+us answer complex queries on videos [17]. This efﬁciency is
+a result of large amounts of data that can be collected and
+labeled as well as usage of highly parallel hardware such as
+GPUs or TPUs [13], [14]. In the work described in this paper,
+we train our neural network models on NVidia GPUs and
+collect enough data samples that enable our models to achieve
+high accuracy. Our major task is a classiﬁcation problem to
+distinguish between zero, one, two Wi-Fi BSSs.
+We consider machine learning models that take time-series
+data of width w as input, giving an example space of X ∈ Rw ,
+where R denotes the real numbers. Our discrete label space
+of k classes is represented as Y ∈ {0, 1}k . For example,
+k = 3 classes, enables us to distinguish between 0, 1, and
+2 Wi-Fis. Machine learning models represent parametrized
+functions (by a weight vector θ) between the example and label
+spaces f (x; θ) : X (cid:55)→ Y . The weight vector θ is iteratively
+updated during the training process until the convergence of
+the train accuracy or train loss (usually determined by very
+small changes to the values despite further training), and then
+the ﬁnal state of θ is used for testing and real-time inference.
+
+A. Data preparation
+The training and testing data is collected over an extended
+period of time; a single case (a single number of Wi-Fi AP)
+takes about 8 hours. For ease of exposition, we consider the
+case with one and two Wi-Fi APs. We collect data for each
+Wi-Fi AP independently and store the two datasets in separate
+ﬁles. Each ﬁle contains more than 2.5 million values and the
+total raw data size in CSV format is of about 60 MB. Each ﬁle
+is treated as time-series data with a sequence of values that are
+ﬁrst divided into chunks. We overlap the time-series chunks
+arbitrarily by three-fourths of their widths w . For example, for
+
+chunks of width w = 128, the ﬁrst chunk starts at index 0,
+the second chunk is formed starting from index 32, the third
+chunk starts at index 64, and so on. This is part of our data
+augmentation and a soft guarantee that much fewer patterns
+are broken on the boundary of chunks. The width w of the
+(time-series data) chunk acts as a parameter for our ML model.
+It denotes the number of samples that have to be provided to
+the model to perform the classiﬁcation. The longer the time-
+series width w , the more data samples have to be collected
+during inference. The result is higher latency of the system,
+however, the more samples are gathered, the more accurate
+the predictions of the model. On the other hand, with smaller
+number of samples per chunk, the time to collect the samples
+is shorter, the inference is faster but of lower accuracy. We
+elaborate more on this topic in Section V.
+
+The collection of chunks are shufﬂed randomly. We divide
+the input data into training and test sets, each 50% of the
+overall data size. The aforementioned shufﬂing ensures that
+we evenly distribute different types of patterns through the
+training and test sets so that the classiﬁcation accuracy of
+both sets is comparable. Each of the training and test sets
+contain roughly the same number of chunks that represent
+one or two Wi-Fi BSSs. We enumerate classes from 0. For
+the case of 2 classes (either one or two Wi-Fis), we denote
+by 0 the class that represents a single Wi-Fi BSS and by 1
+the class that represents 2 Wi-Fi BSSs. Next, we compute the
+mean µ and standard deviation σ only on the train set. We
+check for outliers and replace the values that are larger than
+4σ with the µ value (e.g., there are only 4 such values in class
+1).
+
+σ
+
+The data for the two classes have different ranges (from
+about -45.46 to -26.93 for class 0, and from about -52.02 to
+about -22.28 for class 1). Thus, we normalize the data D in
+the standard way: N D = (D−µ)
+, where N D is the normalized
+data output, µ and σ are the mean and standard deviation
+values computed on the train data. We attach the appropriate
+label to each chunk of the data. The overall size of the data
+after the preparation to detect one or two Wi-Fi APs is of
+about 382 MB, where the Wi-Fi APs are on opposite sides
+of LTE-U BSS and placed at 6 feet distance from the LTE-U
+BSS). We collect data for many more scenarios and present
+them in Section V. The ﬁnal size of the collected data is 3.4
+GB.
+
+For training, we do not insert values from different numbers
+of Wi-Fi APs into a single chunk. The received signal in the
+LTE-U BSS has higher energy on average for more Wi-Fi APs,
+thus there are differences in the mean values for each dataset.
+Our data preparation script handles many possible numbers of
+Wi-Fi APs and generates the data in the format that can be
+used for model training and inference (we follow the format
+for datasets from the UCR archive). In the future, we plan
+on gathering additional data samples for more Wi-Fi APs and
+make the dataset more challenging for classiﬁcation.
+
+B. Neural network models: FC, VGG and FCN
+Our data is treated as a uni-variate time-series for each
+chunk. There are many different models proposed for the
+standard time-series benchmark [15].
+First, we test fully connected (FC) neural networks. For
+simple architectures with two linear layers followed by the
+ReLU non-linearity the maximum accuracy achieved is about
+90%. More linear layers, or using other non-linearities (e.g.
+sigmoid) and weight decays do not help to increase the
+accuracy of the model signiﬁcantly. Thus, next we extract more
+patterns from the data using the convolutional layers.
+Second, we adapt the VGG network [21] to the one di-
+mensional classiﬁcation task. We change its number of weight
+layers to 6 (also test 7, 5, and 4 layers, but ﬁnd that 6 gives
+the highest test accuracy of about 99.52%). However, the
+drawback is that with fewer convolutional layers, the fully
+connected layers at the end of VGG net become bigger to the
+point that it hurts the performance (for 4 weight layers it drops
+to about 95.75%). This architecture gives us higher accuracy
+but is rather difﬁcult to adjust to small data.3
+Finally, one of the strongest and ﬂexible models called FCN
+is based on convolutional neural networks that ﬁnd general
+patterns in the time-series sequences [16]. The advantages of
+the model are: simplicity (no data-speciﬁc hyper-parameters),
+no additional data pre-processing required, no feature crafting
+required, and signiﬁcant academic and industrial effort into
+improving the accuracy of convolutional neural networks [19],
+[20].
+The architecture of the FCN network contains three blocks,
+where each of them consists of a convolutional layer, followed
+by batch normalization f (x) = x−µ√
+(where  is a small
+constant added for numerical stability) and ReLU activation
+function y(x) = max(0, x). There are 128, 256, and 128 ﬁlter
+banks in each of the consecutive 3 layer blocks, where the
+sizes of the ﬁlers are: 8, 5, and 3, respectively. We follow
+the standard convention for Convolutional Neural Networks
+(CNNs) and refer to the discrete cross-correlation operation as
+convolution. The input x to the ﬁrst convolution is the time-
+series data chunk with a single channel c. After its convolution
+with f ﬁlters, the output feature map y has f channels. For
+training, we insert s = 32 time-series data chunks into a mini-
+batch. We have j ∈ f and the discrete convolution [18] that
+can be expressed as:
+
+σ2+
+
+(cid:88)
+
+i∈c
+
+y(s,j ) =
+
+x(s,i) (cid:63) y(j,i)
+
+(1)
+
+V. EX PER IM EN TA L RE SU LT S
+
+A. Training and Inference
+Each model is trained for at least 100 epochs. We experi-
+ment with different gradient descent optimization algorithms,
+e.g. Stochastic Gradient Descent (SGD) and Adaptive Moment
+Estimation (Adam) 4 . For the SGD algorithm, we grid search
+
+3 The dimensionality of the data is reduced slowly because of the small
+ﬁlter of size 3.
+4A very good explanation can be found here: http://bit.ly/2Y9XaQ8
+
+for the best initial learning rate and primarily use 0.0001.
+The learning rate is reduced on plateau by 2X after 50
+consecutive iterations (scheduled patience). SGD is used with
+momentum value 0.9. We use standard parameters for the
+Adam optimization algorithm. The batch size is set to s = 32
+to provide high statistical efﬁciency. The weight decay is
+set to 0.0001. For our neural network models, the dataset is
+relatively simple. The Wi-Fi data can be compared in its size
+and complexity to the MNIST dataset [22] or to the GunPoint
+series from the UCR archive [15].
+
+B. Time-series width
+
+Fig. 3. The test accuracy (%) for a model trained and tested for a given
+chunk size (ranging from 1 to 2048) to distinguish between 2 classes (either
+1 or 2 Wi-Fis) and 3 classes (distinguish between 0, 1, or 2 Wi-Fis).
+
+The number of samples collected per second by the LTE-U
+BS is about 192. The inference of a neural network is executed
+in milliseconds and can be further optimized by compressing
+the network. The ﬁnal width of the time-series chunk imposes
+a major bottleneck in terms of the system latency. The smaller
+the time-series chunk width w , the lower latency of the system.
+However, the neural network has to remain highly accurate
+despite the small amount of data provided for its inference.
+Thus, we train many models and systematically vary the chunk
+width w from 1 to 2048 (see Fig. 3). In this case, each model
+is trained only for the single scenario (placement of the Wi-Fi
+APs) and with zero, one, or two active Wi-Fi APs. When we
+decrease the chunk sizes to the smaller chunk consisting of
+a single sample, the test accuracy deteriorates steadily down
+to the random choice out of the 3 classes (accuracy of about
+33%) and for the 2 classes, its performance is very close to
+the ED (Energy-based Detection) method.
+In Fig. 4 we present the values of energy captured for
+different scenarios with one and two Wi-Fis. If we consider
+the signal from about 1500th sample to 2000th sample, it is
+challenging to distinguish between one or two Wi-Fis. The
+visual inspection of the signals suggests that width of the time-
+series chunk should be longer than 500 samples. Signals with
+width of 384 achieve test accuracy below 99% and signals with
+width 512 can be trained to obtain 99.68% of test accuracy.
+Based on the experiments in Figs. 3 and 4, we ﬁnd that the
+
+2022242628210Chunk size30405060708090100Test accuracy (%)2 classes3 classesin time is capture using the NI LabVIEW. From the program,
+we generate an output ﬁle or write the data to a pipe. The
+ML model reads the new values from the ﬁle until it reaches
+the time-series chunk length. Next, the chunk is normalized
+and passed through the model that gives a categorical output
+that indicates the predicted number of Wi-Fis in the real-time
+environment.
+
+V I . P ER FORMANC E COM PAR I SON BE TW EEN ED , AC AND
+ML M E THOD S
+
+In this section, we analyze and study the performance
+differences between ED, AC and ML methods for different
+conﬁguration setups and discus the inference delay. In ML
+method, we validate the performance on both test (M Lt ) and
+real-time inference (M Lr ) data. For the ﬁnal evaluation, we
+train a single Machine Learning model that is based on the
+FCN network and used for all the following experiments. The
+model is trained on the whole dataset of size 3.4 GB, where
+the train and test sets are of the same size of about 1.7 GB.
+
+A. Successful Detection at Fixed Distance
+
+Fig. 4. The values of the energy (in dBm) captured for 2048 samples in
+LTE-U BS while there are 1 Wi-Fi, and 2 Wi-Fis scenarios.
+
+best trade-off between accuracy and inference time is achieved
+for chunk of size 512.
+
+C. Transitions between classes
+When we switch to another class (change the state of the
+system in terms of the number of Wi-Fis), we account for the
+transition period. If in a given window of 1 second a new Wi-Fi
+is added, the samples from this ﬁrst second with new Wi-Fi
+(or without one of the existing Wi-Fis - when it is removed),
+the chunk is containing values from n and n + 1 (or n − 1)
+number of Wi-Fis. An easy workaround for the contaminated
+chunk is to change the state of the system to new number of
+Wi-Fis only after the same class is returned by the model in
+two consecutive inferences (classiﬁcations).
+
+D. Real-time inference
+
+Fig. 5. The schema of the inference process, where the input received by the
+LTE-U BS is signals from Wi-Fis and the output is the predicted number of
+Wi-Fis.
+
+We deploy the model in real-time, which similar to the
+energy data collection experiment setup, and shown in Fig. 5.
+We prepare the model only for the inference task in the
+following steps. Python scripts load and deploy the trained Py-
+Torch model. We set up the Wi-Fi devices and generate some
+network load for each device. The LTE-U BS is connected
+to a computer with the hardware requirements of at least 8
+GB RAM (Installed Memory), 64-bit operating system, x64-
+based processor, Intel(R) Core i7, CPU clock 2.60GHz. The
+energy of the Wi-Fi transmission signal in a given moment
+
+Fig. 6. Comparison of results for successful detection between ED, AC and
+ML methods. ML results are presented for the test data (denoted as M Lt :)
+and for the real time inference (denoted as M Lr :).
+
+We compare the M Lt and M Lr performance with ED and
+AC approaches using the NI USRP platform as shown in
+Fig. 2. In the experiment, Wi-Fi APs are transmitting full
+buffer data, along with beacon and probe response frames
+following the 802.11 speciﬁcation. We performed different
+experiments with 6ft, 10ft and 15ft for LOS and NLOS
+scenarios. Fig 6 shows the performance of detection for LOS
+and NLOS scenarios. In ED and AC based approach the
+proposed detection algorithm achieves the successful detection
+on average at 93% and 95% for LOS scenario. Similarly, the
+algorithm achieves 80% and 90% for the NLOS scenario. In
+this work, we show that M Lt and M Lr approach can achieve
+close to 100% successful detection rate for both LOS and
+NLOS, and different distance scenarios (6ft, 10ft & 15ft).
+From this result, we observe the M Lr approach works close
+to the performance of M Lt .
+
+025050075010001250150017502000Sample number−40−35−30−25−20−15Energy (dBm)1 Wi-Fi2 Wi-FisLTE-U BSLabVIEWFILE / PIPEInput:signals from Wi-FisMODELOutput:2 Wi-FisED:LOSED:NLOSAC:LOSAC:NLOSMLt:LOSMLt:NLOSMLr:LOSMLr:NLOSTypes of CSAT approach020406080100Successful Detection (%)6 ft10 ft15 ftP ER FORMANC E O F D E TECT ION FOR D I FFER EN T CON FIGURAT ION S ETU P
+
+TABLE III
+
+CSAT Types
+
+ED
+AC
+
+M Lt
+M Lr
+
+CASE A (%)
+LOS
+NLOS
+79
+76
+98
+94
+99.96
+97.74
+99.87
+97.5
+
+CASE B (%)
+LOS
+NLOS
+95
+84
+97
+92
+98.80
+97.96
+98.6
+97.79
+
+CASE C (%)
+LOS
+NLOS
+93
+82
+96
+90
+99.94
+99.37
+99.76
+99.12
+
+OTH ER ADD I T IONA L D ELAY TO D ET EC T TH E W I -F I AP DU E TO TH E N I
+HARDWARE
+
+TABLE IV
+
+CSAT Types
+Energy Detection (ED)
+Auto-correlation (AC)
+Machine Learning (ML)
+
+NI HW Delay
+5.2 S
+4.6 S
+3 S
+
+B. Successful Detection at Different Conﬁguration
+We verify how the detection works in different conﬁgura-
+tions. We placed the two Wi-Fi APs on the same side of the
+LTE-U BS, unlike the above conﬁguration (i.e., 6ft, 10ft and
+15ft) where they were on opposite sides. Wi-Fi AP 1 and
+Wi-Fi AP 2 are placed at distances of 6 feet and 15 feet from
+the LTE-U BS respectively. We measured the performance of
+detection with LOS and NLOS conﬁgurations.
+• Case A: Both Wi-Fi AP 1 and Wi-Fi AP 2 are ON.
+• Case B: Only the Wi-Fi AP 1 at 6 feet is ON.
+• Case C: Only the Wi-Fi AP 2 at 15 feet is ON.
+Table III shows that there is not much degradation in the
+performance of detection in M Lt and M Lr compared to
+ED and AC. Hence, we believe that the ML approach is the
+preferred method for a LTE-U BS to detect the number of
+Wi-Fi APs and scale back the duty cycle efﬁciently.
+
+C. Additional Delay to Detect the Wi-Fi AP
+In ED, the total time for the energy based CSAT algorithm
+to adopt or change the duty cycle from 50% to 33% is 5.2
+seconds (i.e., Wi-Fi 1st beacon transmission time + LTE-U
+detects K beacon (or) data packets time + NI USRP RIO
+hardware processing time) as shown in Table IV. In AC, the
+total time for the AC based CSAT algorithm to change the
+duty cycle from 50% to 33% is 4.6 seconds (i.e., Wi-Fi 1st
+L-STF packet frame + LTE-U detects L-STF frame time + NI
+USRP RIO hardware processing time). In ML (i.e., M Lr ), the
+total time for the CSAT algorithm to adopt the duty cycle from
+50% to 33% is about 3.0 seconds. This approach is dependent
+on the chunk size (in this case set to 512).
+
+V I I . CONC LU S ION
+
+We propose a ML based algorithm that can be used by a
+LTE-U BS to determine presence of one or two Wi-Fi APs on
+the channel so that the duty cycle can be adjusted accordingly.
+We believe that
+this is the ﬁrst work to demonstrate the
+feasibility of using ML on energy values in real-time, instead
+of packet decoding [4], to reliably distinguish between the
+presence of different number of Wi-Fi APs. The results show
+that the ML approach can achieve accuracy close to 100%
+
+in detection as compared to ED and AC. We aim to extend
+this work in future by distinguishing between more than two
+Wi-Fi APs, thus enabling even ﬁner duty cycle adjustments of
+a LTE-U BS and improved coexistence with Wi-Fi.
+
+ACKNOWLEDGEMENT
+This material is based on work supported by the National
+Science Foundation (NSF) under Grant No. CNS - 1618920.
+Adam Dziedzic is supported by the Center For Unstoppable
+Computing (CERES) at the University of Chicago.
+
+R E F ER ENC E S
+[1] 3GPP Release 13 Speciﬁcation, ”http://www.3gpp.org/release-13/”.
+[2] ”LTE-U Forum, ”LTE-U CSAT Procedure TS V1.0””. 2015.
+[3] M. Merhnoush, S. Roy, V. Sathya, and M. Ghosh, ”On the Fairness of
+Wi-Fi and LTE-LAA Coexistence”, in IEEE Transactions on Cognitive
+Communications and Networking, Volume 4, August 2018.
+[4] E. Chai, K. Sundaresan, M. A. Khojastepour, and S. Rangarajan, ”LTE
+in unlicensed spectrum: Are we there yet?”, in Proceedings of the 22nd
+Annual International Conference on Mobile Computing and Networking,
+MobiCom’16, (New York, NY, USA), pp. 135–148, ACM, 2016.
+[5] V. Sathya, M. Merhnoush, M. Ghosh, and S. Roy, ”Energy detection
+based sensing of multiple Wi-Fi BSSs for LTE-U CSAT”, in IEEE
+GLOBECOM, pp. 1–7, 2018.
+[6] V. Sathya, M. Merhnoush, M. Ghosh, and S. Roy, ”Auto-correlation
+based sensing of multiple Wi-Fi BSSs for LTE-U CSAT”, in IEEE VTC,
+September, 2019. Link: http://bit.ly/2LDVWWo
+[7] C. Zhang, P. Patras, and H. Haddadi, ”Deep learning in mobile and
+wireless networking: A survey”, CoRR, vol. abs/1803.04311, 2018.
+[8] C. Cano and D. J. Leith, ”Unlicensed LTE/Wi-Fi coexistence: Is LBT
+inherently fairer than CSAT?”, in IEEE ICC, pp. 1–6, IEEE, 2016.
+[9] Q. Chen, G. Yu, and Z. Ding, ”Optimizing unlicensed spectrum sharing
+for LTE-U and Wi-Fi network coexistence”,IEEE Journal on Selected
+Areas in Communications, vol. 34, no. 10, pp. 2562–2574, 2016.
+[10] V. Sathya, M. Mehrnoush, M. Ghosh, and S. Roy, ”Association fairness
+in Wi-Fi and LTE-U coexistence”, in IEEE WCNC, pp. 1–6, 2018.
+[11] V. Sathya, M. Mehrnoush, M. Ghosh, and S. Roy, ”Analysis of CSAT
+performance in Wi-Fi and LTE-U coexistence”, in IEEE ICC Workshops,
+pp. 1–6, 2018.
+[12] K. He, X. Zhang, S. Ren, and J. Sun, ”Delving deep into rectiﬁers:
+Surpassing human-level performance on imagenet classiﬁcation”, ICCV
+2015.
+[13] N. P. Jouppi, C. Young, N. Patil, D. Patterson, G. Agrawal, R. Bajwa, et
+al. ”In-datacenter performance analysis of a tensor processing unit”, in
+Proceedings of the 44th Annual International Symposium on Computer
+Architecture, ISCA ’17, pages 1–12, New York, NY, USA, 2017. ACM.
+[14] S. Chetlur, C. Woolley, P. Vandermersch, J. Cohen, J. Tran, B. Catanzaro,
+and E. Shelhamer. ”cudnn: Efﬁcient primitives for deep learning”, in
+CoRR, abs/1410.0759, 2014.
+[15] H. A. Dau, E. Keogh, K. Kamgar, C.-C. M. Yeh, Y. Zhu, S. Gharghabi,
+C. A. Ratanamahatana, Yanping, B. Hu, N. Begum, A. Bagnall,
+A. Mueen, and G. Batista ”The ucr time series classiﬁcation archive”,
+October 2018.
+[16] Z. Wang, W. Yan, and T. Oates, ”Time series classiﬁcation from scratch
+with deep neural networks: A strong baseline”, in IJCNN pages 1578–
+1585, 05 2017.
+[17] S. Krishnan, A. Dziedzic and A. Elmore, ”DeepLens: Towards a Visual
+Data Management System”, in CIDR 2019, Asilomar, CA, USA.
+[18] N. Vasilache, J. Johnson, M. Mathieu, S. Chintala, S. Piantino and
+Y. LeCun, ”Fast Convolutional Nets with fbfft: A GPU Performance
+Evaluation”, in ICLR 2015, San Diego, CA, USA
+[19] A. Dziedzic, J. Paparrizos, S. Krishnan, A. Elmore, and M. Franklin,
+”Band-limited Training and Inference for Convolutional Neural Net-
+works”, in ICML 2019, Long Beach, CA, USA.
+[20] A. Lavin and S. Gray,
+”Fast algorithms for convolutional neural
+networks”,
+in IEEE CVPR 2016, Las Vegas, NV, USA, June 27-30,
+2016, pages 4013–4021, 2016.
+[21] K. Simonyan and A. Zisserman, ”Very deep convolutional networks for
+large-scale image recognition”, in ICLR 2015, San Diego, CA, USA
+[22] Y. LeCun and C. Cortes, ”MNIST handwritten digit database”, 2010.
+
+

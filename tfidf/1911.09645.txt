@@ -1,0 +1,618 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+D
+
+S
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+5
+4
+6
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+PROSODY TRANSFER IN NEURAL TEXT TO SPEECH
+USING GLOBAL PITCH AND LOUDNESS FEATURES
+
+Siddharth Gururani1, ∗ , Kilol Gupta2 , Dhaval Shah2 , Zahra Shakeri2 , Jervis Pinto2
+
+1 Music Informatics Group, Georgia Institute of Technology, Atlanta, GA, USA
+2 EADP Data & AI, Electronic Arts, Redwood City, CA, USA
+
+siddgururani@gatech.edu, {kgupta,dshah,zshakeri,jpinto}@ea.com
+
+ABSTRACT
+
+This paper presents a simple yet effective method to achieve
+prosody transfer from a reference speech signal to synthesized
+speech. The main idea is to incorporate well-known acoustic
+correlates of prosody such as pitch and loudness contours of
+the reference speech into a modern neural text-to-speech (TTS)
+synthesizer such as Tacotron2 (TC2). More speciﬁcally, a
+small set of acoustic features are extracted from the reference
+audio and then used to condition a TC2 synthesizer. The
+trained model is evaluated using subjective listening tests and
+novel objective evaluations of prosody transfer are proposed.
+Listening tests show that the synthesized speech is rated as
+highly natural and that prosody is successfully transferred from
+the reference speech signal to the synthesized signal.
+Index Terms— Neural text-to-speech, Prosody transfer
+
+1. INTRODUCTION
+
+In this paper, we address the task of developing a text-to-
+speech (TTS) system with the following two properties: a) The
+range of prosody in the synthesized dialogue must encompass
+a large range of human conversation, from neutral expression
+to extremely emotional, while always sounding perfectly nat-
+ural, and b) The user must be able to easily control prosody
+in synthesized speech. Here, prosody refers to the variation of
+several speech related phenomena such as intonation, stress,
+rhythm and style of the speech [1]. Such expressive TTS
+(ETTS) systems are desirable for content creators and ap-
+plication developers for whom the listener’s enjoyment and
+immersiveness of the speech content is of primary importance.
+Although the desire for ETTS is not new [2], initial TTS sys-
+tems lacked the ability to produce sufﬁciently natural neutral
+speech, which is a pre-requisite since human conversation is
+typically more neutral than expressive.
+Recent progress in deep learning architectures has sig-
+niﬁcantly improved the naturalness of TTS systems [3, 4].
+However, the style of the speech strongly depends on the train-
+ing dataset, with the model often learning a typically neutral
+
+The work was done while S. Gururani was interning at Electronic Arts.
+This is a preprint version.
+
+prosody [5]. Due to this problem there has been much recent
+interest in developing models which can encode prosody. The
+resulting ETTS system would still need to be easily control-
+lable, preferably by the creator of the text itself, who knows
+the target prosody.
+We propose a simple yet effective ETTS system in which
+a domain expert can easily transfer the target prosody from
+one audio clip to another. In this system, the user speciﬁes
+text and selects a reference speech signal. The output is syn-
+thesized speech for the input text using the reference speech’s
+prosody. More speciﬁcally, in our model, we extract a set of
+acoustic features from a reference speech signal that contains
+the desired prosody. Next, we use the extracted features, which
+encode key prosodic components (e.g., intonation, arousal),
+to condition a vanilla Tacotron2 (TC2) synthesizer [4]. The
+resulting log-mel-spectrogram has the desired prosody while
+still sounding natural. The main advantage of our system is
+its simplicity and limited resource requirements. Our main
+contributions are summarized below:
+1. We demonstrate the utility of the pitch contour and root-
+mean-square (RMS) energy curve for generating expres-
+sive speech. We show that the prosody of a desired
+reference can be transferred to a synthesized example
+using as few as 7 features.
+2. We use this compact reference “encoder” as condition-
+ing inputs for the TC2 model. We denote the resulting
+model as GS-TC2 (Global Summary statistics). We
+demonstrate the transfer of prosody from the reference
+signal to the ﬁnal synthesized speech signal, with a small
+decrease in naturalness.
+3. Finally, prosody transfer and ETTS is a relatively recent
+endeavor. We contribute to this effort by extending the
+framework for evaluating prosody transfer with new
+objective evaluation metrics.
+
+2. RELATED WORK
+
+Most research methods in ETTS modify an existing TTS frame-
+work to incorporate expressivity. These frameworks have tra-
+ditionally leveraged hidden Markov models (HMM) for para-
+
+ 
+ 
+ 
+ 
+ 
+ 
+metric speech synthesis [6]. One early approach was to use
+supervised learning with explicit expression labels [7]. The
+primary difﬁculty here is that annotating speech with ‘emotion’
+or ‘expression’ is subjective and expensive. Eyben et al. [8]
+proposed an approach involving unsupervised clustering of
+acoustic features and using cluster assignments as context for
+the generation process of average-expression speech synthesis.
+More recently, neural TTS frameworks such as TC2 [4]
+are adapted for ETTS by conditioning the synthesizer with a
+learned embedding of prosody. Skerry-Ryan et al. [1] propose
+learning a latent space for prosody by encoding the speech
+signal into a lower dimensional embedding. The learned
+prosody embedding is used as a global conditioning vector for
+Tacotron’s decoder [9]. Wang et al. [10] devised a method to
+learn categories of prosody styles or ‘global style tokens’ in
+an unsupervised manner. They jointly learn style embeddings
+along with the TC2 model by adding the style embeddings to
+the text encoder states.
+Similar to the global style tokens approach, Azukawa et
+al. [11] conditioned the encoder of VoiceLoop [12] with a
+latent variable containing global speech characteristics. The
+latent space is learned using a Variational Autoencoder (VAE).
+Hsu et al. [13] formulated a conditional generative model
+for speech where a Gaussian Mixture VAE is utilized to in-
+fer a latent code (prosody or style) as well as an observed
+code (speaker identity). These codes are used to condition the
+decoder of a TC2 model. The results show signiﬁcant improve-
+ment in Mean Opinion Scores (MOS) of synthesized speech
+over previous approaches. Moreover, Wan et al. [14] proposed
+a hierarchical conditional VAE which utilizes both prosodic
+features such as pitch, loudness and phoneme duration, as
+well as linguistic features to learn a prosody embedding.In
+this prosody embedding model, the features are encoded at
+different rates using clockwork RNNs. This differs from other
+VAE methods in that the prosody embedding is learned from
+acoustic and linguistic features as opposed to the spectrogram.
+While the above methods proposed ways to control or
+transfer prosody from a reference speech, a few researchers are
+working on ways to enable ﬁne-grained control of prosodic fea-
+tures. Lee and Kim [15] proposed a method to learn variable-
+length prosody embeddings and conditioning a TC2 model.
+The approach uses attention to align and downsample the
+prosody embeddings learned from the audio to match the num-
+ber of time-steps in the encoder or the decoder. Klimkov et
+al. [16] utilized a similar strategy for ﬁne-grained prosody
+transfer using phoneme aligned prosody features such as pitch,
+intensity, and duration which are encoded by a reference en-
+coder. The prosody embeddings are utilized with a TC2-based
+system to generate mel-spectrograms of expressive speech.
+
+3. PROPOSED METHOD
+
+Our approach leverages prior research on human speech and
+signal processing which showed that pitch and loudness could
+
+Fig. 1. Model architecture for prosody transfer. The reference
+encoder is a linear transformation of summary statistic prosody
+features. During training, prosody features are obtained from
+ground truth audio while during inference, they are extracted
+from reference speech.
+
+encode signiﬁcant amounts of speech prosody [2]. Our hypoth-
+esis is that features derived from pitch and loudness contours
+of a speech signal can be combined with neural TTS to enable
+prosody transfer. We test this hypothesis by incorporating
+these prosodic features into a standard TC2 TTS model using
+global conditioning, previously shown to be effective [13, 10].
+A key aspect of our method is that we do not learn prosody or
+style features from high-dimensional spectrogram representa-
+tions of audio [1, 13]. Rather, we convert the reference speech
+signal into 1-D time-series features such as pitch contours and
+frame-level RMS energy.
+The main advantage of our approach is that the low-
+dimensional features allow us to use a compact reference
+encoder, with a very small number of additional parameters.
+Speciﬁcally, we only need to add a single linear projection
+layer that maps low dimensional prosody features to 512 di-
+mensions to match the dimensionality of the TC2 conditioning
+site. Another potential advantage of the low-dimensional
+prosody encoding is that it can help the model disentangle
+text and speaker attributes from prosodic ones. These at-
+tributes distinguish our method from state-of-the-art prosody
+transfer models [13], which involve both complex reference
+speech encoders requiring additional training as well as large
+datasets due to the model sizes, while still experiencing dif-
+ﬁculties from entangled representations since they rely on a
+high-dimensional (i.e., spectrogram) representations of the
+reference. Furthermore, approaches involving VAEs can
+be difﬁcult to train whereas our model can be trained on a
+single V100 NVIDIA GPU using a variant of a public TC2
+implementation.1
+To the best of our knowledge, there has been very little
+research investigating the effectiveness of using pitch and
+loudness features to condition a neural synthesizer. The clos-
+est approach to our work is the method proposed by Wan et
+al. [14] which uses similar acoustic features in addition to
+linguistic features. However, the model is quite large and
+has signiﬁcant implementation complexity involving clock-
+
+1 https://github.com/NVIDIA/tacotron2
+
+EncoderAttentionDecoderReferenceEncoderPitch ContourLoudness ContourTacotron 2TextUser-selected orground truthreference audioWaveRNNVocoderSpeechwork RNNs, seq2seq and variational inference. In comparison,
+we propose a straightforward modiﬁcation to a vanilla TC2
+model with low-dimensional, well-studied acoustic attributes
+of human speech, namely fundamental frequency (F0) and
+energy (RMS). Our method of generating expressive speech
+via prosody transfer is graphically depicted in Figure 1.
+
+3.1. Extracting Prosody Features
+
+Prosody refers to the variation of pitch and stress in speech,
+among other factors. In order to inform the TTS model about
+the user’s desired prosody for synthesized speech, we let the
+user specify a reference speech signal containing the desired
+prosody. From this reference signal, we extract two 1-D sig-
+nals (time-series), one for the fundamental frequency (F0) and
+the second for loudness. We represent loudness as the RMS of
+overlapping frames of audio. This is a fast and straightforward
+computation. For fundamental frequency (i.e., pitch contour),
+we use a python implementation of the Kaldi speech recog-
+nition toolkit [17]. Kaldi uses a normalized cross-correlation
+function to compute the pitch contour. We refer readers to [18]
+for details about the pitch tracking algorithm. The time-series
+is a smoothed logF0 value for each audio frame. Unvoiced
+frames are set to 0 in the pitch contour based on a threshold
+on the RMS that is computed ofﬂine.
+Given logF0 and RMS contours, our approach for com-
+puting the conditioning features consists of extracting “global
+statistics” (mean, variance, maximum, minimum) over the two
+time-series. This method, denoted as GS, gives us a total of
+7 features.2 In the next section, we demonstrate how these
+simple features lead to the effective transfer of prosody from
+the reference speech signal to synthesized speech signal with
+small decrease in speech naturalness.
+
+text from the test set. We downsample the original audio
+recorded at 48 kHz to 16 kHz. The mel-spectrograms are com-
+puted using 80 mel bins, a window size of 50 ms and a hop
+size of 12.5 ms. Mel-spectrogram magnitudes are converted
+to the log-scale and scaled to a range of [−4, 4]. We use the
+same window-size and hop-size for loudness and pitch contour
+computation. We apply an RMS threshold of 5e−3 as a proxy
+for voicing detection. For the text input, we use a character set
+size of 37 comprising of lower-case alphabets and normalized
+punctuation. Moreover, we perform z-score normalization on
+the 7 global statistical features.
+As previously described, we experiment with conditioning
+TC2 with prosody features. We denote this model as GS-TC2.
+The GS-TC2 model uses the same procedure for training as the
+standard TC2. We use a learning rate of 1e−3 and batch size
+32 and run the training for approximately 200, 000 steps after
+which we observe that the models have converged. During
+training, the conditioning inputs are obtained from the ground-
+truth audio recording for the input text. During inference, a
+reference can be chosen by an end-user based on the desired
+prosody. This reference can come from the training, validation
+or test set.
+Finally, we use a variant of the WaveRNN vocoder to
+generate waveforms from predicted log-mel-spectrograms [19].
+The vocoder is trained separately on ground-truth log-mel-
+spectrograms from training data.
+
+4.2. Results and Discussion
+
+We evaluate our models for prosody transfer using both sub-
+jective and objective metrics. Additionally, we perform MOS
+evaluations for speech naturalness.
+
+4. EXPERIMENTS AND RESULTS
+
+4.2.1. Subjective Evaluations
+
+This section contains the key empirical ﬁndings of the paper
+on a single speaker dataset of expressive speech.
+
+4.1. Dataset and Preprocessing
+
+Our proprietary dataset consists of approximately 10 hours
+of professionally recorded, female, single-speaker expressive
+speech in English, spoken with a British accent. There are
+approximately 10000 (text, utterance) pairs in the dataset. The
+recorded lines cover a large variety of expressions including
+neutral, joyful, angry, sarcastic and urgent.3 Our training and
+inference do not leverage any form of expression annotations.
+We set aside 100 utterances for validation and 100 utter-
+ances for testing. All our evaluations are done on synthesized
+
+2We exclude the minimum feature for RMS since it is typically zero and
+not informative.
+3 These descriptors were gathered from listeners during informal focus
+groups for the sole purpose of subjective analysis of the expressivity in the
+dataset.
+
+We begin with a MOS evaluation of speech naturalness. For
+this evaluation, we use text from the test set and generate
+speech using the baseline TC2 and the GS-TC2 model. We
+also evaluate the naturalness of ground truth (GT) recorded
+test audio. Note that for the GS-TC2 model, we use the cor-
+responding audio’s ground truth prosody features for condi-
+tioning. For each MOS test, a set of 20 listeners, consisting of
+English speakers, were selected. Each listener was presented
+with 9 audio ﬁles and was asked to rate the naturalness of these
+ﬁles on a scale of 1-5 with 0.5 increments. The results from
+the MOS evaluations are shown in Table 1. The addition of
+the prosody transfer module results in a small decrease in the
+naturalness of the model. We ﬁnd that using reference speech
+samples with extreme prosody (loudness and pitch) result in
+unwanted artifacts in the model output [2].4
+
+4Our listening test was also accompanied by a survey. Most listeners
+pointed out that the presence of uncommon proper nouns or entity names
+caused them to give lower ratings even for ground truth recordings. We
+hypothesize the large standard deviations are a result of this issue.
+
+Model
+GT
+TC2
+GS-TC2
+
+MOS Score
+
+4.13 ± 1.01
+3.76 ± 1.06
+3.62 ± 1.07
+
+Table 1. MOS Naturalness scores for the various settings.
+Higher is better.
+
+Prosody transfer score
+
+GS-TC2
+
+1.04 ± 1.81
+
+Table 2. Preference score for prosody transfer evaluation.
+Higher is better. Score of 0 indicates no improvement over the
+baseline TC2.
+
+Next, we evaluate prosody transfer from the reference
+speech to the synthesized speech for an arbitrary line of text.
+This is a side-by-side test comparing synthesized speech from
+two models which was ﬁrst proposed by Skerry-Ryan et al. [1].
+We ask listeners to rate which of the two synthesized samples
+is more similar to a reference speech sample. Speciﬁcally, we
+construct triplets (A, X, Y ) from the test set. A is the reference
+speech sample, X and Y are utterances synthesized using the
+same text but using TC2 and GS-TC2 respectively. For this
+test, a set of 27 listeners, consisting of English speakers, were
+selected. Each listener was presented with 6 triplets and asked
+to rate which synthesized waveform matches more closely to
+the reference in terms of prosody, on a Likert scale of -3 to
+3 with increments of 1. Here, -3 implies X is closer to A,
++3 implies Y is closer to A, and 0 implies that there is no
+difference. Table 2 shows the results of this listening test. It
+can be inferred that the GS-TC2 model successfully transfers
+prosody to synthesized audio compared to baseline TC2.
+
+4.2.2. Objective Evaluations
+
+Our goal is to identify objective metrics that correlate strongly
+with subjective metrics. Since a standard set of objective met-
+rics for prosody transfer does not exist, another contribution
+of this work is introducing two metrics for this purpose. Our
+objective evaluations consist of measuring the prosody transfer
+performance of GS-TC2 compared to TC2 via:
+1. Computing the cosine distance between normalized GS
+Pitch and RMS features of the ground-truth recorded
+reference audio and the synthesized speech. 5
+2. Computing the dynamic time warping (DTW) dis-
+tance [20] between the pitch and RMS series of the
+ground-truth recorded reference audio and the synthe-
+sized speech.
+
+5We used unit (cid:96)2 -norm normalization in this case since this normaliza-
+tion resulted in better correlation with prosody transfer subjective evaluations
+compared to z-score normalization. We note that for both (cid:96)2 -norm and z-score
+normalization, the cosine distance for pitch correlates well with subjective
+evaluation results, whereas for loudness, z-score normalization does not corre-
+late well with subjective listening test results.
+
+TC2
+
+Distance
+Metric
+Pitch cosine
+RMS cosine
+
+0.052 ± 0.005
+0.034 ± 0.003
+Pitch DTW 0.540 ± 0.035
+RMS DTW 0.019 ± 0.0007
+
+GS-TC2
+
+0.029 ± 0.006
+0.027 ± 0.003
+0.306 ± 0.028
+0.019 ± 0.001
+
+Table 3. Objective metrics for prosody transfer. Lower is
+better.
+
+In this experiment, for each text in the test set (consisting
+of 100 examples), a reference is selected uniformly at random
+from a set of 100 references that contain non-neutral prosodies
+and the text is synthesized using the GS-TC2 model, condi-
+tioned on that reference. We conducted 50 Monte Carlo runs
+in all cases. Table 3 shows the results for objective evaluation.
+It can be seen that GS-TC2 can synthesize speech with GS
+features closer to the ground-truth reference audio compared
+to baseline TC2. Table 3 also shows that GS-TC2 is more suc-
+cessful in transferring the reference pitch contour information
+to the synthesized speech compared to TC2, whereas, in terms
+of RMS, the DTW distance is similar for GS-TC2 and TC2.
+
+5. CONCLUSION AND FUTURE WORK
+
+We have demonstrated a simple yet effective method for synthe-
+sizing highly natural, expressive speech using prosody transfer.
+By combining acoustic features known to correlate well with
+prosodic attributes with a neural TTS synthesizer (Tacotron2),
+and vocoder (WaveRNN), we were able to accurately transfer
+global prosody from a reference speech signal to synthesized
+speech. The use of a low-dimensional encoding of the ref-
+erence speech prevents entanglement issues experienced by
+more complex and larger models.
+As future work, we can consider leveraging additional
+components of prosody, such as phoneme durations, in the
+model. Second, in order to further assist the user’s choice of
+reference, it would be useful to develop unsupervised methods
+that can identify the “best” set of reference speech samples
+from large collections of speech using only the text. Further-
+more, pilot experiments showed that the reference audio in our
+model can be selected from other speakers or be comprised of
+para-linguistics instead of speech, provided that the statistics
+of the prosody features of these references are close to the
+statistics of the features of the target speaker. Future work in
+this regard includes incorporating a preprocessing module to
+be able to use arbitrary reference audio for prosody transfer.
+Another promising future direction is using features from a
+learned model or using a more complex reference encoder for
+prosody transfer. In pilot experiments, we trained an LSTM
+on logF0 and RMS contours jointly with the TC2 model for
+prosody transfer and found this approach to perform poorly in
+comparison to our proposed method.
+
+6. REFERENCES
+
+[1] R. Skerry-Ryan, E. Battenberg, Y. Xiao, Y. Wang,
+D. Stanton, J. Shor, R. Weiss, R. Clark, and R. A.
+Saurous, “Towards end-to-end prosody transfer for
+expressive speech synthesis with tacotron,” in Proc. 35th
+Int.Conf. Mach. Learn., ser. Proc. Mach. Learn. Res.,
+vol. 80. PMLR, 10–15 Jul 2018, pp. 4693–4702.
+
+[2] M. Theune, K. Meijs, D. Heylen, and R. Ordelman, “Gen-
+erating expressive speech for storytelling applications,”
+IEEE Trans. Audio, Speech, and Language Process.,
+vol. 14, no. 4, pp. 1137–1144, July 2006.
+
+[3] A. Gibiansky, S. Arik, G. Diamos, J. Miller, K. Peng,
+W. Ping, J. Raiman, and Y. Zhou, “Deep voice 2:
+Multi-speaker neural text-to-speech,” in Advances in
+Neural Inf. Process. Systems 30, I. Guyon, U. V. Luxburg,
+S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and
+R. Garnett, Eds. Curran Associates, Inc., 2017, pp.
+2962–2970.
+
+[4] J. Shen, R. Pang, R. J. Weiss, M. Schuster, N. Jaitly,
+Z. Yang, Z. Chen, Y. Zhang, Y. Wang, R. Skerrv-Ryan,
+R. A. Saurous, Y. Agiomvrgiannakis, and Y. Wu, “Nat-
+ural TTS synthesis by conditioning wavenet on MEL
+spectrogram predictions,” in IEEE Int. Conf. Acoustics,
+Speech and Signal Process., April 2018, pp. 4779–4783.
+
+[5] X. Wu, Y. Cao, M. Wang, S. Liu, S. Kang, Z. Wu, X. Liu,
+D. Su, D. Yu, and H. Meng, “Rapid style adaptation
+using residual error embedding for expressive speech
+synthesis,” in Proc. Interspeech, 2018, pp. 3072–3076.
+
+[6] H. Zen, T. Nose, J. Yamagishi, S. Sako, T. Masuko, A. W.
+Black, and K. Tokuda, “The HMM-based speech synthe-
+sis system (HTS) version 2.0.” in SSW. Citeseer, 2007,
+pp. 294–299.
+
+[7] Schrder, M, Burkhardt, F, Krstulovic, and S, “Synthe-
+sis of emotional speech,” in A Blueprint for Affective
+Computing: A Sourcebook and Manual, K. R. Scherer,
+T. Bnziger, and E. Roesch, Eds. Oxford University
+Press, 2010.
+
+[8] F. Eyben, S. Buchholz, N. Braunschweiler, J. Latorre,
+V. Wan, M. J. F. Gales, and K. Knill, “Unsupervised
+clustering of emotion and voice styles for expressive
+TTS,” in IEEE Int. Conf. Acoustics, Speech and Signal
+Process., March 2012, pp. 4009–4012.
+
+[9] Y. Wang, R. Skerry-Ryan, D. Stanton, Y. Wu, R. J. Weiss,
+N. Jaitly, Z. Yang, Y. Xiao, Z. Chen, S. Bengio et al.,
+“Tacotron: Towards end-to-end speech synthesis,” arXiv
+preprint arXiv:1703.10135, 2017.
+
+[10] Y. Wang, D. Stanton, Y. Zhang, R. J. Skerry-Ryan,
+E. Battenberg, J. Shor, Y. Xiao, Y. Jia, F. Ren, and
+R. A. Saurous, “Style tokens: Unsupervised style
+modeling, control and transfer in end-to-end speech
+synthesis,” in Proc. 35th Int. Conf. Mach. Learn., 2018,
+pp. 5167–5176.
+
+[11] K. Akuzawa, Y. Iwasawa, and Y. Matsuo, “Expressive
+speech synthesis via modeling expressions with
+variational autoencoder,” in Proc. Interspeech 2018,
+2018, pp. 3067–3071.
+
+[12] Y. Taigman, L. Wolf, A. Polyak, and E. Nachmani,
+“Voiceloop: Voice ﬁtting and synthesis via a phonological
+loop,” in Int. Conf. Learn. Representations, Conf. Track
+Proc., 2018.
+
+[13] W.-N. Hsu, Y. Zhang, R. Weiss, H. Zen, Y. Wu, Y. Cao,
+and Y. Wang, “Hierarchical generative modeling for
+controllable speech synthesis,” in Int. Conf. Learn.
+Representations, 2019.
+
+[14] V. Wan, C.-a. Chan, T. Kenter, J. Vit, and R. A. Clark,
+“CHiVE: Varying prosody in speech synthesis with a lin-
+guistically driven dynamic hierarchical conditional vari-
+ational network,” in Proc. 36th Int. Conf. Mach. Learn.,
+2019.
+
+[15] Y. Lee and T. Kim, “Robust and ﬁne-grained prosody
+control of end-to-end speech synthesis,” in IEEE Int.
+Conf. Acoustics, Speech and Signal Process., 2019, pp.
+5911–5915.
+
+[16] V. Klimkov, S. Ronanki, J. Rohnke, and T. Drugman,
+“Fine-Grained Robust Prosody Transfer for Single-
+Speaker Neural Text-To-Speech,” in Proc. Interspeech
+2019, 2019, pp. 4440–4444.
+
+[17] D. Povey, A. Ghoshal, G. Boulianne, L. Burget, O. Glem-
+bek, N. Goel, M. Hannemann, P. Motlicek, Y. Qian,
+P. Schwarz, J. Silovsky, G. Stemmer, and K. Vesely,
+“The kaldi speech recognition toolkit,” in IEEE 2011
+Workshop on Automatic Speech Recognition and Under-
+standing.
+IEEE Signal Processing Society, Dec. 2011.
+
+[18] P. Ghahremani, B. BabaAli, D. Povey, K. Riedhammer,
+J. Trmal, and S. Khudanpur, “A pitch extraction algo-
+rithm tuned for automatic speech recognition,” in IEEE
+Int. Conf. Acoustics, Speech and Signal Process., May
+2014, pp. 2494–2498.
+
+[19] N. Kalchbrenner, E. Elsen, K. Simonyan, S. Noury,
+N. Casagrande, E. Lockhart, F. Stimberg, A. van den
+Oord, S. Dieleman, and K. Kavukcuoglu, “Efﬁcient
+neural audio synthesis,” in Proc. 35th Int. Conf. Mach.
+Learn., 2018, pp. 2415–2424.
+
+[20] M. M ¨uller, “Dynamic time warping,” Information re-
+trieval for music and motion, pp. 69–84, 2007.
+
+

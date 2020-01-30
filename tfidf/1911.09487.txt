@@ -1,0 +1,1314 @@
+“main” — 2019/11/22 — 2:04 — page 1 — #1
+
+Bioinformatics
+doi.10.1093/bioinformatics/xxxxxx
+Advance Access Publication Date: Day Month Year
+Original Paper
+
+Data and text mining
+
+Chemical-protein Interaction Extraction via
+Gaussian Probability Distribution and External
+Biomedical Knowledge
+
+Cong Sun 1 , Zhihao Yang 1,∗ , Leilei Su 2 , Lei Wang 3,∗ , Yin Zhang 3 ,
+Hongfei Lin 1 and Jian Wang 1
+
+1 School of Computer Science and Technology, Dalian University of Technology, Dalian, 116024, China
+2 School of Mathematical Sciences, Dalian University of Technology, Dalian, 116024, China
+3 Beijing Institute of Health Administration and Medical Information, Beijing, 100850, China
+
+∗ To whom correspondence should be addressed.
+Associate Editor : XXXXXXX
+
+Received on XXXXX; revised on XXXXX; accepted on XXXXX
+
+Abstract
+
+Motivation: The biomedical
+literature contains a wealth of chemical-protein interactions (CPIs).
+Automatically extracting CPIs described in biomedical literature is essential for drug discovery, precision
+medicine, as well as basic biomedical research. However, the existing methods do not consider the impact
+of overlapping relations on CPI extraction. This leads to the extraction of sentences with overlapping
+relations becoming the bottleneck of CPI extraction.
+Results: In this paper, we propose a novel neural network-based approach to improve the CPI extraction
+performance of sentences with overlapping relations. Speciﬁcally, the approach ﬁrst employs BERT to
+generate high-quality contextual representations of the title sequence, instance sequence, and knowledge
+sequence. Then, the Gaussian probability distribution is introduced to capture the local structure of the
+instance. Meanwhile, the attention mechanism is applied to fuse the title information and biomedical
+knowledge, respectively. Finally, the related representations are concatenated and fed into the softmax
+function to extract CPIs. We evaluate our proposed model on the CHEMPROT corpus. Our proposed
+model
+is superior in performance as compared with other state-of-the-ar t models. The experimental
+results show that the Gaussian probability distribution and external knowledge are complementary to
+each other. Integrating them can effectively improve the CPI extraction performance. Fur thermore, the
+Gaussian probability distribution can signiﬁcantly improve the extraction performance of sentences with
+overlapping relations in biomedical relation extraction tasks.
+Availability: Data and code are available at https://github.com/CongSun-dlut/CPI_extraction.
+Contact: yangzh@dlut.edu.cn, wangleibihami@gmail.com
+Supplementary information: Supplementary data are available at Bioinformatics online.
+
+1 Introduction
+
+Knowledge of chemical-protein interactions (CPIs) is essential for drug
+discovery, precision medicine, as well as basic biomedical research
+(Krallinger et al., 2017). Currently, PubMed has included approximately
+30 million articles and continues to grow at a rate of more than one
+million articles per year. Extensive valuable CPI knowledge is hidden
+
+in biomedical texts, and how to accurately and automatically extract these
+interactions is increasingly attracting interest. Therefore, the automatic
+extraction of CPIs from biomedical literature is becoming a crucial task
+in biomedical natural language processing (NLP) tasks. Recently, the
+BioCreative VI task organizers released a CHEMPROT corpus, which
+is the ﬁrst corpus for CPI extraction (Krallinger et al., 2017).
+Most existing CPI extraction methods can be roughly categorized
+into two classes: statistical machine learning-based methods and neural
+
+© The Author 2019. Published by Oxford University Press. All rights reserved. For permissions, please e-mail: journals.permissions@oup.com
+
+1
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+7
+8
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+ 
+ 
+ 
+ 
+ 
+ 
+“main” — 2019/11/22 — 2:04 — page 2 — #2
+
+2
+
+Sun et al.
+
+Fig. 1. An example sentence which has six overlapping relations. Chemical and protein entities are labeled green and blue, respectively. This example shows how a sentence with overlapping
+relations generates instances.
+
+network-based methods. Statistical machine learning-based methods
+usually exploit elaborate kernel functions or explicit feature engineering
+to extract CPIs. For example, (Warikoo et al., 2018) utilized a linguistic
+pattern-aware dependency tree kernel to extract CPIs, and their method
+obtains an F-score of 36.54%. (Lung et al., 2019) constructed chemical-
+protein relation (CPR) pairs and triplets and exploited sophisticated
+features to implement CPI extraction. Their method achieves an F-score of
+56.71%. In general, the performance of these methods depends heavily on
+the designed kernel function and chosen feature set, which is an empirical
+and skill-dependent work. Compared with statistical machine learning-
+based methods, neural network-based methods can automatically learn
+latent features and have become a dominant method for CPI extraction.
+For example, (Corbett and Boyle, 2018) introduced transfer learning and
+specialized word embeddings to extract CPIs, and their method obtains an
+F-score of 61.41%. (Peng et al., 2018) proposed a method integrating a
+support vector machine (SVM) (Cortes and Vapnik, 1995), a convolutional
+neural network (CNN) (Kim, 2014) and a recurrent neural network (RNN)
+to extract CPIs. Their system achieves an F-score of 64.10%. (Sun
+et al., 2019) attempted to improve the performance of CPI extraction
+by introducing the entity attention mechanism and ELMo representations
+(Peters et al., 2018) into the stacked bidirectional long short-term memory
+(Bi-LSTM) (Hochreiter and Schmidhuber, 1997). Their method obtains
+an F-score of 69.44%. Despite the success of these neural networks, some
+disadvantages remain. First, the pre-trained word embeddings (Mikolov
+et al., 2013; Pennington et al., 2014; Bojanowski et al., 2017) can only learn
+a context-independent representation for each word (Peters et al., 2018).
+Second, CNNs and RNNs perform distinctly worse than the self-attention
+on word sense disambiguation (Tang et al., 2018). Recently, (Devlin
+et al., 2019) proposed a language representation model called BERT,
+which stands for bidirectional encoder representations from Transformers
+(Vaswani et al., 2017). Compared with the previous neural network-
+based models, BERT eschews the disadvantages of CNNs and RNNs
+and addresses the drawbacks of pre-trained word embeddings. (Peng
+et al., 2019) made a comprehensive comparison of various pre-trained
+BERTs and introduced the biomedical language understanding evaluation
+(BLUE) benchmark to facilitate research in the biomedical domain. In their
+experiments, BERTs pre-trained on PubMed abstracts achieved a start-of-
+the-art performance of CPI extraction, and the F-scores of BERTBASE
+and BERTLARGE reach 72.5% and 74.4%, respectively. Overall, neural
+network-based methods can automatically learn latent features from vast
+amounts of unlabeled biomedical texts, thereby achieving start-of-the-art
+performances of CPI extraction.
+To date, research on CPI extraction is still at an early stage, and
+the performance has much room to improve. As shown in Figure 1,
+one sentence with overlapping relations will generate multiple identical
+
+instances based on different
+target entity pairs. For these identical
+instances, we refer to them as overlapping instances. Correspondingly,
+we refer to the sentences that have only one pair of target entities as
+normal instances. Both the above-mentioned statistical machine learning-
+based methods and neural network-based methods do not consider the
+impact of overlapping instances. However, there are a large number of
+overlapping instances in the CHEMPROT corpus, and the extraction of
+these instances has become the bottleneck of CPI extraction. Existing
+methods usually use position features (e.g., relative distance embeddings)
+to indicate the position of each token in the instance, which can help the
+model learn different latent information for overlapping instances to some
+extent. Nevertheless, because the word/token sequence of the instance is
+the major information for neural network-based methods (Zhang et al.,
+2019b), it is difﬁcult to signiﬁcantly improve the extraction performance
+of overlapping instances by using these position features. Even in the NLP
+ﬁeld, the relation extraction of sentences with overlapping relations is
+also a research difﬁculty. (Zeng et al., 2018) proposed an end2end neural
+model based on the seq2seq learning framework with a copy mechanism
+for relational fact extraction. (Takanobu et al., 2019) applied a hierarchical
+reinforcement learning framework to enhance the interaction between
+entity mentions and relation types. To the best of our knowledge, only
+these two works have studied the extraction of overlapping relations by
+jointly extracting both entity mentions and relation types, and there is
+currently no work that focuses on the research of overlapping instances in
+biomedical relation extraction tasks.
+Our work focuses on improving the CPI extraction performance of
+overlapping instances and starts from the following two aspects. On the
+one hand, it is more reasonable that the relation extraction model should
+focus on the target entity and its adjacent words than on treating each token
+in the instance equally. Although the attention mechanism can use word
+embeddings to calculate the weights, it cannot distinguish the importance
+of the same word at different positions in the instance. Take the sentence in
+Figure 1 as an example. The importance of these three ’agonist’ in different
+instances is different, but the attention mechanism cannot distinguish them.
+Therefore, we introduce the Gaussian probability distribution to enhance
+the weights of the target entity and its adjacent words. On the other hand,
+the CHEMPROT corpus is a corpus composed of abstracts from PubMed.
+The title information and the knowledge from the biomedical knowledge
+base may have a positive impact on CPI extraction. For example, in the
+abstract ﬁle of the CHEMPROT corpus, the title "Loperamide modiﬁes
+but does not block the corticotropin-releasing hormone-induced ACTH
+response in patients with Addison’s disease" contains vital information on
+the entities ’loperamide’ and ’ACTH’. This information may be helpful for
+correctly predicting the interaction between these two entities. Moreover,
+the Therapeutic Target Database (TTD) (Li et al., 2017) is a knowledge
+
+FalseCPR:5CPR:5FalsechemicalgenePEA was a potent and full agonist at each species of TAAR1, whereas TYR was a full agonist for the rodent TAAR1s but was a partial agonist at h-rChTAAR1.CPR:5 PEA was a potent and full agonist at each species of TAAR1, whereas TYR was a full agonist for the rodent TAAR1s but was a partial agonist at h-rChTAAR1.False PEA was a potent and full agonist at each species of TAAR1, whereas TYR was a full agonist for the rodent TAAR1s but was a partial agonist at h-rChTAAR1.False PEA was a potent and full agonist at each species of TAAR1, whereas TYR was a full agonist for the rodent TAAR1s but was a partial agonist at h-rChTAAR1.False PEA was a potent and full agonist at each species of TAAR1, whereas TYR was a full agonist for the rodent TAAR1s but was a partial agonist at h-rChTAAR1.CPR:5 PEA was a potent and full agonist at each species of TAAR1, whereas TYR was a full agonist for the rodent TAAR1s but was a partial agonist at h-rChTAAR1.CPR:5 CPR:5FalsePEA was a potent and full agonistat each species of TAAR1, whereas TYR was a full agonistfor the rodent TAAR1s but was a partial agonistat h-rChTAAR1.“main” — 2019/11/22 — 2:04 — page 3 — #3
+
+CPI Extraction via Gaussian Probability Distribution and External Biomedical Knowledge
+
+3
+
+base to provide information about the known protein and the corresponding
+chemicals directed at each target protein. We can use the knowledge from
+TTD to generate CPR tags for instances. Therefore, we further leverage
+the title information and biomedical knowledge (collectively referred to
+as external knowledge) to guide CPI extraction.
+In this paper, we propose a novel neural network-based approach
+to improve the CPI extraction performance of overlapping instances.
+Speciﬁcally, the approach ﬁrst employs BERT to generate high-quality
+contextual representations of the title sequence,
+instance sequence,
+and knowledge sequence, respectively. Then the Gaussian probability
+distribution is introduced to enhance the weights of the target entity and
+its adjacent words in the instance sequence. Meanwhile, the attention
+mechanism is applied to fuse the title information and biomedical
+knowledge. Finally, the related representations are concatenated and fed
+into the softmax function to extract CPIs. The contributions of our study
+are three-fold.
+• We propose a novel neural network-based approach to improve
+the CPI extraction performance of overlapping instances. The
+experimental results show that our proposed model can improve the
+extraction performance of overlapping instances while maintaining the
+performance of normal instances.
+• We introduce the Gaussian probability distribution and external
+knowledge into our proposed model to improve CPI extraction.
+Through extensive experiments on the CHEMPROT corpus, we
+demonstrate that the Gaussian probability distribution and external
+knowledge are helpful for CPI extraction, and they are highly
+complementary to each other.
+• To the best of our knowledge,
+this is the ﬁrst study that
+introduces the Gaussian probability distribution into biomedical
+relation extraction tasks. Through extensive experiments on the
+CHEMPROT and DDIExtraction 2013 corpora, we demonstrate that
+the Gaussian probability distribution can effectively improve the
+extraction performance of overlapping instances.
+
+2 Methods
+
+2.1 CPI Extraction
+
+respectively. Finally, the related representations were concatenated and fed
+into the softmax function to extract CPIs. In the following, our proposed
+model will be described in detail.
+
+2.2.1 BERT Representations
+
+BERT is composed of a multi-layer bidirectional Transformer encoder.
+For the input sequence, BERT uses the WordPiece tokenizer (Devlin et al.,
+2019) to alleviate the out-of-vocabulary problem to a certain extent. The
+ﬁrst token of every sequence is always a special token ’CLS’, and the
+ﬁnal hidden state corresponding to this token is used as the sequence
+representations for classiﬁcation tasks. More details about BERT can be
+found in the study (Devlin et al., 2019).
+BERT uses the ﬁnal hidden state of the token ’CLS’ to represent the
+whole sequence representation. However, we argue that the ﬁnal hidden
+states of the remaining tokens also contain valuable information. As a
+result, we retain all ﬁnal hidden states of the tokens in the sequence.
+Given an sequence (Si = {w1 , · · · , wi , · · · , wN }) as input, BERT can
+be formulated as follows:
+
+h0
+i = Wewi + Wb
+i = transf ormer_block(hl−1
+hl
+tL
+i = hL
+
+i
+
+)
+
+(1)
+
+(2)
+
+(3)
+
+i
+Rseq = hL
+CLS
+
+(4)
+where wi is the i-th token, L is the total number of layers for BERT, l
+(1 ≤ l ≤ L) is the l-th layer, and N denotes the sequence length. Equation
+1 indicates input embeddings, Equation 3 denotes the representation of
+the i-th token, and Equation 4 denotes the representations of the sequence.
+The transformer_block in Equation 2 contains multi-head attention layers,
+fully connected layers, and the output layer. Furthermore, the parameters
+We , Wb , and transformer_block are pre-trained on large-scale corpora
+using two unsupervised pre-training tasks, masked language model and
+next sentence prediction. In the experiments, the input of our proposed
+model is the title sequence, instance sequence and knowledge sequence.
+We use BERT to generate these representations, where Qt , Qk , Rins
+and ui denote the title sequence representations, the knowledge sequence
+representations, the instance sequence representations and the instance
+token representations, respectively.
+
+CPI extraction is a task for detecting whether a speciﬁed CPR type
+between the target chemical-protein pair within a sentence or document
+and if so, classifying the CPR type. The CHEMPROT corpus contains
+ﬁve types (i.e., âŁ™CPR:3âŁ™, âŁ™CPR:4âŁ™, âŁ™CPR:5âŁ™,
+âŁ™CPR:6âŁ™ and âŁ™CPR:9âŁ™) used for evaluation purposes.
+Therefore, we formulate CPI extraction into a multi-class classiﬁcation
+problem (including the false relation). The classiﬁcation problem is deﬁned
+as follows: given the instances {x1 , · · · , xi , · · · , xn }, the goal is to
+classify the relation r for xi . Essentially, our proposed model is to estimate
+the probability P (r|xi ), where R = {CPR:3, CPR:4, CPR:5, CPR:6,
+CPR:9 and False}, r ∈ R, 1 ≤ i ≤ n.
+
+2.2.2 Gaussian Probability Distribution Operation
+
+In the CHEMPROT dataset, we found that there are a total of 19,460,
+11,820 and 16,943 instances in the training set, development set and
+test set, respectively. However, of these instances, only 915, 517 and
+811 instances are normal instances, and the others are all overlapping
+instances. These overlapping instances have the same sentence structure,
+which makes it difﬁcult for existing methods to accurately extract their
+CPR types. Therefore, we introduce the Gaussian probability distribution
+to enhance the weights of the target entity and its adjacent words, so
+that the model can learn the local structure of the instance. The Gaussian
+probability density function is:
+
+2.2 Model Architecture
+
+Figure 2 is a schematic overview of our proposed model. Overall, our
+model consists of three parts: BERT representations, Gaussian probability
+distribution operation and external knowledge acquisition. The input of our
+model is the title sequence, instance sequence, and knowledge sequence.
+We ﬁrst used BERT to generate high-quality contextual representations of
+these sequences, respectively. Then the Gaussian probability distribution
+was introduced to enhance the weights of the target entity and its adjacent
+words in the instance sequence. Meanwhile, the attention mechanism
+was applied to fuse the title information and biomedical knowledge,
+
+f (x) =
+
+1√
+
+2πδ
+
+exp(− (x − µ)2
+2δ2
+
+the Gaussian cumulative distribution function is:
+
+(cid:90) x
+
+−∞
+
+F (x) =
+
+f (x) dx
+
+the Gaussian probability distribution function is:
+
+P (x) = F (x) − F (x − w)
+
+)
+
+(5)
+
+(6)
+
+(7)
+
+where x is a real number, µ is the mean of the distribution, δ is the standard
+deviation, and w is the token window. In the experiments, we set the token
+
+“main” — 2019/11/22 — 2:04 — page 4 — #4
+
+4
+
+Sun et al.
+
+Fig. 2. The schematic overview of our proposed model.
+
+window to w = 1 to represent the distance of each token itself, and set the
+optimal values of µ and δ to 0 and 3, respectively.
+Figure 3 illustrates the Gaussian probability distribution operation
+process for tokens in the instance. We ﬁrst numbered the tokens according
+to the two target entities in the instance, thus obtaining two token relative
+distance lists (x1 and x2 in Figure 3). Then we used the Gaussian
+probability distribution function to calculate the probability of each token
+in the instance. Afterwards, these token probabilities were performed
+
+element-wise multiplication with the token representations. Finally,
+we obtained the ﬁrst and second target-entity-aware representations,
+respectively. The formula is as follows:
+
+N(cid:88)
+N(cid:88)
+
+1
+
+Rtar1 =
+
+Rtar2 =
+
+P (x1 )ui
+
+P (x2 )ui
+
+(8)
+
+(9)
+
+1
+
+where N is the sequence length, x1 and x2 are token numbers, and Rtar1
+and Rtar2 denote the ﬁrst and second target-entity-aware representations,
+respectively.
+
+2.2.3 External Knowledge Acquisition
+
+In this study, we used the title information and biomedical knowledge
+to improve the performance of CPI extraction. For the title information
+acquisition, we ﬁrst employed BERT to generate high-quality contextual
+representations of the title sequence. Then we applied the attention
+mechanism to calculate the query of the title sequence and the key-value
+pairs of the instance sequence, thereby incorporating the title information
+into our proposed model. The title fusion attention is deﬁned as follows:
+
+ti = QT
+
+t ui
+
+(cid:80)
+
+αi =
+
+exp(ti )
+n exp(tn )
+
+N(cid:88)
+
+Rtitle =
+
+αi ui
+
+(10)
+
+(11)
+
+(12)
+
+Fig. 3. The process of Gaussian probability distribution operation.
+
+1
+
+where N is the sequence length, Qt is the representations of the title
+sequence, ui is the representation of the i-th token, and Rtitle denotes
+the fused title representations.
+
+“main” — 2019/11/22 — 2:04 — page 5 — #5
+
+CPI Extraction via Gaussian Probability Distribution and External Biomedical Knowledge
+
+5
+
+Figure 4 illustrates the process for obtaining the biomedical knowledge
+sequence. We ﬁrst obtained the CPR tags from TTD based on the target
+chemical and protein entities of the instances, which we denote by K .
+To improve the quality of K , we only obtained the tags of the ’CPR:4’,
+’CPR:5’ and ’CPR:6’ types and eliminated the ambiguous CPR tags.
+Then, we extended K by including tokens in the shortest dependency
+path (SDP) from the target chemical and protein entities. Thus, we used
+K as the knowledge sequence. More details on the knowledge sequence
+acquisition are provided in Supplementary Material: Knowledge Sequence
+Acquisition. Afterwards, we also employed BERT to generate high-
+quality contextual representations of the knowledge sequence. Finally,
+the attention mechanism is applied to calculate the query of K and the
+key-value pairs of the instance sequence. The knowledge fusion attention
+is deﬁned as follows:
+
+ki = QT
+
+k ui
+
+(cid:80)
+
+αi =
+
+exp(ki )
+n exp(kn )
+
+N(cid:88)
+
+Rknow =
+
+αi ui
+
+(13)
+
+(14)
+
+(15)
+
+1
+
+where N is the sequence length, Qk is the representations of the knowledge
+sequence, ui is the representation of the i-th token, and Rknow denotes
+the fused knowledge representations.
+
+Fig. 4. The process for obtaining the biomedical knowledge sequence.
+
+2.2.4 Fusion and Classiﬁcation
+
+In the fusion layer, the related representations are concatenated as the
+
+fusion representations h (h = [Rtitle ; Rins ; Rtar1 ; Rtar2 ; Rknow ]).
+
+Then a fully connected neural network is employed to learn the
+representations h. Finally, the softmax function is used to calculate the
+probability P belonging to the CPR type r :
+
+P (r |h) = sof tmax(Wo h + bo )
+
+(16)
+
+where Wo and bo are weight parameters and bias parameters. Furthermore,
+our proposed model uses the categorical cross-entropy function as the loss
+function and utilizes Adam to optimize the parameters.
+
+3 Experiments and Discussion
+
+3.1 Dataset and Experimental Settings
+
+In this study, to make a fair comparison with other methods, we used the
+BLUE CHEMPROT dataset provided by (Peng et al., 2019) to evaluate
+our proposed model. More detailed descriptions of the CHEMPROT
+dataset are provided in Supplementary Material: CHEMPROT Dataset.
+The only difference between our instance with Peng’s is that we replaced
+the corresponding chemical and gene mentions with ’@CHEMPROT$’
+and ’@GENE$’, respectively. For example, as shown in Figure 1, the
+fourth instance is processed as "PEA was a potent and full agonist at
+each species of @CHEMICAL$, whereas @GENE $ was a full agonist for
+the rodent TAAR1s but was a partial agonist at h-rChTAAR1." in Peng’s
+instance, but the instance is more reasonable to be processed into our
+instance "PEA was a potent and full agonist at each species of @GENE $,
+whereas @CHEMICAL$ was a full agonist for the rodent TAAR1s but was
+a partial agonist at h-rChTAAR1.". The statistics of evaluated CPR types
+in the CHEMPROT dataset are illustrated in Table 1.
+
+Table 1. Statistics of evaluated CPR types in the CHEMPROT dataset.
+
+Set
+
+CPR:3 CPR:4 CPR:5 CPR:6 CPR:9
+
+False
+
+Training set
+Development set
+Test set
+Total
+
+768
+550
+665
+1,983
+
+2,251
+1,094
+1,661
+5,009
+
+173
+116
+195
+484
+
+235
+199
+293
+727
+
+727
+457
+644
+1,828
+
+15,306
+9,404
+13,485
+38,195
+
+In the experiments, we employed the PyTorch (https://pytorch.org/)
+framework to implement our proposed model. For the BERT model, we
+used the BERTBASE pre-trained on PubMed provided by (Peng et al.,
+2019). The performance of other BERTs was also tested, but no better
+performance was achieved. The results are provided in Supplementary
+Material: Performance of BERTs. We used the training set to train our
+proposed model and utilized the development set to choose the appropriate
+hyper-parameters. The test set was only used to evaluate the model.
+The hyper-parameter settings are consistent throughout this study, and
+the details are provided in Supplementary Material: Hyper-parameter
+Settings. Because most existing methods used precision, recall and F1-
+score as metrics, we evaluated our proposed model in the same way. The
+formula is: F -score = 2P R/(P + R), where P denotes the precision and
+R denotes the recall, respectively.
+
+3.2 Experimental Results
+
+In this section, we ﬁrst compared our approach with other state-of-the-
+art methods on the CHEMPROT corpus. Table 2 shows the experimental
+results of different methods in detail. The ﬁrst two methods are based
+on statistical machine learning. These methods exploited a tree kernel
+function or feature engineering to construct a classiﬁer to implement
+CPI extraction. However, the performance of these two methods is not
+satisfactory. This indicates that it is difﬁcult to effectively achieve CPI
+extraction on the CHEMPROT corpus using statistical machine learning-
+based methods. In addition to the ﬁrst two methods, the others are all
+neural network-based methods. It can be observed from Table 2 that
+neural network-based methods generally achieve better performance than
+statistical machine learning-based methods. In these neural network-based
+methods,
+the ﬁrst four methods utilized ensemble methods to obtain
+better performance. However, the individual model (e.g., CNNs or RNNs)
+still has much room for improvement. (Lu et al., 2019) attempted to
+improve the performance by using a granular attention mechanism to
+
+“main” — 2019/11/22 — 2:04 — page 6 — #6
+
+6
+
+Sun et al.
+
+Table 2. Performance comparison on the CHEMPROT dataset.
+
+Machine learning-based methods
+
+Neural network-based methods
+
+Method
+
+(Warikoo et al., 2018)
+(Lung et al., 2019)
+(Corbett and Boyle, 2018)
+(Mehryary et al., 2018)
+(Peng et al., 2018)
+(Lim and Kang, 2018)
+(Lu et al., 2019)
+(Zhang et al., 2019a)
+(Sun et al., 2019)
+BERT (Peng et al., 2019)
+Our proposed model
+
+CPR:3
+
+F-score on each CPR type (%)
+CPR:4
+CPR:5
+CPR:6
+
+CPR:9
+
+Overall performance (%)
+Precision Recall
+F-score
+
+-
+49.80
+-
+-
+-
+-
+-
+59.4
+64.69
+-
+
+72.27
+
+-
+66.50
+-
+-
+-
+-
+-
+71.8
+75.26
+-
+
+80.92
+
+-
+56.49
+-
+-
+-
+-
+-
+65.7
+68.14
+-
+
+71.66
+
+-
+69.64
+-
+-
+-
+-
+-
+72.5
+
+79.26
+
+-
+78.28
+
+-
+28.74
+-
+-
+-
+-
+-
+50.1
+55.71
+-
+
+66.77
+
+27.32
+63.52
+56.10
+59.05
+72.66
+74.8
+65.44
+70.6
+67.04
+74.5
+
+76.82
+
+55.14
+51.21
+67.84
+67.76
+57.35
+56.0
+64.84
+61.8
+72.01
+70.6
+
+75.25
+
+36.54
+56.71
+61.41
+63.10
+64.10
+64.1
+65.14
+65.9
+69.44
+72.5
+
+76.03
+
+enhance the RNN model. (Zhang et al., 2019a) exploited the multi-head
+attention mechanism and ELMo representations to improve CPI extraction.
+(Sun et al., 2019) introduced the entity attention mechanism and ELMo
+representations into the stacked Bi-LSTM to improve the performance
+of CPI extraction. These three methods are all single models and obtain
+competitive performance on CPI extraction. Recently, BERT raised the
+F-score to a new level, which demonstrates the success of the language
+representation model. Our approach exploited BERT to generate high-
+quality contextual representations and introduced the Gaussian probability
+distribution and external knowledge to enhance the extraction ability of
+the model. Our proposed model obtains an F-score of 76.03%, which is
+currently the best performance. These experimental results demonstrate
+that our proposed model can effectively improve the performance of CPI
+extraction.
+Then, we compared the performance of each evaluated CPR
+type. Compared with other models, our proposed model achieves the
+highest F-scores on the ’CPR:3’, ’CPR:4’, ’CPR:5’ and ’CPR:9’ types,
+respectively. This experimental result demonstrates the effectiveness
+of our proposed model. On the other hand,
+it can be observed that
+the extraction performance of different CPR types varies signiﬁcantly.
+We can see all methods achieve relatively high performance on the
+’CPR:3’, âŁ™CPR:4âŁ™, âŁ™CPR:5âŁ™ and âŁ™CPR:6âŁ™ types.
+The reason may be that these four CPR types have obvious recognition
+words (e.g., ’activator’, ’inhibitor’, ’agonist’ and ’antagonist’) in the
+instance, so it is easier for the model to extract these types of chemical-
+protein interactions. In contrast, all methods have relatively low F-scores
+on the ’CPR:9’ type. This suggests that it is the most challenging to
+accurately extract the ’CPR:9’ type chemical-protein interactions on the
+CHEMPROT corpus. According to our observations, the ’CPR:9’ type
+has no obvious recognition words in the instance. Moreover, from Table
+2, we can see that the training set for the ’CPR:9’ type only contains 727
+instances. Therefore, the worse extraction performance on the ’CPR:9’
+type may be caused by an insufﬁcient number of the ’CPR:9’ instances
+in the training set. Despite this, our proposed model is still superior to
+other models on the extraction of the ’CPR:9’ type. This demonstrates the
+effectiveness of our proposed model from another aspect.
+In conclusion, the experimental results show that our proposed model
+is superior in performance compared with other state-of-the-art methods
+used for CPI extraction. Due to space limitations, the error analysis of our
+proposed model is provided in Supplementary Material: Error Analysis.
+
+3.3 Extraction of Overlapping and Normal Instances
+
+In this section, we explored the impact of our proposed model on
+overlapping instances and normal instances. Table 3 shows the statistics
+
+for the instances in the CHEMPROT dataset. There are 19,460, 11,820 and
+16,943 instances in the training set, development set and test set, of which
+18,545, 11,303 and 16,132 instances are overlapping instances. However,
+the existing methods do not consider the impact of these instances on
+CPI extraction. This leads to the extraction of overlapping instances
+becoming the bottleneck for CPI extraction. Unlike the previous works, our
+proposed approach is designed to focus on these overlapping instances by
+introducing the Gaussian probability distribution and external knowledge.
+We performed comparative experiments to explore the reason for the CPI
+performance improvement of our proposed model. In the comparative
+experiments, we ﬁrst used overlapping instances and normal instances
+in the test set as input, and then compared the performance of BERT
+with the performance of our proposed model (the input of our proposed
+model also contains the title sequence and knowledge sequence). As
+shown in Table 4, BERT obtains F-scores of 73.62% and 83.28% in the
+extraction of overlapping instances and normal instances, respectively.
+Correspondingly, our proposed model achieves F-scores of 75.40% and
+82.84%, respectively. These experimental results show that our proposed
+model can improve the CPI performance of overlapping instances while
+maintaining the performance of normal instances.
+
+Table 3. Statistics for the instances in the CHEMPROT dataset.
+
+Set
+
+Overlapping
+
+Normal
+
+All
+
+Training set
+Development set
+Test set
+Total
+
+18,545
+11,303
+16,132
+45,980
+
+915
+517
+811
+2,243
+
+19,460
+11,820
+16,943
+48,223
+
+Table 4. Overlapping and normal instance extraction on the test set.
+
+Model
+
+Instances
+
+Precision(%) Recall(%) F-score(%)
+
+BERT (local)
+
+overlapping
+normal
+all
+Our proposed model overlapping
+normal
+all
+
+74.57
+81.61
+75.19
+76.30
+82.41
+76.82
+
+72.69
+85.02
+73.71
+74.52
+83.28
+75.25
+
+73.62
+83.28
+74.45
+75.40
+82.84
+76.03
+
+Notes. ’Local’ denotes the BERT runs locally.
+
+“main” — 2019/11/22 — 2:04 — page 7 — #7
+
+CPI Extraction via Gaussian Probability Distribution and External Biomedical Knowledge
+
+7
+
+3.4 Ablation Study
+
+In this section, to explore the contribution of each component to overall
+performance, we performed an ablation study over our proposed model
+on the CHEMPROT test set. The experimental results are presented
+in Table 5. We ﬁrst explored the impact brought by the Gaussian
+probability distribution. We can see that removing the Gaussian probability
+distribution hurts performance signiﬁcantly on CPI extraction. This
+experimental result demonstrates that the Gaussian probability distribution
+operation is critical in obtaining state-of-the-art performance. Next, we
+evaluated the impact of external knowledge (i.e., the title information
+and biomedical knowledge). When the title sequence or knowledge
+sequence is removed, the F-score of the model decreases by 1.49% and
+1.46%, respectively. However, when the title sequence and knowledge
+sequence are both removed, the F-score of the model drops only 0.78%.
+These experimental results indicate that both the title information and
+biomedical knowledge contribute to our proposed model, and the two
+external knowledge are complementary. Finally, we validated the effects of
+Gaussian probability distribution and external knowledge. When removing
+the Gaussian probability distribution and external knowledge, our
+proposed model degenerates into the BERT model, and the performance
+drops to 74.45% in F-score. These experimental results demonstrate that
+the Gaussian probability distribution and external knowledge are helpful
+for CPI extraction, and they are also highly complementary to each other.
+
+Table 5. Ablation study over our proposed model.
+
+model
+
+Precision(%) Recall(%) F-score(%)
+
+Our proposed model
+76.82
+– Gaussian
+77.73
+– title
+75.35
+– knowledge
+75.69
+– title & knowledge
+77.13
+– Gaussian & title & knowledge 75.19
+
+75.25
+73.08
+73.74
+73.48
+73.45
+73.71
+
+76.03
+
+75.33
+74.54
+74.57
+75.25
+74.45
+
+Notes. ’–’ denotes removing the corresponding component.
+
+3.5 Impact of Gaussian Probability Distribution on
+Biomedical Relation Extraction
+
+In this study, we introduced the Gaussian probability distribution
+into biomedical relation extraction tasks. When removing the external
+knowledge, our proposed model degenerates into a ’BERT+Gaussian’
+model. To explore the impact of Gaussian probability distribution
+on biomedical
+relation extraction tasks, we further evaluated the
+’BERT+Gaussian’ model on the CHEMPROT and DDIExtraction 2013
+(Herrero-Zazo et al., 2013; Segura-Bedmar et al., 2013) corpora.
+DDIExtraction 2013 corpus is a manually annotated drug-drug interaction
+(DDI) corpus based on the DrugBank database and MEDLINE abstracts.
+This corpus contains four DDI types for evaluation purposes, namely
+’Advice’,
+’Effect’,
+’Mechanism’ and ’Int’. We also formulate DDI
+extraction into a multi-class classiﬁcation problem, and the evaluation
+metrics of DDI are consistent with CPI, which are precision, recall and
+F1-score. In the experiments, to fairly compare with existing methods,
+we also used the BLUE DDIExtraction 2013 dataset provided by (Peng
+et al., 2019) to evaluate the model. Table 6 illustrates the statistics for the
+instances in the DDIExtraction 2013 dataset. More detailed descriptions of
+the DDIExtraction 2013 dataset are provided in Supplementary Material:
+DDIExtraction 2013 Dataset.
+Table 7 shows the performance comparison on the DDIExtraction
+2013 dataset. (Zhang et al., 2017) proposed a hierarchical RNN-based
+
+Table 6. Statistics for the instances in the DDIExtraction 2013 dataset.
+
+Set
+
+Overlapping
+
+Normal
+
+All
+
+Training set
+Development set
+Test set
+Total
+
+17,584
+6,850
+5,426
+29,860
+
+1,195
+394
+335
+1,924
+
+18,779
+7,244
+5,761
+31,784
+
+Table 7. Performance comparison on the DDIExtraction 2013 dataset.
+
+Method
+
+Precision(%) Recall(%)
+
+F-score(%)
+
+(Zhang et al., 2017)
+BERT (Peng et al., 2019)
+BERT+Gaussian
+
+74.1
+81.1
+
+83.28
+
+71.8
+75.3
+
+79.88
+
+72.9
+78.1
+
+81.54
+
+method to integrate the SDP and sentence sequence for DDI extraction.
+To the best of our knowledge,
+their method achieved state-of-the-art
+performance with an F-score of 72.9% before BERT appears. (Peng et al.,
+2019) exploited BERT pre-trained on PubMed to extract DDIs and raised
+the F-score to 78.1%. This experimental result demonstrates the success
+of BERT on DDI extraction. We used BERT pre-trained on PubMed
+to generate BERT representations, and employed the ’BERT+Gaussian’
+model to extract DDIs. The ’BERT+Gaussian’ model obtains an F-score
+of 81.54%, which is 3.44% higher than the corresponding BERT model.
+This experimental result demonstrates the effectiveness of the Gaussian
+probability distribution for DDI extraction.
+Moreover, we further explored the impact of Gaussian probability
+distribution on biomedical relation extraction. We exploited overlapping
+instances and normal instances in the CHEMPROT or DDIExtraction
+2013 test set as input, respectively. Then, we compared the performance
+of BERT with the ’BERT+Gaussian’ model locally. As shown in Table
+8, compared with BERT, the ’BERT+Gaussian’ model improves the
+performance of overlapping instances by 0.95% and 2.70% in CPI and
+DDI extraction, respectively. Through these experiments, we can infer
+that the Gaussian probability distribution can signiﬁcantly improve the
+performance of overlapping instances while maintaining the performance
+of normal instances in biomedical relation extraction tasks.
+
+Table 8. The impact of Gaussian probability distribution on biomedical relation
+extraction.
+
+Model
+
+Task Instances
+
+Precision(%) Recall(%) F-score(%)
+
+BERT (local)
+
+CPI
+
+BERT+Gaussian CPI
+
+overlapping 74.57
+normal
+81.61
+all
+75.19
+overlapping 76.72
+normal
+81.36
+all
+77.13
+DDI overlapping 79.12
+normal
+87.22
+all
+80.65
+BERT+Gaussian DDI overlapping 82.59
+normal
+86.19
+all
+83.28
+
+BERT (local)
+
+72.69
+85.02
+73.71
+72.53
+83.62
+73.45
+76.15
+88.20
+78.35
+78.15
+87.64
+79.88
+
+73.62
+83.28
+74.45
+74.57
+82.47
+75.25
+77.61
+87.71
+79.48
+80.31
+86.91
+81.54
+
+Notes. BERT is pre-trained on PubMed and provided by (Peng et al., 2019).
+’Local’ denotes the BERT runs locally.
+
+“main” — 2019/11/22 — 2:04 — page 8 — #8
+
+8
+
+4 Conclusion
+
+In this paper, we propose a novel neural network-based approach to
+improve the performance of CPI extraction by introducing the Gaussian
+probability distribution and external knowledge. We evaluate our proposed
+model on the CHEMPROT corpus. It is encouraging to see that the
+performance of our proposed model outperforms other state-of-the-art
+models, reaching an F-score of 76.03%. The experimental results show that
+the Gaussian probability distribution and external knowledge are highly
+complementary to each other. Integrating them can effectively improve
+the CPI extraction performance. Furthermore, the Gaussian probability
+distribution can signiﬁcantly improve the extraction performance of
+overlapping instances in biomedical relation extraction tasks.
+Although our proposed approach exhibits promising performance for
+CPI extraction from biomedical literature, there is still some room to
+improve. In particular, our proposed approach does not obtain a high F-
+score on the ’CPR:9’ type, likely because of insufﬁcient training data. This
+indicates that our proposed approach depends on high-quality training
+data. In future work, we would like to explore the effectiveness of the
+semi-supervised or unsupervised approach in CPI extraction.
+
+Funding
+
+This work was supported by the National Key Research and Development
+Program of China under Grant 2016YFC0901902.
+
+Conﬂict of Interest : none declared.
+
+References
+
+Bojanowski, P., Grave, E., Joulin, A., and Mikolov, T. (2017). Enriching word vectors
+with subword information, Transactions of the Association for Computational
+Linguistics, 5, 135–146.
+Corbett, P. and Boyle, J. (2018). Improving the learning of chemical-protein
+interactions from literature using transfer
+learning and specialized word
+embeddings, Database, 2018.
+Cortes, C. and Vapnik, V. (1995). Support-vector networks, Machine learning, 20(3),
+273–297.
+Devlin, J., Chang, M.-W., Lee, K., and Toutanova, K. (2019). BERT: Pre-training of
+deep bidirectional transformers for language understanding, In Proceedings of the
+Conference of the North American Chapter of the Association for Computational
+Linguistics, pages 4171–4186.
+Herrero-Zazo, M., Segura-Bedmar, I., MartÃnez, P., and Declerck, T. (2013). The
+DDI corpus: An annotated corpus with pharmacological substances and drug–drug
+interactions, Journal of biomedical informatics, 46(5), 914–920.
+Hochreiter, S. and Schmidhuber, J. (1997). Long short-term memory, Neural
+computation, 9(8), 1735–1780.
+Kim, Y. (2014). Convolutional neural networks for sentence classiﬁcation, In
+Proceedings of the Conference on Empirical Methods in Natural Language
+Processing, pages 1746–1751.
+Krallinger, M., Rabal, O., Akhondi, S. A., et al. (2017). Overview of the BioCreative
+VI chemical-protein interaction Track, In Proceedings of the sixth BioCreative
+challenge evaluation workshop, volume 1, pages 141–146.
+Li, Y. H., Yu, C. Y., Li, X. X., Zhang, P., Tang, J., Yang, Q., Fu, T., Zhang, X.,
+Cui, X., Tu, G., et al. (2017). Therapeutic target database update 2018: enriched
+resource for facilitating bench-to-clinic research of targeted therapeutics, Nucleic
+acids research, 46(D1), D1121–D1127.
+
+Sun et al.
+
+Lim, S. and Kang, J. (2018). Chemical–gene relation extraction using recursive neural
+network, Database, 2018.
+Lu, H., Li, L., He, X., Liu, Y., and Zhou, A. (2019). Extracting chemical-protein
+interactions from biomedical literature via granular attention based recurrent neural
+networks, Computer Methods and Programs in Biomedicine, 176, 61–68.
+Lung, P.-Y., He, Z., Zhao, T., Yu, D., and Zhang, J. (2019). Extracting chemical–
+protein interactions from literature using sentence structure analysis and feature
+engineering, Database, 2019.
+Mehryary, F., BjÃ¶rne, J., Salakoski, T., and Ginter, F. (2018). Potent pairing:
+ensemble of long short-term memory networks and support vector machine for
+chemical-protein relation extraction, Database, 2018.
+Mikolov, T., Sutskever, I., Chen, K., Corrado, G. S., and Dean, J. (2013). Distributed
+representations of words and phrases and their compositionality, In Advances in
+Neural Information Processing Systems, pages 3111–3119.
+Peng, Y., Rios, A., Kavuluru, R., and Lu, Z. (2018). Extracting chemical–protein
+relations with ensembles of SVM and deep learning models, Database, 2018.
+Peng, Y., Yan, S., and Lu, Z. (2019). Transfer learning in biomedical natural language
+processing: An evaluation of BERT and ELMo on ten benchmarking datasets, In
+Proceedings of the 18th BioNLP Workshop and Shared Task, volume 1, pages
+58âŁ“65, Florence, Italy. Association for Computational Linguistics.
+Pennington, J., Socher, R., and Manning, C. (2014). Glove: Global vectors for word
+representation, In Proceedings of the Conference on Empirical Methods in Natural
+Language Processing, pages 1532–1543.
+Peters, M., Neumann, M., Iyyer, M., Gardner, M., Clark, C., Lee, K., and
+Zettlemoyer, L. (2018). Deep contextualized word representations, In Proceedings
+of
+the Conference of
+the North American Chapter of
+the Association for
+Computational Linguistics, pages 2227–2237.
+Segura-Bedmar, I., MartÃnez, P., and Herrero-Zazo, M.(2013). SemEval-2013 task 9
+: Extraction of drug-drug interactions from biomedical texts (DDIExtraction 2013),
+In Proceedings of the Seventh International Workshop on Semantic Evaluation
+(SemEval 2013), pages 341–350, Atlanta, Georgia, USA.
+Sun, C., Yang, Z., Luo, L., Wang, L., Zhang, Y., Lin, H., and Wang, J. (2019). A deep
+learning approach with deep contextualized word representations for chemical–
+protein interaction extraction from biomedical literature, IEEE Access, 7, 151034–
+151046.
+Takanobu, R., Zhang, T., Liu, J., and Huang, M. (2019). A hierarchical framework
+for relation extraction with reinforcement learning, In Proceedings of the AAAI
+Conference on Artiﬁcial Intelligence, pages 7072–7079.
+Tang, G., MÃ¼ller, M., Rios, A., and Sennrich, R. (2018). Why self-attention?
+a targeted evaluation of neural machine translation architectures, In Proceedings
+of the 2018 Conference on Empirical Methods in Natural Language Processing,
+pages 4263–4272, Brussels, Belgium.
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser,
+Å'., and Polosukhin, I. (2017). Attention is all you need, In Advances in Neural
+Information Processing Systems, pages 5998–6008.
+Warikoo, N., Chang, Y.-C., and Hsu, W.-L. (2018). LPTK: a linguistic pattern-
+aware dependency tree kernel approach for the BioCreative VI CHEMPROT task,
+Database, 2018.
+Zeng, X., Zeng, D., He, S., Liu, K., and Zhao, J. (2018). Extracting relational facts
+by an end-to-end neural model with copy mechanism, In Proceedings ofthe 56th
+Annual Meeting ofthe Association for Computational Linguistics, pages 506–514.
+Zhang, Y., Zheng, W., Lin, H., Wang, J., Yang, Z., and Dumontier, M. (2017).
+Drug–drug interaction extraction via hierarchical rnns on sequence and shortest
+dependency paths, Bioinformatics, 34(5), 828–835.
+Zhang, Y., Lin, H., Yang, Z., Wang, J., and Sun, Y. (2019a). Chemical–protein
+interaction extraction via contextualized word representations and multihead
+attention, Database, 2019.
+Zhang, Y., Lin, H., Yang, Z., Wang, J., Sun, Y., Xu, B., and Zhao, Z. (2019b).
+Neural network-based approaches for biomedical relation classiﬁcation: A review,
+Journal of biomedical informatics, page 103294.
+
+

@@ -1,0 +1,1046 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+5
+4
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Empirical Autopsy of Deep Video Captioning Frameworks
+
+Nayyer Aafaq
+Naveed Akhtar Wei Liu
+Ajmal Mian
+Computer Science and Software Engineering,
+The University of Western Australia.
+
+nayyer.aafaq@research.uwa.edu.au,{naveed.akhtar, wei.liu, syed.gilani, ajmal.mian}@uwa.edu.au
+
+Abstract
+
+Contemporary deep learning based video captioning fol-
+lows encoder-decoder framework. In encoder, visual fea-
+tures are extracted with 2D/3D Convolutional Neural Net-
+works (CNNs) and a transformed version of those features
+is passed to the decoder. The decoder uses word embed-
+dings and a language model to map visual features to nat-
+ural language captions. Due to its composite nature, the
+encoder-decoder pipeline provides the freedom of multi-
+ple choices for each of its components, e.g the choices of
+CNNs models, feature transformations, word embeddings,
+and language models etc. Component selection can have
+drastic effects on the overall video captioning performance.
+However, current literature is void of any systematic investi-
+gation in this regard. This article ﬁlls this gap by providing
+the ﬁrst thorough empirical analysis of the role that each
+major component plays in a contemporary video caption-
+ing pipeline. We perform extensive experiments by varying
+the constituent components of the video captioning frame-
+work, and quantify the performance gains that are pos-
+sible by mere component selection. We use the popular
+MSVD dataset as the test-bed, and demonstrate that sub-
+stantial performance gains are possible by careful selection
+of the constituent components without major changes to the
+pipeline itself. These results are expected to provide guiding
+principles for future research in the fast growing direction
+of video captioning.
+
+1. Introduction
+
+Recent years have seen rising research interests in auto-
+matic description of images and videos in natural language
+using deep learning techniques [2]. Most recent methods
+are inspired by the encoder-decoder framework used in ma-
+chine translation [37, 8, 27]. These techniques use Con-
+volutional Neural Networks (CNNs) as encoders to com-
+pute ﬁxed/variable-length vector representations of the in-
+put images or videos. A Recurrent Neural Network (RNN),
+e.g. vanilla RNN [11], Gated Recurrent Units (GRU) [8] or
+
+Long Short Term Memory (LSTM) networks [13] are then
+used as decoders to generate natural language descriptions.
+In the encoder-decoder pipeline, visual features are ex-
+tracted with 2D/3D CNNs from the input videos. These fea-
+tures are then transformed through Mean Pooling (MP) [32,
+20, 21], Temporal Encoding (TE) [35], and/or Semantic At-
+tributes Learning (SAL) [12, 21] before feeding to a lan-
+guage model for natural language caption generation. Most
+of the existing captioning methods [7, 10, 34, 20, 24, 25, 36]
+mainly differ from each other in terms of the adopted visual
+feature extraction (i.e. CNN models), types of visual fea-
+ture transformations, language models, and the word em-
+beddings incorporated in the language models. Despite
+the differences in methods, these four core components are
+common to nearly all techniques that follow the encoder-
+decoder framework for video captioning.
+In Fig. 1, we take a modular decomposition approach
+and depict the encoder-decoder captioning framework in
+terms of its four core components. Multiple choices are
+available to instantiate each component. For instance, one
+can choose either a 2D-CNN or a 3D-CNN as the CNN
+model. Availability of numerous 2D/3D-CNN models pro-
+vides further ﬂexibility in the choices of the visual fea-
+ture extraction component. The choice of models may di-
+rectly affect the overall performance of the video caption-
+ing system. Similarly, the choice of MP or TE for Fea-
+ture Transformation can also have signiﬁcant effects on the
+system performance. This modular view of the encoder-
+decoder pipeline for video captioning is critical to assess
+how each component contributes to the caption qualities.
+For many existing methods, it is often unclear whether the
+performance gain is a result of some novel sophisticated en-
+hancements, or simply due to better component selection.
+This calls for a systematic investigation to quantify perfor-
+mance gains against various component selections across
+the pipeline. Such analysis would establish a better under-
+standing of the encoder-decoder framework and in turn help
+identify the most promising components and their best in-
+stances. Moreover, it can guide future research in video
+captioning to focus more on improving the critical compo-
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+Figure 1. The encoder-decoder framework of contemporary deep video captioning techniques has four major modules where selections can
+be made. It is possible to choose from a variety of 2D/3D-CNNs to encode visual features of videos. These features are then transformed to
+feed to the language model, which can be done by temporal encoding or mean pooling of the features. Multiple choices are also available
+for selecting the word embeddings that map words in a vocabulary to dense vector representations to be used by the language model.
+Language models can have different complexity, governed by e.g. the number of network layers. In this paper, we vary the choices for each
+of the four major components, and analyze its effects on the overall captioning performance of the framework.
+
+nents of the framework.
+In this work, we present the ﬁrst systematic analysis of
+the encoder-decoder framework components with the aim of
+revealing the contribution of each component on the qual-
+ity of the generated captions. Our analysis is performed
+by studying the effects of popular choices for each compo-
+nent while keeping the remaining components ﬁxed. We
+also include the choices of important hyper-parameters in
+our analysis. The main contributions of this paper are as
+follows:
+
+1. We analyze the visual features of ﬁve state-of-the-art
+CNN models for video captioning under an encoder-
+decoder framework. We demonstrate that the choice of
+CNN model plays a key role in the quality of generated
+captions.
+
+2. We analyze the effects of two popular feature transfor-
+mations, i.e. mean pooling and temporal encoding, on
+caption quality. It is observed that temporal encoding
+can improve performance signiﬁcantly as compared to
+the more popular mean pooling transformation.
+
+3. We explore the affects of popular word embeddings
+used in language models and report that FastText out-
+performs the currently more popular embeddings e.g.
+Word2Vec [18] or GloVe [23]
+
+4. Lastly, we analyze the effects of language model
+depth and various hyper-parameters choices e.g. inter-
+nal state size, number of processed frames, ﬁne tuning
+word embeddings, and dropout regularization etc.
+
+2. Setup for Analysis
+
+We ﬁrst introduce the setup used in our empirical analy-
+sis of the video captioning framework. For evaluation, we
+divide the framework into four core components, namely
+
+CNN model - that encodes visual features of videos, feature
+transformation - that transforms visual features to be used
+as inputs by the language model component, word embed-
+dings - that provides numerical representation of words in
+the vocabulary, and the language model component, which
+decodes the visual features into natural language descrip-
+tions. Extensive experiments are carried out by varying the
+methods for each component of the framework and analyze
+the captioning performance of the overall pipeline.
+We measure the performance in terms of most com-
+monly used evaluation metrics in the contemporary cap-
+tioning literature, namely Bilingual Evaluation Understudy
+(BLEU) [22], Recall Oriented Understudy for Gisting Eval-
+uation (ROUGE) [17], Metric for Evaluation of Trans-
+lation with Explicit Ordering (METEOR) [3], and Con-
+sensus based Image Description Evaluation (CIDEr) [31].
+These metrics are known to comprehensively evaluate the
+quality of automatically generated captions. For instance,
+BLEU measures n–gram based exact matches of the words
+as well as their order in the reference and generated sen-
+tences. ROUGEL computes the recall score of the gener-
+ated sentences using n-–grams. METEOR addresses many
+of the BLEU shortcomings. For example, instead of ex-
+act word match, it incorporates synonym matching and per-
+forms semantic matching. It is also found to be more robust
+and closely correlated to human judgments [15]. Lastly,
+CIDErD evaluates the consensus between a generated and
+reference sentences. It has been found to be more robust to
+distractions e.g. scene or person changes [15].
+We perform experiments on the popular video captioning
+dataset MSVD [5]. This dataset comprises 1, 970 YouTube
+short video clips, primarily containing single action/event
+in a video. Each clip duration varies from 10 to 25 sec-
+onds. Each video is associated with multiple human anno-
+tated captions. On average, there are 41 captions per video
+clip. For bench-marking, we follow the data split of 1, 200,
+
+2
+
+100, and 670 videos for training, validation and testing re-
+spectively. This is a widely employed protocol for evalu-
+ation using MSVD dataset [35, 33, 12]. We used the Mi-
+crosoft COCO server [6] to compute our results. To clearly
+analyze the contribution of each component in the overall
+pipeline, we follow the strategy of freezing all other com-
+ponents when evaluating a particular module.
+
+3. Analysis of Framework Components
+
+3.1. CNN selection
+
+Convolutional Neural Networks (CNNs) can be read-
+ily applied to images and videos. In deep learning based
+encoder-decoder framework for captioning, CNNs domi-
+nate the encoder part. Due to the signiﬁcance of a decoder
+role, the choice of CNN models can affect the overall cap-
+tioning performance signiﬁcantly. Hence, we ﬁrst analyze
+the ﬁve most commonly used CNN models in captioning,
+namely; C3D [30], VGG-16 [26], VGG-19 [26], Inception-
+v3 [29], and InceptionResNet-v2 [28]. Among these mod-
+els, C3D - a popular example of 3D-CNN, is a common
+choice [16, 36] because it can not only process individual
+frames, but also short video clips. This is possible due to its
+ability to process tensors with an extra time dimension.
+While performing these experiments to compare differ-
+ent CNN models, we ﬁx all components of the pipeline, ex-
+cept the visual features. For the remaining components, the
+popular Mean Pooling is used to transform the extracted vi-
+sual feature into a ﬁxed length vector to represent a com-
+plete video; word2vec word embeddings are used for a 2-
+layer GRU as the language model. The results of this set
+of experiments are summarized in Fig 2. We can see a sig-
+niﬁcant variation in captioning performance due to changes
+in the CNN models, ascertaining that better visual features
+(obtained from more sophisticated models) lead to better
+video captions. Hence, a careful selection of CNN model is
+critical for effective video captioning. Interestingly, the spa-
+tial visual features of 2D-CNN (VGG16, VGG19, Inc-V3,
+and Inc-Res-V2) are able to outperform the spatio-temporal
+features of C3D for the video captioning task, indicating
+that the extra dimension of 3D CNNs may not be particu-
+larly effective in this case.
+
+3.2. Features Transformation
+
+Most existing video captioning methods [32, 20, 12, 21]
+perform mean pooling to combine individual frame features
+into a feature vector for the whole video. However, this
+practice is bound to inferior performance as mean pooling
+can result in signiﬁcant loss of temporal information and
+the order of events in videos. Such information often plays
+a crucial role in video understanding for humans. Inspired
+by this observation, we conduct another series of experi-
+ments that compares a temporal encoding strategy to the
+
+Figure 2. Performance of ﬁve 2D/3D CNNs architectures
+(C3D, VGG-16, VGG-19, Inception-V3 (Inv-V3), and Inception-
+ResNet-V2 (Inv-Res-V2)) when used as visual encoder in the cap-
+tioning framework. Results are achieved by using Mean Pooling
+for feature transformation, word2vec as word embedding, and a
+2-layer GRU as the language model.
+
+Figure 3. Performance comparison of ﬁve 2D/3D CNNs models
+with two types of feature transformations i.e. Mean Pooling and
+Temporally Encoding. It is evident that under all circumstances,
+temporally encoded features outperform the mean pooled features
+across all networks and among all metrics.
+
+mean pooling strategy for feature transformation in video
+captioning.
+For temporal encoding, we follow our previous work [1]
+and compute Short Fourier Transform [19] of the frame
+level features of the video. These features are combined
+in a hierarchical manner that captures the local, interme-
+diate and high level temporal dynamics in the video. Inter-
+ested readers are referred to our work [1] for exact details of
+the temporal feature transformation. The core insight rele-
+vant to our analysis here is that instead of compromising on
+the temporal information through mean pooling, we capture
+high ﬁdelity temporal dynamics over whole videos with our
+temporal encoding. Similar to the other sections of this pa-
+per, we ﬁx all the remaining components of the underlying
+framework when analyzing the transformation strategy. The
+results of our experiments are summarized in Fig 3. It is
+evident that the models employing temporal encoded fea-
+
+3
+
+tures, have outperformed all of their mean pooling based
+counterparts across all evaluation metrics. Considering the
+widespread use of mean pooling as the feature transforma-
+tion strategy in video description, these results are signiﬁ-
+cant. This experiment clearly establishes the supremacy of
+temporal encoding over mean pooling for the encoders in
+video description. This temporal encoding does not require
+any training, as it is applied after the features are extracted,
+therefore little computational overhead is introduced.
+It is also evident from the results that for temporal en-
+coding, the performance of different models show a simi-
+lar behavior relative to each other, which is also the case
+for the mean pooled features. For instance, with tempo-
+rally encoded features, the best performing architecture still
+remains the best and vice versa is also true. The tempo-
+ral encoding is providing a signiﬁcant positive offset to the
+performance.
+
+Figure 4. Performance of four popular pre-trained word embed-
+dings and the learned embedding with random initialization.
+
+glove6B shows comparable performance to our randomly
+initialized learned word embeddings.
+
+3.3. Word Embeddings in Language Model
+
+4. Experimental Evaluation
+
+In this encoder-decoder framework, a word embedding
+is a vector representation for each word in the available vo-
+cabulary for video caption generation. Word embeddings
+are much more powerful low-dimensional representations
+for words as compared to the sparse one-hot vectors. More
+importantly, unlike one-hot vectors, word embeddings can
+be learned for the captioning tasks. In captioning literature,
+two methods are commonly used to compute these vectors.
+The ﬁrst approach is to learn the vectors from the train-
+ing dataset while the language model is trained.
+In this
+case, one can initialize the embedding vectors randomly
+and compute the embeddings tailored to the captioning task.
+However, such vectors often fail to capture rich semantics
+due to the fact that captioning corpus size is often small for
+the purpose of training a language model. The second way
+to obtain these vectors is to use pre-trained embeddings that
+are learned for a different task and select those according to
+the vocabulary of the current task.
+We follow both of the aforementioned methods to com-
+pute embeddings in our analysis. For the ﬁrst method, ran-
+dom initialization is performed. For the second, we obtain
+the most commonly used four pre-trained word embeddings
+in the contemporary video description literature, namely
+Word2Vec [18], two variants of Glove (i.e. glove6B and
+glove840B) [23] and FastText [4]. In our analysis, we se-
+lect the best performing CNN model from our experiments
+in Section 3.2 that uses temporal encoding for feature trans-
+formation, i.e. Inception-ResNet-V2. The results of our ex-
+periments for word embeddings are summarized in Fig 4.
+From the ﬁgure, we can conclude that FastText currently
+provides much more effective word embeddings for video
+captioning than the other techniques. Moreover, learning
+the embeddings with random initialization is still a useful
+option for the MSVD dataset. This is true to the extent that
+
+4.1. Datasets
+
+We evaluate our technique using two popular benchmark
+datasets from the existing literature in video description,
+namely Microsoft Video Description (MSVD) dataset [5],
+and MSR-Video To Text (MSR-VTT) dataset [34]. We ﬁrst
+give details of these datasets and their processing performed
+in this work, before discussing the experimental results.
+
+MSVD Dataset [5]: This dataset is composed of 1,970
+YouTube open domain videos that predominantly show only
+a single activity each. Generally, each clip is spanning over
+10 to 25 seconds. The dataset provides multilingual human
+annotated sentences as captions for the videos. We experi-
+ment with the captions in English. On average, 41 ground
+truth captions can be associated with a single video. For
+benchmarking, we follow the common data split of 1,200
+training samples, 100 samples for validation and 670 videos
+for testing [35, 33, 12].
+
+MSR-VTT Dataset [34]: This recently introduced open
+domain videos dataset contains a wide variety of videos
+for the captioning task. It consists of 7,180 videos that are
+transformed into 10,000 clips. The clips are grouped into 20
+different categories. Following the common settings [34],
+we divide the 10,000 clips into 6,513 samples for training,
+497 samples for validation and the remaining 2,990 clips
+for testing. Each video is described by 20 single sentence
+annotations by Amazon Mechanical Turk (AMT) workers.
+This is one of the largest clips-sentence pair dataset avail-
+able for the video captioning task, which is the main reason
+of choosing this dataset for benchmarking our technique.
+We attribute the superior performance of FastText to its
+ability to generate vectors for out of vocabulary words ac-
+cording to the contextual vectors. The other word embed-
+
+4
+
+Table 1. Results of depth variation in GRU-based language model.
+Model Depth
+B-4
+M
+C
+R
+1 layer
+49.6
+34.9
+75.8
+71.3
+2 layers
+47.9
+35.0
+78.1
+71.5
+3 layers
+47.7
+34.6
+77.4
+70.8
+
+dings do not have this property. For instance, with 9, 914
+words of corpus vocabulary size in FastText, 8, 846 tokens
+are extracted from the pre-trained embeddings and the em-
+beddings for the remaining 1, 068 tokens are generated us-
+ing character n-grams of out-of-vocabulary words. The re-
+sulting vectors are then merged to produce the ﬁnal embed-
+ding vector. This strategy is certainly better than random
+initialization of the out-of-vocabulary words. With FastText
+at the top, glove840B and Word2Vec performs almost
+at par. Among all the pre-trained embeddings, glove6B
+proved to be the weakest.
+
+4.2. Language Model Depth Selection
+
+In language models, given the type and size of data,
+depth of the model plays the pivotal role in effective learn-
+ing. Where lower layers of a model learn to represent the
+syntactic information (parts of speech, grammatical role of
+words in each sentence etc.), semantic information (mean-
+ing of the words, contextual information) is better captured
+at the higher layers. As each layer learns different type of
+information, depth of models becomes important for effec-
+tive language modelling. However, the modelling perfor-
+mance may start to deteriorate at a certain depth due to the
+data size limitation.
+In our experiments, Gated Recurrent Units (GRUs)
+based language models are used. Long Short Term Mem-
+ory (LSTM) networks are also popular for language model-
+ing, however, there is a consensus in the literature that the
+performance and behavior of the two do not deviate signif-
+icantly for the same task [9, 14]. In our analysis, we vary
+the number of layers in the language model to observe the
+performance change. Our empirical evaluation shows that
+two-layers language model performs best under our settings
+(type and size of dataset, encoder-decoder framework), as
+compared to a one or a three layer model. The results are
+summarized in Table 1. Increasing layers from one to two
+generally improves the captioning performance. However,
+increasing the layers further to three does not result in per-
+formance gain.
+In fact, it slightly deteriorates the scores
+across all metrics. The experiments are performed using vi-
+sual features of Inception-ResNet-V2 that are transformed
+with temporal encoding [1] for the language model.
+
+4.3. Hyperparameter Settings
+
+Appropriate hyper-parameter setting and model ﬁne-
+tuning are well-known for their role in achieving the im-
+proved performance with deep networks. Here, we provide
+
+Table 2. Results on the state size choices of the GRU language
+model.
+State Size
+4096
+2048
+1024
+512
+
+B1
+77.3
+77.1
+74.9
+71.8
+
+B2
+62.9
+62.8
+59.4
+54.9
+
+C
+59.2
+61.9
+55.9
+46.5
+
+B3
+51.6
+51.5
+47.5
+42.8
+
+B4
+40.7
+41.0
+36.6
+32.0
+
+M
+30.8
+31.3
+30.0
+28.4
+
+R
+66.7
+67.6
+65.6
+62.4
+
+Figure 5. Performance evaluation of language model using four
+state sizes. Each trend line show each metric used to compute the
+captions score.
+
+a study of a few important hyper-parameters relevant to the
+captioning task under the encoder-decoder framework. The
+reported results and ﬁndings can serve as guidelines for the
+community for training effective captioning models.
+State Size: In the language model, deciding a suitable state
+size is critical. We tested captioning performance for var-
+ious state sizes, i.e. 512, 1024, 2048, and 4096. These re-
+sults are reported in Table 2 and Fig 5. We ﬁnd a direct
+relation between the state size and the model performance.
+We compute Pearson’s correlation between state sizes and
+each metric as shown in Table 3. It is evident from the re-
+sults that there is signiﬁcant correlation between state size
+and all the metrics. The relationship is even stronger in the
+lower n–grams of BLEU metric. It can be observed that the
+model performance enhances gradually when we change the
+state size from 512 until 2048. Further increase in the state
+size results in negligible or no improvement in the perfor-
+mance of the BLEU-4, METEOR, CIDEr, and ROUGEL
+metrics. However, lower n-grams of BLEU metric (B1, B2,
+B3) show slight improvements in such cases.
+Number of Frames: Frame selection can be treated as a
+function of time for any video. A smaller number of frames
+reduces the computation cost but at the expense of poten-
+tially losing some important spatio-temporal information.
+In this set of experiments, we ﬁrst process signiﬁcantly low
+number of frames, i.e. using every sixteenth (16th ) frame
+in the video. In the other experiment, we process all frames
+of the video. A signiﬁcant gain in model performance is
+observed in the case when all frames are used.
+These experiments are performed using C3D model [30]
+for visual encoding. The two experiments follows the same
+
+5
+
+Table 3. Results of Pearson’s correlation of state sizes with each metric.
+B1
+B2
+B3
+B4
+M
+C
+0.8110
+0.8028
+0.8107
+0.7947
+0.6897
+0.6635
+0.1889
+0.1972
+0.1893
+0.2053
+0.3103
+0.3365
+
+Pearson’s Correlation
+p-Value
+
+R
+0.6714
+0.3286
+
+Table 4. Results on how the number of frames affect the captioning
+quality.
+# Frames
+16–F
+All–F
+
+R
+57.2
+61.6
+
+B2
+46.7
+52.1
+
+B1
+65.4
+69.6
+
+B3
+34.0
+39.6
+
+B4
+23.0
+28.8
+
+M
+24.5
+27.7
+
+C
+31.6
+42.6
+
+settings except in terms of the number of frames used. The
+results of these experiments are shown in Table 4. As ev-
+ident from the results, a signiﬁcant improvement in model
+performance across all metrics can be observed when all
+frames are used for captioning.
+
+Fine Tuning Pre-Trained Word Embeddings: It is also
+
+observed in our experiments that using pre-trained word
+embeddings often outperform random initialization based
+learned embeddings. We also experimented by ﬁne tuning
+the model for 10 epochs on the pre-trained word embed-
+dings. It was observed that in this case, the performance
+on BLEU and CIDEr metrics improved slightly with the
+ﬁne tuning. However, performance on ROUGEL metric re-
+mained negligible. METEOR metric value showed mixed
+behaviour with no regular patterns.
+
+Dropout in Recurrent Layers: Dropout is a technique
+
+used in neural networks to prevent overﬁtting of the model
+during training. In recurrent networks e.g. in GRU, input
+and recurrent connections to GRU units are probabilistically
+excluded from activation and weight updates while training
+the network. Using dropout is typically effective for train-
+ing language models with large dataset. However, with the
+MSVD dataset, the caption corpus is rather small (∼48K
+captions with ∼9K unique tokens), dropout therefore does
+not have a signiﬁcant effect on language model performance
+for this dataset, or the datasets of similar scale. We em-
+ployed dropout in the recurrent layers of language model.
+However, it was observed that application of dropout did
+not improve the performance. In fact, it sometimes resulted
+in slight deterioration of the model performance. Based
+on the observed behavior, we can conﬁdently recommend
+to avoid the use of recurrent dropout in a GRU language
+model, given the training data of MSVD size (or compara-
+ble) and model complexity of 2-3 GRU layers.
+
+5. System Level Discussion and Analysis
+
+With Section 3 focusing on ‘ablation study’ of individual
+components, in this section, we further discuss and analyze
+the results of the pipeline as a whole, at the system level.
+First, we discuss the results in terms of Min – Max improve-
+ments in captioning score for each metric, respectively, as
+
+6
+
+shown in Table 5. Here, ‘Min’ denotes the minimum per-
+centage gain in the performance which is computed as the
+difference between the lowest score and the second low-
+est score in our experiments. ‘Max’ denotes the percentage
+gain achieved by comparing the lowest and the highest val-
+ues achieved. The Min – Max ranges provide an estimate of
+the performance gain that is possible by varying the selec-
+tion of component variants.
+In Table 5, ﬁrst two rows depict improvements by se-
+lecting superior or inferior CNNs (in terms of their origi-
+nal results on ImageNet classiﬁcation accuracies). These
+results are obtained using mean pooling strategy over the
+frame level features of the corresponding networks. When
+compared across 2D/3D CNNs (ﬁrst row) we see a drastic
+obtainable improvement in the model performance i.e. up
+to 44 % in BLEU and 60 % for CIDEr metric, if we choose
+the right visual feature encoding model. Similarly, when
+comparing among 2D CNNs only (second row), we see
+there are signiﬁcant performance variations. These varia-
+tions only resulted from varying the CNN model. Hence,
+we can conclusively argue that superior CNNs (with better
+representation power) can result in signiﬁcant performance
+improvement for the captioning techniques.
+The evaluation results for the word vector representa-
+tions are shown in row 3 of Table 5. We can observe that
+there are a few instances of signiﬁcant performance varia-
+tions across all metrics when we use different word embed-
+dings. Among the used popular embeddings, FastText
+performs the best and glove6B the weakest. Note that
+the results also include the learned word vectors obtained
+during language model training with random initialization.
+Moreover, we also experimented with ﬁne tuning of the pre-
+trained embeddings for 10 epochs for the captioning task.
+However, we observed that ﬁne tuning does not result in any
+drastic performance gain. We noticed that the performance
+of word2vec and glove840B mostly remain at par with
+each other. Compared to the visual feature encoder selec-
+tion, we can see the performance gain by the informed se-
+lection of word embeddings are not negligible either. How-
+ever, the right CNN model does have a dominant effect on
+the performance gain as compared to the word embedding
+selection.
+The last row of Table 5 provides language model depth
+analysis. Relative to the gain obtainable by varying other
+components in the pipeline, altering the depth from 1-layer
+to 3-layers, does not boost the performance signiﬁcantly.
+The metric scores generally improve when model depth is
+varied from 1-to-2 layers. However, further increase in the
+
+Table 5. Percentage improvements (Min – Max) achievable with careful selection of components. First row compared performance includ-
+ing 2D/3D networks. Row 2 demonstrates performance variation with 2D networks only. Subsequent rows show improvements due to
+word embeddings and the depth of language model.
+
+CNN (2D/3D)
+CNN (2D only)
+Word Vectors
+Depth of Language Model
+
+B-4 (%)
+32.64 – 44.10
+3.93 – 8.64
+8.27 – 14.99
+0.42 – 3.98
+
+M (%)
+6.86 – 16.61
+3.38 – 9.12
+0.64 – 7.03
+0.87 – 1.16
+
+C (%)
+23.0 – 60.09
+1.53 – 30.15
+0.81 – 9.69
+2.11 – 3.03
+
+R (%)
+6.17 – 9.74
+0.92 – 3.36
+0.60 – 5.37
+0.71 – 0.99
+
+Table 6. Percentage improvement achieved in BLEU (B-4), ME-
+TEOR (M), CIDEr (C), and ROUGEL (R) metrics when mean
+pooled visual features are replaced with temporally encoded fea-
+tures of corresponding networks.
+B-4 (%) M (%)
+40.97
+11.91
+13.09
+7.77
+12.59
+6.86
+10.84
+4.04
+10.14
+4.33
+
+C3D
+VGG-16
+VGG-19
+Inception-V3
+Inception-ResNet-V2
+
+C (%)
+30.75
+20.04
+18.80
+8.82
+8.80
+
+R (%)
+9.42
+4.59
+4.70
+2.98
+3.25
+
+depth degrades the model performance. We can conﬁdently
+claim that under the employed popular pipeline, 2-layers
+GRU network performs better as compared to the single or
+three layers RNNs.
+In Table 6, we report the maximum percentage gains
+caused by the feature transformation techniques in our ex-
+periments. Each row reports the metric score improvement
+resulted when mean pooled features are replaced with the
+temporal encoding features [1] of same CNN network. As
+can be observed, there is signiﬁcant improvement in the
+model performance across all metrics and all networks with
+the temporal encoding. The largest performance gain re-
+sults in the case of C3D. We conjecture that a major reason
+behind this phenomenon is that there are always less num-
+ber of clips as compared to the number of frames in videos.
+C3D exploits clips which reduces the number of unit data
+samples containing distinct pieces of information for the
+task at hands. The temporal encoding strategy is able make
+up for this discrepancy. Moreover, spatial feature captur-
+ing with a 2D-CNN followed by temporal encoding result
+in more discriminative video-level features as compared to
+the spatio-temporal features of 3D-CNNs.
+Based on the evaluations performed with all components
+of the captioning framework, we can order the components
+in terms of their importance/contribution to the overall cap-
+tioning performance. To that end, in our experiments, the
+most signiﬁcant contribution comes from the feature trans-
+formation technique i.e. Temporal Encoding. The second
+signiﬁcant performance variation is possible through the se-
+lection of appropriate CNN model. At the third position in
+terms of contribution to captioning quality, we can place the
+word embedding vectors. The number of network layers
+in captioning model had less signiﬁcant role to play in our
+
+7
+
+experimental results. A simple 2-layer GRU seems a rea-
+sonable baseline choice for the captioning models. Similar
+to the network layers, other hyper-parameters choices also
+contribute to the captioning performance, as mentioned in
+Sec. 4.3. However, assuming a reasonable default hyper-
+parameter settings, their role is far less signiﬁcant than the
+variation in the major components of the pipeline.
+
+6. Conclusion
+
+In this paper, we decompose encoder-decoder based au-
+tomatic video captioning framework into four core compo-
+nents. This allows us to carry out a comprehensive and
+fair ablation study at both the component level and the
+system level on a common dataset. The four core com-
+ponents include CNN model (visual feature encoder), fea-
+ture transformation (e.g. mean pooling, temporal encoding),
+word embeddings, and language model. Various model
+hyper-parameters (depth, state size, and dropout in recur-
+rent layers etc.) are also included in our empirical study.
+Exhaustive experiments are carried out for each compo-
+nent to capture the contribution and effects of that compo-
+nent in the overall captioning performance. In particular,
+5 popular CNNs (C3D, VGG-16, VGG-19, Inception-V3,
+and Inc-ResNet-V2), 2 feature transformation algorithms
+(mean pooling, temporal encoding), 5 Word Embedding
+Techniques (learned, word2vec, glove6B, glove840B, and
+fasttext) and an RNN language model with three different
+depths (1, 2, 3 layers) are tested.
+It is found that with a
+well-informed selection of the components in the encoder-
+decoder based video captioning framework, a signiﬁcant
+performance gain can be achieved. In our experiments, the
+best performing combination is Inception-ResNet-V2 as the
+visual encoder, followed by temporal encoding for feature
+transformation, followed by the use of fasttext word embed-
+dings with a two layer language model.
+
+7. Acknowledgement
+
+This work is supported by Australian Research Council
+Grant ARC DP19010244. The GPU used for this work was
+donated by NVIDIA Corporation.
+
+References
+
+[1] N. Aafaq, N. Akhtar, W. Liu, S. Z. Gilani, and A. Mian.
+Spatio-temporal dynamics and semantic attribute enriched
+visual encoding for video captioning.
+, in: IEEE CVPR.,
+2019.
+[2] N. Aafaq, A. Mian, W. Liu, S. Z. Gilani, and M. Shah. Video
+description: A survey of methods, datasets, and evaluation
+metrics. ACM Computing Surveys (CSUR), 52(6):115, 2019.
+[3] S. Banerjee and A. Lavie. Meteor: An automatic metric for
+mt evaluation with improved correlation with human judg-
+ments. In Proceedings of the ACL workshop on intrinsic and
+extrinsic evaluation measures for machine translation and/or
+summarization, pages 65–72, 2005.
+[4] P. Bojanowski, E. Grave, A. Joulin, and T. Mikolov. Enrich-
+ing word vectors with subword information. In TACL, pages
+135–146, 2017.
+[5] D. L. Chen and W. B. Dolan. Collecting highly parallel
+data for paraphrase evaluation. In ACL: Human Language
+Technologies-Volume 1, pages 190–200. ACL, 2011.
+[6] X. Chen, H. Fang, T.-Y. Lin, R. Vedantam, S. Gupta,
+P. Doll ´ar, and C. L. Zitnick. Microsoft coco captions:
+Data collection and evaluation server.
+arXiv preprint
+arXiv:1504.00325, 2015.
+[7] X. Chen and C. Lawrence Zitnick. Mind’s eye: A recur-
+rent visual representation for image caption generation. In
+Proceedings of the IEEE conference on computer vision and
+pattern recognition, pages 2422–2431, 2015.
+[8] K. Cho, B. Van Merri ¨enboer, C. Gulcehre, D. Bahdanau,
+F. Bougares, H. Schwenk, and Y. Bengio. Learning phrase
+representations using rnn encoder-decoder for statistical ma-
+chine translation. arXiv preprint arXiv:1406.1078, 2014.
+[9] J. Chung, C. Gulcehre, K. Cho, and Y. Bengio. Empirical
+evaluation of gated recurrent neural networks on sequence
+modeling. arXiv preprint arXiv:1412.3555, 2014.
+[10] J. Devlin, H. Cheng, H. Fang, S. Gupta, L. Deng, X. He,
+G. Zweig, and M. Mitchell. Language models for image
+captioning: The quirks and what works.
+arXiv preprint
+arXiv:1505.01809, 2015.
+[11] J. L. Elman. Finding structure in time. Cognitive science,
+14(2):179–211, 1990.
+[12] Z. Gan, C. Gan, X. He, Y. Pu, K. Tran, J. Gao, L. Carin,
+and L. Deng. Semantic Compositional Networks for visual
+captioning. In IEEE CVPR, 2017.
+[13] S. Hochreiter and J. Schmidhuber. Long short-term memory.
+Neural computation, 9(8):1735–1780, 1997.
+[14] R. Jozefowicz, W. Zaremba, and I. Sutskever. An empirical
+exploration of recurrent network architectures.
+In Interna-
+tional Conference on Machine Learning, pages 2342–2350,
+2015.
+[15] M. Kilickaya, A. Erdem, N. Ikizler-Cinbis, and E. Erdem.
+Re-evaluating automatic metrics for image captioning. arXiv
+preprint arXiv:1612.07600, 2016.
+[16] R. Krishna, K. Hata, F. Ren, L. Fei-Fei, and J. Car-
+los Niebles. Dense-captioning events in videos. In Proceed-
+ings of the IEEE International Conference on Computer Vi-
+sion, pages 706–715, 2017.
+
+[17] C.-Y. Lin. Rouge: A package for automatic evaluation of
+summaries. In Text summarization branches out: Proceed-
+ings of the ACL-04 workshop, volume 8. Barcelona, Spain,
+2004.
+[18] T. Mikolov, I. Sutskever, K. Chen, G. S. Corrado, and
+J. Dean. Distributed representations of words and phrases
+and their compositionality. In Advances in neural informa-
+tion processing systems, pages 3111–3119, 2013.
+[19] A. V. Oppenheim. Discrete-time signal processing. Pearson
+Education India, 1999.
+[20] Y. Pan, T. Mei, T. Yao, H. Li, and Y. Rui. Jointly modeling
+embedding and translation to bridge video and language. In
+Proceedings of the IEEE conference on computer vision and
+pattern recognition, pages 4594–4602, 2016.
+[21] Y. Pan, T. Yao, H. Li, and T. Mei. Video captioning with
+transferred semantic attributes. In IEEE CVPR, 2017.
+[22] K. Papineni, S. Roukos, T. Ward, and W.-J. Zhu. Bleu: a
+method for automatic evaluation of machine translation. In
+Proceedings of the 40th annual meeting on ACL, pages 311–
+318, 2002.
+[23] J. Pennington, R. Socher, and C. Manning. Glove: Global
+vectors for word representation. In Proceedings of the 2014
+conference on empirical methods in natural language pro-
+cessing (EMNLP), pages 1532–1543, 2014.
+[24] A. Rohrbach, M. Rohrbach, W. Qiu, A. Friedrich, M. Pinkal,
+and B. Schiele. Coherent multi-sentence video description
+with variable level of detail. In German Conference on Pat-
+tern Recognition, 2014.
+[25] A. Shin, K. Ohnishi, and T. Harada. Beyond caption to nar-
+rative: Video captioning with multiple sentences. In IEEE
+International Conference on Image Processing (ICIP), 2016.
+[26] K. Simonyan and A. Zisserman. Very deep convolutional
+networks for large-scale image recognition. In ICLR, 2015.
+[27] I. Sutskever, O. Vinyals, and Q. V. Le. Sequence to sequence
+learning with neural networks. In Advances in neural infor-
+mation processing systems, pages 3104–3112, 2014.
+[28] C. Szegedy, S. Ioffe, V. Vanhoucke, and A. A. Alemi.
+Inception-v4, inception-resnet and the impact of residual
+connections on learning.
+In Thirty-First AAAI Conference
+on Artiﬁcial Intelligence, 2017.
+[29] C. Szegedy, V. Vanhoucke, S. Ioffe, J. Shlens, and Z. Wojna.
+Rethinking the inception architecture for computer vision. In
+Proceedings of the IEEE conference on computer vision and
+pattern recognition, pages 2818–2826, 2016.
+[30] D. Tran, L. Bourdev, R. Fergus, L. Torresani, and M. Paluri.
+Learning spatiotemporal features with 3d convolutional net-
+works. In Proceedings of the IEEE international conference
+on computer vision, pages 4489–4497, 2015.
+[31] R. Vedantam, C. Lawrence Zitnick, and D. Parikh. Cider:
+Consensus-based image description evaluation.
+In IEEE
+CVPR, 2015.
+[32] S. Venugopalan, H. Xu,
+J. Donahue, M. Rohrbach,
+R. Mooney, and K. Saenko. Translating videos to natural
+language using deep recurrent neural networks. In NAACL,
+pages 1494–1504, 2015.
+[33] J. Wang, W. Wang, Y. Huang, L. Wang, and T. Tan. M3:
+Multimodal memory modelling for video captioning. In Pro-
+
+8
+
+ceedings of the IEEE Conference on Computer Vision and
+Pattern Recognition, pages 7512–7520, 2018.
+[34] J. Xu, T. Mei, T. Yao, and Y. Rui. Msr-vtt: A large video
+description dataset for bridging video and language. In IEEE
+CVPR, 2016.
+[35] L. Yao, A. Torabi, K. Cho, N. Ballas, C. Pal, H. Larochelle,
+and A. Courville. Describing videos by exploiting temporal
+structure. In Proceedings of the IEEE international confer-
+ence on computer vision, pages 4507–4515, 2015.
+[36] H. Yu, J. Wang, Z. Huang, Y. Yang, and W. Xu. Video
+paragraph captioning using hierarchical recurrent neural net-
+works. In Proceedings of the IEEE conference on computer
+vision and pattern recognition, pages 4584–4593, 2016.
+[37] S. Zhang, C. Liu, H. Jiang, S. Wei, L. Dai, Y. Hu, S. Zhang,
+C. Liu, H. Jiang, S. Wei, et al. Nonrecurrent neural structure
+for long-term dependence. IEEE/ACM Transactions on Au-
+dio, Speech and Language Processing (TASLP), 25(4):871–
+884, 2017.
+
+9
+
+

@@ -1,0 +1,1232 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+0
+2
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Minimizing the Bag-of-Ngrams Difference for Non-Autoregressive
+Neural Machine Translation
+
+Chenze Shao1 2 , Jinchao Zhang3 , Yang Feng1 2 ∗ , Fandong Meng3 and Jie Zhou3
+
+1 Key Laboratory of Intelligent Information Processing,
+Institute of Computing Technology, Chinese Academy of Sciences (ICT/CAS)
+2 University of Chinese Academy of Sciences
+3 Pattern Recognition Center, WeChat AI, Tencent Inc, China
+{shaochenze18z,fengyang}@ict.ac.cn
+{dayerzhang,fandongmeng,withtomzhou}@tencent.com
+
+Abstract
+
+Non-Autoregressive Neural Machine Translation (NAT)
+achieves signiﬁcant decoding speedup through generating tar-
+get words independently and simultaneously. However, in
+the context of non-autoregressive translation, the word-level
+cross-entropy loss cannot model the target-side sequential de-
+pendency properly, leading to its weak correlation with the
+translation quality. As a result, NAT tends to generate in-
+ﬂuent translations with over-translation and under-translation
+errors. In this paper, we propose to train NAT to minimize
+the Bag-of-Ngrams (BoN) difference between the model out-
+put and the reference sentence. The bag-of-ngrams training
+objective is differentiable and can be efﬁciently calculated,
+which encourages NAT to capture the target-side sequential
+dependency and correlates well with the translation quality.
+We validate our approach on three translation tasks and show
+that our approach largely outperforms the NAT baseline by
+about 5.0 BLEU scores on WMT14 En↔De and about 2.5
+BLEU scores on WMT16 En↔Ro.
+
+1
+
+Introduction
+
+Neural Machine Translation (NMT) has achieved impres-
+sive performance over the recent years (Cho et al. 2014;
+Sutskever, Vinyals, and Le 2014; Bahdanau, Cho, and Ben-
+gio 2014; Wu et al. 2016; Vaswani et al. 2017). NMT models
+are typically built on the encoder-decoder framework where
+the encoder encodes the source sentence into distributed rep-
+resentations and the decoder generates the target sentence
+from the representations in an autoregressive manner: to pre-
+dict the next word, previously predicted words have to be fed
+as inputs. The word-by-word generation manner of NMT
+determined by the autoregressive mechanism leads to high
+translation latency during inference and restricts application
+scenarios of NMT.
+To reduce the translation latency for neural machine
+translation, non-autoregressive translation models (Gu et al.
+2017) have been proposed. A basic NAT model takes the
+
+∗Corresponding author: Yang Feng
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+Joint work with Pattern Recognition Center, WeChat AI, Ten-
+cent Inc, China.
+Reproducible code: https://github.com/ictnlp/BoN-NAT
+
+Figure 1: The cross-entropy loss gives a large penalty to the
+unaligned translation and may cause the overcorrection. The
+bag-of-2grams difference is robust to the unaligned transla-
+tion and correlates well with the translation quality.
+
+same encoder-decoder architecture as Transformer (Vaswani
+et al. 2017). Instead of using previously generated tokens
+as in autoregressive models, NAT takes other global sig-
+nals as decoder inputs (Gu et al. 2017; Guo et al. 2019;
+Kaiser et al. 2018; Akoury, Krishna, and Iyyer 2019), which
+enables the simultaneous and independent generation of tar-
+get words and achieves signiﬁcant decoding speedup.
+However, in the context of non-autoregressive translation,
+the word-level cross-entropy loss cannot model the target-
+side sequential dependency properly, leading to its weak cor-
+relation with the translation quality. The cross-entropy loss
+encourages NAT to generate the golden token in each posi-
+tion without considering the global correctness. For exam-
+ple, as Figure 1 illustrates, though the translation “I have to
+get up and start working” is semantically close to the ref-
+erence, the cross-entropy loss will give it a large penalty
+due to its unalignment with the reference. Under the guid-
+ance of cross-entropy loss, the translation may be corrected
+to “I have to up up start start working” that is preferred by
+the cross-entropy loss but actually gets worse and contains
+repeated words, which is named as the overcorrection er-
+ror (Zhang et al. 2019). The limitation of the cross-entropy
+loss aggravates the weakness of NAT in modeling target se-
+quential dependency, which often causes inﬂuent transla-
+tion results with over-translation and under-translation er-
+rors (Shao et al. 2019; Wang et al. 2019). In addition, since
+
+ 
+ 
+ 
+ 
+ 
+ 
+the cross-entropy loss does not correlate well with the trans-
+lation quality, it usually takes a long time for NAT to con-
+verge.
+In this paper, we propose to model the target-side se-
+quential dependency for NAT through minimizing the Bag-
+of-Ngrams (BoN) difference between the model output and
+the reference sentence. As the word-level cross-entropy loss
+cannot model the target-side sequential dependency prop-
+erly, we propose to evaluate the NAT output on the n-gram
+level. Since the output of NAT may not be aligned with the
+reference, we do not require the strict alignment and instead
+optimize the bag-of-ngrams for NAT. As Figure 1 illustrates,
+the bag-of-ngrams difference is robust to unaligned transla-
+tions and correlates well with the translation quality. Opti-
+mizing such a sequence-level objective usually faces the dif-
+ﬁculty of exponential search space. Previous works (Ranzato
+et al. 2015; Shao et al. 2019) usually observe the objective as
+a reward and train the model under the reinforcement learn-
+ing framework (Williams 1992), which has relatively slow
+training speed and suffers from high estimation variance. We
+introduce a novel method to overcome the difﬁculty of expo-
+nential search space. Firstly, we deﬁne the BoN of NAT by
+the expectation of BoN on all possible translations. Then the
+BoN training objective is to minimize the BoN difference
+between NAT output and reference. For NAT, we give a sim-
+ple and efﬁcient method to calculate the BoN objective. The
+BoN training objective has the following advantages:
+• It models the target-side sequential dependency for NAT
+and correlates well with the translation quality.
+• It does not assume speciﬁc NAT model architectures and
+is easy to implement.
+• It can be calculated accurately without making any ap-
+proximation.
+• It
+is differentiable and maintains fast
+training speed.
+Therefore it can not only be utilized for ﬁne-tuning but
+also work together with cross-entropy loss to jointly train
+NAT from scratch.
+We evaluate the proposed method on three transla-
+tion tasks (IWSLT16 En→De, WMT14 En↔De, WMT16
+En↔Ro). Experimental results show that the ﬁne-tuning
+method achieves large improvements over the pre-trained
+NAT baseline, and the joint training method further brings
+considerable improvements over the ﬁne-tuning method,
+which outperforms the NAT baseline by about 5.0 BLEU
+scores on WMT14 En↔De and about 2.5 BLEU scores on
+WMT16 En↔Ro.
+
+2 Background
+
+2.1 Autoregressive Neural Machine Translation
+
+Deep neural networks with autoregressive encoder-decoder
+framework have achieved great success on machine transla-
+tion, with different choices of architectures such as RNN,
+CNN and Transformer. RNN-based models (Bahdanau,
+Cho, and Bengio 2014; Cho et al. 2014) have a sequen-
+tial architecture that prevents them from being parallelized.
+CNN (Gehring et al. 2017), and self-attention (Vaswani et
+
+al. 2017) based models have highly parallelized architec-
+ture, which solves the parallelization problem during train-
+ing. However, during inference, the translation has to be gen-
+erated word-by-word due to the autoregressive mechanism.
+Given a source sentence X = {x1 , ..., xn} and a target
+sentence Y = {y1 , ..., yT }, autoregressive NMT models the
+transaltion probability from X to Y sequentially as:
+
+P (Y |X , θ) =
+
+p(yt |y<t , X , θ),
+
+(1)
+
+T(cid:89)
+
+t=1
+
+where θ is a set of model parameters and y<t =
+{y1 , · · · , yt−1 } is the translation history. The standard train-
+ing objective is the cross-entropy loss, which minimize the
+negative log-likelihood as:
+
+LM LE (θ) = − T(cid:88)
+
+log(p(yt |y<t , X , θ)),
+
+(2)
+
+t=1
+
+During decoding, the partial translation generated by decod-
+ing algorithms such as the greedy search and beam search is
+fed into the decoder to generate the next word.
+
+2.2 Non-Autoregressive Neural Machine
+Translation
+
+Non-autoregressive neural machine translation (Gu et al.
+2017) is proposed to reduce the translation latency through
+parallelizing the decoding process. A basic NAT model
+takes the same encoder-decoder architecture as Transformer.
+The NAT encoder stays unchanged from the original Trans-
+former encoder, and the NAT decoder has an additional po-
+sitional attention block in each layer compared to the Trans-
+former decoder. Besides, there is a length predictor that takes
+encoder states as input to predict the target length.
+Given a source sentence X = {x1 , ..., xn} and a tar-
+get sentence Y = {y1 , ..., yT }, NAT models the translation
+probability from X to Y as:
+
+P (Y |X , θ) =
+
+p(yt |X , θ),
+
+(3)
+
+where θ is a set of model parameters and p(yt |X , θ) indi-
+cates the translation probability of word yt in position t. The
+cross-entropy loss is applied to minimize the negative log-
+likelihood as:
+
+LM LE (θ) = − T(cid:88)
+
+log(p(yt |X , θ)),
+
+(4)
+
+t=1
+
+During training, the target length T is usually set as the ref-
+erence length. During inference, the target length T is ob-
+tained from the length predictor, and then the translation of
+length T is obtained by taking the word with the maximum
+likelihood at each time step:
+
+ˆyt = arg max
+
+yt
+
+p(yt |X , θ).
+
+(5)
+
+T(cid:89)
+
+t=1
+
+approach is to consider all possible translations and use the
+expected BoN to deﬁne the BoN for sequence models. For
+NMT with parameter θ , we use BoNθ to denote its bag-of-
+ngrams. Formally, given a source sentence X , the value of
+n-gram g in BoNθ is deﬁned as follows:
+
+BoNθ (g) =
+
+P (Y |X , θ) · BoNY (g).
+
+(7)
+
+(cid:88)
+
+Y
+
+3.2 Efﬁcient Calculation
+
+It is unrealistic to directly calculate BoNY (g) according to
+Eq.(7) due to the exponential search space. For autoregres-
+sive NMT, because of the conditional dependency in model-
+ing translation probability, it is difﬁcult to simplify the cal-
+culation without loss of accuracy. Shao, Chen, and Feng
+(2018) only focuses on greedily chosen words and makes the
+search space very limited. Ma et al. (2018) sums up the dis-
+tribution of all positions to generate the bag-of-words, which
+is biased by the teacher forcing.
+Fortunately, NAT models the translation probability in
+different positions independently, which enables us to di-
+vide the target sequence into subareas and analyze the BoN
+in each subarea without being inﬂuenced by other positions.
+Guiding by this unique property of NAT, we convert Eq.(7)
+to the following form:
+
+P (Y |X , θ) · T −n(cid:88)
+P (Y |X , θ) · 1{yt+1:t+n = g}
+
+t=0
+
+1{yt+1:t+n = g}
+
+P (Yt+1:t+n |X , θ) · 1{yt+1:t+n = g}
+
+BoNθ (g) =
+
+Y
+
+(cid:88)
+(cid:88)
+(cid:88)
+n(cid:89)
+
+Y
+
+Yt+1:t+n
+
+t=0
+
+T −n(cid:88)
+T −n(cid:88)
+T −n(cid:88)
+
+t=0
+
+=
+
+=
+
+=
+
+p(yt+i = gi |X , θ).
+
+t=0
+
+i=1
+
+(8)
+Eq.(8) gives an efﬁcient method to calculate BoNθ (g): slide
+a window on NAT output distributions to obtain subareas
+of size n, and then accumulate the values of n-gram g in
+all subareas. Figure 2 illustrates the calculation process of
+a bigram “get up”. It does not make any approximation and
+requires little computational effort.
+
+3.3 Bag-of-Ngrams Objective
+
+The training objective is to minimize the BoN difference
+between NAT output and reference. The difference can be
+measured by several metrics such as the L1 distance, L2 dis-
+tance and cosine distance. In previous sections, we deﬁne the
+BoN for NAT and give an efﬁcient calculation method for
+BoNθ (g). However, since there are V n different n-grams,
+calculating the complete BoN vector for NAT still consumes
+a huge amount of storage space and computing resources.
+We use the sparsity of bag-of-ngrams to further simplify
+the calculation. As shown in Eq.(8), for NAT, its bag-of-
+ngrams BoNθ is dense. On the contrary, assume that the ref-
+
+Figure 2: The calculation process of BoNθ (“get up”). First
+calaulate the probability of the bigram “get up” in each sub-
+area and then accumulate the probabilities.
+
+3 Model
+
+In this section, we will discuss the BoN objective for NAT in
+detail. We ﬁrst formulize the BoN of a discrete sentence by
+the sum of n-gram vectors with one-hot representation. Then
+we deﬁne the BoN of NMT by the expectation of BoN on all
+possible translations and give an efﬁcient method to calcu-
+late the BoN of NAT. The BoN objective is to minimize the
+difference between the BoN of NAT output and reference,
+which encourages NAT to capture the target-side sequential
+dependency and generate high-quality translations.
+
+3.1 Bag-of-Ngrams
+
+Bag-of-words (Joachims 1998) is the most commonly used
+text representation model which discards the word order
+and represent sentence as the multiset of its belonging
+words. Bag-of-ngrams (Pang, Lee, and Vaithyanathan 2002;
+Li et al. 2017) is proposed to enhance the text representa-
+tion by takeing consecutive words (n-gram) into considera-
+tion. Assume that the vocabulary size is V , Bag-of-Ngrams
+(BoN) is a vector of size V n , which is the sum of zero-one
+vectors where each vector is the one-hot representation of
+an n-gram. Formally, for a sentence Y = {y1 , ..., yT }, we
+use BoNY to denote the bag-of-ngrams of Y . For an n-gram
+g = (g1 , . . . , gn ), we use BoNY (g) to denote the value of g
+in BoNY , which is the number of occurrences of n-gram g
+in sentence Y and can be formulized as follows:
+T −n(cid:88)
+where 1{·} is the indicator function that takes value from
+{0, 1} whose value is 1 iff the inside condition holds.
+For a discrete sentence, our deﬁnition of BoN is consistent
+with previous work. However, there is no clear deﬁnition
+of BoN for sequence models like NMT, which model the
+probability distribution on the whole target space. A natural
+
+1{yt+1:t+n = g},
+
+BoNY (g) =
+
+(6)
+
+t=0
+
+erence sentence is ˆY , the vector BoN ˆY is very sparse where
+only a few entries of it have non-zero values. Using this
+property, we show that the L1 distance between the two BoN
+vectors can be calculated efﬁciently. Unfortunately, some
+other distance metrics like L2 distance and cosine distance
+cannot be simpliﬁed in this way.
+Assume that the target length is T . Intutively, a sentence
+of length T has T −n+1 n-grams. We ﬁrst verify the intution
+that the L1 -norm of BoNY and BoNθ are both T − n + 1:
+T −n(cid:88)
+
+1{yt+1:t+n = g} = T − n + 1.
+BoNY (g) =
+BoNθ (g) =
+P (Y |X , θ) · (cid:88)
+
+P (Y |X , θ) · BoNY (g)
+
+BoNY (g) = T − n + 1.
+
+(cid:88)
+(cid:88)
+(cid:88)
+
+g
+
+(10)
+
+(cid:88)
+(cid:88)
+(cid:88)
+
+g
+
+(9)
+
+g
+
+Y
+
+g
+
+=
+
+t=0
+
+Y
+
+g
+
+On this basis, we can derive the L1 distance between
+BoNθ and BoN ˆY , where ˆY is the reference sentence. We
+denote the L1 distance as BoN-L1 and convert it to the fol-
+lowing form:
+
+|BoNθ (g) − BoN ˆY (g)|
+
+(cid:88)
+
+g
+
+BoN-L1 =
+
+(cid:88)
+
+= 2(T − n + 1 − (cid:88)
+(BoNθ (g) + BoN ˆY (g) − 2 min(BoNθ (g), BoN ˆY (g))
+=
+
+min(BoNθ (g), BoN ˆY (g))).
+
+g
+
+g
+
+(11)
+The minimum between BoNθ (g) and BoN ˆY (g) can be
+understood as the number of matches for the n-gram g , and
+the L1 distance measures the number of n-grams predicted
+by NAT that fails to match the reference sentence. Notice
+that the minimum will be nonzero only if the n-gram g ap-
+pears in the reference sentence. Hence we can only focus
+on n-grams in the reference, which signiﬁcantly reduce the
+computational effort and storage requirement. Algorithm 1
+illustrates the calculation process of BoN-L1 .
+We normalize the L1 distance to range [0, 1] by dividing
+the constant 2(T − n + 1). The BoN training objective is to
+minimize the normalized L1 distance:
+BoN-L1
+
+LBoN (θ) =
+
+(12)
+
+2(T − n + 1)
+
+.
+
+As is usual practice in sequence-level training, we can use
+the BoN objective to ﬁne-tune a pre-trained baseline model.
+We denote this method as BoN-FT. In addition, since the
+BoN objective is differentiable and can be calculated efﬁ-
+ciently, it can also work together with cross-entropy loss to
+jointly train NAT from scratch. We use a hyper-parameter α
+to combine the two losses:
+
+Lj oint (θ) = α · LM LE (θ) + (1 − α) · LBoN (θ).
+
+(13)
+The joint training method is denoted as BoN-Joint. After
+the joint training, we can ﬁne-tune the model using the BoN
+objective only. We denote this method as BoN-Joint+FT.
+
+Algorithm 1 BoN-L1
+
+Input: model parameters θ , input sentence X , reference
+sentence ˆY , prediction length T , n
+Output: BoN precision BoN-p
+1: construct the reference bag-of-ngrams BoN ˆY
+2: ref-ngrams={g |BoN ˆY (g) != 0}
+3: match = 0
+4: for g in ref-ngrams do
+calculate BoNθ (g) according to Eq.(8)
+
+match += min(BoNθ (g), BoN ˆY (g))
+
+5:
+6:
+
+7: BoN-L1 = 2(T-n+1-match)
+8: return BoN-L1
+
+4 Related Work
+
+Gu et al. (2017) introduced the non-autoregressive Trans-
+former to reduce the translation latency of NMT, which
+comes at the cost of translation quality. Instead of using pre-
+viously generated tokens as in autoregressive models, NAT
+take other global signals as decoder inputs. Gu et al. (2017)
+introduced the uniform copy and fertility to copy from
+source inputs. Kaiser et al.; Roy et al.; Ma et al. (2018; 2018;
+2019) proposed to use latent variables to improve the per-
+formance of non-autoregressive Transformer. Akoury, Kr-
+ishna, and Iyyer (2019) introduced syntactically supervised
+Transformers, which ﬁrst autoregressively predicts a chun-
+ked parse tree and then generate all target tokens conditioned
+on it. Lee, Mansimov, and Cho (2018) proposed to itera-
+tively reﬁne the translation where the outputs of decoder are
+fed back as inputs in the next iteration. Li et al. (2019) pro-
+posed to improve non-autoregressive models through dis-
+tilling knowledge from autoregressive models. Gu, Wang,
+and Zhao (2019) introduced Levenshtein Transformer for
+more ﬂexible and amenable sequence generation. Wang,
+Zhang, and Chen (2018) introduced the semi-autoregressive
+Transformer that generates a group of words each time.
+Guo et al. (2019) proposed to enhance decoder inputs with
+phrase-table lookup and embedding mapping. Libovick `y
+and Helcl (2018) proposed an end-to-end non-autoregressive
+model using connectionist temporal classiﬁcation. Wei et
+al. (2019) proposed an imitation learning framework where
+the non-autoregressive learner learns from the autoregres-
+sive demonstrator through an imitation module. Wang et al.
+(2019) pointed out that NAT is weak in capturing sequential
+dependency and proposed the similarity regularization and
+reconstruction regularization to reduce errors of repeated
+and incomplete translations. Anonymous; Ran et al. (2020;
+2019) proposed to model the reordering information for non-
+autoregressive Transformer. Shao et al. (2019) proposed
+Reinforce-NAT to train NAT with sequence-level objectives.
+As the techniques for variance reduction makes the training
+speed relatively slow, this method is restricted in ﬁne-tuning.
+Training NMT with discrete sequence-level objectives
+has been widely investigated under the reinforcement learn-
+ing framework (Ranzato et al. 2015; Shen et al. 2015;
+Wu et al. 2016; 2018; Shao et al. 2019). Recently, differ-
+entiable sequence-level training objectives for autoregres-
+
+sive NMT have attracted much attention. Gu, Cho, and Li
+(2017) applied the deterministic policy gradient algorithm
+to train NMT actor with the differentiable critic. Ma et al.
+(2018) proposed to use bag-of-words as target during train-
+ing. Shao, Chen, and Feng (2018) proposed to evaluate
+NMT outputs with probabilistic n-grams.
+
+5 Experimental Setting
+
+newstest-2013
+
+Datasets We use several widely adopted benchmark
+datasets to evaluate the effectiveness of our proposed
+method: IWSLT16 En→De (196k pairs), WMT14 En↔De
+(4.5M pairs) and WMT16 En↔Ro (610k pairs). For
+En↔De, we
+WMT14
+employ
+and newstest-2014 as development and test sets.
+For WMT16 En↔Ro, we take newsdev-2016 and
+newstest-2016 as development and test sets. For
+IWSLT16 En→De, we use the test2013 for validation.
+We use the preprocessed datasets released by Lee, Mansi-
+mov, and Cho (2018), where all sentences are tokenized
+and segmented into subwords units (Sennrich, Haddow, and
+Birch 2016). The vocabulary size is 40k and is shared for
+source and target languages. We use BLEU (Papineni et al.
+2002) to evaluate the translation quality.
+Baselines We take the Transformer model (Vaswani et al.
+2017) as our autoregressive baseline as well as the teacher
+model. The non-autoregressive model with 2 iterative reﬁne-
+ment iterations (IRNAT) (Lee, Mansimov, and Cho 2018) is
+our non-autoregressive baseline, and the methods we pro-
+pose are all experimented on this baseline model. We also
+include three relevant NAT works for comparison, NAT with
+fertility (NAT-FT) (Gu et al. 2017), NAT with auxiliary regu-
+larization (NAT-REG) (Wang et al. 2019) and reinforcement
+learning for NAT (Reinforce-NAT) (Shao et al. 2019).
+Model Conﬁgurations We closely follow the settings
+of Gu et al. (2017), Lee, Mansimov, and Cho (2018)
+and Shao et al. (2019). For IWSLT16 En→De, we use
+the small Transformer (dmodel=278, dhidden=507, nlayer=5,
+
+nhead=2, pdropout=0.1, twarmup=746). For experiments on
+
+WMT datasets, we use the base Transformer (Vaswani
+
+et al. 2017) (dmodel=512, dhidden=512, nlayer=6, nhead=8,
+
+pdropout=0.1, twarmup=16000). We use Adam (Kingma and
+Ba 2014) for the optimization. In the main experiment, the
+hyper-parameter α to combine the BoN objective and cross-
+entropy loss set to be 0.1. We set n=2, that is, we use the
+bag-of-2grams objective to train the model. The effects of α
+and n will be analyzed in detail later.
+Training and Inference During training, we apply the
+sequence-level knowledge distillation (Kim and Rush 2016),
+which constructs the distillation corpus where the target side
+of the training corpus is replaced by the output of the autore-
+gressive Transformer. We directly use the distillation corpus
+released by Lee, Mansimov, and Cho (2018). We use the
+original corpus to train the autoregressive Transformer and
+distillation corpus to train non-autoregressive models. For
+NAT baseline, we stop training when the number of training
+steps exceeds 300k and there is no further improvements in
+the last 100k steps. For BoN-Joint, we stop training when
+
+the number of training steps exceeds 150k and there is no
+further improvements in the last 100k steps. For BoN-FT,
+the number of ﬁne-tuning steps is ﬁxed to 5k.
+After training NAT, we train a target length predictor to
+predict the length difference between the source and target
+sentences. The target length predictor takes the sum of en-
+coder hidden states as input and feeds it to a softmax classi-
+ﬁer after an afﬁne transformation. During inference, we ﬁrst
+run the encoder and apply the length predictor to predict the
+target length. Then we construct decoder inputs through uni-
+form copy (Gu et al. 2017) and run the decoder to generate
+the translation. During postprocessing, we remove any to-
+ken that is generated repeatedly. The training and decoding
+speed are measured on a single Geforce GTX TITAN X.
+
+6 Results and Analysis
+
+6.1 Main Results
+
+We report our main results in Table 1, from which we have
+the following observations:
+
+1. BoN-FT achieves signiﬁcant training speedup over
+Reinforce-NAT and outperforms Reinforce-NAT on
+
+BLEU scores. BoN-FT and Reinforce-NAT are both ﬁne-
+tuning approaches. BoN-FT slightly outperforms Reinforce-
+NAT on four translation directions and achieves at most
+3.74 BLEU improvements over the NAT-Base on WMT14
+De→En. More importantly, since the BoN objective is dif-
+ferentiable and can be efﬁciently calculated, the training
+speed of BoN-FT is nearly 10 times faster than Reinforce-
+NAT, which makes the ﬁne-tuning process very efﬁcient.
+
+2. BoN-Joint+FT achieves considerable improvements
+
+over BoN-FT. By combining the BoN objective and cross-
+entropy loss, we obtain BoN-Joint, which achieves consider-
+able improvements over BoN-FT. Though the training speed
+for BoN-Joint is about two times slower, BoN-Joint only
+needs about half of training steps to converge, so the training
+time is almost the same as NAT-Base. BoN-Joint+FT further
+improves the performance through ﬁne-tuning BoN-Joint
+with the BoN objective, which achieves about 5.0 BLEU im-
+provements on WMT14 En↔De, about 2.5 BLEU improve-
+ments on WMT16 En↔Ro and 1.59 BLEU improvements
+on IWSLT16 En→De.
+
+3. Our methods achieve higher improvements on WMT
+datasets than the IWSLT dataset. One interesting phe-
+
+nomenon is that our methods achieve higher improvements
+on WMT datasets. The BLEU improvement is 4.85 on
+WMT14 En→De but only 1.59 on IWSLT16 En→De. As
+we will analyze later, this has a lot to do with the sentence
+length of datasets since the cross-entropy loss does not per-
+form well on long sentences.
+
+6.2 Correlation with Translation Quality
+
+In this section, we experiment with the correlation between
+the loss function and translation quality. We are interested in
+how the cross-entropy loss and BoN objective correlate with
+the translation quality. As a common practice, the BLEU
+score is used to represent the translation quality. We experi-
+ment on the WMT14 En→De development set, which con-
+tains 3000 sentences. Firstly we randomly divide the dataset
+
+s
+
+l
+
+A
+
+M
+
+e
+d
+o
+
+R b=1
+b=4
+NAT-FT (Gu et al. 2017)
+IRNAT(iter=2) (2018)
+IRNAT(adaptive) (2018)
+NAT-REG (Wang et al. 2019)
+Reinforce-NAT (Shao et al. 2019)
+s NAT-Base
+BoN-FT (n=2)
+BoN-Joint (n=2, α=0.1)
+BoN-Joint+FT (n=2, α=0.1)
+
+e
+d
+o
+
+T
+
+A
+N
+
+r
+
+u
+
+O
+
+l
+
+M
+
+IWSLT’16 En-De
+En→ speedup
+secs/b
+1.09×
+28.64
+0.20
+1.00×
+28.98
+0.20
+15.6×
+26.52
+–
+24.82
+6.64×
+–
+1.97×
+27.01
+–
+–
+8.43× 13.40
+–
+–
+25.18
+8.42×
+24.13
+8.44×
+0.62
+25.03
+1.41
+8.39×
+25.63
+1.49
+25.72
+8.40×
+1.41
+
+WMT’16 En-Ro
+WMT’14 En-De
+En→ Ro→ speedup
+En→ De→ speedup
+1.23× 23.77
+1.13×
+31.93
+31.55
+28.15
+32.40
+32.06
+1.00× 24.57
+28.47
+1.00×
+27.29
+29.06
+–
+17.69
+21.47
+–
+27.10
+28.15
+7.68× 16.95
+20.39
+8.77×
+2.73× 21.54
+2.38×
+29.66
+30.30
+25.43
+–
+–
+–
+20.65
+24.77
+27.6×
+9.44× 19.15
+10.73×
+27.09
+27.93
+22.52
+25.96
+26.49
+9.41× 16.05
+19.46
+10.76×
+9.50× 19.27
+10.72×
+27.21
+27.95
+23.20
+9.44× 20.75
+10.79×
+28.12
+29.03
+9.51× 20.90
+24.47
+10.77×
+28.31
+29.29
+24.61
+
+Table 1: Generation quality (4-gram BLEU), speedup and training speed (seconds/batch). Decoding speed is measured sentence-
+by-sentence from the En→ direction. AR: the autoregressive Transformer baseline and the teacher model. b: beam size. NAT-
+Base: the non-autoregressive Transformer baseline trained by the cross-entropy loss. BoN-FT: ﬁne-tune the NAT-Base with the
+BoN objective. BoN-Joint: combine the BoN objective and cross-entropy loss to jointly train NAT from scratch. BoN-Joint+FT:
+ﬁne-tune the BoN-Joint with the BoN objective.
+
+into 100 subsets of size 30. Then we use the NAT model to
+decode the 100 subsets and compute the BLEU score and
+loss function on every subset. Finally we calculate the pear-
+son correlation between the 100 BLEU scores and losses.
+For the cross-entropy loss, we normalize it by the target
+sentence length. The BoN training objective is the L1 dis-
+tance BoN-L1 normalized by 2(T − n + 1). We respectively
+set n to 1, 2, 3 and 4 to test different n-gram size. Table 2
+lists the correlation results.
+
+Loss function
+Correlation
+
+CE
+0.37
+
+n = 1 n = 2 n = 3 n = 4
+
+0.61
+
+0.56
+
+0.70
+
+0.67
+
+Table 2: The pearson correlation bewteen loss functions and
+translation quality. n = k represents the bag-of-kgrams
+training objective. CE represents the cross-entropy loss.
+
+We can see that between different BoN objectives, n = 1,
+which represents the bag-of-words objective, underperforms
+other choices of n, indicating the necessity of modeling se-
+quential dependency for NAT. Another observation is that all
+the four BoN objectives outperform the cross-entropy loss
+by large margins. To ﬁnd out where the performance gap
+comes from, we analyze the effect of sentence length in the
+following experiment. We evenly divide the dataset into two
+parts according to the source length, where the ﬁrst part con-
+sists of 1500 short sentences and the second part consists of
+1500 long sentences. We respectively measure the pearson
+correlation on the two parts and list the results in Table 3:
+From Table 3, we can see that the correlation of cross-
+entropy loss drops sharply as the sentence length increases,
+where the BoN objective still has strong correlation on long
+sentences. The reason is not difﬁcult to explain. The cross-
+entropy loss requires the strict alignment between the trans-
+lation and reference. As sentence length grows, it becomes
+
+Cross-Entropy
+BoN (n=2)
+
+all
+0.37
+0.70
+
+short
+0.52
+0.79
+
+long
+0.21
+0.81
+
+Table 3: The pearson correlation bewteen loss functions and
+translation quality on short sentences and long sentences.
+
+harder for NAT to align the translation with reference, which
+leads to a decrease of correlation between cross-entropy loss
+and translation quality. In contrast, the BoN objective is ro-
+bust to unaligned translations, so its correlation with trans-
+lation quality stays strong when translating long sentences.
+
+6.3 Number of Removed Tokens
+
+In this section, we study the number of tokens removed dur-
+ing postprocessing to see how our method improves transla-
+tion quality. We sort the WMT14 En→De development set
+by sentence length and split it evenly into the short part and
+long part accordingly. Then we translate them using NAT-
+Base and BoN-Joint respectively and record in table 4 the
+number of removed repeated tokens during postprocessing.
+
+Total
+NAT-Base
+BoN-Joint
+
+short
+22023
+1232(5.6%)
+515(2.3%)
+
+long
+56142
+7317(13.0%)
+1726(3.1%)
+
+all
+78165
+9643(12.3%)
+2241(2.9%)
+
+Table 4: The number of removed repeated tokens for NAT-
+Base and BoN-Joint. Total represents the total length of ref-
+erence sentences.
+
+As shown in table 4, NAT-Base suffers from the repeated
+translation when translating long sentences, which is efﬁ-
+ciently alleviated in BoN-Joint. This is in line with our anal-
+
+ysis. As sentence length grows, it becomes harder for NAT
+to align the translation with reference, which results in more
+overcorrection errors and makes more repeated tokens be
+translated.
+
+6.4 Effect of Sentence Length
+
+Previously, we give the correlation between loss functions
+and the translation quality under different sentence lengths.
+In this section, we will experiment on the BLEU perfor-
+mance of NAT baseline and our models on different sentence
+lengths and see whether the better correlation contributes to
+better BLEU performance. We conduct the analysis on the
+WMT14 En→De development set and divide the sentence
+pairs into different length buckets according to the length of
+the reference sentence. Figure 3 shows our results.
+We can see that the performance of NAT-Base drops
+quickly as sentence length increases, where the autoregres-
+sive Transformer and BoN models have stable performance
+over different sentence lengths. This can be well explained
+by the correlation results. As sentence length grows, the cor-
+relation between the cross-entropy loss and the translation
+quality drops sharply, which leads to the weakness of NAT
+in translating long sentences.
+
+Figure 4: Training curves for BoN-Joint with different
+hyper-parameter α.
+
+6.6 Effect of N-gram Size
+
+In this section, we study the effect of n-gram size. We re-
+spectively set n to 1, 2, 3, and 4 and evaluate the perfor-
+mance of BoN-FT and BoN-Joint on the WMT14 En→De
+development set. When training BoN-Joint, we tune the
+hyper-parameter α for every n to obtain the optimal perfor-
+mance. The results are listed in Table 5. For BoN-FT, the
+BoN objective is only used to ﬁne-tune the NAT baseline,
+and different choices for n do not have a large impact on
+the BLEU performance. For BoN-Joint, the choice of n be-
+comes more important, and n = 2 signiﬁcantly outperforms
+other choices of n, which is consistent with the correlation
+result in Table 2.
+
+BoN-FT
+BoN-Joint
+
+18.06
+17.73
+
+18.08
+17.97
+
+n = 1 n = 2 n = 3 n = 4
+
+18.13
+19.28
+
+18.17
+18.45
+
+Figure 3: BLEU performance on different length buckets.
+
+6.5 Effect of α
+
+In this section, we study the effect of the hyper-parameter α,
+which is deﬁned in Eq.(13) and is used to control the propor-
+tion of the cross-entropy loss and BoN loss. We set n = 2
+and use different α to train BoN-Joint on WMT14 En→De.
+Figure 4 shows the BLEU scores on the development set.
+We can see from Figure 4 that α = 0.1 has a stable and
+fast BLEU improvement over time. When we set α = 0.1,
+the time required for model convergence is the shortest, and
+the BLEU score after convergence is the best over other
+choices of α. In addition, we ﬁnd that when we set n = 2,
+α = 0.1 performs well in all the three datasets, which frees
+us from the hyper-parameter tuning.
+
+Table 5: The BLEU performance of BoN-FT and BoN-Joint
+under different choices of n.
+
+7 Conclusion
+
+In the context of non-autoregressive translation, the cross-
+entropy loss cannot model the target-side sequential depen-
+dency properly and suffers from the weak correlation with
+the translation quality. In this paper, we propose a novel
+Bag-of-Ngrams objective to model the target-side sequen-
+tial dependency for NAT. The BoN objective is differentiable
+and can be calculated efﬁciently. Experiments show that the
+BoN objective correlates well with the translation quality
+and achieves large improvements over the NAT baseline.
+
+8 Acknowledgments
+
+We thank the anonymous reviewers for their insightful com-
+ments. This work was supported by National Natural Sci-
+ence Foundation of China (NO.61876174) and National Key
+R&D Program of China (NO.2017YFE9132900).
+
+References
+
+Akoury, N.; Krishna, K.; and Iyyer, M. 2019. Syntactically
+supervised transformers for faster neural machine transla-
+tion. In ACL.
+Anonymous. 2020. {PNAT}: Non-autoregressive trans-
+former by position learning. In Submitted to International
+Conference on Learning Representations. under review.
+Bahdanau, D.; Cho, K.; and Bengio, Y. 2014. Neural ma-
+chine translation by jointly learning to align and translate.
+arXiv preprint arXiv:1409.0473.
+Cho, K.; Van Merri ¨enboer, B.; Gulcehre, C.; Bahdanau, D.;
+Bougares, F.; Schwenk, H.; and Bengio, Y. 2014. Learning
+phrase representations using rnn encoder-decoder for statis-
+tical machine translation. arXiv preprint arXiv:1406.1078.
+Gehring, J.; Auli, M.; Grangier, D.; Yarats, D.; and Dauphin,
+Y. N. 2017. Convolutional sequence to sequence learning.
+arXiv preprint arXiv:1705.03122.
+Gu, J.; Bradbury, J.; Xiong, C.; Li, V. O.; and Socher, R.
+2017. Non-autoregressive neural machine translation.
+In
+ICLR.
+Gu, J.; Cho, K.; and Li, V. O. 2017. Trainable greedy de-
+coding for neural machine translation. In EMNLP.
+Gu, J.; Wang, C.; and Zhao, J. 2019. Levenshtein trans-
+former. In Advances in NeurIPS.
+Guo, J.; Tan, X.; He, D.; Qin, T.; Xu, L.; and Liu, T.-Y.
+2019. Non-autoregressive neural machine translation with
+enhanced decoder input. In AAAI, volume 33.
+Joachims, T. 1998. Text categorization with support vector
+machines: Learning with many relevant features. In Euro-
+pean conference on machine learning. Springer.
+Kaiser, L.; Bengio, S.; Roy, A.; Vaswani, A.; Parmar, N.;
+Uszkoreit, J.; and Shazeer, N. 2018. Fast decoding in se-
+quence models using discrete latent variables. In ICML.
+Kim, Y., and Rush, A. M. 2016. Sequence-level knowledge
+distillation. In EMNLP.
+Kingma, D. P., and Ba, J. 2014. Adam: A method for
+stochastic optimization. CoRR abs/1412.6980.
+Lee, J.; Mansimov, E.; and Cho, K. 2018. Deterministic non-
+autoregressive neural sequence modeling by iterative reﬁne-
+ment. In EMNLP.
+Li, B.; Liu, T.; Zhao, Z.; Wang, P.; and Du, X. 2017. Neural
+bag-of-ngrams. In AAAI.
+Li, Z.; Lin, Z.; He, D.; Tian, F.; QIN, T.; WANG, L.; and
+Liu, T.-Y. 2019. Hint-based training for non-autoregressive
+machine translation. In EMNLP-IJCNLP.
+Libovick `y, J., and Helcl, J.
+2018.
+End-to-end non-
+autoregressive neural machine translation with connectionist
+temporal classiﬁcation. In EMNLP.
+Ma, S.; Xu, S.; Wang, Y.; and Lin, J. 2018. Bag-of-words as
+target for neural machine translation. In ACL.
+Ma, X.; Zhou, C.; Li, X.; Neubig, G.; and Hovy, E. 2019.
+Flowseq: Non-autoregressive conditional sequence genera-
+tion with generative ﬂow. In EMNLP-IJCNLP.
+
+Pang, B.; Lee, L.; and Vaithyanathan, S. 2002. Thumbs up?:
+sentiment classiﬁcation using machine learning techniques.
+In ACL.
+Papineni, K.; Roukos, S.; Ward, T.; and Zhu, W.-J. 2002.
+Bleu: a method for automatic evaluation of machine transla-
+tion. In ACL.
+Ran, Q.; Lin, Y.; Li, P.; and Zhou, J. 2019. Guiding non-
+autoregressive neural machine translation decoding with re-
+ordering information. arXiv preprint arXiv:1911.02215.
+Ranzato, M.; Chopra, S.; Auli, M.; and Zaremba, W. 2015.
+Sequence level training with recurrent neural networks.
+arXiv preprint arXiv:1511.06732.
+Roy, A.; Vaswani, A.; Neelakantan, A.; and Parmar, N.
+2018. Theory and experiments on vector quantized autoen-
+coders. arXiv preprint arXiv:1805.11063.
+Sennrich, R.; Haddow, B.; and Birch, A. 2016. Neural ma-
+chine translation of rare words with subword units. In ACL.
+Shao, C.; Feng, Y.; Zhang, J.; Meng, F.; Chen, X.; and
+Zhou, J. 2019. Retrieving sequential information for non-
+autoregressive neural machine translation. In ACL.
+Shao, C.; Chen, X.; and Feng, Y. 2018. Greedy search with
+probabilistic n-gram matching for neural machine transla-
+tion. In EMNLP.
+Shen, S.; Cheng, Y.; He, Z.; He, W.; Wu, H.; Sun, M.; and
+Liu, Y. 2015. Minimum risk training for neural machine
+translation. In ACL.
+Sutskever, I.; Vinyals, O.; and Le, Q. V. 2014. Sequence
+to sequence learning with neural networks. In Advances in
+NIPS.
+Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.; Jones,
+L.; Gomez, A. N.; Kaiser, Ł.; and Polosukhin, I. 2017. At-
+tention is all you need. In Advances in NIPS.
+Wang, Y.; Tian, F.; He, D.; Qin, T.; Zhai, C.; and Liu, T.-Y.
+2019. Non-autoregressive machine translation with auxil-
+iary regularization. In AAAI.
+Wang, C.; Zhang, J.; and Chen, H.
+2018.
+Semi-
+autoregressive neural machine translation. In EMNLP.
+Wei, B.; Wang, M.; Zhou, H.; Lin, J.; and Sun, X. 2019. Imi-
+tation learning for non-autoregressive neural machine trans-
+lation. In ACL.
+Williams, R. J. 1992. Simple statistical gradient-following
+algorithms for connectionist reinforcement learning. In Re-
+inforcement Learning. Springer.
+Wu, Y.; Schuster, M.; Chen, Z.; Le, Q. V.; Norouzi, M.;
+Macherey, W.; Krikun, M.; Cao, Y.; Gao, Q.; Macherey, K.;
+et al. 2016. Google’s neural machine translation system:
+Bridging the gap between human and machine translation.
+arXiv preprint arXiv:1609.08144.
+Wu, L.; Tian, F.; Qin, T.; Lai, J.; and Liu, T.-Y. 2018. A study
+of reinforcement learning for neural machine translation. In
+EMNLP.
+Zhang, W.; Feng, Y.; Meng, F.; You, D.; and Liu, Q. 2019.
+Bridging the gap between training and inference for neural
+machine translation. In ACL.
+
+

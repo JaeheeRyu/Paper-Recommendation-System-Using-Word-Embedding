@@ -1,0 +1,2822 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+9
+8
+2
+3
+1
+
+.
+
+5
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+On the Accuracy of Inﬂuence Functions
+for Measuring Group Effects
+
+Pang Wei Koh∗
+
+Percy Liang
+
+Kai-Siang Ang∗
+
+Hubert H. K. Teo∗
+
+Department of Computer Science
+Stanford University
+{pangwei@cs, kaiang@, hteo@, pliang@cs}.stanford.edu
+
+Abstract
+
+Inﬂuence functions estimate the effect of removing a training point on a model
+without the need to retrain. They are based on a ﬁrst-order Taylor approximation
+that is guaranteed to be accurate for sufﬁciently small changes to the model, and
+so are commonly used to study the effect of individual points in large datasets.
+However, we often want to study the effects of large groups of training points,
+e.g., to diagnose batch effects or apportion credit between different data sources.
+Removing such large groups can result in signiﬁcant changes to the model. Are
+inﬂuence functions still accurate in this setting? In this paper, we ﬁnd that across
+many different types of groups and for a range of real-world datasets, the predicted
+effect (using inﬂuence functions) of a group correlates surprisingly well with its
+actual effect, even if the absolute and relative errors are large. Our theoretical anal-
+ysis shows that such strong correlation arises only under certain settings and need
+not hold in general, indicating that real-world datasets have particular properties
+that allow the inﬂuence approximation to be accurate.
+
+1
+
+Introduction
+
+Inﬂuence functions (Jaeckel, 1972; Hampel, 1974; Cook, 1977) estimate the effect of removing an
+individual training point on a model’s predictions without the computationally-prohibitive cost of
+retraining the model. Tracing a model’s output back to its training data can be useful: inﬂuence
+functions have been recently applied to explain predictions (Koh and Liang, 2017), produce conﬁdence
+intervals (Schulam and Saria, 2019), investigate model bias (Brunet et al., 2018; Wang et al., 2019),
+improve human trust (Zhou et al., 2019), and even craft data poisoning attacks (Koh et al., 2019).
+Inﬂuence functions are based on ﬁrst-order Taylor approximations that are accurate for estimating
+small perturbations to the model, which makes them suitable for predicting the effects of removing
+individual training points on the model. However, we often want to study the effects of removing
+groups of points, which represent large perturbations to the data. For example, we might wish
+to analyze the effect of data collected from different experimental batches (Leek et al., 2010) or
+demographic groups (Chen et al., 2018); apportion credit between crowdworkers, each of whom
+generated part of the data (Arrieta-Ibarra et al., 2018); or, in a multi-party learning setting, ensure
+that no individual user has too much inﬂuence on the joint model (Hayes and Ohrimenko, 2018). Are
+inﬂuence functions still accurate when predicting the effects of (removing) these larger groups?
+In this paper, we ﬁrst show empirically that on real datasets and across a broad variety of groups of
+data, the predicted and actual effects are strikingly correlated (Spearman ρ of 0.8 to 1.0), such that
+the groups with the largest actual effect also tend to have the largest predicted effect. Moreover, the
+predicted effect tends to underestimate the actual effect, suggesting that it could be an approximate
+
+∗Equal contribution.
+
+33rd Conference on Neural Information Processing Systems (NeurIPS 2019), Vancouver, Canada.
+
+ 
+ 
+ 
+ 
+ 
+ 
+lower bound in practice. Using inﬂuence functions to predict the actual effect of removing large, co-
+herent groups of data can therefore still be useful, even though the violation of the small-perturbation
+assumption can result in high absolute and relative errors between the predicted and actual effects.
+What explains these phenomena of correlation and underestimation? Prior theoretical work focused
+on establishing the conditions under which this inﬂuence approximation is accurate, i.e., the error
+between the actual and predicted effects is small (Giordano et al., 2019b; Rad and Maleki, 2018).
+However, in our setting of removing large, coherent groups of data, this error can be quite large. As
+a ﬁrst step towards understanding the behavior of the inﬂuence approximation in this regime, we
+characterize the relationship between the predicted and actual effects of a group via the one-step
+Newton approximation (Pregibon et al., 1981), which we ﬁnd is a surprisingly accurate approximation
+in practice. We show that correlation and underestimation arise under certain settings (e.g., removing
+multiple copies of a single training point), but need not hold in general, which opens up the intriguing
+question of why we observe those phenomena across a wide range of empirical settings.
+Finally, we exploit the correlation of predicted and actual group effects in two example case studies: a
+chemical-disease relationship (CDR) task, where the groups correspond to different labeling functions
+(Hancock et al., 2018), and a natural language inference (NLI) task (Williams et al., 2018), where
+the groups come from different crowdworkers. On the CDR task, we ﬁnd that the inﬂuence of
+each labeling function correlates with its size (the number of examples it labels) but not its average
+accuracy, which suggests that practitioners should focus on the coverage of the labeling functions they
+construct. In contrast, on the NLI task, we ﬁnd that the inﬂuence of each crowdworker is uncorrelated
+with the number of examples they contibute, which suggests that practitioners should focus on how
+to elicit high-quality examples from crowdworkers over increasing quantity.
+
+2 Background and problem setup
+
+Consider learning a predictive model with parameters θ ∈ Θ that maps from an input space X to an
+output space Y . We are given n training points {(x1 , y1 ), . . . , (xn , yn )} and a loss function (cid:96)(x, y , θ)
+that is twice-differentiable and convex in θ . To train the model, we select the model parameters
+
+(cid:35)
+
+(cid:35)
+
+(cid:34) n(cid:88)
+
+i=1
+
+(cid:34) n(cid:88)
+
+i=1
+
+ˆθ(1) = arg minθ∈Θ
+
+(cid:96)(xi , yi ; θ)
+
++
+
+(cid:107)θ(cid:107)2
+
+2
+
+λ
+2
+
+(1)
+
+that minimize the L2 -regularized empirical risk, where λ > 0 controls regularization strength. The
+all-ones vector 1 in ˆθ(1) denotes that the initial training points all have uniform sample weights.
+Our goal is to measure the effects of different groups of training data on the model: if we removed a
+subset of training points W , how much would the model ˆθ change? Concretely, we deﬁne a vector
+w ∈ {0, 1}n of sample weights with wi = I((xi , yi ) ∈ W ) and consider the modiﬁed parameters
+
+ˆθ(1 − w) = arg minθ∈Θ
+
+(1 − wi )(cid:96)(xi , yi ; θ)
+
++
+
+(cid:107)θ(cid:107)2
+
+2
+
+λ
+2
+
+(2)
+
+corresponding to retraining the model after excluding W . We refer to w as the subset (corresponding
+to W ); the number of removed points as (cid:107)w(cid:107)1 ; and the fraction of removed points as α = (cid:107)w(cid:107)1/n.
+The actual effect I ∗
+f : [0, 1]n → R of the subset w is
+
+I ∗
+
+f (w) = f ( ˆθ(1 − w)) − f ( ˆθ(1)),
+
+(3)
+where the evaluation function f : Θ → R measures a quantity of interest. Speciﬁcally, we study:
+• The change in test prediction, with f (θ) = θ(cid:62)xtest . Linear models (for regression or binary
+classiﬁcation) make predictions that are functions of θ(cid:62)xtest , so this measures the effect
+• The change in self-loss, with f (θ) = (cid:80)n
+that removing a subset will have on the model’s prediction for some test point xtest .
+• The change in test loss, with f (θ) = (cid:96)(xtest , ytest ; θ), which is similar to the test prediction.
+the removed points w . Its average over all subsets of size (cid:107)w(cid:107)1 is the estimated extra loss
+i=1 wi (cid:96)(xi , yi ; θ), measures the increase in loss on
+that leave-(cid:107)w(cid:107)1 -out cross-validation (CV) measures over the training loss.
+
+2
+
+2.1
+
+Inﬂuence functions
+
+If (w) = q (cid:48)
+
+The issue with computing the actual effect I ∗
+f (w) is that retraining the model to compute ˆθ(1 − w)
+Consider the function qw : [0, 1] → R with qw (t) = f (cid:0) ˆθ(1 − tw)(cid:1), such that the actual effect I ∗
+for each subset w can be prohibitively expensive. Inﬂuence functions provide a relatively efﬁcient
+ﬁrst-order approximation to I ∗
+f (w) that avoids retraining.
+can be written as qw (1) − qw (0). We deﬁne the predicted effect of the subset w to be its inﬂuence
+w (0) ≈ qw (1)− qw (0); in this paper, we use the term predicted effect interchangeably with
+inﬂuence. Intuitively, inﬂuence measures the effect of removing an inﬁnitesimal weight from each
+point in w and then linearly extrapolates to removing all of w .2 By taking a Taylor approximation
+(see, e.g., Hampel et al. (1986) for details), the inﬂuence can be computed as
+
+w (0) = ∇θ f (cid:0) ˆθ(1)(cid:1)(cid:62) (cid:20) d
+If (w) def= q (cid:48)
+= ∇θ f (cid:0) ˆθ(1)(cid:1)(cid:62)
+ˆθ(1 − tw)
+dt
+where g1 (w) = (cid:80)n
+i=1 wi∇θ (cid:96)(xi , yi ; ˆθ(1)), H1 = (cid:80)n
+H −1
+λ,1 g1 (w),
+θ (cid:96)(xi , yi ; ˆθ(1)), and Hλ,1 = H1 + λI .
+
+When measuring the change in test prediction or test loss, inﬂuence is additive: if w = w1 + w2 , then
+If (w) = If (w1 ) + If (w2 ), i.e., the inﬂuence of a subset is the sum of inﬂuences of its constituent
+points, and we can efﬁciently compute the inﬂuence of any subset by pre-computing the inﬂuence of
+each individual point (e.g., by taking a single inverse Hessian-vector product, as in Koh and Liang
+(2017)). However, when measuring the change in self-loss, inﬂuence is not additive and requires a
+separate calculation for each subset removed.
+
+(cid:21)
+
+(cid:12)(cid:12)(cid:12)t=0
+
+f (w)
+
+(4)
+
+i=1 ∇2
+
+2.2 Relation to prior work
+
+Inﬂuence functions—introduced in the seminal work of Hampel (1974) and in Jaeckel (1972), where
+it was called the inﬁnitesimal jackknife—have a rich history in robust statistics. The use of inﬂuence
+functions in the ML community is more recent, though growing; in Section 1, we provide references
+for several recent applications of inﬂuence functions in ML.
+Removing a single training point, especially when the total number of points n is large, represents a
+small perturbation to the training distribution, so we expect the ﬁrst-order inﬂuence approximation
+to be accurate. Indeed, prior work on the accuracy of inﬂuence has focused on this regime: e.g.,
+Debruyne et al. (2008); Liu et al. (2014); Rad and Maleki (2018); Giordano et al. (2019b) give
+evidence that the inﬂuence on self-loss can approximate LOOCV, and Koh and Liang (2017) similarly
+examined the accuracy of estimating the change in test loss after removing single training points.
+However, removing a constant fraction α of the training data represents a large perturbation to the
+training distribution. To the best of our knowledge, this setting has not been empirically studied;
+perhaps the closest work is Khanna et al. (2019)’s use of Bayesian quadrature to estimate a maximally
+inﬂuential subset.
+Instead, older references have alluded to the phenomena of correlation and
+underestimation we observe: Pregibon et al. (1981) note that inﬂuence tends to be conservative, while
+Hampel et al. (1986) say that “bold extrapolations” (i.e., large perturbations) are often still useful.
+On the theoretical front, Giordano et al. (2019b) established ﬁnite-sample error bounds that apply
+to groups, e.g., showing that the leave-k-out approximation is consistent as the fraction of removed
+points α → 0. Our focus is instead on the relationship of the actual effect I ∗
+f (w) and predicted effect
+(inﬂuence) If (w) in the regime where α is constant and the error |I ∗
+f (w) − If (w)| is large.
+
+3 Empirical accuracy of inﬂuence functions on constructed groups
+
+How well do inﬂuence functions estimate the effect of (removing) a group of training points? If
+n is large and we remove a subset w uniformly at random, the new parameters ˆθ(1 − w) should
+remain close to ˆθ(1) even when if fraction of removed points α is non-negligible, so the inﬂuence
+error |I ∗
+f (w) − If (w)| should be small. However, we are usually interested in removing coherent,
+non-random groups, e.g., all points from a data source or share some feature. In such settings, the
+
+2 In the statistics literature, inﬂuence typically refers to the effect of adding weight, so the sign is ﬂipped.
+
+3
+
+Dataset
+Diabetes
+Enron
+Dogﬁsh
+MNIST
+CDR
+MultiNLI
+
+Classes
+
+2
+2
+2
+10
+2
+3
+
+n
+20, 000
+4, 137
+1, 800
+55, 000
+24, 177
+392, 702
+
+d
+127
+3, 289
+2, 048
+784
+328
+600
+
+2.2 × 10−4
+1.0 × 10−3
+2.2 × 10−2
+1.0 × 10−3
+1.0 × 10−4
+1.0 × 10−4
+
+λ/n Test acc.
+Source
+68.2% Strack et al. (2014)
+96.1% Metsis et al. (2006)
+98.5% Koh and Liang (2017)
+92.1% LeCun et al. (1998)
+67.4% Hancock et al. (2018)
+50.4% Williams et al. (2018)
+
+Table 1: Dataset characteristics and the test accuracies that logistic regression achieves (with regular-
+ization λ selected by cross-validation). n is the training set size and d is the number of features.
+
+parameters ˆθ(1 − w) and ˆθ(1) might differ substantially, and the error |I ∗
+f (w) − If (w)| could be
+large. Put another way, there could be a cluster of points such that removing one of those points
+would not change the model by much—so inﬂuence could be low—but removing all of them would.
+Surprisingly (to us), we found that even when removing large and coherent groups of points, the
+inﬂuence If (w) behaved consistently relative to the actual effect I ∗
+f (w) on test predictions, test
+losses, and self-loss, with two broad phenomena emerging:
+
+1. Correlation: If (w) and I ∗
+2. Underestimation: If (w) and I ∗
+
+f (w) rank subsets of points w similarly (e.g., high Spearman ρ).
+f (w) tend to have the same sign with |If (w)| < |I ∗
+Here, we report results on 5 datasets chosen to span a range of applications, training set size n, and
+number of features d (Table 1).4 In an attempt to make the inﬂuence approximation as inaccurate
+as possible, we constructed a variety of subsets, from small (α = 0.25%) to large (α = 25%), to be
+coherent and have considerable inﬂuence on the model. On each dataset, we trained an L2 -regularized
+logistic regression model (or softmax for the multiclass tasks) and compared the inﬂuences and actual
+effects of these subsets.
+
+f (w)|.3
+
+Group construction. Our aim is to construct coherent groups that when removed will substantially
+change the model. To do so, we need to choose points that are similar in some way. Speciﬁcally, for
+each dataset, we grouped points in 7 ways: 1) points that share feature values; 2) points that cluster
+on their features or 3) on their gradients ∇θ (cid:96)(x, y , ˆθ(1))); 4) random points within the same class; 5)
+random points from any class. We also grouped 6) points with large positive and 7) negative inﬂuence
+on the test loss (cid:96)(xtest , ytest , ˆθ(1)), since intuitively, training points that all have high inﬂuence on
+a test point should act together to change the model substantially. Overall, for each dataset, we
+constructed 1,700 subsets ranging in size from 0.25% to 25% of the training points. See Appendix A
+for more details.
+
+Results. Figure 1 shows that the inﬂuences and actual effects of all of these subsets on test prediction
+(Top), test loss (Mid), and self-loss (Bot) are highly correlated (Spearman ρ of 0.89 to 0.99 across all
+plots), even though the absolute and relative errors of the inﬂuence approximation can be quite large.
+Moreover, the inﬂuence of a group tends to underestimate its actual effect in all settings except for
+groups with negative inﬂuence on test loss (the left side of each plot in Figure 1-Mid). These trends
+held across a wide range of regularizations λ, though correlation increased with λ (Appendix C.2).
+In Section 5, we will use the CDR dataset (Hancock et al., 2018) and the MultiNLI (Williams et al.,
+2018) dataset to show that correlation and underestimation also apply to groups of data that arise
+naturally, and that inﬂuence functions can therefore be used to derive insights about real datasets and
+applications. Before that, we ﬁrst attempt to develop some theoretical insight into the results above.
+
+3 This holds with one exception: when measuring the change in test loss, f (θ) = (cid:96)(xtest , ytest ; θ), underes-
+timation only holds when actual effect I ∗
+f (w) is positive (Figure 1-Mid).
+4 The ﬁrst 4 datasets involve hospital readmission prediction, spam classiﬁcation, and object recognition, and
+were used in Koh and Liang (2017) to study the inﬂuence of individual points. The ﬁfth dataset is a chemical-
+disease relationship (CDR) dataset Hancock et al. (2018). In Section 5, we will also study the MultiNLI language
+inference dataset (Williams et al., 2018), which was omitted from the experiments here because its large size
+makes repeated retraining to compute the actual effect too expensive. See Appendix B for dataset details.
+
+4
+
+Figure 1: Inﬂuences vs. actual effects of coherent groups of points ranging from 0.25% to 25%
+in size. Each point corresponds to a group, and its color reﬂects how that group was constructed.
+In Top and Mid, we show results for the test point with highest loss; other test points are similar
+(Appendix C.1), though with more curvature for test loss (Appendix C.3). The grey reference line
+has slope 1, and the red borders represent points that are not plotted because they are outside the x- or
+y-axis range. We omit the top row for MNIST, as θ(cid:62)xtest is not meaningful in the multi-class setting.
+
+4 Theoretical analysis
+
+The experimental results above show that there is consistent underestimation and high correlation
+between the predicted effects, based on inﬂuence functions, and the actual effects of groups across a
+variety of datasets, despite the inﬂuence approximation incurring large absolute and relative error. As
+we discussed in Section 2.2, this is outside the regime of existing theory.
+As an initial step towards understanding the high-error regime, we establish conditions under which
+the actual effect I ∗
+f (w) lies approximately between If (w) and CmaxIf (w) for some Cmax > 0.
+This cone constraint—so called because it implies that all points on the graph of inﬂuence vs. actual
+effect lie within a cone—implies underestimation and, if Cmax is small, some degree of correlation.
+We ﬁrst show that this constraint holds in restricted settings—when measuring self-loss, or when
+removing multiple copies of the same point—and that Cmax varies inversely with the regularization
+term λ, which is expected since stronger regularization reduces the change in the model. However,
+the cone constraint is stronger than necessary because it bounds the degree of underestimation, and
+we construct counterexamples to show that it need not hold in more general settings.
+Our analysis centers on the one-step Newton approximation, which estimates the change in parameters
+
+ˆθ(1 − w) − ˆθ(1) ≈ ∆θNt (w) def= (cid:0)Hλ,1 (1 − w)(cid:1)−1
+where Hλ,1 (1 − w) = ((cid:80)n
+g1 (w),
+i=1 (1 − wi )∇2
+f (w) = f (cid:0) ˆθ(1) + ∆θNt (w)(cid:1) − f ( ˆθ(1))) and the corresponding
+f (w) − I Nt
+
+θ (cid:96)(xi , yi ; ˆθ(1))) + λI is the regularized empirical Hessian
+at ˆθ(1) but reweighted after removing the subset w . This change in parameters gives the Newton
+approximation of the effect I Nt
+Newton error ErrNt-act (w) = I ∗
+f (w), which measures its gap from the actual effect.
+Speciﬁcally, we decompose the error between the actual effect I ∗
+f (w) and inﬂuence If (w) as
+
+I ∗
+
+f (w) − If (w) = I ∗
+f (w) − I Nt
+f (w)
+
++ I Nt
+f (w) − If (w).
+
+(5)
+
+(cid:125)
+
+(cid:124)
+
+(cid:123)(cid:122)
+
+(cid:125)
+
+ErrNt-act (w)
+
+ErrNt-inf (w)
+
+(cid:124)
+
+(cid:123)(cid:122)
+
+5
+
+50050DiabetesInfluence ontest prediction10010Enron505Dogfish505CDRMNISTShared feature valueFeature clusteringGradient clusteringRandom within classRandomLarge positive test infl.Large negative test infl.050Influence ontest loss05100.02.55.005100100246×103Influence onself-lossActual effect02004004 hidden02040012×10318 hidden024×1035 hiddenFigure 2: The Newton approximation accurately captures the actual effect for our datasets (though
+there is more error on the Diabetes dataset), with the same test point as in Figure 1-Top. We omit
+MNIST and MultiNLI for computational reasons. See Figure C.4 for plots of test loss and self-loss.
+O(cid:0)1/(σmin + λ)3 (cid:1), where λ is regularization strength and σmin is the smallest eigenvalue of the
+In Section 4.1, we ﬁrst show that the Newton-actual error ErrNt-act (w) decays at a rate of
+empirical Hessian H1 . Empirically, this error is small on our datasets, so we focus on characterizing
+the Newton-inﬂuence error ErrNt-inf (w) in Section 4.2. We use this characterization to study the
+behavior of inﬂuence relative to the actual effect on self-loss (Section 4.3) and test prediction (Sec-
+tion 4.4). For margin-based models, the test loss is a monotone function of the test prediction, so the
+analysis is similar (Appendix D.3).
+
+4.1 Bounding the error of the one-step Newton approximation
+
+The Newton approximation is computationally expensive because it computes (Hλ,1 (1 − w))−1 for
+each w (instead of the ﬁxed H −1
+λ,1 in the inﬂuence calculation). However, it provides more accurate
+estimates (e.g., Pregibon et al. (1981), Rad and Maleki (2018)), and we show that its error can be
+bounded as follows (all proofs in Appendix E):
+Proposition 1. Let the Newton error be ErrNt-act (w) def= I ∗
+f (w). Assume that the
+evaluation function f (θ) is Cf -Lipschitz and that the Hessian ∇2
+θ (cid:96)(x, y , θ) is CH -Lipschitz. Then
+
+f (w) − I Nt
+
+|ErrNt-act (w)| ≤ n(cid:107)w(cid:107)2
+(σmin + λ)3
+
+1Cf CH C 2
+(cid:96)
+
+,
+
+def= max1≤i≤n (cid:107)∇θ (cid:96)(xi , yi , ˆθ(1))(cid:107)2 to be the largest norm of a training point’s
+where we deﬁne C(cid:96)
+gradient at ˆθ(1), and σmin to be the smallest eigenvalue of H1 . ErrNt-act (w) only involves third-order
+or higher derivatives of the loss, so it is 0 for quadratic losses.
+
+Proposition 1 tells us that the Newton approximation is accurate when λ is large or the third derivative
+of (cid:96)(x, y ; ·) (controlled by CH ) is small. Empirically, the Newton error ErrNt-act (w) is strikingly
+small in most of our settings (Figure 2), even though the overall error of the inﬂuence approximation
+f (w) − If (w) is still large. In the remainder of this section, we therefore focus on characterizing
+the Newton-inﬂuence error ErrNt-inf (w), under the assumption that the Newton approximation is
+similar to the actual effect (within a factor of O(1/λ3 )).
+
+I ∗
+
+4.2 Characterizing the difference between the Newton approximation and inﬂuence
+
+f (w) − If (w):
+
+We next characterize the Newton-inﬂuence error ErrNt-inf (w) = I Nt
+Proposition 2. Under the assumptions of Proposition 1 and the additional assumption that the third
+derivative of f (θ) exists and is bounded in norm by Cf ,3 , the Newton-inﬂuence error ErrNt-inf (w) is
+− 1
+− 1
+
+ErrNt-inf (w) = ∇θ f ( ˆθ(1))(cid:62)H
+1
+∆θNt (w)(cid:62)∇2
+θ f ( ˆθ(1))∆θNt (w) + Errf ,3 (w),
+λ,1 D(w)H
+λ,1 g1 (w) +
+2
+with D(w) def= (cid:0)I − H
+(cid:1)−1 − I and H1 (w) def= (cid:80)n
+
+Error from curvature of f (·)
+
+θ (cid:96)(xi , yi ; ˆθ(1)). The error
+
+i=1 wi∇2
+
+2
+
+λ,1 H1 (w)H
+
+matrix D(w) has eigenvalues between 0 and σmax
+λ , where σmax is the largest eigenvalue of H1 . The
+
+(cid:123)(cid:122)
+
+2
+
+2
+
+− 1
+
+− 1
+
+2
+
+λ,1
+
+(cid:124)
+
+6
+
+(cid:125)
+
+50050DiabetesNewton approx.on test predictionActual effect10010Enron505Dogfish505CDRShared feature valueFeature clusteringGradient clusteringRandom within classRandomLarge positive test infl.Large negative test infl.Figure 3: Inﬂuence If (w) vs. Newton ap-
+proximation I Nt
+f (w) on the test prediction on
+two counterexamples detailed in Appendix D.1.
+that If (w) and I Nt
+Left: We adversarially choose a set of w’s such
+f (w) can have different signs
+and need not correlate. Right: When we only
+remove copies of single points, underestima-
+tion holds. However, we can control the scal-
+ing factor d(w) between If (w) and I Nt
+different groups, so correlation need not hold.
+
+f (w) on
+
+residual term Errf ,3 (w) captures the error due to third-order derivatives of f (·) and is bounded by
+
+|Errf ,3 (w)| ≤ (cid:107)w(cid:107)3
+
+1Cf ,3C 3
+
+(cid:96) /6(σmin + λ)3 .
+
+4.3 The relationship between inﬂuence and actual effect on self-loss
+
+We can interpret Proposition 2 as a formalization of Hampel et al. (1986)’s observation that inﬂuence
+approximations are accurate when the model is robust and the curvature of the loss is low. In
+general, the error decreases as λ increases and f (·) becomes less curved; in Figure C.2, we show that
+increasing λ reduces error and increases correlation in our experiments.
+evaluation function f (·). We start with the self-loss f (θ) = (cid:80)n
+Let us now apply Proposition 2 to analyze the behavior of inﬂuence under different choices of
+i=1 wi (cid:96)(xi , yi ; θ), as its inﬂuences
+and actual effects are always non-negative, and it is the cleanest to characterize:
+Proposition 3. Under the assumptions of Proposition 2, the inﬂuence on the self-loss obeys
+
+If (w) + Errf ,3 (w) ≤ I Nt
+f (w) ≤
+
+1 +
+
+3σmax
+
+2λ
+
++
+
+max
+
+σ2
+2λ2
+
+If (w) + Errf ,3 (w).
+
+(cid:18)
+
+(cid:19)
+
+The constraint in Proposition 3 implies that up to O(1/λ3 ) terms, inﬂuence underestimates the
+Newton approximation and therefore the actual effect. This explains the previously-unexplained
+downward bias observed when using inﬂuence to approximate LOOCV (Debruyne et al., 2008;
+Giordano et al., 2019b). Equivalently, all points on the graph of inﬂuences vs. actual effects lie within
+the cone bounded by the lines with slope 1 and slope
+λ+3σmax /2 lines, up to O(1/λ3 ) terms. As λ
+grows, these lines will converge, and the error terms Errf ,3 (w) and ErrNt-act (w) will decay at a rate
+of O(1/λ3 ), forcing the inﬂuences and actual effects to be equal.
+However, λ/σmax is quite small in our experiments in Section 3, so the actual correlation of inﬂuence
+is better than predicted by this theory: in Figure 1-Bot, the sizes of the theoretically-permissible
+cones can be quite large, but the points in the graphs nevertheless trace a tight curve through the cone.
+
+λ
+
+4.4 The relationship between inﬂuence and actual effect on a test point
+
+2
+
+λ,1 H1 (w)H
+
+2
+
+λ,1
+
+2
+
+λ,1 xtest and vw = H
+
+(cid:0)I − H
+
+We now turn to measuring the test prediction f (θ) = θ(cid:62)xtest . Here, we show that correlation and
+underestimation need not hold, and that we cannot obtain a cone constraint similar to Proposition 3
+− 1
+− 1
+except in a restricted setting. Deﬁne vtest = H
+λ,1 g1 (w). Proposition 2 gives:
+Corollary 1. Suppose f (θ) = θ(cid:62)xtest . Then I Nt
+(cid:1)−1 − I is the error matrix from Proposition 2.
+− 1
+− 1
+Unfortunately, Corollary 1 implies that no cone constraint applies: in general, we can ﬁnd xtest such
+that the inﬂuence If (w) = vtest
+(cid:62) vw = 0 but the Newton approximation I Nt
+is large. As a counterexample, Figure 3-Left shows that on synthetic data, If (w) and I Nt
+even have opposite signs on some subsets w .
+We can recover a cone constraint similar to Proposition 3 if we restrict our attention to the special
+case where we use a margin-based model and remove (possibly multiple copies) of a single point:
+
+(cid:62)D(w)vw , where D(w) =
+
+f (w) = If (w) + vtest
+
+(cid:62)D(w)vw
+f (w) can
+
+f (w) = vtest
+
+2
+
+7
+
+202Influence on test preditionNewton approximation505I Nt
+
+f (w) =
+
+If (w)
+1 − (cid:107)w(cid:107)1 · φ(cid:48)(cid:48) (yw
+ˆθ(1)(cid:62)xw ) · x(cid:62)
+w H −1
+
+Proposition 4. Consider a binary classiﬁcation setting with y ∈ {−1, +1} and a margin-based
+model with loss (cid:96)(x, y ; θ) = φ(yθ(cid:62)x) for some φ : R → R+ . Suppose f (θ) = θ(cid:62)xtest and that the
+subset w comprises (cid:107)w(cid:107)1 identical copies of the training point (xw , yw ). Then under the assumptions
+of Proposition 1, the Newton approximation I Nt
+f (w) is related to the inﬂuence If (w) according to
+f (w) is bounded between If (w) and (cid:0)1 + σmax
+This implies the Newton approximation I Nt
+Similar to Proposition 3, Proposition 4 shows that up to O(1/λ3 ) terms, the inﬂuence underestimates
+the actual effect when removing copies of a single point. Moreover, all points on the graph of
+inﬂuences vs. actual effects lie within the cone bounded by the lines with slope 1 and slope
+λ/(λ + σmax ), up to O(1/λ3 ) terms. As λ/σmax grows, the cone shrinks, and correlation increases.
+However, if λ/σmax is small (as in our experiments in Section 3), the cone is wide, and the scaling
+factor d(w) = 1/(1 − (cid:107)w(cid:107)1 · φ(cid:48)(cid:48)
+λ,1xk ) in Proposition 4 can be quite large for some subsets w
+but not for others. In particular, d(w) is large when there are few remaining points in the direction
+of the removed points. In Figure 3-Right, we exploit this fact to show that the inﬂuence If (w) and
+Newton approximation I Nt
+f (w) can exhibit low correlation (e.g., low If (w) need not mean low
+f (w)), even in the simpliﬁed setting of removing copies of single points. We comment on the
+analogue of d(w) in the general multiple-point setting in Appendix D.2, and on the inﬂuence on test
+loss (instead of test prediction) in Appendix D.3.
+
+(cid:1)If (w).
+
+k x(cid:62)
+k H −1
+
+.
+
+λ,1xw
+
+λ
+
+I Nt
+
+5 Applications of inﬂuence functions on natural groups of data
+
+The analysis in Section 4 shows that the cone constraint between predicted and actual group effects
+need not always hold. Nonetheless, our experiments in Section 3 demonstrate that on real datasets,
+the correlation is much stronger than the theory predicts. We now turn to using inﬂuence functions to
+predict group effects in two case studies where groups arise naturally.
+
+Chemical-disease relation (CDR). The CDR dataset tackles the following task: given text about
+the relationship between a chemical and a disease, predict if the chemical causes the disease. It was
+collected via data programming, where users provide labeling functions (LFs)—instead of labels—
+that take in an unlabeled point and either abstain or output a heuristic label (Ratner et al., 2016).
+Speciﬁcally, Hancock et al. (2018) collected natural language explanations of provided classiﬁcations;
+parsed those explanations into LFs; and used those LFs to label a large pool of data (Appendix B.1).
+We used inﬂuence functions to study two important properties of LFs: coverage, the fraction of
+unlabeled points for which an LF outputs a non-abstaining label; and precision, the proportion of
+correct labels output. We associated each LF with the group of points that it labeled, and computed
+its inﬂuence; as expected, these correlated with actual effects on overall test loss (Spearman ρ = 1;
+Figure C.5). LFs with higher coverage had more inﬂuence (Figure 4-Left; see also Figure C.6),
+but surprisingly, LFs with higher precision did not (Figure 4-Mid). The association with coverage
+stems at least partially from class balance: each LF outputs either all positive or all negative labels,
+so removing an LF with high coverage changes the class balance and consequently improves test
+performance on one class at the expense of the other (Figure 4-Left). While these ﬁndings are not
+causal claims, they suggest that the coverage of an LF, rather than its precision, might have a stronger
+effect on its overall contribution to test performance.
+
+MultiNLI. The MultiNLI dataset deals with natural language inference: determining if a pair of
+sentences agree, contradict, or are neutral. Williams et al. (2018) presented crowdworkers with initial
+sentences from ﬁve genres and asked them to generate follow-on sentences that were neutral or in
+agreement/contradiction (Appendix B.2). We studied the effect that each crowdworker had on the
+model’s test set performance by computing the inﬂuence of the examples they created on overall test
+loss (Spearman ρ of 0.77 to 0.86 with actual effects across different genres; see Figure C.8).
+Studying the inﬂuence of each crowdworker reveals that the number of examples a crowdworker
+created was not predictive of inﬂuence on test performance: e.g., the most proliﬁc crowdworker
+
+8
+
+Figure 4: In CDR, the inﬂuence of a label-
+ing function (LF) on test performance is
+predicted by its coverage (Left) but not its
+precision (Mid). However, in MultiNLI,
+the number of examples contributed by a
+crowdworkers is not predictive of its inﬂu-
+ence (Right). For CDR, LFs output either
+all + or all − labels; we plot the inﬂuence
+of each LF on the test points of the same
+class.
+
+contributed 35,000 examples but had negative inﬂuence, and we veriﬁed that removing all of those
+examples and retraining the model indeed made overall test performance worse (Figure 4-Right).
+Curiously, this effect was genre-speciﬁc: crowdworkers who improved performance on some gen-
+res would lower performance on others (Figure C.10), even though the number of examples they
+contributed to a genre did not correlate with their inﬂuence on it (Figure C.11). We note that these
+results are obtained on a baseline logistic regression model built on top of a continuous bag-of-words
+representation. Identifying precisely what makes a crowdworker’s contributions useful, especially on
+higher-performing models, could help us improve dataset collection and credit attribution as well as
+better understand the biases due to annotator effects (Geva et al., 2019).
+
+6 Discussion
+
+In this paper, we showed empirically that the inﬂuences of groups of points are highly correlated
+with, and consistently underestimate, their actual effects across a range of datasets, types of groups,
+and sizes. These phenomena allows us to use inﬂuence functions to better understand the “different
+stories that different parts of the data tell,” in the words of Hampel et al. (1986). We showed that we
+can gain insight into the effects of a labeling function in data programming, or a crowdworker in a
+crowdsourced dataset, by computing the inﬂuence of their corresponding group effects.
+While these applications involved predeﬁned groups, inﬂuence functions could potentially also
+discover coherent, semantically-relevant groups in the data. They can also be used to approximate
+Shapley values, which are a different but related way of measuring the effect of data points; see, e.g.,
+Jia et al. (2019) and Ghorbani and Zou (2019). Separately, inﬂuence functions can also estimate the
+effects of adding training points. In this context, underestimation turns into overestimation, i.e., the
+inﬂuence of adding a group of training points tends to overestimate the actual effect of adding that
+group. This raises the possibility of using inﬂuence functions to evaluate the vulnerability of a given
+dataset and model to data poisoning attacks (Steinhardt et al., 2017).
+Our theoretical analysis showed that while correlation and underestimation hold in some restricted
+settings, they need not hold in general, realistic settings. This gap between theory and experiments
+opens up important directions for future work: Why do we observe such striking correlation between
+predicted and actual effects on real data? To what extent is this due to the speciﬁc model, datasets, or
+subsets used? Do these trends hold for non-convex models like neural networks? Our work suggests
+that there could be distributional assumptions that hold for real data and give rise to the broad
+phenomena of correlation and underestimation. One promising lead is the surprising observation that
+the Newton approximation is much more accurate than inﬂuence at predicting group effects, which
+holds out the hope that we can understand group effects using just low-order terms (since the Newton
+approximation only uses the ﬁrst and second derivatives of the loss) without needing to account for
+the whole loss function through higher order terms (as in Giordano et al. (2019a)).
+
+9
+
+0.00.1LF coverage0250500Influence on test set lossCDR0.00.40.8LF precisionCDRPos. LFNeg. LF010000Examples contributed4202MultiNLIReproducibility
+
+The code for replicating our experiments is available in the GitHub repository https:
+//github.com/kohpangwei/group-influence-release. An executable version of this
+paper is also available on CodaLab at https://worksheets.codalab.org/worksheets/
+0xfed2ae0b9e5b44b7a1af8096365592a5.
+
+Acknowledgments
+
+We are grateful to Zhenghao Chen, Brad Efron, Jean Feng, Tatsunori Hashimoto, Robin Jia, Stephen
+Mussmann, Aditi Raghunathan, Marco Túlio Ribeiro, Noah Simon, Jacob Steinhardt, and Jian Zhang
+for helpful discussions and comments. We are further indebted to Ryan Giordano, Ruoxi Jia, and Will
+Stephenson for discussion about prior work, and Samuel Bowman, Braden Hancock, Emma Pierson,
+and Pranav Rajpurkar for their assistance with applications and datasets. This work was funded by an
+Open Philanthropy Project Award. PWK was supported by the Facebook Fellowship Program.
+
+References
+
+I. Arrieta-Ibarra, L. Goff, D. Jiménez-Hernández, J. Lanier, and E. G. Weyl. Should we treat data
+as labor? Moving beyond “free”. In American Economic Association Papers and Proceedings,
+volume 108, pages 38–42, 2018.
+
+S. Boyd and L. Vandenberghe. Convex Optimization. Cambridge University Press, 2004.
+
+M. Brunet, C. Alkalay-Houlihan, A. Anderson, and R. Zemel. Understanding the origins of bias in
+word embeddings. arXiv preprint arXiv:1810.03611, 2018.
+
+I. Chen, F. D. Johansson, and D. Sontag. Why is my classiﬁer discriminatory? In Advances in Neural
+Information Processing Systems (NeurIPS), pages 3539–3550, 2018.
+
+R. D. Cook. Detection of inﬂuential observation in linear regression. Technometrics, 19:15–18, 1977.
+
+M. Debruyne, M. Hubert, and J. A. Suykens. Model selection in kernel based regression using the
+inﬂuence function. Journal of Machine Learning Research (JMLR), 9(0):2377–2400, 2008.
+
+M. Geva, Y. Goldberg, and J. Berant. Are we modeling the task or the annotator? an investigation
+ofannotator bias in natural language understanding datasets. In Empirical Methods in Natural
+Language Processing (EMNLP), 2019.
+
+A. Ghorbani and J. Zou. Data shapley: Equitable valuation of data for machine learning. arXiv
+preprint arXiv:1904.02868, 2019.
+
+R. Giordano, M. I. Jordan, and T. Broderick. A higher-order Swiss Army inﬁnitesimal jackknife.
+arXiv preprint arXiv:1907.12116, 2019a.
+
+R. Giordano, W. Stephenson, R. Liu, M. Jordan, and T. Broderick. A Swiss Army inﬁnitesimal
+jackknife. In Artiﬁcial Intelligence and Statistics (AISTATS), pages 1139–1147, 2019b.
+
+F. R. Hampel. The inﬂuence curve and its role in robust estimation. Journal of the American
+Statistical Association, 69(346):383–393, 1974.
+
+F. R. Hampel, E. M. Ronchetti, P. J. Rousseeuw, and W. A. Stahel. Robust Statistics: The Approach
+Based on Inﬂuence Functions. Wiley, 1986.
+
+B. Hancock, P. Varma, S. Wang, M. Bringmann, P. Liang, and C. Ré. Training classiﬁers with natural
+language explanations. In Association for Computational Linguistics (ACL), 2018.
+
+J. Hayes and O. Ohrimenko. Contamination attacks and mitigation in multi-party machine learning.
+In Advances in Neural Information Processing Systems (NeurIPS), pages 6604–6615, 2018.
+
+L. A. Jaeckel. The inﬁnitesimal jackknife. Unpublished memorandum, Bell Telephone Laboratories,
+Murray Hill, NJ, 1972.
+
+10
+
+R. Jia, D. Dao, B. Wang, F. A. Hubis, N. Hynes, N. M. Gurel, B. Li, C. Zhang, D. Song, and C. Spanos.
+Towards efﬁcient data valuation based on the shapley value. arXiv preprint arXiv:1902.10275,
+2019.
+
+R. Khanna, B. Kim, J. Ghosh, and O. Koyejo. Interpreting black box predictions using Fisher kernels.
+In Artiﬁcial Intelligence and Statistics (AISTATS), pages 3382–3390, 2019.
+
+P. W. Koh and P. Liang. Understanding black-box predictions via inﬂuence functions. In International
+Conference on Machine Learning (ICML), 2017.
+
+P. W. Koh, J. Steinhardt, and P. Liang. Stronger data poisoning attacks break data sanitization
+defenses. arXiv preprint arXiv:1811.00741, 2019.
+
+Y. LeCun, L. Bottou, Y. Bengio, and P. Haffner. Gradient-based learning applied to document
+recognition. Proceedings of the IEEE, 86(11):2278–2324, 1998.
+
+J. T. Leek, R. B. Scharpf, H. C. Bravo, D. Simcha, B. Langmead, W. E. Johnson, D. Geman,
+K. Baggerly, and R. A. Irizarry. Tackling the widespread and critical impact of batch effects in
+high-throughput data. Nature Reviews Genetics, 11(10), 2010.
+
+Y. Liu, S. Jiang, and S. Liao. Efﬁcient approximation of cross-validation for kernel methods using
+Bouligand inﬂuence function. In International Conference on Machine Learning (ICML), pages
+324–332, 2014.
+
+V. Metsis, I. Androutsopoulos, and G. Paliouras. Spam ﬁltering with naive Bayes – which naive
+Bayes? In CEAS, volume 17, pages 28–69, 2006.
+
+D. Pregibon et al. Logistic regression diagnostics. Annals of Statistics, 9(4):705–724, 1981.
+
+K. R. Rad and A. Maleki. A scalable estimate of the extra-sample prediction error via approximate
+leave-one-out. arXiv preprint arXiv:1801.10243, 2018.
+
+A. J. Ratner, C. M. D. Sa, S. Wu, D. Selsam, and C. Ré. Data programming: Creating large training
+sets, quickly. In Advances in Neural Information Processing Systems (NeurIPS), pages 3567–3575,
+2016.
+
+P. Schulam and S. Saria. Can you trust this prediction? Auditing pointwise reliability after learning.
+In Artiﬁcial Intelligence and Statistics (AISTATS), pages 1022–1031, 2019.
+
+J. Steinhardt, P. W. Koh, and P. Liang. Certiﬁed defenses for data poisoning attacks. In Advances in
+Neural Information Processing Systems (NeurIPS), 2017.
+
+B. Strack, J. P. DeShazo, C. Gennings, J. L. Olmo, S. Ventura, K. J. Cios, and J. N. Clore. Impact of
+HbA1c measurement on hospital readmission rates: Analysis of 70,000 clinical database patient
+records. BioMed Research International, 2014, 2014.
+
+H. Wang, B. Ustun, and F. P. Calmon. Repairing without retraining: Avoiding disparate impact with
+counterfactual distributions. arXiv preprint arXiv:1901.10501, 2019.
+
+C. Wei, Y. Peng, R. Leaman, A. P. Davis, C. J. Mattingly, J. Li, T. C. Wiegers, and Z. Lu. Overview
+of the BioCreative V chemical disease relation (cdr) task. In Proceedings of the Fifth BioCreative
+Challenge Evaluation Workshop, pages 154–166, 2015.
+
+A. Williams, N. Nangia, and S. Bowman. A broad-coverage challenge corpus for sentence under-
+standing through inference. In Association for Computational Linguistics (ACL), pages 1112–1122,
+2018.
+
+J. Zhou, Z. Li, H. Hu, K. Yu, F. Chen, Z. Li, and Y. Wang. Effects of inﬂuence on user trust in
+predictive decision making. In Conference on Human Factors in Computing Systems (CHI), 2019.
+
+11
+
+A Experimental details for comparing inﬂuence vs. actual effects on
+constructed groups
+
+A.1 Model training
+
+For all experiments in Section 3, we trained a logistic regression model (or softmax for multiclass)
+using sklearn.linear_model.LogisticRegression.fit, ﬁtting the intercept but only applying
+L2 -regularization to the weights. To choose the regularization strength λ, we conducted 5-fold cross-
+validation across 10 possible values of λ/n logarithmically spaced between 1.0×10−4 and 1.0×10−1 ,
+inclusive, selecting the regularization that yielded the highest cross-validation accuracy (except on
+the CDR dataset, where we selected regularization based on cross-validation F1 score to account for
+class imbalance as per Hancock et al. (2018)’s procedure).
+
+A.2 Group construction
+
+For each dataset, we constructed groups of various sizes relative to the entire dataset by considering
+100 sizes linearly spaced between 0.25% and 25% of the dataset. For each of these 100 sizes, we
+constructed one group with each of the following methods:
+
+1. Shared features: We selected a single feature uniformly at random and sorted the dataset
+along this selected feature. Next, we selected an training point uniformly at random. We
+then constructed a group of size s that consisted of the s unique training points that were
+closest to the chosen point, as measured by their values in the selected feature. We randomly
+sampled a feature and initial training point for each different group constructed in this way.
+2. Feature clustering: We clustered the dataset with respect
+to raw features via
+scipy.cluster.hierarchy.fclusterdata with t set
+to 1, as well as with
+sklearn.cluster.KMeans.fit with n_clusters taking on values 4, 8, 16, 32, 64, 128.
+Since hierarchical clustering determines cluster sizes automatically with a principled heuris-
+tic and we try a range of values for n_clusters in k-means, this recovers clusters with
+a large range of sizes. The clustering with n_clusters = 4 also guarantees (via the
+pigeonhole principle) that there is at least one cluster which contains at least 25% of the
+dataset. From all the clusters that are at least the size of the desired group, we chose one
+uniformly at random and chose the group uniformly at random and without replacement
+from the training points in this cluster.
+3. Gradient clustering: We followed the same procedure as “Feature clustering,” except that we
+clustered the dataset with respect to ∇θ (cid:96)(x, y ; ˆθ(1)), i.e. each training point was represented
+by the gradient of the loss on that point.
+4. Random within class: We considered all classes with at least as many training points as the
+size of the desired group. From these classes, we chose one uniformly at random. Then, we
+chose the group uniformly at random and without replacement from all training points in
+this class.
+5. Random: We picked a group uniformly at random and without replacement from the entire
+dataset.
+
+The above methods gave us a total of 500 groups (100 groups per method) for each dataset, with
+the exception of the “random within class” method for MNIST. Since MNIST has 10 classes, each
+with only 10% of the data, we skipped over groups of size > 10% just for the “random within class”
+groups.
+In addition, we selected 3 random test points and the 3 test points with highest loss; we intend these
+to represent the average case and the more extreme case that may be relevant to model developers
+who want to debug errors that their model outputs. For each of these 6 test points, we selected groups
+that had large positive inﬂuence on its test loss. More speciﬁcally, we proceeded in 3 stages:
+
+1. We considered 33 group sizes linearly spaced between 0.25% and 2.5% of the dataset,
+replacement from training points in the top 1.5 × 2.5% of the dataset, ordered according to
+and for any size s out of these 33, we selected a group uniformly at random and without
+their inﬂuence on the test point of interest.
+
+12
+
+2. This was similar to the ﬁrst stage, but with 33 sizes spaced between 0.25% and 10% and
+groups chosen from the top 1.5 × 10% of the dataset.
+3. Finally, we considered 34 sizes spaced between 0.25% and 25%, with groups chosen from
+the top 1.5 × 25% of the dataset.
+Larger groups tend to have lower average inﬂuence than smaller groups, since by necessity, the
+group must contain points farther from the top. This multi-stage approach ensured that we would
+select small groups with both a high average inﬂuence and also with a low average inﬂuence, so that
+we could compare them to larger groups and mitigate confounding the group size with its average
+inﬂuence.
+Finally, we repeated this last method of group construction for groups with large negative inﬂuence
+on test point loss.
+Using these 6 test points, we generated 1,200 groups (100 subsets per group, with 6 test points, and
+drawing from the positive and negative tails). In total, we therefore generated 1,700 groups per
+dataset (except MNIST).
+
+A.3 Comparison of inﬂuence and actual effect
+
+To produce Figure 1, we selected groups as described in Appendix A.2. We retrained the model
+once for each group, excluding the group in order to calculate its actual effect. To compute all
+groups’ inﬂuences, we ﬁrst calculated the inﬂuence of every individual training point using the
+procedure of Koh and Liang (2017). Then, to compute the inﬂuence on test prediction or loss of some
+group, we simply added the relevant individual inﬂuences (in CDR, we weighted these individual
+inﬂuences according to that point’s weight; see Appendix B.1). To compute the inﬂuence on self-loss
+of some group, we summed up the gradients of the loss of each training point to compute g1 (w), we
+calculated the inverse Hessian vector product H −1
+λ,1 g1 (w) and took its dot product with g1 (w) (again,
+we modiﬁed this with appropriate weighting for individual points in CDR).
+
+B Dataset details
+
+We used the same versions of the Diabetes, Enron, Dogﬁsh, and MNIST datasets as Koh and Liang
+(2017), since the examination of the accuracy of inﬂuence functions for large perturbations is a
+natural extension of their studies of small perturbations. Additionally, we applied inﬂuence to more
+natural settings in CDR and MultiNLI; here, we discuss their preprocessing pipelines.
+
+B.1 CDR
+
+Hancock et al. (2018) established the BabbleLabble framework for data programming, following
+the following pipeline: They took labeled examples with natural language explanations, parsed
+the explanations into programmatic labeling functions (LFs) via a semantic parser, and ﬁltered out
+obviously incorrect LFs. Then, they applied the remaining LFs to unlabeled data to create a sparse
+label matrix, from which they learned a label aggregator that outputs a noisily labeled training set.
+Finally, they ran L2 -regularized logistic regression on a set of basic linguistic features with the noisy
+labels.
+They demonstrated their method on three datasets: Spouse, CDR, and Protein. The Protein dataset
+was not publicly available, and the vast majority of Spouse was labeled by a single LF, hence
+we chose to use CDR. This dataset’s associated task involved identifying whether, according to a
+given sentence, a given chemical causes a given disease. For instance, the sentence “Young women
+on replacement estrogens for ovarian failure after cancer therapy may also have increased risk of
+endometrial carcinoma and should be examined periodically.” would be labeled True, since it
+indicates that estrogens may cause endometrial carcinoma (Hancock et al., 2018). The sentences and
+ground truth labels were sourced from the 2015 BioCreative chemical-disease relation dataset (Wei
+et al., 2015).
+In our application, we began with their 28 LFs and the corresponding label matrix. For simplicity, we
+did not learn a label aggregator; instead, if an example x was given labels yi1 , yi2 , . . . , yik by k LFs
+i1 , . . . , ik , then we created k copies of x, each with weight 1/k . The subset of points corresponding
+
+13
+
+to LF i1 then included one instance of x with weight 1/k . This weighting was taken into account
+in model training as well as in calculations of inﬂuence and actual effect. In addition, we used
+L1 -regularization for feature selection, reducing the number of features to 328 while still achieving
+similar F1 score to (Hancock et al., 2018); they reported an F1 of 42.3, while we achieved 42.0. After
+feature selection, we remove the L1 -regularization and train a L2 -regularized logistic regression
+model. We assume that the feature selection step is static and not affected by removing groups of
+data (though in general this assumption is not true); we therefore do not include feature selection in
+our inﬂuence calculations.
+We note that in BabbleLabble, a given LF can never output positive on one example but negative on
+another. Hence, some LFs are positive (unable to output negative and only able to abstain or output
+positive), while the others are negative (unable to output positive and only able to abstain or output
+negative).
+
+B.2 MultiNLI
+
+Williams et al. (2018) created the MultiNLI dataset for the task of natural language inference: deter-
+mining if a pair of sentences agree, contradict, or are neutral. To do so, they presented crowdworkers
+with initial sentences and asked them to generate follow-on sentences that were neutral or in agree-
+ment/contradiction. For example, a crowdworker may be presented with “Met my ﬁrst girlfriend that
+way.” and write the contradicting sentence “I didn’t meet my ﬁrst girlfriend until later.” (Williams
+et al., 2018). Thus, each of the 380 crowdworkers generated a subset of the dataset. We used these
+subsets in our application of inﬂuence.
+The training set consisted of 392,702 examples from ﬁve genres. The development set consisted
+of 10,000 “matched” examples from the same ﬁve genres as the training set, as well as 10,000
+“mismatched” examples from ﬁve new genres. The test set was put on Kaggle as an open competition,
+hence we do not have its labels and could not use it; therefore, we use the development set as the test
+set.
+The continuous bag-of-words baseline in Williams et al. (2018) ﬁrst converted the raw text of each
+sentence in the pair into a vector by treating the sentence as a continuous bag of words and simply
+averaging the 300-dimensional GloVe vector embeddings. This converted a pair of sentences into
+vectors a, b. They then concatenated [a, b, a − b, a (cid:12) b] into a 1200D vector, where a (cid:12) b denotes the
+element-wise product. Finally, they treated this as input to a neural network with three hidden layers
+and ﬁne-tuned the entire model, including word embeddings (more details in (Williams et al., 2018)).
+For our application, we truncated their baseline and just used the concatenation of a and b as the
+representation for every example. By running logistic regression on this, we achieved test accuracy of
+50.4% (vs. their baseline’s 64.7%; the performance difference comes from the additional dimensions
+in their vector embeddings and the ﬁnetuning through the neural network). Future work could explore
+inﬂuence in the setting of more complex and higher-performing models.
+
+C Additional experiments
+
+As in Figure 1, in each of the plots below, the grey reference line has slope 1, and the red borders
+represent points that are not plotted because they are outside the x- or y-axis range.
+
+C.1 Representative test points
+
+Figure C.1 is similar to Figure 1 in the main text: it shows the inﬂuences vs. actual effects of groups
+on test points, but with test points that are closer to the median (within the 40th to 60th percentile) of
+the test loss distribution.
+
+C.2 Regularization
+
+In Section 4, our bounds show that inﬂuence ought to be closer to actual effect as regularization
+increases. Here, we support this claim empirically on Diabetes, Enron, Dogﬁsh, and MNIST (small).5
+To do so, for each dataset, we selected a range of values for λ/n, and we selected subsets as described
+
+14
+
+Figure C.1: Inﬂuences vs. actual effects of the same coherent groups in Figure 1, but on test points
+closer to the median (within the 40th to 60th percentile) of the test loss distribution. We consider these
+to represent average test points. On these, inﬂuence on the test prediction remains well-correlated
+with the actual effect.
+
+Figure C.2: The effect of regularization for a representative test point. Red frame lines indicate the
+existence of points exceeding those bounds. We did not include the test prediction for MNIST (small)
+because the margin is not well-deﬁned for a multiclass model.
+
+in Appendix A.2. We then computed the inﬂuence and actual effect of each of these subsets on a
+representative test point’s prediction, that point’s loss, and on self-loss (Figure C.2).
+
+5This experiment required us to retrain the model for every value of λ and for every subset. Thus, for
+computational purposes, we omitted CDR and MultiNLI, and we selected a random 10% subset of MNIST’s
+training set to use in place of all of MNIST.
+
+15
+
+505DiabetesInfluence ontest prediction505Enron202Dogfish505CDRMNISTShared feature valueFeature clusteringGradient clusteringRandom within classRandomLarge positive test infl.Large negative test infl.024Influence ontest lossActual effect0.00.51.01.519 hidden0.000.020.040.02.55.002450050DiabetesInfluence ontest predictionActual effect201001020Enron505DogfishMNIST (small)10−710−610−510−410−310−210−1100101102Regularization(λ/n)050Influence ontest loss2025052010010200.000.250.500.75×104Influence onself-loss012×1030501000.00.51.01.5×103Figure C.3: As regularization increases, correlation increases between the inﬂuences and actual
+effects on test prediction (Left), test loss (Middle), and self-loss (Right).
+
+In Figure C.3, we observe the trend that correlation generally increases as λ does. Speciﬁcally, we
+computed the Spearman ρ between the inﬂuence and actual effect for each dataset, each value of λ,
+and each evaluation function f (·) of interest (i.e., test prediction, test loss, or self-loss).
+
+C.3 The effect of loss curvature on the accuracy of inﬂuence
+
+One takeaway from the results on test loss in Figure 1-Mid is that the curvature of f (θ) can signiﬁ-
+cantly increase approximation error; this is expected since the inﬂuence If (w) linearizes f (·) around
+ˆθ(1). When possible, choosing a f (·) that has low curvature (e.g., the linear prediction) will result in
+higher accuracy. We can mitigate this by using inﬂuence to approximate the parameters ˆθ(1 − w) and
+then plug that estimate into f (·) (Figure C.4), though this can be more computationally expensive.
+Note that Figure C.4 shows that this technique does not help much for measuring self-loss. However,
+in the context of LOOCV, the computational complexity of the Newton approximation for self-loss
+(described in Section 4) is similar to that of the inﬂuence approximation, so we encourage the use of
+the Newton approximation for LOOCV (as in Rad and Maleki (2018)); Figure C.4 shows that this
+leads to more accurate approximations for self-loss.
+
+C.4 Additional analysis of inﬂuence functions applied to natural groups of data
+
+In Section 5, we considered the CDR and MultiNLI datasets, which contain the natural subsets of LFs
+and crowdworkers, respectively. To draw inferences about these subsets, we took the L2 -regularized
+logistic regression model described in Appendix A, calculated the inﬂuence of the LF/crowdworker
+subsets, and retrained the model once for each LF/crowdworker.
+
+CDR. As discussed in Appendix B.1, an LF is either positive or negative, where a positive LF
+can only give positive labels or abstain, and similarly for negative LFs. Because of this stark class
+separation, we indicate whether an LF is positive or negative, and we consider LF inﬂuence on the
+positive test examples separately from their inﬂuence on the negative test examples. To measure an
+LF’s inﬂuence and actual effect on a set of test points, we simply add up its inﬂuence and actual
+effect on the set’s individual test points.
+In Figure C.5, we note that inﬂuence is a good approximation of an LF’s actual effect, just as with
+other kinds of subsets as well as other datasets (Figure 1). Furthermore, we observe that positive LFs
+improve the overall performance of the positively labeled portion of the test set while hurting the
+negatively labeled portion of the test set, and vice versa for negative LFs. This dichotomous effect
+further motivates the analysis of inﬂuence on the positive test set separately from the negative test set,
+since the process of adding these two inﬂuences to study the inﬂuence on the entire test set would
+obscure the full story.
+
+16
+
+10-510-2101Test prediction0.70.80.91.0Spearman ρ10-510-2101Test lossRegularization (λ/n)10-510-2101Self-lossDiabetesEnronDogfishMNIST (small)Figure C.4: The top 3 rows show inﬂuence on test loss (with the same test points as in Figure 1),
+while the bottom 3 show self-loss. Within each set, the ﬁrst row shows the inﬂuence vs. actual
+effect (as in Figure 1); the second shows the predicted effect obtained by estimating the change in
+parameters via inﬂuence and then evaluating f (·) directly on those parameters; and the third shows
+the Newton approximation.
+
+Next, we deﬁne an LF’s coverage to be the proportion of the examples that it does not abstain on,
+which can be measured through the number of examples in its corresponding subset. In Figure C.6,
+we observe that the magnitude of inﬂuence correlates strongly with coverage.
+Finally, we deﬁne an LF’s precision to be the number of examples it labels correctly divided by the
+number of examples it does not abstain on. Because the dataset had many more negative than positive
+examples, positive LFs had lower precision than negative LFs. Surprisingly, even when this effect
+
+17
+
+050DiabetesInfluenceon test loss0510Enron0.02.55.0Dogfish05CDR10010MNIST050Parameter infl.on test loss05100.02.55.00510010050Newton approx.on test loss05100.02.55.005Shared feature valueFeature clusteringGradient clusteringRandom within classRandomLarge positive test infl.Large negative test infl.0246×103Influenceon self-loss010020023 hidden02040012×10318 hidden0.000.250.500.75×1044 hidden0246×103Parameter infl.on self-loss010020023 hidden02040012×10318 hidden0.000.250.500.75×1044 hidden0246×103Newton approx.on self-lossActual effect0.00.5×1030255075012×10318 hiddenFigure C.5: We observe both correlation and underestimation for LFs on the positive and negative
+test sets. We also see that positive LFs help the positive test set and hurt the negative test set; vice
+versa for negative LFs.
+
+Figure C.6: The magnitude of LF inﬂuence correlates with coverage. This ﬁgure is an extension of
+Figure 4-Left: there, we showed the inﬂuence of positive LFs on the positive test set and the inﬂuence
+of negative LFs on the negative test set. Here, we additionally show the inﬂuence of positive LFs on
+the negative test set and vice versa.
+
+was taken into account and we considered positive LFs separately from negative ones, precision did
+not correlate with inﬂuence (Figure C.7).
+
+Figure C.7: LF inﬂuence does not correlate with precision. Similar to Figure C.6, this ﬁgure is an
+extension of Figure 4-Mid: there, we showed the inﬂuence of positive LFs on the positive test set and
+the inﬂuence of negative LFs on the negative test set. Here, we additionally show the inﬂuence of
+positive LFs on the negative test set and vice versa.
+
+18
+
+2000200400Pos. test set2000200400Influence ontest set lossActual effectActual effect5000500Neg. test set5000500Pos. LFNeg. LF0.00.1Pos. test set2000200Influence ontest set lossLF coverage0.00.1Neg. test set5000500Pos. LFNeg. LF0.20.40.60.8Pos. test set2000200Influence ontest set lossLF precision0.20.40.60.8Neg. test set5000500Pos. LFNeg. LFMultiNLI. As discussed in Appendix B.2, the training set consisted of ﬁve genres, and the test set
+consisted of a matched portion with the same ﬁve genres, as well as a mismatched portion with ﬁve
+new genres. For succinctness, we refer to the inﬂuence/actual effect of the set of examples generated
+by a single crowdworker as that crowdworker’s inﬂuence/actual effect.
+First, we note in Figure C.8 that inﬂuence is a good approximation of a crowdworker’s actual effect
+for both matched and mismatched test sets, consistent with our ﬁndings in Figure 1 for other subset
+types and datasets.
+
+Figure C.8: We observe strong correlation between crowdworkers’ inﬂuence and actual effects.
+
+Unlike in CDR (Figure C.6), we do not ﬁnd strong correlation between a crowdworker’s inﬂuence
+and the number of examples they contributed; it is possible to contribute many examples but have
+relatively little inﬂuence (Figure C.9).
+
+Figure C.9: Size does not correlate strongly with inﬂuence. The hidden point is the crowdworker that
+contributed 35,000 examples. This is the ﬁgure presented in Figure 4-Right.
+
+The most proliﬁc crowdworker contributed 35,000 examples and had large negative inﬂuence on
+the test set. A closer analysis revealed that they had positive inﬂuence on the ﬁction genre but
+lowered performance on many other genres, despite contributing roughly equally to each genre.
+This genre-speciﬁc trend tended to hold more broadly among the workers: there appear to be two
+categories of genres (ﬁction, facetoface, nineeleven vs. travel, government, verbatim, letters, oup)
+
+19
+
+0.02.55.0fictionInfluence on testset loss (matched)50government20slateActual effect20telephone2101travel101facetofaceInfluence on testset loss (mismatched)50letters1012nineelevenActual effect1050oup5.02.50.02.5verbatim010000Examples contributed4202Influence on testset loss (matched)1 hiddensuch that each worker tended to have positive inﬂuence on all genres in one category and negative
+inﬂuence on all genres in the other (Figure C.10). Moreover, the number of examples a worker
+contributed to a given genre was not a good indicator for their inﬂuence on that genre (Figure C.11).
+
+Figure C.10: Workers tended to have positive inﬂuence on ﬁction, facetoface, and nineeleven and
+negative inﬂuence on travel, government, verbatim, letters, and oup (or vice versa). In this plot, we
+allowed for full color saturation when the magnitude of the total inﬂuence on the test set (matched)
+exceeded 0.8.
+
+Figure C.11: Inﬂuence on a genre does not correlate with number of contributions to that genre.
+
+D Additional analysis on inﬂuence vs. actual effect on a test point
+
+D.1 Counterexamples
+
+For Figure 3, we constructed two binary datasets in which the inﬂuence of a certain class of subsets
+on the test prediction of a single test point exhibits pathological behavior.
+
+Rotation effect.
+
+In Figure 3-Left, our aim was to show that there can be a dataset with subsets such
+that the cone constraint discussed in Section 4.4 does not hold.
+The rotation effect described in Corollary 1 is due to the angular difference between the change in
+parameters predicted by the inﬂuence approximation, ∆θinf (w) def= H −1
+− 1
+λ,1 vw , and the
+− 1
+change in parameters predicted by the Newton approximation, ∆θNt (w) = H
+∆θinf (w) and ∆θNt (w) are linearly independent, then for any pair of target values a, b ∈ R, we can
+ﬁnd some xtest such that If (w) = xtest
+To exploit this, we constructed the MoG dataset as an equal mixture of two standard (identity
+covariance) Gaussian distributions in R60 , one for each class, and with means (−1/2, 0, . . . , 0) and
+(1/2, 0, . . . , 0), respectively. In particular:
+
+(cid:0)D(w) + I (cid:1)vw . If
+λ,1 g1 (w) = H
+(cid:62)∆θNt (w) = b.
+
+(cid:62)∆θinf (w) = a and I Nt
+
+f (w = xtest
+
+2
+
+2
+
+λ,1
+
+1. We sampled 60 examples from each class for a total of n = 120 training points, and set the
+regularization strength λ = 0.001.
+
+20
+
+Workerfictionfacetofacenineelevenslatetelephonetravelgovernmentverbatimlettersoup0.750.500.250.000.250.500.75Influence on genre loss0246fiction×10321012Influence ontest genre loss1 hidden0246government×1031 hidden0246slate×1031 hiddenExamples contributed to genre0246telephone×1031 hidden0246travel×1031 hidden2. We then computed ∆θinf (w) and ∆θNt (w) for each pair of training points and chose the
+120 pairs of training points with the largest angles between ∆θinf (w) and ∆θNt (w).
+3. Finally, we solved a least-squares optimization problem to ﬁnd xtest for which If (w) and
+f (w) are approximately decorrelated.
+
+I Nt
+
+Note that we adversarially chose which subsets to study in this counterexample, since our main
+goal was to show that there existed subsets for which the cone constraint did not hold. For the next
+counterexample, we instead study all possible subsets in the restricted setting of removing copies of
+single points.
+
+Scaling effect.
+
+In Figure 3-Right, our aim was to construct a dataset such that even if we only
+removed subsets comprising copies of single distinct points, a low inﬂuence need not translate into a
+low actual effect.
+To do so, we constructed the Ortho dataset that contains 2 repeated points of opposite classes on each
+of the 2 canonical axes of R2 (for a total of 4 distinct points). By varying their relative distances
+from the origin, we can control the inﬂuence of removing one of these points as well as the rate
+that the scaling factor d(w) from Proposition 4 grows as we remove more copies of the same point.
+Furthermore, because the axes are orthogonal, we can control d(w) independently for each repeated
+point. We ﬁx the test point xtest = (1, 1). Maximizing d(w) for one axis and minimizing it for the
+other produces the two distinct lines in Figure 3-Right.
+
+D.2 Scaling effects when removing multiple points
+
+In the general setting of removing subsets of different points, the analogous failure case to a varying
+scaling factor d(w) (Figure 3-Right) is the varying scaling effect that the error matrix D(w) in
+Proposition 2 can have on different subsets w . The range of this effect is bounded by the spectral
+norm of D(w). This norm is precisely equal to d(w) in the single-point setting, and it is large
+when we remove a subset w whose Hessian H1 (w) is almost as large as the full Hessian Hλ,1 in
+some direction. As with d(w), the spectral norm of D(w) decreases with λ (Proposition 2), so as
+regularization increases, we expect that the inﬂuence of a group will track its actual effect more
+accurately.
+
+D.3 The relationship between inﬂuence and actual effect on the loss of a test point
+
+In the margin-based setting, the loss (cid:96)(xtest , ytest ; θ) is a monotone function of the linear prediction
+θ(cid:62)xtest . Thus, measuring f (θ) = (cid:96)(xtest , ytest ; θ) will display the same rank correlation as measur-
+ing f (θ) = θ(cid:62)xtest above, so the same results about correlation in the test prediction setting carry
+over.
+However, the second-order f -curvature term 1
+θ f ( ˆθ(1))∆θNt (w) from Proposition 2
+is always non-negative, even if the inﬂuence is negative. Under the assumption that Errf ,3 (w) and
+ErrNt-act (w) are both small because they decay as O(1/λ3 ), this implies that underestimation is only
+preserved when the inﬂuence is positive, as we observed empirically in Figure 1-Mid.
+
+2 ∆θNt (w)(cid:62)∇2
+
+E Proofs
+
+E.1 Notation
+
+We ﬁrst review the notation given in Section 2 and introduce new deﬁnitions that will be useful in the
+sequel. We deﬁne the empirical risk as
+
+(cid:34) n(cid:88)
+
+i=1
+
+(cid:35)
+
+(cid:107)θ(cid:107)2
+
+2 ,
+
+λ
+2
+
+Ls (θ) def=
+
+si (cid:96)(xi , yi ; θ)
+
++
+
+such that the optimal parameters are ˆθ(s) def= arg minθ∈ΘLs (θ).
+
+21
+
+Given sample weight vectors r, s ∈ Rn , we deﬁne the derivatives
+
+gr (s) def=
+
+Hr (s) def=
+
+si∇θ (cid:96)(xi , yi ; ˆθ(r))
+
+si∇2
+θ (cid:96)(xi , yi ; ˆθ(r)).
+
+i=1
+
+n(cid:88)
+n(cid:88)
+n(cid:88)
+
+i=1
+
+If the argument s is omitted, it is assumed to be equal to r . For example,
+
+H1
+
+def=
+
+∇2
+
+θ (cid:96)(xi , yi ; ˆθ(1)).
+
+If H has a λ subscript, then we add λI . For example,
+
+i=1
+
+For a given dataset, we deﬁne the following constants:
+
+Hλ,1
+
+def= H1 + λI .
+(cid:13)(cid:13)(cid:13)∇θ (cid:96)(xi , yi , ˆθ(1))
+
+(cid:13)(cid:13)(cid:13)2
+
+,
+
+C(cid:96) = max
+
+1≤i≤n
+
+σmin = smallest singular value of H1 ,
+σmax = largest singular value of H1 .
+To avoid confusion with the vector 2-norm, we will use the operator norm (cid:107)·(cid:107)op to denote the matrix
+2-norm.
+In the sequel, we study the order-3 tensor ∇3
+θ f ( ˆθ(1)). We deﬁne its product with a vector (which
+returns a matrix) as a contraction along the last dimension:
+
+(cid:68)∇3
+
+(cid:69)
+
+(cid:88)
+
+k
+
+θ f ( ˆθ(1)), v
+
+def=
+
+ij
+
+∂ 3 f ( ˆθ(1))
+∂ θi∂ θj ∂ θk
+
+vk .
+
+E.2 Assumptions
+
+We make the following assumptions on the derivatives of the loss (cid:96)(x, y , θ) and the evaluation
+function f (θ).
+Assumption 1 (Positive-deﬁniteness and Lipschitz continuity of H ). The loss (cid:96)(x, y , θ) is convex
+and twice-differentiable in θ , with positive regularization λ > 0. Further, there exists CH ∈ R such
+that
+
+θ (cid:96)(x, y , θ2 )(cid:13)(cid:13)op ≤ CH (cid:107)θ1 − θ2(cid:107)2
+θ (cid:96)(x, y , θ1 ) − ∇2
+
+for all (x, y) ∈ X × Y and θ1 , θ2 ∈ Θ. This is a bound on the third derivative of (cid:96), if it exists.
+Assumption 2 (Bounded derivatives of f ). f (θ) is thrice-differentiable, with Cf , Cf ,3 ∈ R such that
+
+(cid:13)(cid:13)∇2
+
+Cf = sup
+
+θ∈Θ
+
+(cid:107)∇θ f (θ)(cid:107)2 ,
+
+Cf ,3 =
+
+sup
+
+v∈Θ,(cid:107)v(cid:107)2=1
+
+θ f ( ˆθ(1)), v
+
+(cid:13)(cid:13)(cid:13)(cid:68)∇3
+
+(cid:69)(cid:13)(cid:13)(cid:13)op
+
+.
+
+These assumptions apply to all the results that follow below.
+
+E.3 Bounding the error of the one-step Newton approximation
+
+Proposition 1 (Restated). Let the Newton error be ErrNt-act (w) def= I ∗
+Assumptions 1 and 2,
+
+f (w) − I Nt
+
+f (w). Then under
+
+|ErrNt-act (w)| ≤ n(cid:107)w(cid:107)2
+(σmin + λ)3
+
+1Cf CH C 2
+(cid:96)
+
+.
+
+ErrNt-act (w) only involves third-order or higher derivatives of the loss, so it is 0 for quadratic losses.
+
+22
+
+(cid:13)(cid:13)(cid:13)2
+
+(cid:13)(cid:13)(cid:13) ˆθ(1 − w) − ˆθNt (1 − w)
+f (w) − I Nt
+f (w) = f ( ˆθ(1 − w)) − f ( ˆθNt (1 − w)). We will bound
+(cid:13)(cid:13)(cid:13) ˆθ(1 − w) − ˆθNt (1 − w)
+(cid:13)(cid:13)(cid:13) ˆθ(1 − w) − ˆθNt (1 − w)
+
+Proof. This proof is adapted to our setting from the standard analysis of the Newton method in
+convex optimization (Boyd and Vandenberghe, 2004).
+First, note that ErrNt-act (w) = I ∗
+the norm of the difference of the parameters
+; the desired bound on f
+then follows from the assumption that f has gradients bounded by Cf and is therefore Lipschitz.
+Since L1−w (θ) is strongly convex (with parameter σmin + λ) and minimized by ˆθ(1 − w), we can
+in terms of the norm of the gradient at ˆθNt (1 − w):
+(cid:13)(cid:13)(cid:13)∇θ L1−w
+bound the distance
+(cid:13)(cid:13)(cid:13)∇θ L1−w
+We start by expressing the Newton step ∆θNt (w) in terms of the ﬁrst and second derivatives of the
+empirical risk L1−w (θ):
+
+(cid:16) ˆθNt (1 − w)
+(cid:16) ˆθNt (1 − w)
+
+Therefore, the problem reduces to bounding
+
+2
+σmin + λ
+
+(cid:17)(cid:13)(cid:13)(cid:13)2
+
+(cid:17)(cid:13)(cid:13)(cid:13)2
+
+(cid:13)(cid:13)(cid:13)2
+
+(cid:13)(cid:13)(cid:13)2
+
+≤
+
+.
+
+.
+
+n(cid:88)
+
+i=1
+
+= − n(cid:88)
+
+g1 (w) =
+
+wi∇θ (cid:96)(xi , yi ; ˆθ(1))
+
+i=1
+
+n(cid:88)
+
+(1 − wi )∇θ (cid:96)(xi , yi ; ˆθ(1))
+= −∇θ L1−w ( ˆθ(1)),
+Hλ,1 (1 − w) =
+(1 − wi )∇2
+θ (cid:96)(xi , yi ; ˆθ(1))
+= ∇2
+θ L1−w ( ˆθ(1)),
+∆θNt (w) = Hλ,1 (1 − w)−1 g1 (w)
+(cid:105)−1 ∇θ L1−w ( ˆθ(1)),
+θ L1−w ( ˆθ(1))
+
+= − (cid:104)∇2
+
+i=1
+
+gradients (cid:80)n
+where the second equality for g1 (w) comes from the fact that at the optimum ˆθ(1), the sum of the
+With these expressions, we bound the norm of the gradient ∇θ L1−w ( ˆθNt (1 − w)):
+(cid:13)(cid:13)(cid:13)∇θ L1−w
+(cid:13)(cid:13)(cid:13)∇θ L1−w
+(cid:13)(cid:13)(cid:13)∇θ L1−w
+(cid:17) − ∇θ L1−w
+
+(cid:17) − ∇2
+
+(cid:16) ˆθ(1)
+
+(cid:17)(cid:13)(cid:13)(cid:13)2
+
+∆θNt (w)
+
+θ L1−w
+
+=
+
+=
+
+(cid:13)(cid:13)(cid:13)2
+
+(cid:16) ˆθ(1)
+
+(cid:17)(cid:17)
+
+θ L1−w
+
+(cid:17)
+
+(cid:16) ˆθ(1)
+∆θNt (w) dt
+
+(cid:13)(cid:13)(cid:13)(cid:13)2
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:90) 1
+
+(cid:17)(cid:13)(cid:13)(cid:13)2
+
+(cid:16)∇2
+
+i=1 ∇θ (cid:96)(xi , yi ; ˆθ(1)) is 0.
+(cid:16) ˆθNt (1 − w)
+(cid:16) ˆθ(1) + ∆θNt (w)
+(cid:16) ˆθ(1) + ∆θNt (w)
+(cid:16) ˆθ(1) + t∆θNt (w)
+(cid:107)∆θNt (w)(cid:107)2
+(cid:105)−1 ∇θ L1−w ( ˆθ(1))
+θ L1−w ( ˆθ(1))
+(cid:13)(cid:13)(cid:13)∇θ L1−w ( ˆθ(1))
+2(σmin + λ)2 .
+
+(cid:17) − ∇2
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:104)∇2
+
+nCH
+2(σmin + λ)2
+
+(cid:13)(cid:13)(cid:13)2
+
+1 CH C 2
+(cid:96)
+
+θ L1−w
+
+0
+
+2
+
+2
+
+=
+
+≤ nCH
+2
+nCH
+2
+
+=
+
+≤
+≤ n (cid:107)w(cid:107)2
+
+(cid:13)(cid:13)(cid:13)(cid:13)2
+
+2
+
+Putting together the successive bounds gives the result.
+
+23
+
+E.4 Characterizing the difference between the Newton approximation and inﬂuence
+
+Lemma 1. The matrix D(w) def= (cid:0)I − H
+(cid:1)−1 − I has singular values bounded
+Before proving Proposition 2, we ﬁrst prove a lemma about the spectrum of the error matrix D(w).
+− 1
+− 1
+between 0 and σmax
+λ .
+
+λ,1 H1 (w)H
+
+λ,1
+
+2
+
+2
+
+2
+
+2
+
+2
+
+2
+
+− 1
+
+σmax+λ .
+
+λ,1 H1 (w)H
+
+− 1
+Proof. We ﬁrst show that H
+λ,1 has singular values bounded between 0 and σmax
+− 1
+− 1
+The lower bound of 0 comes from the fact that H
+λ,1 is symmetric and H1 (w) (cid:23) 0.
+To show the upper bound, ﬁrst note that H1 (w) (cid:22) H1 (w) + H1 (1 − w) = H1 (recalling that
+w ∈ {0, 1}n ), and let U ΣU (cid:62) be the singular value decomposition of H1 . Since Hλ,1 = H1 + λI ,
+we have
+
+λ,1 H1 (w)H
+λ,1 = (cid:0)H1 + λI (cid:1)− 1
+2 H1 (w)(cid:0)H1 + λI (cid:1)− 1
+λ,1 H1 (w)H
+(cid:22) (cid:0)H1 + λI (cid:1)− 1
+(cid:0)H1 + λI (cid:1)− 1
+= (cid:0)U (Σ + λI )U (cid:62) (cid:1)− 1
+2 U ΣU (cid:62) (cid:0)U (Σ + λI )U (cid:62) (cid:1)− 1
+= U (Σ + λI )− 1
+2 Σ(Σ + λI )− 1
+2 U (cid:62) ,
+
+2 H1
+
+− 1
+
+− 1
+
+H
+
+2
+
+2
+
+2
+
+2
+
+2
+
+so its maximum singular value is upper bounded by σmax
+− 1
+− 1
+λ,1 implies that the singular values of
+(cid:3). Subtracting 1 from each end (for the identity matrix)
+In turn,
+this implies that the singular values of
+
+The bound on the singular values of H
+− 1
+− 1
+λ,1 lie in
+.
+− 1
+
+(cid:1)−1 lie in (cid:2)1, σmax+λ
+λ,1 H1 (w)H
+
+I − H
+λ,1 H1 (w)H
+
+(cid:0)I − H
+
+σmax+λ , 1
+λ
+
+σmax+λ .
+
+(cid:104)
+
+(cid:105)
+
+− 1
+
+2
+
+2
+
+2
+
+2
+
+2
+
+2
+
+λ,1 H1 (w)H
+
+λ,1
+
+λ
+
+gives the desired result.
+
+2
+
+Proposition 2 (Restated). Under Assumptions 1 and 2, the Newton-inﬂuence error ErrNt-inf (w) is
+− 1
+− 1
+
+ErrNt-inf (w) = ∇θ f ( ˆθ(1))(cid:62)H
+1
+∆θNt (w)(cid:62)∇2
+θ f ( ˆθ(1))∆θNt (w) + Errf ,3 (w),
+λ,1 D(w)H
+λ,1 g1 (w) +
+2
+with D(w) def= (cid:0)I − H
+(cid:1)−1 − I and H1 (w) def= (cid:80)n
+|Errf ,3 (w)| ≤ (cid:107)w(cid:107)3
+
+matrix D(w) has eigenvalues between 0 and σmax
+λ , where σmax is the largest eigenvalue of H1 . The
+residual term Errf ,3 (w) captures the error due to third-order derivatives of f (·) and is bounded by
+
+θ (cid:96)(xi , yi ; ˆθ(1)). The error
+
+Error from curvature of f (·)
+
+i=1 wi∇2
+
+λ,1 H1 (w)H
+
+(cid:96) /6(σmin + λ)3 .
+
+1Cf ,3C 3
+
+(cid:123)(cid:122)
+
+(cid:124)
+
+(cid:125)
+
+− 1
+
+− 1
+
+λ,1
+
+2
+
+2
+
+2
+
+Proof. From the second-order Taylor expansion of f about ˆθ(1), there exists 0 ≤ ξ ≤ 1 such that
+
+I Nt
+
+f (w) = f ( ˆθNt (1 − w)) − f ( ˆθ(1))
+= f ( ˆθ(1) + ∆θNt (w)) − f ( ˆθ(1))
+= ∇θ f ( ˆθ(1))(cid:62)∆θNt (w) +
+∆θNt (w)(cid:62) (cid:68)∇3
+1
+∆θNt (w)(cid:62)∇2
+θ f ( ˆθ(1))∆θNt (w)+
+2
+1
+θ f ( ˆθ(1) + ξ∆θNt (w)), ∆θNt (w)
+6
+= ∇θ f ( ˆθ(1))(cid:62)∆θNt (w) +
+6 ∆θNt (w)(cid:62) (cid:68)∇3
+1
+∆θNt (w)(cid:62)∇2
+θ f ( ˆθ(1))∆θNt (w) + Errf ,3 (w),
+2
+where we deﬁne Errf ,3 (w) def= 1
+θ f ( ˆθ(1) + ξ∆θNt (w)), ∆θNt (w)
+
+∆θNt (w)
+
+(cid:69)
+
+(cid:69)
+
+the error due to third-order and higher derivatives of f .
+
+(6)
+
+∆θNt (w) to be
+
+24
+
+We can express the difference between the ﬁrst-order Taylor term ∇θ f ( ˆθ(1))(cid:62)∆θNt (w) above and
+the ﬁrst-order inﬂuence approximation If (w) = q (cid:48)
+
+H −1
+λ,1 g1 (w) as
+
+w (0) = ∇θ f (cid:0) ˆθ(1)(cid:1)(cid:62)
+∇θ f ( ˆθ(1))(cid:62)∆θNt (w) − If (w)
+= ∇θ f ( ˆθ(1))(cid:62)∆θNt (w) − ∇θ f (cid:0) ˆθ(1)(cid:1)(cid:62)
+= ∇θ f ( ˆθ(1))(cid:62) (cid:16)
+H −1
+λ,1 g1 (w)
+= ∇θ f ( ˆθ(1))(cid:62) (cid:16)(cid:0)Hλ,1 − H1 (w)(cid:1)−1 − H −1
+Hλ,1 (1 − w)−1 − H −1
+g1 (w)
+(cid:0)Hλ,1 − H1 (w)(cid:1)−1
+g1 (w)
+= ∇θ f ( ˆθ(1))(cid:62)H
+H
+= ∇θ f ( ˆθ(1))(cid:62)H
+λ,1 H1 (w)H
+= ∇θ f ( ˆθ(1))(cid:62)H
+λ,1 D(w)H
+λ,1 g1 (w).
+
+(cid:16)(cid:0)I − H
+
+(cid:1)−1 − I
+
+λ,1 − I
+
+(cid:17)
+
+(cid:17)
+
+(cid:16)
+
+(cid:17)
+
+− 1
+
+− 1
+
+− 1
+
+− 1
+
+− 1
+
+− 1
+
+H
+
+2
+
+λ,1
+
+2
+
+λ,1
+
+2
+
+λ,1
+
+1
+2
+
+λ,1
+
+2
+
+2
+
+λ,1
+
+λ,1
+
+1
+2
+
+2
+
+(cid:17)
+
+H
+
+− 1
+
+2
+
+λ,1 g1 (w)
+
+− 1
+
+2
+
+H
+λ,1 g1 (w)
+
+(7)
+
+Substituting (7) into (6), we have that
+
+I Nt
+
+f (w) − If (w) = ∇θ f ( ˆθ(1))(cid:62)H
+λ,1 D(w)H
+λ,1 g1 (w)
+1
+∆θNt (w)(cid:62)∇2
+θ f ( ˆθ(1))∆θNt (w) + Errf ,3 (w),
+2
+
++
+
+2
+
+2
+
+− 1
+
+− 1
+
+as desired.
+We can bound Errf ,3 (w) as follows:
+
+|Errf ,3 (w)| ≤ Cf ,3
+6
+
+(cid:107)∆θNt (w)(cid:107)3
+
+2
+
+≤ (cid:107)w(cid:107)3
+
+1 Cf ,3C 3
+(cid:96)
+
+6(σmin + λ)3 .
+
+Applying Lemma 1 to bound the spectrum of D(w) completes the proof.
+
+E.5 The inﬂuence on self-loss
+
+We ﬁrst state two linear algebra facts that will be useful in the sequel.
+Lemma 2. Let A (cid:31) 0, B (cid:23) 0 ∈ Rd×d be a pair of symmetric positive-deﬁnite and positive-
+semideﬁnite matrices, respectively. Let σA,1 be the largest eigenvalue of A, σA,d the smallest
+eigenvalue of A, and similarly let σB ,1 and σB ,d be the largest and smallest eigenvalues of B ,
+respectively. Then
+
+σB ,d
+σA,1
+
+I (cid:22) A− 1
+2 BA− 1
+
+2 (cid:22) σB ,1
+σA,d
+
+I .
+
+1
+
+is the smallest eigenvalue of A−1 , while
+Proof. Note that
+is its largest. The lemma follows
+from the fact that the smallest singular value of the product of two matrices is lower bounded by the
+product of the smallest singular values of each matrix, and similarly the largest singular value of the
+product is upper bounded by the product of the largest singular values of each matrix.
+
+σA,d
+
+σA,1
+
+1
+
+The next fact is a consequence of the variational deﬁnition of eigenvalues.
+Lemma 3. Given a symmetric matrix A ∈ Rd×d and a vector v ∈ Rd , we have the following bounds
+on the quadratic form v(cid:62)Av :
+
+σd (cid:107)v(cid:107)2
+2 ≤ v(cid:62)Av ≤ σ1 (cid:107)v(cid:107)2
+2 ,
+
+where σd is the smallest eigenvalue of A, and σ1 is the largest.
+
+We are now ready to analyze the effect of removing a subset w of k training points on the total loss
+on those k points.
+
+25
+
+(cid:19)
+
+(cid:19)
+
+(cid:18)
+
+n(cid:88)
+n(cid:88)
+
+i=1
+
+(cid:19)
+(cid:18)
+(cid:12)(cid:12)(cid:12)(cid:12) σ2
+
+Proposition 3 (Restated). Under Assumptions 1 and 2, the inﬂuence on the self-loss f (θ) =
+
+(cid:80)n
+
+i=1 wi (cid:96)(xi , yi ; θ) obeys
+If (w) + Errf ,3 (w) ≤ I Nt
+f (w) ≤
+
+Proof. Since f (θ) = (cid:80)n
+
+1 +
+
+3σmax
+
+2λ
+
++
+
+max
+
+σ2
+2λ2
+
+If (w) + Errf ,3 (w).
+
+i=1 wi (cid:96)(xi , yi ; θ), we have that
+∇θ f ( ˆθ(1)) =
+wi∇θ (cid:96)(xi , yi ; ˆθ(1))
+
+= g1 (w),
+wi∇2
+θ (cid:96)(xi , yi ; ˆθ(1))
+
+∇2
+
+θ f ( ˆθ(1)) =
+
+Substituting these and ∆θNt (w) = Hλ,1 (1 − w)−1 g1 (w) into Proposition 2, we obtain
+
+i=1
+
+= H1 (w).
+
+I Nt
+
+f (w) − If (w) − Errf ,3 (w)
+= ∇θ f ( ˆθ(1))(cid:62)H
+1
+∆θNt (w)(cid:62)∇2
+λ,1 D(w)H
+λ,1 g1 (w) +
+θ f ( ˆθ(1))∆θNt (w)
+2
+= g1 (w)(cid:62)H
+1
+g1 (w)(cid:62)Hλ,1 (1 − w)−1H1 (w)Hλ,1 (1 − w)−1 g1 (w)
+λ,1 D(w)H
+2
+
+λ,1 g1 (w) +
+
+− 1
+
+− 1
+
+− 1
+
+− 1
+
+2
+
+2
+
+2
+
+2
+
+(cid:123)(cid:122)
+
+2
+
+1
+2
+
+λ,1
+
+H
+
+1
+2
+
+− 1
+
+λ,1Hλ,1 (1 − w)−1H1 (w)Hλ,1 (1 − w)−1H
+
+= g1 (w)(cid:62)H
+where D(w) def= (cid:0)I − H
+λ,1 H1 (w)H
+
+− 1
+(cid:1)−1 − I has singular values bounded between 0 and σmax
+λ .
+From Lemma 2, Λ(w) has singular values bounded between 0 and σmax (σmax+λ)
+.
+Applying Lemma 3 and using If (w) = g1 (w)(cid:62)H −1
+λ,1 g1 (w), we obtain
+− 1
+− 1
+
+λ,1 g1 (w),
+
+def= Λ(w)
+
+− 1
+
+− 1
+
+2λ2
+
+λ,1
+
+λ,1
+
+1
+2
+
+2
+
+2
+
+2
+
+D(w) +
+
+(cid:124)
+
+ H
+(cid:125)
+
+(cid:19)
+
+(cid:18) σmax
+
+2
+
+2
+
+≤
+
+0 ≤ g1 (w)(cid:62)H
+λ,1 [D(w) + Λ(w)] H
+λ,1 g1 (w)
+(cid:18) 3σmax
+σmax (σmax + λ)
+g1 (w)(cid:62)H −1
++
+λ,1 g1 (w)
+λ
+2λ2
+If (w),
+2λ
+
+σ2
+2λ2
+
+max
+
+=
+
++
+
+which gives us
+
+If (w) + Errf ,3 (w) ≤ I Nt
+f (w) ≤
+
+1 +
+
+3σmax
+
+2λ
+
++
+
+max
+
+σ2
+2λ2
+
+If (w) + Errf ,3 (w).
+
+Note that Errf ,2 (w) def= σ2
+
+2λ2 If (w) can be bounded as
+
+max
+
+|Errf ,2 (w)| =
+
+(cid:12)(cid:12)(cid:12)(cid:12)
+
+max
+
+max
+
+2λ2 If (w)
+≤ σ2
+2λ2 · (cid:12)(cid:12)(cid:12)g1 (w)(cid:62)H −1
+2λ2 · |If (w)|
+≤ σ2
+λ,1 g1 (w)
+2(σmin + λ)λ2 ,
+
+≤ (cid:107)w(cid:107)2
+
+1 C 2
+(cid:96) σ2
+max
+
+max
+
+(cid:12)(cid:12)(cid:12)
+
+26
+
+and ErrNt-act (w) = I ∗
+f (w) − I Nt
+If (w) + O
+
+(cid:16) 1
+
+(cid:17) ≤ I ∗
+
+λ3
+
+(cid:18)
+
+(cid:19)
+
+f (w) ≤
+
+1 +
+
+3σmax
+
+2λ
+
+If (w) + O
+
+(cid:17)
+
+.
+
+(cid:16) 1
+
+λ3
+
+f (w) grows as O(1/λ3 ) from Proposition 1, so we can also write
+
+E.6 The inﬂuence on a test point
+
+2
+
+H
+
+(cid:0)I − H
+
+Corollary 1 (Restated). Suppose f (θ) = θ(cid:62)xtest , and deﬁne vtest
+(cid:1)−1 − I is the error matrix from Proposition 2.
+λ,1 g1 (w). Then under Assumptions 1 and 2, I Nt
+− 1
+− 1
+− 1
+Proof. Since f (θ) = θ(cid:62)xtest is linear, we have that for any θ ∈ Θ,
+
+f (w) = If (w) + vtest
+
+λ,1 H1 (w)H
+
+λ,1
+
+2
+
+2
+
+− 1
+
+def= H
+
+2
+
+λ,1 xtest and vw
+
+(cid:62)D(w)vw , where D(w) =
+
+def=
+
+∇θ f (θ) = xtest ,
+θ f (θ) = 0,
+Cf ,3 = 0.
+
+∇2
+
+This in turn implies that Errf ,3 (w) = 0. Substituting these expressions into Proposition 2 gives us
+the desired result.
+Proposition 4 (Restated). Consider a binary classiﬁcation setting with y ∈ {−1, +1} and a margin-
+based model with loss (cid:96)(x, y ; θ) = φ(yθ(cid:62)x) for some φ : R → R+ . Suppose f (θ) = θ(cid:62)xtest
+and that the subset w comprises (cid:107)w(cid:107)1 identical copies of the training point (xw , yw ). Then under
+Assumptions 1 and 2, the Newton approximation I Nt
+f (w) is related to the inﬂuence If (w) according
+to
+f (w) is bounded between If (w) and (cid:0)1 + σmax
+This implies the Newton approximation I Nt
+− 1
+− 1
+
+If (w)
+1 − (cid:107)w(cid:107)1 · φ(cid:48)(cid:48) (yw
+ˆθ(1)(cid:62)xw ) · x(cid:62)
+w H −1
+
+(cid:1)If (w).
+
+Proof. From Corollary 1,
+
+f (w) =
+
+λ,1xw
+
+I Nt
+
+λ
+
+.
+
+(cid:62)H
+With the additional assumptions on w and (cid:96)(x, y ; θ), we have that
+
+f (w) = If (w) + xtest
+
+λ,1 D(w)H
+
+I Nt
+
+2
+
+2
+
+λ,1 g1 (w).
+
+i=1
+
+n(cid:88)
+n(cid:88)
+n(cid:88)
+
+i=1
+
+n(cid:88)
+n(cid:88)
+
+i=1
+
+=
+
+wiφ(cid:48)(cid:48) (yi
+
+ˆθ(1)(cid:62)xi )xix(cid:62)
+
+i
+
+i=1
+
+= (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+
+k xw xT
+
+w .
+
+27
+
+∇θ (cid:96)(x, y ; θ) = yφ(cid:48) (yθ(cid:62)x)x,
+wi∇θ (cid:96)(xi , yi ; ˆθ(1))
+
+g1 (w) =
+
+=
+
+wi yiφ(cid:48) (yi
+
+ˆθ(1)(cid:62)xi )xi
+
+ixi
+
+wi yiφ(cid:48)
+=
+= (cid:107)w(cid:107)1 yw φ(cid:48)
+k xw ,
+
+i=1
+
+∇2
+
+θ (cid:96)(x, y ; θ) = φ(cid:48)(cid:48) (yθ(cid:62)x)xx(cid:62) ,
+wi∇2
+θ (cid:96)(xi , yi ; ˆθ(1))
+
+H1 (w) =
+
+where in the last equality we use the assumption that we are removing (cid:107)w(cid:107)1 copies of the point
+(xw , yw ). Similarly,
+
+We thus have
+
+D(w) = (cid:0)I − H
+λ,1 H1 (w)H
+I − H
+λ,1 (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+=
+λ,1 (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+H
+wH
+wH −1
+wH
+wH −1
+
+− 1
+
+2
+
+− 1
+
+2
+
+λ,1
+
+(cid:1)−1 − I
+− 1
+
+(cid:16)
+
+− 1
+
+2
+
+k xw xT
+
+wH
+
+2
+
+λ,1
+
+(cid:17)−1 − I
+
+=
+
+− 1
+1 − (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+(cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+− 1
+1 − (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+where the third equality comes from the Sherman-Morrison formula. Substituting D(w) into Corol-
+lary 1, we obtain
+
+2
+
+k xw xT
+λ,1
+k xT
+λ,1xw
+λ,1 xw xT
+λ,1
+k xT
+λ,1xw
+
+− 1
+
+2
+
+=
+
+k H
+
+2
+
+− 1
+
+2
+
+,
+
+I Nt
+
+f (w) = If (w) + xtest
+= If (w) +
+
+(cid:62)H
+− 1
+− 1
+(cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+(cid:62)H −1
+1 − (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+(cid:62)H −1
+
+2
+
+λ,1 D(w)H
+λ,1 g1 (w)
+wH −1
+λ,1 g1 (w)
+wH −1
+λ,1 (cid:107)w(cid:107)1 yw φ(cid:48)
+k xw · (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+wH −1
+λ,1 g1 (w) · (cid:107)w(cid:107)1 zT
+k H −1
+wH −1
+If (w) · (cid:107)w(cid:107)1 zT
+k H −1
+wH −1
+
+2
+
+k xtest
+
+λ,1xw xT
+k xT
+λ,1xw
+
+= If (w) +
+
+xtest
+
+k xT
+λ,1xw
+λ,1 zk
+
+wH −1
+
+λ,1xw
+
+1 − (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+
+k xT
+
+= If (w) +
+
+xtest
+
+(cid:62)H −1
+1 − (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+
+k xT
+λ,1xw
+λ,1 zk
+λ,1xw
+
+= If (w) +
+
+1 − (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+
+k xT
+
+=
+
+If (w)
+wH −1
+
+1 − (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+(cid:16)(cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+To bound the denominator, we ﬁrst use the trace trick to rearrange terms
+(cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+− 1
+
+k xT
+
+λ,1xw
+
+.
+
+k xT
+
+wH −1
+λ,1xw = tr
+
+k xT
+
+wH −1
+λ,1 (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+λ,1 H1 (w)H
+
+λ,1xw
+
+(cid:17)
+
+= tr
+
+(cid:16)
+(cid:16)
+
+H
+
+2
+
+k xw xT
+
+wH
+
+− 1
+
+2
+
+λ,1
+
+(cid:17)
+
+= tr
+
+H
+
+− 1
+
+2
+
+− 1
+
+2
+
+λ,1
+
+(cid:17)
+
+.
+
+− 1
+Since H
+λ,1 has rank one under our assumptions, it only has at most one non-zero
+eigenvalue. We can therefore apply Lemma 1 to conclude that
+(cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+− 1
+
+− 1
+
+2
+
+λ,1 H1 (w)H
+
+2
+
+k xT
+
+wH −1
+λ,1xw = tr
+
+(cid:16)
+
+H
+λ,1 H1 (w)H
+
+2
+
+− 1
+
+2
+
+λ,1
+
+(cid:17)
+
+≤ σmax
+λ,1xw ≥
+
+σmax + λ
+
+,
+
+which in turn implies that 1 − (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+
+k xT
+
+wH −1
+
+σmax+λ , so
+λ
+
+1
+
+1 − (cid:107)w(cid:107)1 φ(cid:48)(cid:48)
+
+k xT
+
+wH −1
+
+λ,1xw
+
+≤ σmax + λ
+λ
+
+= 1 +
+
+σmax
+
+λ
+
+.
+
+28
+
+

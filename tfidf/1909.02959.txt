@@ -1,0 +1,1076 @@
+Discriminative and Robust Online Learning for Siamese Visual Tracking
+
+Jinghao Zhou, Peng Wang, Haoyang Sun
+
+School of Computer Science and School of Automation, Northwestern Polytechnical University, China
+National Engineering Laboratory for Integrated Aero-Space-Ground-Ocean Big Data Application Technology, China
+jensen.zhoujh@gmail.com, peng.wang@nwpu.edu.cn, sunhaoyang@mail.nwpu.edu.cn
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+9
+5
+9
+2
+0
+
+.
+
+9
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+The problem of visual object tracking has traditionally been
+handled by variant tracking paradigms, either learning a
+model of the object’s appearance exclusively online or match-
+ing the object with the target in an ofﬂine-trained embedding
+space. Despite the recent success, each method agonizes over
+its intrinsic constraint. The online-only approaches suffer
+from a lack of generalization of the model they learn thus are
+inferior in target regression, while the ofﬂine-only approaches
+(e.g., convontional siamese trackers) lack the target-speciﬁc
+context information thus are not discriminative enough to
+handle distractors, and robust enough to deformation. There-
+fore, we propose an online module with an attention mech-
+anism for ofﬂine siamese networks to extract target-speciﬁc
+features under L2 error. We further propose a ﬁlter update
+strategy adaptive to treacherous background noises for dis-
+criminative learning, and a template update strategy to handle
+large target deformations for robust learning. Validity can be
+validated in the consistent improvement over three siamese
+baselines: SiamFC, SiamRPN++, and SiamMask. Beyond
+that, our model based on SiamRPN++ obtains the best re-
+sults over six popular tracking benchmarks and can operate
+beyond real-time.
+
+1
+
+Introduction
+
+Visual object tracking is a fundamental topic in vari-
+ous computer vision tasks, such as vehicle navigation, au-
+tomatic driving, visual surveillance, and video analytics.
+Brieﬂy speaking, given the position of an arbitrary target of
+interest in the ﬁrst frame of a sequence, visual object track-
+ing aims to estimate its location in all subsequent frames.
+In the context of visual object tracking, almost all the
+state-of-the-art trackers can be categorized into two cate-
+gories: discriminative and generative trackers. Discrimina-
+tive trackers train a classiﬁer to distinguish the target from
+the background, while generative trackers ﬁnd the object that
+can best match the target through computing the joint prob-
+ability density between targets and search candidates.
+
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved. This work is sup-
+ported in part by the National Natural Science Foundation of China
+(No. 61876152 )
+
+Figure 1: Qualitative demonstration and comparison. While
+accurate bounding box regression eludes ATOM and
+SiamRPN++ struggles at situations like distractors and de-
+formation, our method DROL outperforms ATOM with a
+siamese matching subnet, and SiamRPN++ with our pro-
+posed discriminative and robust online module.
+
+Recently, the siamese framework (Bertinetto et al. 2016a)
+as a generative tracker has received surging attention in
+that its performance has taken the lead in various bench-
+marks while running at real-time speed. Generally, these ap-
+proaches obtain a similarity embedding space between sub-
+sequent frames and directly regress to the real state of the
+target (Li et al. 2018; Wang et al. 2019). Despite its recent
+success, since the siamese paradigm is exclusively trained
+ofﬂine, it suffers from severe limitations:
+(I) Siamese approaches ignore the background informa-
+tion in the course of tracking, leading to inferior dis-
+criminative capability for target classiﬁcation in the
+
+GTDROL-RPNATOMSiamRPN++ 
+ 
+ 
+ 
+ 
+ 
+face of distractors.
+(II) Siamese approaches solely utilize the ﬁrst frame as
+template or merely update it through averaging the
+subsequent frames, thus its performance degrades
+with huge deformation, rotation, and motion blur and
+results in poor robustness for target regression.
+Probing into a uniﬁed solution to these issues arising from
+the parameter-ﬁxed inherency of siamese tracking, we’re
+motivated to introduce an online mechanism referring to the
+discriminative trackers which often feature a discriminative
+classiﬁer and an efﬁcient online update strategy. The unique
+strengths in online fashion, that is, the attainment of dynamic
+video-speciﬁc information, have long eluded siamese net-
+works given its ofﬂine settings. However, the directly on-
+line updating siamese networks may be improper since any
+introduction of noises during tracking may deteriorate the
+generative ability of ofﬂine-trained embedding space.
+Given the above intuitive analysis, a standalone online
+module that is systematically integrated but mutually inde-
+pendent with siamese networks is proposed as a complemen-
+tary subnet. The online subnet is designed with an attention
+mechanism for extraction to most representative target fea-
+tures and is optimized efﬁciently to cater for time require-
+ments. The response map of the online module is utilized for
+two earlier-mentioned issues separately. Speciﬁcally, limita-
+tion (I) is resolved by fusing the online response map with
+siamese classiﬁcation score yielding an adaptive classiﬁca-
+tion score for discriminative tracking, while limitation (II) is
+tackled by giving high-quality frames to siamese networks
+to update template for robust tracking.
+To wrap up, we develop a highly effective visual track-
+ing framework and establish a new state-of-the-art in terms
+of robustness and accuracy. The main contributions of this
+work are listed in fourfold:
+• We propose an online module with attention mechanism
+optimized as a classiﬁcation problem for siamese visual
+tracking, which can fully exploit background information
+to extract target-speciﬁc features.
+• We propose discriminative learning using target-speciﬁc
+features via score fusion to help siamese networks han-
+dling distractors and background noises.
+• We propose robust learning using target-speciﬁc features
+via template update to improve their robustness handling
+deformation, rotation, and illumination, etc.
+• The proposed online module can be integrated with a va-
+riety range of siamese trackers without re-training them.
+Our method consistently set new state-of-the-art perfor-
+mance on 6 popular benchmarks of OTB100, VOT2018,
+VOT2018-LT, UAV123, TrackingNet, and LaSOT.
+
+2 Related Work
+
+Siamese visual tracking. Recently, the tracking methods
+based on siamese network (Bertinetto et al. 2016a) in the
+literature greatly outperformed other trackers due to heavy
+ofﬂine training, which largely enriches the depiction of the
+target. The following works include higher-ﬁdelity object
+representation (Wang et al. 2019; Li et al. 2018), deeper
+
+backbone for feature extraction (Li et al. 2019a; Zhang and
+Peng 2019), and multi-stage or multi-branch network design
+(Fan and Ling 2019; He et al. 2018). Beyond that, another
+popular optimization is template’s update for robust tracking
+in the face of huge target’s appearance change, either by us-
+ing fused frames (Choi, Kwon, and Lee 2017a) or separately
+selected frames (Yang and Chan 2018). However, the lack
+of integrating background information degrades its perfor-
+mance on challenges like distractor, partial occlusions, and
+huge deformation. In fact, such rigidity is intrinsic given the
+fact that the object classiﬁcation score from siamese frame-
+work turns out to be messy thus requires a centered Gaus-
+sian window to ensure stability. While many works intend
+to construct a target-speciﬁc space, by distractor-aware of-
+ﬂine training (Zhu et al. 2018), residual attentive learning
+(Wang et al. 2018), gradient-based learning (Choi, Kwon,
+and Lee 2017b; Li et al. 2019b), this embedding space ob-
+tained through cross-correlation has yet to explicitly account
+for the distractors and appearance variation.
+
+Online learning approach. Online learning is a domi-
+
+nant feature for discriminative trackers to precede, which
+is achieved by training an online component to distin-
+guish the target object from the background. Particularly,
+the correlation-ﬁlter-based trackers (Henriques et al. 2014;
+Danelljan et al. 2017) and classiﬁer-based trackers (Kalal,
+Mikolajczyk, and Matas 2011; Nam and Han 2016) are
+among the most representative and powerful methods. These
+approaches learn an online model of the object’s appear-
+ance using hand-crafted features or deep features pre-trained
+for object classiﬁcation. Given the recent prevalence of
+meta-learning framework, (Bhat et al. 2019; Park and Berg
+2018) further learns to learn during tracking. Comparatively
+speaking, online learning for siamese-network-based track-
+ers has had less attention. While previous approaches are
+to directly insert a correlation ﬁlter as a layer in the for-
+ward pass and update it online (Bertinetto et al. 2016b;
+Guo et al. 2017), our work focuses on the siamese’s com-
+bination with an online classiﬁer in a parallel manner with
+no need to retrain them.
+
+Target regression and classiﬁcation. Visual object track-
+
+ing synchronously needs target regression and classiﬁcation,
+which can be regarded as two different but related subtasks.
+While object classiﬁcation has been successfully addressed
+by the discriminative methods, object regression is recently
+upgraded by the introduction of Regional Proposal Network
+(Li et al. 2018) in siamese network owing to the intrinsic
+strength for generative trackers to embed rich representation.
+Nevertheless, the majority of trackers in the gallery stand out
+usually with the strength within one subtask while degrading
+within the other. To design a high-performance tracker, lots
+of works have been focused on addressing these two needs
+in two separate parts. MBMD (Zhang et al. 2018) uses a
+regression network to propose candidates and classify them
+online. ATOM (Danelljan et al. 2019) combines a simple yet
+effective online discriminative classiﬁer and high-efﬁciency
+optimization strategy with an IoUNet through overlap max-
+imization, while the regression is achieved through a sparse
+sampling strategy compared with the dense one via cross-
+correlation in siamese networks.
+
+Figure 2: Overview of the network architecture for visual object tracking. It consists of siamese matching subnet M majorly
+accounting for bounding box regression and online classiﬁcation subnet C generating classiﬁcation score. Dashed line denotes
+reference scores passed from the classiﬁer to the updater to select the short-term template z t
+s .
+
+m(cid:88)
+
+(cid:88)
+
+λk (cid:107)wk (cid:107)2 ,
+
+(1)
+
+3 Proposed Method
+
+The visual object tracking task can be formulated as a
+learning problem whose the primary task is to ﬁnd the opti-
+mal target position by minimizing the following objective:
+
+L(w) =
+
+γj r(f (xj ; w), yj ) +
+
+j=1
+
+k
+
+where r(f , w) computes the residual at each spatial location
+and yj ∈ RW ×H is the annotated label. The impact of each
+residual r is set by γj and regularization on wk is set by λk .
+
+3.1 Siamese Matching Subnet
+
+Before moving to our approach, we ﬁrstly review
+the siamese network baseline. The siamese-network-based
+tracking algorithms take (1) as a template-matching task by
+formulating as a cross-correlation problem fR and learn a
+embedding space φ(·) that computes where in the search re-
+gion can best match the template, shown as
+
+M (x, z ) = φ(x) ∗ φ(z ) + b ∗ 1,
+
+f cls
+
+(2)
+
+where one branch learns the feature representation of the tar-
+get z , and the other learns the search area x.
+While the brute-force scale search to obtain target regres-
+sion f reg
+M (x, z ; w) is insufﬁcient in accuracy, siamese net-
+work extensions explicitly complement themselves with a
+Region Proposal Network (RPN) head or a mask head by
+separately regressing the bounding box and the mask of the
+target by encoding a subspace for box [·]reg−box and mask
+[·]reg−mask . They each output the offsets for all prior an-
+chors or a pixel-wise binary mask. These 3 variants of target
+regression can be formulated as:
+
+f reg−f c
+M
+f reg−box
+M
+f reg−mask
+M
+
+(x, z ) = φ(x) ∗ φ( ˆz ), ˆz ∈ {z i |i = 1, 2, 3}
+(x, z ) = [φ(x)]reg−box ∗ [φ(z )]reg−box
+(x, z ) = [φ(x)]reg−mask ∗ [φ(z )]reg−mask
+
+(3)
+
+M
+
+f reg−box
+M
+f reg−mask
+M
+
+which is seperately adopted by our chosen baseline SiamFC,
+SiamRPN++, and SiamMask. ˆz is the scaled template with
+maximal response value and f reg−f c
+(x, ˆz ) is a 1d vector,
+directly giving target center at pixel with maximal score.
+(x, z ) is a 4d vector which stands for the offsets of
+center point location and scale of the anchors to groudtruth.
+(x, z ) is a (63 × 63)d vector encoding the spatial
+distribution of object mask.
+The eventual predicted target state s is obtained using the
+same strategy as in (Bertinetto et al. 2016a; Li et al. 2018;
+Li et al. 2019a; Wang et al. 2019). Additionally, the siamese
+network takes the residuals for classiﬁcation commonly as
+cross-entropy loss, bounding box regression as smooth L1
+loss, and mask regression as logistic regression loss.
+
+3.2 Target-speciﬁc Features
+
+The features provided by siamese matching subnet which
+are trained ofﬂine and set ﬁxed to ensure tracking stabil-
+ity and efﬁciency. However, they’re not target-speciﬁc and
+adaptive to the target’s domain. Inspired by discriminative
+trackers, in the initialization stage (the ﬁrst frame), we pro-
+pose to harness target-speciﬁc features on top of siamese
+features in a supervised manner by setting (1) as L2 loss
+yielding,
+
+rC (f , y1 ) = (cid:107)fC − y1(cid:107)2 ,
+
+(4)
+where the expected output fC is the classiﬁcation scores for
+each location belonging to the region of target and overall
+representing a spatial distribution of labels. y1 is set to Gaus-
+sian according to the given target bounding box.
+In light of related researches (Li et al. 2019b; Yang et al.
+2019), the ﬁtting of conﬁdence scores for all negative back-
+ground pixels dominates online learning by directly using
+the standard convolutions, as only a few convolutional ﬁlters
+play an important role in constructing each feature pattern or
+object category. The aforementioned data imbalance in both
+
+Cross-correlationSiamese Matching SubnetClassifiersearchtrain setShared Backbone𝒇𝑪𝒇𝑴𝒓𝒆𝒈−𝒃𝒐𝒙𝒇𝑴𝒄𝒍𝒔Online Classification Subnet𝒇𝑴𝒓𝒆𝒈−𝒎𝒂𝒔𝒌𝒇𝑴𝒓𝒆𝒈−𝒇𝒄initialize train setsupdate train setstemplate𝒛𝟏𝒙t𝒛𝒔𝒊𝑻tscore fusiontemplate updateሶ𝒇𝑪෠𝒇𝑪Input
+
+Algorithm 1: Tracking algorithm
+: Video frames f 1 , ..., f t of length L;
+Initial target state s1 ;
+Output: Target state st in subsequent frames;
+update with augmented search {(cid:101)x1 } ;
+Setting train set T for online classiﬁcation subnet C and
+Setting template z , zs for siamese matching subnet M ;
+for t = 2 to L do
+Obtain the search xt based on the previous
+predicted target state st−1 ;
+// Track
+Obtain fC (xt ) = C (xt ) via classiﬁcation subnet;
+Obtain f cls
+Obtain current target state st based on ˙fC (xt ) using
+(5) and f reg
+
+M (xt ), f reg
+M (xt ) = R(xt ) using (2);
+
+if δc (st ) ≥  then
+
+M (xt );
+T t ← T t−1 ∪ xt ;
+
+Train C with T t ;
+
+end
+
+if (t mod T ) = 0 then
+s using (6);
+
+zs ← z t
+
+end
+end
+
+3.4 Robust Learning via Template Update
+
+A crucial section of siamese trackers is the selection of
+templates, as the variation of target appearances often ren-
+ders poor target regression and even target drift. We thus
+design an extra template branch for siamese networks to re-
+serve the target information on the most recent frame. The
+template for this branch is denoted as zs , representing the
+template in short-term memory as opposed to retaining the
+ﬁrst frame for long-term memory.
+It’s worth noting that the key for good performance rests
+largely on the quality of identiﬁed templates, thus the se-
+lection of possible template candidates need to be designed
+reasonably. We use the maximal score ˆfC (x; w) of the out-
+put from online classiﬁer as a yardstick to select high-quality
+templates, which can be formulated by
+
+ˆfC (x; w) ∗ 1 ˆfC >τc
+
+zs = warp(arg max
+
+(6)
+where warp(·) is the cropping operation to feature size of the
+template and τc is ﬁltering threshold suppressing low-quality
+template facing occlusion, motion blur, and distractors.
+modiﬁed to z (cid:48) which is decided with
+By shifting to the short-term template, z in (2) can be
+
+),
+
+x
+
+ zs ,
+
+z (cid:48) =
+
+M (z 1 )) ≥ υr ,
+IoU( ˆf reg
+M (zs ) − ˆf cls
+M (zs ), ˆf reg
+M (z 1 ) ≥ υc ,
+
+ˆf cls
+
+(7)
+
+z 1 ,
+
+otherwise,
+where ˆf cls
+M denotes location with maximal score and ˆf reg
+M its
+corresponding bounding box. This is to avoid bounding box
+drift and inconsistency using the short-term template. The
+full pipeline of our method is detailed in Algorithm 1.
+
+Figure 3: Network architecture of proposed online module,
+which consists of compression module to reﬁne the fea-
+ture map from backbone suitable for classiﬁcation, attention
+module resolving data imbalance and ﬁlter module. ϕs de-
+notes spatial attention consisting of 2 FC layers after global
+average pool (GAP) and ϕc channel-wise attention com-
+posed of a softmax after channel averaging.
+
+spatial and channel-wise fashion degrades the model’s dis-
+criminative capabilities.
+To accommodate this issue, we introduce a dual atten-
+tion mechanism to fully extract target-speciﬁc features. As
+shown in Figure 3, the compression module, and the atten-
+tion module together form a target-speciﬁc feature extractor.
+Note that these 2 modules (gray area) are only ﬁne-tuned
+with the ﬁrst frame of given sequences and are kept ﬁxed
+during tracking to ensure stability. The harnessed target-
+speciﬁc features are then leveraged to optimize the ﬁlter
+module (white area) in subsequent frames.
+
+3.3 Discriminative Learning via Filter Update
+
+√
+
+γj (f (xj ) − yj ) and rm+k (w) =
+
+Extensive study (Zhu et al. 2018) has proved siamese
+trackers can be easily distracted by a similar object dur-
+ing tracking even with distractor-aware (target-speciﬁc) fea-
+tures. A more profound reason for such inferiority is that
+there’s no online weight update performed to suppress the
+treacherous background noises.
+As a solution, by changing y1 in (4) to yi centered at
+predicted location, the update of ﬁlter module can be iter-
+atively optimized as tracking proceeds. To further acceler-
+ate optimization, reformulating (1) into the squared norm
+of the residual vector L(w) = (cid:107)r(w)(cid:107)2 , where rj (w) =
+λkwk , induces a posi-
+tive deﬁnite quadratic problem. Instead of using the standard
+stochastic gradient descent (SGD) as the optimization strat-
+egy, following (Danelljan et al. 2019), we used Conjugate
+Gradient Descent better suited for solving quadratic prob-
+lem in terms of convergence speed. This algorithm allows
+an adaptive search direction p and learning rate α during
+backpropogation in an iterative form.
+The online classiﬁcation score from the ﬁlter module is
+resized using cubic interpolation to the same spatial size
+as the siamese classiﬁcation score and then fused with it
+through weighted sum yielding an adaptive classiﬁcation
+score, which can be formulated as:
+
+√
+
+˙fC (x; w) = λfC (x; w) + (1 − λ)f cls
+M (x, z ; w),
+
+(5)
+
+where λ is the impact of online conﬁdence score.
+
+𝟏×𝟏conv4×𝟒conv𝜑𝑐𝜑sAttention moduleCompression moduleFilter module𝜙(𝑥)𝑓𝐶Figure 4: Visualized process of proposed template update strategy on sequence Basketball of OTB2015. The frame with the
+highest score in the historical frames will be selected to update the short-term template zs .
+
+4 Experiments
+
+4.1
+
+Implementation Details
+
+Our method is implemented in Python with PyTorch, and
+the complete code and video demo will be made available at
+https://github.com/shallowtoil/DROL.
+Architecture. Corresponding to the regression variants as
+described in (3), we apply our method in three siamese base-
+lines SiamFC, SiamRPN++, and SiamMask yielding DROL-
+FC, DROL-RPN, DROL-Mask respectively. In DROL-FC,
+we use the modiﬁed AlexNet as the backbone and up-
+channel correlation. In DROL-RPN, we use the modiﬁed
+AlexNet and layer 2, 3, 4 of ResNet50 and depth-wise cor-
+relation. While in DROL-Mask, we use layer 2 of ResNet50
+and depth-wise correlation. For the classiﬁcation subnet, the
+ﬁrst layer is a 1 × 1 convolutional layer with ReLU activa-
+layer employs a 4 × 4 kernel with a single output channel.
+tion, which reduces the feature dimensionality to 64. The last
+Training phase. For ofﬂine training, since we directly use
+the off-the-shelf siamese models, no extra ofﬂine training
+stage for the whole framework is required. The training data
+for our models thus is completely the same as those vari-
+ants’ baselines. For online tuning, we use the region of size
+255 × 255 of the ﬁrst frame to pre-train the whole classi-
+ﬁer. Similar to (Danelljan et al. 2019), we also perform data
+augmentation to the ﬁrst frame of translation, rotation, and
+blurring, yielding total 30 initial training samples.
+
+Discriminative learning. We add the coming frames to
+
+initial training samples with a maximal batch size of 250
+by replacing the oldest one. Each sample is labeled with a
+Gaussian function centered at predicted target location. We
+discard the frames with the occurrence of distractors or tar-
+get absence for ﬁlter update. The classiﬁer is updated every
+10 frame with a learning rate set to 0.01 and doubled once
+neighboured distractors are detected. To fuse classiﬁcation
+scores, we set λ to 0.6 in DROL-FC and 0.8 in DROL-RPN
+and DROL-Mask.
+Robust learning. For template update, to strike a balance
+between stability and dynamicity when tracking proceeds,
+we update the short-term template every T = 5 frames,
+while τc , υr , and υc are set to 0.75, 0.6, and 0.5 respectively.
+The above hyper-parameters are set using VOT2018 as the
+validation set and are further evaluated in Section 5.
+
+Method
+
+Backbone OTB2015
+VOT2018 FPS
+AUC Pr
+EAO A
+ECO
+VGGNet 0.694 0.910 0.280 0.484
+8
+UPDT
+ResNet50 0.702
+-
+0.378 0.536
+-
+MDNet
+VGGNet 0.678 0.909
+-
+-
+1
+ATOM
+ResNet18 0.669 0.882 0.401 0.590 30
+DiMP
+ResNet50 0.684 0.894 0.440 0.597 40
+SiamFC
+AlexNet 0.582 0.771 0.206 0.527 120
+DROL-FC AlexNet 0.619 0.848 0.256 0.502 60
+SiamRPN
+AlexNet 0.637 0.851 0.326 0.569 200
+DaSiamRPN AlexNet 0.658 0.875 0.383 0.586 160
+SiamRPN++ AlexNet 0.666 0.876 0.352 0.576 180
+ResNet50 0.696 0.915 0.414 0.600 35
+DROL-RPN AlexNet 0.689 0.914 0.376 0.583 80
+ResNet50 0.715 0.937 0.481 0.616 30
+SiamMask ResNet50
+-
+-
+0.347 0.602 56
+-
+-
+0.434 0.614 40
+Table 1: state-of-the-art comparison on two popular track-
+ing benchmarks OTB2015 and VOT2018 with their running
+speed. AUC: area under curve; Pr: precisoin; EAO: expected
+average overlap; A: accuracy; FPS: frame per second. The
+performance is evaluated using the best results over all the
+settings proposed in their original papers. The speed is tested
+on Nvidia GTX 1080Ti GPU.
+
+DROL-Mask ResNet50
+
+4.2 Comparison with state-of-the-art
+
+We ﬁrst showcase the consistence improvement of DROL
+with each of its baseline on two popular benchmarks
+OTB2015 (Wu, Lim, and Yang 2015) and VOT2018 (Kris-
+tan et al. 2018), as shown in Table 1. We further verify our
+best model DROL-RPN with backbone ResNet50 on other
+four benchmarks: VOT2018-LT, UAV123 (Mueller, Smith,
+and Ghanem 2016), TrackingNet (Muller et al. 2018), and
+LaSOT (Fan et al. 2019).
+OTB2015. We validate our proposed tracker on the
+OTB2015 dataset, which consists of 100 videos. Though the
+latest work SiamRPN++ unveiling the power of deep neu-
+ral network, as shown in Figure 1, the best siamese trackers
+still suffer the agonizing pain from distractors, full occlu-
+sion and deformation in sequences like Baseketball, Liquor
+and Skating1. Comparatively speaking, our approach can ro-
+bustly discriminate the aforementioned challenges thus ob-
+
+0.990.730.760.740.780.79𝑇0.790.830.83𝑇z𝑠…0.840.810.85…Figure 5: state-of-the-art comparison on the OTB2015
+dataset in terms of success rate (left) and precision (right).
+
+tain a desirable gain above the siamese baseline through on-
+line learning. Figure 5 and Table 1 show that DROL-RPN
+achieves the top-ranked result in both AUC and Pr. Com-
+pared with previous best tracker UPDT, we improve 1.3%
+in overlap. While compared with ATOM and SiamRPN++,
+our tracker achieves a performance gain of 4.6%, 1.9% in
+overlap and 5.5%, 2.2% in precision respectively.
+VOT2018. Compared with OTB2015, VOT2018 bench-
+mark includes more challenging factors,
+thus may be
+deemed as a more holistic testbed on both accuracy and ro-
+bustness. We validate our proposed tracker on the VOT2018
+dataset, which consists of 60 sequences.
+As Figure 6(a) shown, we can observe that our tracker
+DROL-RPN improves the ATOM and SiamRPN++ method
+by an absolute gain of 8.0% and 6.6% respectively in terms
+of EAO. Our approach outperformed the leading tracker
+DiMP by 4.8% in overlap and 1.9% in accuracy.
+VOT2018-LT. VOT2018 Long-term dataset provides a
+challenging yardstick on robustness as the target may leave
+the ﬁeld of view or encounters full occlusions for a long pe-
+riod. We report these metrics compared with the state-of-the-
+art method in Figure 6(b) and Table 2. We directly adopt-
+ing the long-term strategy the same as SiamRPN++ (Li et
+al. 2019a) in our siamese subnet. When the target absence
+is detected and the search region is enlarged, we don’t add
+any search at these moments into training sets to train the
+classiﬁer. Compared with our baseline SiamRPN++, our ap-
+proach achieves a maximum performance gain of 3.8% in
+precision, 3.8% in recall, and 3.8% in F-score respectively.
+Results show that even encountered huge deformation and
+long-term target absence, the online classiﬁcation subnet can
+still perform desirably.
+UAV123. We evaluate our proposed tracker on the UAV123
+dataset. The dataset contains more than 110K frames and
+a total of 123 video sequences, each with on average 915
+frames captured from low-altitude UAVs. Table 3 showcases
+the overlap and precision of the compared tracker. We com-
+pare our trackers with previous state-of-the-arts and results
+show that our approach outperforms the others by achiev-
+ing an AUC score of 65.7%. Our tracker outperforms the
+SiamRPN++ baseline by a large margin of 4.4% in AUC
+score and 4.5% in precision.
+TrackingNet. We validate our proposed tracker on the
+
+(a) Baseline
+
+(b) Long-term
+
+Figure 6: state-of-the-art comparison on VOT2018 Baseline
+(left) and Long-term (right) dataset. In right one, the max-
+imal and minimal value for each attribute is shown in pair,
+and the rest are permuted propotionally. In left one, the av-
+erage precision-recall curves are shown above, each with its
+maximal F-score pointed out at corresponding point.
+
+MMLT DaSiam-LT MBMD SiamRPN++ DROL-RPN
+Pr↑
+0.574
+0.627
+0.642
+0.649
+0.687
+Re↑ 0.521
+0.588
+0.583
+0.612
+0.650
+
+Table 2: state-of-the-art comparison on the VOT2018-LT
+dataset in terms precision (Pr) and Recall (Re).
+
+ECO SiamRPN SiamRPN++ ATOM DiMP DROL-RPN
+AUC 0.525
+0.527
+0.613
+0.631 0.643
+0.652
+Pr
+0.741
+0.748
+0.807
+0.843 0.851
+0.855
+
+Table 3: state-of-the-art comparison on the UAV123 dataset
+in terms of success (AUC), and precision (Pr).
+
+MDNet ATOM SPM SiamRPN++ DiMP DROL-RPN
+AUC 0.614
+0.703 0.712
+0.733
+0.740
+0.746
+Pr
+0.555
+0.648 0.661
+0.694
+0.687
+0.708
+NPr
+0.710
+0.771 0.778
+0.800
+0.801
+0.817
+
+Table 4: state-of-the-art comparison on the TrackingNet test
+dataset in terms of success (AUC), precision (Pr) and nor-
+malized precision (NPr).
+
+Figure 7: state-of-the-art comparison on LaSOT dataset in
+terms of success rate (left) and normalized precision (right).
+
+TrackingNet test dataset, which provides more than 30K
+videos with 14 million dense bounding box annotations. As
+illustrated in Table 4, our approach DROL-RPN outperforms
+
+all previous methods and improves the performance of state-
+of-the-art by 0.6% in overlap, 1.4% in precision, and 1.6%
+in normalized precision.
+LaSOT. We validate our proposed tracker on the LaSOT
+dataset to further validate its discriminative and genera-
+tive capability. Figure 7 reports the overall performance of
+DROL-RPN on LaSOT testing set. Speciﬁcally, our tracker
+achieves an AUC of 53.7% and an NPr of 62.4%, which out-
+performed ATOM and SiamRPN++ without bells and whis-
+tles.
+
+4.3 Ablation Study
+
+In this part, we perform ablation analysis to demonstrate
+the impact of each component in groups and illustrate the
+superiority of our method (only DROL-RPN with backbone
+ResNet50 is showcased for brevity). Since we search the
+hyper-parameters using VOT2018 (validation set), we report
+the performance with LaSOT and TrackingNet (test set).
+
+Classiﬁcation score fusion (G1). As data reveals, there’s
+
+a synchronous need of scores from two subnets as two ex-
+tremes with λ being 0 or 1 induce poor results while the
+optimal coefﬁcient falls around 0.8. Theoretically, it can be
+partly explained by that, though discriminative enough, on-
+line classiﬁcation score only locates a rough location, while
+more ﬁne-grained details distinguishing the quality of dense
+bounding boxes around the peak region need to be ﬂeshed
+out by the siamese classiﬁcation score.
+
+Target-speciﬁc feature learning (G2). With the best set-
+
+tings in G1, we further delve into the investigation of the
+proposed attention mechanism. As shown in Table 5, the ex-
+istence of the attention module further improves trackers’
+performance. Qualitatively, in the comparison between Fig-
+ure 8(b) and Figure 8(c), the online classiﬁcation score is
+more discriminative to deal with distractors and occlusions.
+The attention module uplifts this discriminative capability
+given the fact the peak on ground-truth target is more fo-
+cused as shown in Figure 8(c) and Figure 8(d).
+
+Template update interval (G3). From Table 5, compared
+
+with directly updating the short-term sample once it obtains
+a qualiﬁed classiﬁcation score by setting T = 1, we ﬁnd
+that properly prolonging the update interval and selecting
+one with the highest classiﬁcation conﬁdence after sorting
+allows us a more trust-worthy template. To demonstrate the
+validity of the update strategy, we provide IoU curve of 2
+sequences. As Figure 9(a) shown, short-term template im-
+proves the performance especially when putative box over-
+laps the ground truth not well, and Figure 9(b) shows such
+strategy can even avoid target drift in the long run.
+
+Validity of update strategy (G4). To evaluate the effective-
+
+ness of our update strategy, G4 is conducted by only using
+the online classiﬁcation score to guide template update with-
+out fusing it with siamese classiﬁcation score. Compared
+with the baseline (see the ﬁrst column in G1), the validity
+of updater can be more clearly observed.
+
+5 Conclusion
+
+In this work, we propose an online module with a dual
+attention mechanism for siamese visual tracking to extract
+
+group λ
+
+pipeline T
+
+LaSOT
+TrackingNet
+AUC NPr AUC NPr
+0.508 0.586 0.733 0.800
+0.514 0.596 0.737 0.808
+0.521 0.605 0.738 0.807
+0.528 0.615 0.739 0.810
+
+0.532 0.619 0.743 0.814
+
+0.525 0.612 0.740 0.811
+0.391 0.542 0.576 0.749
+Att-Cmp − 0.528 0.610 0.741 0.812
+Cmp-Att
+0.526 0.614 0.744 0.815
+
+0.534 0.621 0.745 0.817
+
+0.8 Cmp-Att
+
+0.537 0.624 0.746 0.817
+
+0.0
+
+Cmp
+
+10 0.533 0.620 0.745 0.817
+0.513 0.592 0.738 0.805
+
+5
+
+0.0
+0.2
+0.4
+0.6
+0.8
+0.9
+1.0
+
+0.8
+
+G1
+
+G2
+
+G3
+
+G4
+
+Cmp
+
+−
+
+1
+5
+
+Table 5: Ablation study of different modules and setups. λ is
+fusion weight of classiﬁcation scores from 2 subnets. Cmp,
+Att represent compresson module and attention module re-
+spectively. T denotes the update interval for short-term, and
+− means no update is applied.
+
+(a) Search
+
+(b) w/o C
+
+(c) w/o Att
+
+(d) w/ Att
+
+Figure 8: Visualization on ﬁnal classiﬁcation output after the
+Classiﬁcation subnet C and attention module is used on se-
+quence Bolt of OTB2015.
+
+Figure 9: IoU curve and expected average IoU on sequence
+MotorRolling (left) and Coke (right) of OTB2015.
+
+video-speciﬁc features under a quadratic problem. The dis-
+criminative learning is performed by updating the ﬁlter mod-
+ule during tracking, which enhances siamese network’s dis-
+criminative ability to deal with distractors. And the robust
+learning is achieved by an extra short-term template branch
+updating dynamically based on scores from the classiﬁer to
+handle huge deformation. Without bells and whistles, our
+proposed online module can easily work with any siamese
+baselines without degenerating its speed too much. Exten-
+sive experiments on 6 major benchmarks are performed to
+demonstrate the validity and superiority of our approach.
+
+References
+
+[Bertinetto et al. 2016a] Bertinetto, L.; Valmadre, J.; Hen-
+riques, J. F.; Vedaldi, A.; and Torr, P. H. 2016a. Fully-
+convolutional siamese networks for object tracking. In Eu-
+ropean conference on computer vision, 850–865. Springer.
+[Bertinetto et al. 2016b] Bertinetto, L.; Valmadre, J.; Hen-
+riques, J. F.; Vedaldi, A.; and Torr, P. H. 2016b. Fully-
+convolutional siamese networks for object tracking. In Eu-
+ropean conference on computer vision, 850–865. Springer.
+[Bhat et al. 2019] Bhat, G.; Danelljan, M.; Van Gool, L.; and
+Timofte, R. 2019. Learning discriminative model prediction
+for tracking. arXiv preprint arXiv:1904.07220.
+[Choi, Kwon, and Lee 2017a] Choi, J.; Kwon, J.; and Lee,
+K. M. 2017a. Deep meta learning for real-time visual track-
+ing based on target-speciﬁc feature space. arXiv preprint
+arXiv:1712.09153.
+[Choi, Kwon, and Lee 2017b] Choi, J.; Kwon, J.; and Lee,
+K. M. 2017b. Deep meta learning for real-time visual track-
+ing based on target-speciﬁc feature space. arXiv preprint
+arXiv:1712.09153.
+[Danelljan et al. 2017] Danelljan, M.; Bhat, G.; Shah-
+baz Khan, F.; and Felsberg, M.
+2017. Eco: efﬁcient
+convolution operators for tracking.
+In Proceedings of
+the IEEE conference on computer vision and pattern
+recognition, 6638–6646.
+[Danelljan et al. 2019] Danelljan, M.; Bhat, G.; Khan, F. S.;
+and Felsberg, M. 2019. Atom: Accurate tracking by overlap
+maximization. In The IEEE Conference on Computer Vision
+and Pattern Recognition (CVPR).
+[Fan and Ling 2019] Fan, H., and Ling, H. 2019. Siamese
+cascaded region proposal networks for real-time visual
+tracking. In The IEEE Conference on Computer Vision and
+Pattern Recognition (CVPR).
+[Fan et al. 2019] Fan, H.; Lin, L.; Yang, F.; Chu, P.; Deng,
+G.; Yu, S.; Bai, H.; Xu, Y.; Liao, C.; and Ling, H. 2019. La-
+sot: A high-quality benchmark for large-scale single object
+tracking. In Proceedings of the IEEE Conference on Com-
+puter Vision and Pattern Recognition, 5374–5383.
+[Guo et al. 2017] Guo, Q.; Feng, W.; Zhou, C.; Huang, R.;
+Wan, L.; and Wang, S. 2017. Learning dynamic siamese
+network for visual object tracking.
+In Proceedings of the
+IEEE International Conference on Computer Vision, 1763–
+1771.
+[He et al. 2018] He, A.; Luo, C.; Tian, X.; and Zeng, W.
+2018. Towards a better match in siamese network based
+visual object tracker. In Proceedings of the European Con-
+ference on Computer Vision (ECCV), 0–0.
+[Henriques et al. 2014] Henriques, J. F.; Caseiro, R.; Mar-
+tins, P.; and Batista, J. 2014. High-speed tracking with
+kernelized correlation ﬁlters. IEEE transactions on pattern
+analysis and machine intelligence 37(3):583–596.
+[Kalal, Mikolajczyk, and Matas 2011] Kalal, Z.; Mikola-
+jczyk, K.; and Matas, J. 2011. Tracking-learning-detection.
+IEEE transactions on pattern analysis and machine
+intelligence 34(7):1409–1422.
+
+[Kristan et al. 2018] Kristan, M.; Leonardis, A.; Matas, J.;
+Felsberg, M.; Pﬂugfelder, R.; Cehovin Zajc, L.; Vojir, T.;
+Bhat, G.; Lukezic, A.; Eldesokey, A.; et al. 2018. The sixth
+visual object tracking vot2018 challenge results.
+In Pro-
+ceedings of the European Conference on Computer Vision
+(ECCV), 0–0.
+[Li et al. 2018] Li, B.; Wu, W.; Zhu, Z.; Yan, J.; and Hu, X.
+2018. High performance visual tracking with siamese region
+proposal network.
+IEEE Conference on Computer Vision
+and Pattern Recognition (CVPR).
+[Li et al. 2019a] Li, B.; Wu, W.; Wang, Q.; Zhang, F.; Xing,
+J.; and Yan, J. 2019a. Siamrpn++: Evolution of siamese
+visual tracking with very deep networks. IEEE Conference
+on Computer Vision and Pattern Recognition (CVPR).
+[Li et al. 2019b] Li, X.; Ma, C.; Wu, B.; He, Z.; and Yang,
+M.-H. 2019b. Target-aware deep tracking.
+In Proceed-
+ings of the IEEE Conference on Computer Vision and Pat-
+tern Recognition, 1369–1378.
+[Mueller, Smith, and Ghanem 2016] Mueller, M.; Smith, N.;
+and Ghanem, B. 2016. A benchmark and simulator for uav
+tracking. In European conference on computer vision, 445–
+461. Springer.
+[Muller et al. 2018] Muller, M.; Bibi, A.; Giancola, S.; Al-
+subaihi, S.; and Ghanem, B. 2018. Trackingnet: A large-
+scale dataset and benchmark for object tracking in the wild.
+In Proceedings of the European Conference on Computer
+Vision (ECCV), 300–317.
+[Nam and Han 2016] Nam, H., and Han, B. 2016. Learn-
+ing multi-domain convolutional neural networks for visual
+tracking.
+In Proceedings of the IEEE conference on com-
+puter vision and pattern recognition, 4293–4302.
+[Park and Berg 2018] Park, E., and Berg, A. C. 2018. Meta-
+tracker: Fast and robust online adaptation for visual object
+trackers. Lecture Notes in Computer Science 587604.
+[Wang et al. 2018] Wang, Q.; Teng, Z.; Xing, J.; Gao, J.; Hu,
+W.; and Maybank, S. 2018. Learning attentions: residual
+attentional siamese network for high performance online vi-
+In Proceedings of the IEEE Conference on
+sual tracking.
+Computer Vision and Pattern Recognition, 4854–4863.
+[Wang et al. 2019] Wang, Q.; Zhang, L.; Bertinetto, L.; Hu,
+W.; and Torr, P. H. 2019. Fast online object tracking and
+segmentation: A unifying approach.
+IEEE Conference on
+Computer Vision and Pattern Recognition (CVPR).
+[Wu, Lim, and Yang 2015] Wu, Y.; Lim, J.; and Yang, M.-
+H. 2015. Object tracking benchmark. IEEE Transactions
+on Pattern Analysis and Machine Intelligence 37(9):1834–
+1848.
+[Yang and Chan 2018] Yang, T., and Chan, A. B.
+2018.
+Learning dynamic memory networks for object tracking. In
+Proceedings of the European Conference on Computer Vi-
+sion (ECCV), 152–167.
+[Yang et al. 2019] Yang, K.; Song, H.; Zhang, K.; and Liu,
+Q. 2019. Hierarchical attentive siamese network for real-
+time visual tracking. Neural Computing and Applications
+1–12.
+
+[Zhang and Peng 2019] Zhang, Z., and Peng, H.
+2019.
+Deeper and wider siamese networks for real-time visual
+tracking. In Proceedings of the IEEE Conference on Com-
+puter Vision and Pattern Recognition, 4591–4600.
+[Zhang et al. 2018] Zhang, Y.; Wang, D.; Wang, L.; Qi, J.;
+and Lu, H. 2018. Learning regression and veriﬁcation
+networks for long-term visual tracking.
+arXiv preprint
+arXiv:1809.04320.
+[Zhu et al. 2018] Zhu, Z.; Wang, Q.; Li, B.; Wei, W.; Yan, J.;
+and Hu, W. 2018. Distractor-aware siamese networks for
+visual object tracking. The European Conference on Com-
+puter Vision (ECCV).
+
+

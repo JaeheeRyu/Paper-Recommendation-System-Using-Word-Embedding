@@ -1,0 +1,1237 @@
+Weighted Sampling for Combined Model Selection and Hyperparameter Tuning
+
+Dimitrios Sarigiannis, Thomas Parnell, Haralampos Pozidis
+
+IBM Research
+S ¨aumerstrasse 4, 8803 R ¨uschlikon, Switzerland
+saridimi@gmail.com, tpa@zurich.ibm.com, hap@zurich.ibm.com
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+3
+v
+0
+4
+1
+7
+0
+
+.
+
+9
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+The combined algorithm selection and hyperparameter tun-
+ing (CASH) problem is characterized by large hierarchical
+hyperparameter spaces. Model-free hyperparameter tuning
+methods can explore such large spaces efﬁciently since they
+are highly parallelizable across multiple machines. When no
+prior knowledge or meta-data exists to boost their perfor-
+mance, these methods commonly sample random conﬁgura-
+tions following a uniform distribution. In this work, we pro-
+pose a novel sampling distribution as an alternative to uni-
+form sampling and prove theoretically that it has a better
+chance of ﬁnding the best conﬁguration in a worst-case set-
+ting. In order to compare competing methods rigorously in an
+experimental setting, one must perform statistical hypothesis
+testing. We show that there is little-to-no agreement in the au-
+tomated machine learning literature regarding which methods
+should be used. We contrast this disparity with the methods
+recommended by the broader statistics literature, and iden-
+tify a suitable approach. We then select three popular model-
+free solutions to CASH and evaluate their performance, with
+uniform sampling as well as the proposed sampling scheme,
+across 67 datasets from the OpenML platform. We investi-
+gate the trade-off between exploration and exploitation across
+the three algorithms, and verify empirically that the proposed
+sampling distribution improves performance in all cases.
+
+1
+
+Introduction
+
+In recent years, it has become apparent that the prolifera-
+tion of skills required to develop end-to-end machine learn-
+ing solutions has not kept pace with the rapid growth in
+expectations surrounding the potential of such techniques.
+This imbalance has led to the desire for automated machine
+learning (AutoML) systems. The goal of an AutoML sys-
+tem is to automate the entire process of building a machine
+learning model. Typically, this includes data cleaning, data
+pre-processing, feature engineering, model selection, hyper-
+parameter tuning and in some cases even ensemble-building.
+In recent years, software frameworks such as Auto-WEKA
+(Thornton et al. 2013), auto-sklearn (Feurer et al. 2015),
+TPOT (Olson and Moore 2016) and H2O Driverless AI
+(Hall, Kurka, and Bartz 2019) have appeared that offer ex-
+actly this functionality.
+
+The CASH Problem At the heart of any automated ma-
+chine learning framework is an optimization problem over
+a large hierarchical parameter space. A machine learning
+solution is typically structured as a pipeline comprising
+multiple components. Each component has a different set
+of hyperparameters that must be tuned to achieve best-in-
+class accuracy. In this work, we focus on a restricted set of
+such pipelines, considering solely the problem of Combined
+Algorithm Selection and Hyperparameter tuning (hence-
+forth referred to as CASH). Speciﬁcally, this is a joint opti-
+mization problem involving selecting which machine learn-
+ing model to use (e.g. random forest vs. gradient-boosted
+decision trees) and how to tune the model hyperparame-
+ters. The hierarchical conﬁguration space associated with
+the CASH problem is illustrated in Figure 1. Mathemati-
+cally, the problem of ﬁnding the optimal model λ∗ and its
+corresponding hyperparameter conﬁguration α∗ is deﬁned:
+(1)
+where M is the total number of models, A(λ) is the set of
+all possible hyperparameter conﬁgurations for model λ and
+Lvalid is a loss function evaluated over a validation dataset.
+Crucially, it is important that the solution found also general-
+izes to unseen data, which is typically veriﬁed by evaluating
+the same loss function over a test set unseen to the optimiza-
+tion routine.
+
+Lvalid (λ, α),
+
+(λ∗ , α∗ ) =
+
+arg min
+
+λ∈{1,...,M },α∈A(λ)
+
+Model-based vs. Model-free optimization. Solutions for
+
+solving equation (1) fall roughly into two categories: model-
+based and model-free. Model-based approaches are typically
+based on Bayesian optimization (Hutter, Hoos, and Leyton-
+Brown 2011; Bergstra et al. 2011): models and their hyper-
+parameter conﬁgurations (henceforth jointly referred sim-
+ply as a conﬁguration) are evaluated sequentially, whereby
+the next conﬁguration to try is determined by maximizing
+some acquisition function involving a surrogate model (of-
+ten based on Gaussian processes). While model-based ap-
+proaches often lead to superior accuracy, such methods are
+inherently difﬁcult to parallelize and maximization of the
+acquisition function and/or updating the surrogate model
+can often be very slow. On the other hand, model-free ap-
+proaches (Bergstra and Bengio 2012; Jamieson and Nowak
+
+ 
+ 
+ 
+ 
+ 
+ 
+2014; Jamieson and Talwalkar 2016; Li et al. 2016) sim-
+ply involve randomly sampling conﬁgurations and evaluat-
+ing them, possibly under what is known as a resource con-
+straint. These methods are inherently easy to parallelize and
+distribute across a cluster of machines, and make no assump-
+tions on the structure of the underlying space. For this rea-
+son, in this paper we focus on model-free methods. In partic-
+ular, we focus on how the sampling distribution affects the
+accuracy of the resulting solution.
+
+Comparing AutoML methods A major challenge in the
+
+AutoML ﬁeld is how different schemes should be compared.
+There may exist datasets for which the differences between
+competing methods are relatively small, and others where
+differences are very big. It is crucial to have a consistent way
+to measure the differences between methods and be able to
+perform rigorous statistical hypothesis testing on those mea-
+surements, to ensure that differences observed are truly sig-
+niﬁcant. Despite the importance of this challenge, there is
+little discussion in the AutoML literature on this topic and a
+wide disparity in the evaluation methodology and the statis-
+tical techniques applied. Addressing this problem is another
+focus of this paper.
+
+Contributions The contributions of this paper are as fol-
+lows:
+• We propose a novel sampling distribution as an alternative
+to uniform sampling and prove theoretically that it has a
+better chance of ﬁnding the best conﬁguration in a worst-
+case setting.
+• We select three popular model-free hyperparameter tun-
+ing algorithms and perform a large empirical study, using
+67 datasets from OpenML (Vanschoren et al. 2013), with
+uniform sampling as well as the proposed scheme.
+• We review the state-of-the-art in statistical hypothesis
+testing in the context of machine learning, and propose
+a systematic approach for comparing multiple AutoML
+methods across a collection of datasets.
+• We investigate the trade-off between exploration and ex-
+ploitation across the three algorithms and verify empir-
+ically that the proposed sampling distribution improves
+average rank performance in all cases.
+
+Figure 1: Hierarchical conﬁguration space of the models and
+their corresponding hyperparameters.
+
+2 Model-free Optimization for CASH
+
+In this section we describe three popular model-free meth-
+ods that can be applied to solve the CASH problem.
+
+2.1 Random Search
+
+The simplest and most well-known model-free approach for
+solving (1) is random search (RS) (Bergstra and Bengio
+2012). The method is very simple: one draws n different
+conﬁgurations (models and their hyperparameters) at ran-
+dom according to some sampling distribution. Each conﬁg-
+uration is then trained on the full training set, and the conﬁg-
+uration that results in the minimal validation loss is selected
+as the winner. Since all evaluations are independent, RS is
+embarrassingly parallel. Despite its simplicity, it is widely
+acknowledged that RS is a competitive baseline for AutoML
+optimization (Li and Talwalkar 2019).
+
+2.2 Successive Halving
+
+The next model-free approach we consider is successive
+halving (SH) (Jamieson and Nowak 2014; Jamieson and Tal-
+walkar 2016). Crucial to this method is the notion of a re-
+source. Namely, some quantity that if lowered, will reduce
+the training time, and if raised will increase the training time.
+For iterative learning algorithms (e.g. stochastic gradient de-
+scent), an appropriate resource would be the number of iter-
+ations. When considering the CASH problem, where hyper-
+parameters across different models are not consistent (e.g.
+learning algorithms may not all be iterative), we must de-
+ﬁne resource in some alternative manner. Following the ap-
+proach of (Li et al. 2016) we deﬁne the resource to be the
+size of a stratiﬁed subsample of the training dataset, thus
+overcoming the issue of model heterogeneity.
+With this deﬁnition in hand, SH begins by randomly sam-
+pling n0 conﬁgurations according to some sampling distri-
+bution and evaluates them using a minimum resource rmin
+(for instance rmin = 0.1 implies 10% of the training exam-
+ples). The algorithm then identiﬁes the best n0 η−1 conﬁgu-
+rations and carries them over into the next rung where said
+conﬁgurations are evaluated using a resource of rmin η . The
+parameter η is a hyperparameter of the SH method that con-
+trols how aggressively conﬁgurations are eliminated. The
+method continues as above, reducing the number of conﬁg-
+urations by a power of η , and increasing the resource by a
+power of η until the maximal resource is attained, which in
+the CASH context corresponds to a resource of one (i.e., all
+of the training examples). In total, the number of rungs is
+given by 1 + smax where smax = (cid:98)− logη (rmin )(cid:99). In order
+to ensure there is at least one conﬁguration evaluated with
+the maximal resource we also require that n0 ≥ ηsmax .
+The steps of the SH are provided in full in Algorithm 1. It
+should be noted that within each rung, all evaluations can
+be executed in parallel, whereas between rungs there ex-
+ist dependencies. However, there exists some recent work
+that tries to effectively overcome these constraints to achieve
+more efﬁcient parallel and distributed implementations of
+SH (Li et al. 2018).
+In order to compare SH against RS and other methods, we
+need to deﬁne the notion of a budget. The budget is deﬁned
+
+Algorithm 1 Successive Halving
+Require: initial number of conﬁgurations n0 , minimum
+resource rmin , scaling factor η , sampling distribution
+
+1: smax ← (cid:98)− logη (rmin )(cid:99)
+p(λ, α)
+Ensure: n0 >= ηsmax
+2: T ← sample conf igurations(n, p(λ, α))
+3: for i ∈ {0, 1, ..., smax } do
+ni ← (cid:98)nη−i (cid:99)
+L ← eval and return val loss(θ , ri ) : θ ∈ T
+T ← top k(T , L, ni/η)
+
+ri ← η−smax+i
+
+4:
+5:
+6:
+7:
+
+8: end for
+
+9: return Conﬁguration with the smallest intermediate
+loss seen so far in T
+
+smax(cid:88)
+
+to be the total amount of resource used (i.e., effective num-
+ber of times the full training data is processed), and is given
+mathematically as:
+
+bSH =
+
+ni ri ,
+
+(2)
+
+i=0
+
+where ni and ri are as deﬁned in Algorithm 1. By compar-
+ison, the budget for RS is simply the number of conﬁgura-
+tions evaluated.
+
+Exploitation vs. Exploration Let us assume that η = 3
+
+is ﬁxed, and observe that by selecting different values for
+the minimum resource rmin and the initial number of con-
+ﬁgurations n0 , it is possible to obtain instances of SH with
+an equivalent budget, but with signiﬁcantly different elimi-
+nation schedules. In the corner-case, if we set rmin = 1.0
+and n0 = n, we obtain a schedule (SH0 ) that is equivalent
+to RS with budget n. Because this schedule only evaluates
+conﬁgurations using the maximal resource, we refer to it as
+the most exploitative schedule. On the other hand, if we set
+rmin = 1/9 and n0 = 3n, we obtain a different schedule
+(SH2 ) which has the same budget:
+
+BSH2 = 3n × 1
+9
+
++ n × 1
+3
+
++
+
+n
+3
+
+× 1 = n.
+
+(3)
+
+Since this schedule is able to evaluate many more conﬁgu-
+rations in the initial rung (albeit with reduced resource), we
+refer to this schedule as a more explorative schedule. Three
+different such schedules are illustrated in Table 1.
+
+2.3 Hyperband
+
+One of the main issues with SH is how a practitioner should
+decide which of the aforementioned schedules to use. There
+may be some optimization problems where a more exploita-
+tive schedule performs better, and others where a more ex-
+plorative schedule is desirable. This is exactly the problem
+considered in (Li et al. 2016), in which the authors propose a
+new method, Hyperband, that tries to seamlessly handle the
+
+SH2
+ni
+3n
+n
+n/3
+
+ri
+1/9
+1/3
+1
+
+SH1
+ni
+3n/2
+n/2
+
+-
+
+ri
+1/3
+1
+
+-
+
+SH0
+ni
+ri
+n
+1
+
+-
+-
+
+-
+-
+
+Table 1: Three SH schedules with equivalent budget ranging
+from the most explorative (SH2 ) to the most exploitative
+(SH0 ).
+
+2(cid:88)
+
+exploration-exploitation trade-off. The main concept is very
+simple: execute a number of SH schedules in parallel (with
+varying values for rmin ) and output the best conﬁguration
+found by any of them. Each instance of SH is referred to as
+a bracket. To give a concrete example, a Hyperband instance
+would execute the three brackets from Table 1 (SH0 , SH1
+and SH2 ) in parallel. The budget of such a scheme is given
+by:
+
+bHB =
+
+bSHi = 3n.
+
+(4)
+
+i=0
+
+Therefore, in order to fairly compare this instance of Hyper-
+band with RS, the RS should sample 3n conﬁgurations and
+evaluate them on the full resource.
+
+3 Weighted Sampling of Models
+
+3.1 Main Idea
+
+The model-free approaches for solving CASH discussed in
+the previous section generally involve sampling models (and
+their hyperparameters) according to a uniform distribution.
+While there have been some efforts to alter this distribution
+via adaptive Bayesian linear regression models (Valkov et
+al. 2018), such methods perform best when a large amount
+of meta-data is available. Using meta-data to improve SH
+was also considered in (Sommer, Sarigiannis, and Parnell
+2019), in which the sampling distribution remains uniform,
+but the decision regarding which conﬁgurations to eliminate
+is taken using a meta-model trained on existing tuning exper-
+iments. In such an approach, the evaluations at earlier rungs
+are akin to so-called landmarking meta-features (Pfahringer,
+Bensusan, and Giraud-Carrier 2000). While this line of re-
+search is promising, in practice such meta-data may not exist
+and may be costly to obtain. Instead, in this paper we pro-
+pose a non-uniform sampling distribution based on a very
+simple heuristic: as the number of model hyperparameters
+increases linearly, one requires exponentially more budget
+(or model evaluations) in order to identify the optimal con-
+ﬁguration. Mathematically, we propose to sample model λ
+according to the following probability:
+
+2Nλ(cid:80)M
+λ(cid:48)=1 2Nλ(cid:48)
+
+pλ =
+
+,
+
+(5)
+
+where Nλ ∈ Z+ is the number of hyperparameters of model
+λ. In the rest of this section, we will provide a theoretical
+motivation for such a sampling distribution.
+
+3.2 Theoretical Motivation
+
+In this section we prove that, under a worst-case scenario
+for CASH, there exists a weighted sampling scheme that
+consistently outperforms the uniform sampling scheme. The
+worst-case scenario that we consider is that for any new
+dataset, the optimal model is drawn uniformly at random,
+and the optimal conﬁguration of that model is similarly
+drawn uniformly at random. We assume that each model has
+an integer number of continuous hyperparameters. We for-
+malize this scenario with the following assumptions:
+Assumption 1. The optimal model λ∗
+i is a random variable
+distributed according to a discrete uniform distribution:
+λ∗
+where M is the total number of models.
+Assumption 2. Given model λ ∈ {1, . . . , M }, the optimal
+conﬁguration of the n-th hyperparameter of the model is
+a random variable distributed accordingly to a continuous
+uniform distribution. That is, for n = 1, 2, . . . , Nλ :
+
+i ∼ U {1, M },
+
+α(λ)∗
+i,n ∼ U (l (λ)n , u(λ)n ) ,
+
+where l(λ)n ≤ u(λ)n ∈ R are the lower and upper limits of
+the n-th hyperparameter of model λ respectively.
+We will now prove the following lemma regarding the
+performance of RS under a given model-sampling scheme.
+We assume that the probability of the RS sampling model
+λ is given by pλ and all hyperparameters of all models are
+sampled uniformly from their ranges.
+Lemma 1. Under the assumptions above, the probability of
+a RS with budget K not ﬁnding the optimal model λ∗
+i and
+conﬁguration α∗
+is given by:
+
+i,1 , . . . , α∗
+
+(cid:19)K
+
+(cid:18)
+
+i,Nλ∗
+
+M(cid:88)
+
+i
+
+1 − pλ
+θλ
+
+λ=1
+
+(u(λ)n − l(λ)n )
+
+,
+
+(6)
+
+(7)
+
+PF =
+
+where θλ is given by:
+
+θλ =
+
+1
+M
+
+Nλ(cid:89)
+n=1
+
+ K
+
+PF = Pr
+
+Proof. The probability of failure for a RS with budget K
+can be expressed:
+
+4 Statistical Comparison of AutoML
+Methods
+
+In this section, we will review what statistical techniques are
+being used in the AutoML literature today, discuss how they
+relate to the broader literature on statistical comparisons of
+ML methods, and ﬁnally provide a clear recommendation of
+how multiple AutoML methods should be compared across
+a collection of datasets.
+
+4.1 Review of statistical analysis in the AutoML
+literature
+
+Statistical analysis presented in the AutoML literature can
+generally be separated into two distinct categories. There are
+papers which compare competing methods on a per-dataset
+basis (i.e., asserting that method A is statistically different
+to method B on each individual dataset) and those that com-
+pare competing methods across a collection of datasets (i.e.,
+verifying that method A is statistically different to method B
+across the entire collection).
+In terms of the per-dataset approach, there is little con-
+sensus on how this comparison should be performed. In
+(Thornton et al. 2013), normal evaluation metrics are simply
+presented in a table with no statistical hypothesis testing to
+validate if differences are signiﬁcant. Whereas in (Falkner,
+Klein, and Hutter 2018) the average regret is plotted for each
+method along with the standard deviation measured over
+multiple runs. Formal statistical signiﬁcance testing is per-
+formed in (Feurer et al. 2015) and (Feurer, Springenberg,
+and Hutter 2015) using a bootstrap test and a two-sided
+t-test respectively, although it is not clear whether the p-
+values have been adjusted to account for the many hypothe-
+ses tested. Finally, in (Olson and Moore 2016) the authors
+use the Mann-Witney U test to determine statistically signif-
+icant wins/losses on each dataset and apply the Bonferroni
+correction to account for multiple hypotheses.
+Similarly, when AutoML methods are compared across
+a collection of datasets, there is again little agreement. In
+(Balaji and Allen 2018) metrics such as F1-score or MSE
+are simply averaged over the collection of datasets, which
+is problematic since the MSE of a difﬁcult dataset may not
+be directly comparable with the MSE of an easier one.
+In (Li et al. 2016) and (Feurer, Springenberg, and Hutter
+2015) the average ranks of the competing methods are com-
+pared, where the average is computed across a collection of
+datasets, but no statistical analysis is performed to determine
+whether the differences in rank are indeed signiﬁcant or not.
+Finally, in (Yang et al. 2018), average ranks are presented
+along with a standard deviation.
+
+4.2 What does the broader ML and statistics
+literature recommend?
+
+In the widely-cited paper of (Demˇsar 2006) it is argued that
+it is preferable to compare machine learning methods sta-
+tistically across a collection of datasets, rather than on a
+per-dataset basis. The argument provided is that by perform-
+ing statistical signiﬁcance testing on a per-dataset basis and
+counting the number of signiﬁcant wins, one is implicitly as-
+suming that each test can distinguish between a random and
+
+a non-random difference. This is not the case, the test can
+only state the improbability of the observed event assuming
+that the null hypothesis was correct. Furthermore, in order
+to apply methods like the Student t-test on a single dataset,
+one must somehow generate repeated measurements (e.g. by
+resampling the training/test set) which often violates the un-
+derlying assumptions required to apply the test such as nor-
+mality and/or independence (Dietterich 1998).
+When comparing two ML methods across multiple
+datasets, the approach recommended by (Demˇsar 2006) is to
+apply the Wilcoxon signed-ranks test. This non-parametric
+test makes fewer assumptions relative to a Student t-test, and
+is able to take into account the relative magnitude of differ-
+ences (as opposed to the simpler sign test). When comparing
+more than two ML methods one should ﬁrst apply a family-
+wise hypothesis test (e.g. the Friedman test with Iman and
+Davemport extension), and once it has been determined that
+differences exist within the family, one should proceed to
+apply pairwise post-hoc testing, In this context it is com-
+mon practice to use the mean-ranks test (Nemenyi 1963) as a
+post-hoc test. However, it was recently demonstrated in (Be-
+navoli, Corani, and Mangili 2016) that this approach leads
+to results that depend strongly on the number of methods in-
+cluded in the pool and that by adding or removing methods
+one can arrive at contradictory conclusions. Instead, the au-
+thors recommend to use the Wilcoxon signed-ranks test, as
+recommended when comparing only two methods, while ap-
+plying appropriate correction techniques to account for mul-
+tiple hypotheses.
+A rigorous evaluation of different correction techniques
+was further provided in (Garc´ıa and Herrera 2008) and
+(Garc´ıa et al. 2010). The most simple such technique is
+the Bonferroni correction, although it has relatively lower
+power. Conversely, the Hommel and the Rom procedure
+are considered the most powerful, at the expense of signiﬁ-
+cant computational complexity. The Finner correction is also
+powerful but is vastly simpler, and is thus recommended in
+most cases.
+
+4.3 Proposed method
+
+Based on the above literature review, we propose the fol-
+lowing guidelines for comparing K > 2 AutoML methods
+across a collection of datasets:
+1. Apply the omnibus test (Friedman test with Iman and
+Davemport extension) to determine whether at least one
+method performs differently to the others.
+2. Construct a K × K matrix of raw p-values arising
+from all-to-all pairwise comparisons using the Wilcoxon
+signed-rank test across datasets.
+3. Apply the Finner correction to the above matrix to ac-
+count for multiple hypotheses.
+All of the above methods are implemented in the R package
+SCMAM P (Calvo and Santaf ´e Rodrigo 2016), which we will
+make extensive use of in the following section.
+
+5 Experimental Results
+
+In this section we will compare different model-free solu-
+tions to the CASH problem, with and without weighted sam-
+
+pling, across a collection of 67 datasets.
+
+num ex
+count
+67
+mean
+1965.05
+std
+1212.33
+min
+1000
+25% 1000.00
+50% 1563.00
+75% 2330.50
+max
+5000
+
+num ft
+67
+24.90
+19.35
+1
+8.50
+20.00
+38.50
+76
+
+Table 2: Summary of OpenML Datasets under study.
+
+5.1 Experimental Design
+
+All datasets were obtained from the OpenML platform (Van-
+schoren et al. 2013) and their characteristics are summa-
+rized in Table 2. A complete list of OpenML dataset IDs
+is provided in Appendix A, and the pre-processing scheme
+used is provided in Appendix B. All datasets correspond
+to binary classiﬁcation problems. In terms of model selec-
+tion, we consider a pool of 11 different models. The mod-
+els and their hyperparameters are summarized in Table 3.
+Since the datasets are relatively small, the performance of
+each optimization method is evaluated using many repe-
+titions in a nested manner. Firstly, we create a stratiﬁed
+train/test split of each dataset. We then perform 10 differ-
+ent stratiﬁed splits of the training set to create a collection
+of 10 different train/validation sets. Internally in each opti-
+mization framework, every conﬁguration is trained on each
+of the 10 training sets, and the validation loss is evaluated on
+the corresponding validation sets. The validation loss used to
+compare different conﬁgurations is taken to be the average
+over all train/validation splits. Once the best conﬁguration
+has been identiﬁed, we then re-train it using the full training
+set, and evaluate the loss function on the test set. The above
+process is repeated 10 times (with different train/test splits)
+and the average generalization performance is reported. In
+all experiments the logistic loss is used as a loss function.
+
+Name
+RandomForestClassiﬁer
+LogisticRegression
+XGBoost
+GradientBoostingClassiﬁer
+AdaBoostClassiﬁer
+BernoulliNB
+GaussianNB
+ExtraTreesClassiﬁer
+KNeighborsClassiﬁer
+LinearDiscriminantAnalysis
+QuadraticDiscriminantAnalysis
+
+# hp
+8
+6
+11
+10
+2
+3
+1
+8
+3
+4
+1
+
+# cat
+3
+4
+2
+3
+0
+1
+0
+4
+2
+1
+0
+
+# int
+4
+0
+3
+4
+1
+1
+0
+3
+1
+1
+0
+
+# cont
+1
+2
+6
+3
+1
+1
+1
+1
+0
+2
+1
+
+Table 3: Classiﬁcation Models. For XGBoost we have used
+the xgboost v0.82 library and for the rest of the classiﬁers
+we have used scikit-learn v0.21.2.
+
+5.2 Exploration vs Exploitation
+
+In our ﬁrst comparison, we compare the three different SH
+schedules deﬁned in Table 1 with a budget of 33, so that
+in the most explorative schedule n0 = 99 conﬁgurations
+are evaluated in the ﬁrst rung. For each schedule, we eval-
+uate SH with uniform model sampling and also with the
+weighted model sampling deﬁned in equation (5). The hy-
+perparameters for each model are sampled uniformly from
+a ﬁxed range in both cases (possibly with some logarith-
+mic transformations). We are therefore comparing 6 differ-
+ent schemes across a collection of 67 datasets.
+We will follow the statistical approach deﬁned in Section
+4.3 to compare these schemes for both the validation loss
+and the generalization loss. Firstly, we perform the omnibus
+test and ﬁnd that for both the validation and the generaliza-
+tion results, the p-value is very small (< 2.2e−16 ), indicat-
+ing that differences do indeed exist between the family of
+6 schemes. Next, we compute the matrix of p-values for all
+pairwise comparisons using the Wilcoxon signed rank test
+and apply the Finner correction to account for the multi-
+ple hypotheses tested. The matrices of corrected p-values are
+presented in full in Appendix C, where it can be seen that all
+p-values are less than a threshold of 0.05, indicating that the
+null hypothesis can be rejected for all pairwise comparisons.
+In terms of the relative performance, the average ranks
+for the 6 schemes are displayed in Figure 2 and Figure 3 for
+the validation loss and generalization loss respectively. The
+conclusions we can draw are as follows:
+1. The relative order of all 6 schemes is consistent across
+validation and generalization loss.
+2. The more explorative schedules of SH consistently out-
+perform the more exploitative schedules.
+3. The weighted model sampling (denoted by SH{0,1,2}.W)
+improves the average rank of all three schedules.
+
+Figure 2: Average rank in validation loss for the three differ-
+ent schedules of SH (lower is better).
+
+Figure 3: Average rank in generalization loss for the three
+different schedules of SH (lower is better).
+
+5.3 Hyperband Evaluation
+
+In this section we would like to assess how effectively Hy-
+perband can automate the choice between exploration and
+
+exploitation. Speciﬁcally, we will evaluate an instance of
+Hyperband consisting of the three brackets deﬁned in Table
+1, again with the parameter n = 33, thus having a budget of
+99 in total. For comparison, we will compare with RS and
+the most explorative SH schedule, both with an equivalent
+budget (e.g. RS samples n = 99 conﬁgurations). Based on
+the results of the previous section, we have a strong indica-
+tion that explorative schedules are well suited to the CASH
+problem. The question we would like to ask is the follow-
+ing: can Hyperband, without this knowledge, perform simi-
+larly well to an explorative schedule of SH with an equiva-
+lent budget? We will also evaluate each of the three methods
+(Hyperband, RS and SH) with and without weighted model
+sampling.
+
+Figure 4: Average rank in validation loss for the Hyperband,
+SH and RS (lower is better).
+
+We have observed that with weighted model sampling,
+Hyperband is very effective: the practitioner that uses Hy-
+perband, without the knowledge that SH 2 is likely to work
+well, is likely to obtain similar results to the practitioner
+that tries to explicitly optimize the explore/exploit trade-off.
+However, the same assertion cannot be made if one was to
+apply Hyperband with uniform model sampling. Why might
+this be the case? In Figure 6, we show the total number of
+times the different brackets of Hyperband produce winning
+conﬁgurations, for all of the datasets and all of the train/test
+repetitions, with and without weighted sampling. As ex-
+pected, we see that the most explorative brackets win most
+of the time. However, when using weighted model sampling,
+we observe that the distribution becomes more equalized.
+The ideal situation for applying Hyperband would be when
+such a distribution is uniform (i.e., one never knows whether
+explorative vs. exploitative brackets are preferable), thus ex-
+plaining why the performance of Hyperband improves sig-
+niﬁcantly (relative to explorative SH of an equivalent bud-
+get) when using weighted sampling.
+
+Figure 5: Average rank in generalization loss for the Hyper-
+band, SH and RS (lower is better).
+
+As before, we ﬁrstly perform the omnibus test and ﬁnd
+that for both the validation and the generalization results, the
+p-value is very small (< 2.2e−16 ), again indicating that dif-
+ferences do indeed exist between the family of 6 schemes.
+The matrices of corrected p-values for all of the pairwise
+comparisons can also be found in Appendix C. The results
+are summarized in Figure 4 and Figure 5 for the valida-
+tion loss and generalization loss respectively. In these ﬁgures
+we again plot the average rank, and denote with horizontal
+bars the schemes for which the null hypothesis could not be
+rejected (i.e., the p-value for the pairwise comparison was
+> 0.05). The conclusions we can draw are as follows:
+1. Again, the relative order of all 6 schemes is consistent
+across validation and generalization loss.
+2. Without weighted model sampling, explorative SH out-
+performs both RS and Hyperband, and in the generaliza-
+tion loss the differences between Hyperband and RS are
+not statistically signiﬁcant (somewhat conﬁrming the re-
+sults of (Li et al. 2016)).
+3. Using weighted model sampling, the performance of Hy-
+perband signiﬁcantly improves, and in fact the differences
+between Hyperband and SH are not signiﬁcantly different
+either in validation loss or generalization loss.
+
+Figure 6: Total number of times each bracket outputs the
+winning conﬁguration (for all 67 datasets and 10 train/test
+splits).
+
+6 Conclusion
+
+We propose a weighted sampling distribution for model-free
+optimization of the combined algorithm selection and hy-
+perparameter tuning problem. We prove theoretically, under
+worst-case assumptions, that this distribution out-performs
+uniform sampling. Additionally, we recommend a robust
+procedure for statistical comparison of competing AutoML
+frameworks over a collection of datasets. We then evaluate
+the performance of RS, SH and Hyperband with and with-
+out weighted model sampling. Our ﬁndings are threefold:
+(a) weighted sampling improves performance of all three
+schemes, (b) explorative SH schedules tend to out-perform
+exploitative schedules, and (c) that weighted sampling effec-
+tively enables Hyperband to successfully automate the ex-
+plore/exploit trade-off.
+
+A OpenML IDs
+
+In this work we used datasets with the following OpenML
+IDs: 3, 31, 44, 715, 720, 723, 728, 737, 740, 741, 743, 751,
+772, 797, 799, 806, 813, 837, 845, 849, 866, 871, 903, 904,
+910, 912, 913, 914, 917, 934, 953, 958, 962, 971, 979, 983,
+991, 995, 1020, 1049, 1050, 1067, 1068, 1444, 1453, 1462,
+1487, 1494, 1504, 1547, 1558, 40646, 40647, 40648, 40649,
+40650, 40680, 40701, 40702, 40704, 40706, 40713, 40983,
+40999, 41005, 41007, 41156.
+
+B Dataset Preprocessing
+
+We applied the sklearn.impute.SimpleImputer to ﬁll any
+missing values with the most frequent value and then we
+applied sklearn.preprocessing.LabelEncoder to all the cate-
+gorical features.
+
+C Statistical Results
+
+SH0
+
+SH1
+
+SH0
+
+NA
+SH0 .W 3.9e-8
+3.9e-8
+SH1 .W 3.9e-8
+3.9e-8
+SH2 .W 3.9e-8
+
+SH2
+
+SH0 .W SH1
+
+SH0 .W SH2
+
+SH2 .W
+
+NA
+1.2e-6
+1.8e-6
+2.5e-2
+6.4-7
+
+NA
+1.3e-7
+3.9e-8
+1.8e-7
+
+NA
+3.3e-4
+1.2e-6
+
+NA
+1.3e-6
+
+NA
+
+Table 4: Pairwise corrected p-values for the experiments in
+Section 5.2 (Validation Loss).
+
+SH0
+
+SH1
+
+SH0
+
+NA
+SH0 .W 4.1e-9
+8.6e-7
+SH1 .W 4.5e-9
+3.5e-8
+SH2 .W 2.3e-8
+
+SH2
+
+SH0 .W SH1
+
+SH0 .W SH2
+
+SH2 .W
+
+NA
+1.1e-7
+8.7e-4
+8.5e-3
+5.2e-6
+
+NA
+2.3e-8
+5.6e-8
+4.3e-8
+
+NA
+1.5e-4
+1.4e-4
+
+NA
+2.4e-6
+
+NA
+
+Table 5: Pairwise corrected p-values for the experiments in
+Section 5.2 (Test Loss).
+
+RS
+RS
+NA
+RS.W 8.3e-7
+HB
+9.2e-5
+HB.W 1.3e-7
+SH
+6.7e-6
+SH.W 9.9e-7
+
+RS.W HB
+
+HB.W SH
+
+SH.W
+
+NA
+2.4e-5
+1.1e-7
+6.4e-4
+7.3e-6
+
+NA
+8.3e-7
+3.7e-4
+7.3e-6
+
+NA
+7.3e-6
+
+3.4e-1
+
+NA
+7.3e-6
+
+NA
+
+Table 6: Pairwise corrected p-values for the experiments
+in Section 5.3 (Validation Loss). Boldface indicates values
+larger than 0.05.
+
+References
+
+Balaji, A., and Allen, A. 2018. Benchmarking Automatic
+Machine Learning Frameworks. CoRR abs/1808.06492.
+Benavoli, A.; Corani, G.; and Mangili, F. 2016. Should we
+really use post-hoc tests based on mean-ranks? The Journal
+of Machine Learning Research 17(1):152–161.
+
+RS
+RS
+NA
+RS.W 3.0e-6
+HB
+HB.W 7.1e-7
+SH
+8.2e-4
+SH.W 2.2e-6
+
+9.8e-2
+
+RS.W HB
+
+HB.W SH
+
+SH.W
+
+NA
+3.0e-6
+1.1e-6
+2.1e-5
+4.1e-4
+
+NA
+7.1e-7
+3.9e-3
+9.0e-7
+
+NA
+7.1e-7
+
+1.9e-1
+
+NA
+7.1e-7
+
+NA
+
+Table 7: Pairwise corrected p-values for the experiments
+in Section 5.3 (Test Loss). Boldface indicates values larger
+than 0.05.
+
+Bergstra, J., and Bengio, Y.
+2012.
+Random Search
+for Hyper-parameter Optimization. J. Mach. Learn. Res.
+13:281–305.
+Bergstra, J. S.; Bardenet, R.; Bengio, Y.; and K ´egl, B. 2011.
+Algorithms for Hyper-Parameter Optimization. In Shawe-
+Taylor, J.; Zemel, R. S.; Bartlett, P. L.; Pereira, F.; and Wein-
+berger, K. Q., eds., Advances in Neural Information Process-
+ing Systems 24. Curran Associates, Inc. 2546–2554.
+Calvo, B., and Santaf ´e Rodrigo, G. 2016. scmamp: Statisti-
+cal comparison of multiple algorithms in multiple problems.
+The R Journal, Vol. 8/1, Aug. 2016.
+Demˇsar, J. 2006. Statistical comparisons of classiﬁers over
+multiple data sets. Journal of Machine learning research
+7(Jan):1–30.
+Dietterich, T. G. 1998. Approximate statistical tests for com-
+paring supervised classiﬁcation learning algorithms. Neural
+computation 10(7):1895–1923.
+Falkner, S.; Klein, A.; and Hutter, F. 2018. BOHB: Robust
+and Efﬁcient Hyperparameter Optimization at Scale. CoRR
+abs/1807.01774.
+Feurer, M.; Klein, A.; Eggensperger, K.; Springenberg, J.;
+Blum, M.; and Hutter, F. 2015. Efﬁcient and Robust Auto-
+mated Machine Learning. In Cortes, C.; Lawrence, N. D.;
+Lee, D. D.; Sugiyama, M.; and Garnett, R., eds., Advances
+in Neural Information Processing Systems 28. Curran Asso-
+ciates, Inc. 2962–2970.
+Feurer, M.; Springenberg, J. T.; and Hutter, F. 2015.
+Ini-
+tializing Bayesian Hyperparameter Optimization via Meta-
+learning. In Proceedings of the Twenty-Ninth AAAI Confer-
+ence on Artiﬁcial Intelligence, AAAI’15, 1128–1135. AAAI
+Press.
+Garc´ıa, S., and Herrera, F. 2008. An extension on “statis-
+tical comparisons of classiﬁers over multiple data sets” for
+all pairwise comparisons. Journal of Machine Learning Re-
+search 9(Dec):2677–2694.
+Garc´ıa, S.; Fern ´andez, A.; Luengo, J.; and Herrera, F. 2010.
+Advanced nonparametric tests for multiple comparisons in
+the design of experiments in computational intelligence and
+data mining: Experimental analysis of power. Information
+Sciences 180(10):2044–2064.
+Hall, P.; Kurka, M.; and Bartz, A. 2019. Using H2O Driver-
+less AI. H2O.ai Inc.
+Hutter, F.; Hoos, H. H.; and Leyton-Brown, K. 2011. Se-
+quential Model-based Optimization for General Algorithm
+
+Conﬁguration. In Proceedings of the 5th International Con-
+ference on Learning and Intelligent Optimization, LION’05,
+507–523. Berlin, Heidelberg: Springer-Verlag.
+Jamieson, K., and Nowak, R. 2014. Best-arm identiﬁcation
+algorithms for multi-armed bandits in the ﬁxed conﬁdence
+setting.
+In 2014 48th Annual Conference on Information
+Sciences and Systems (CISS), 1–6. IEEE.
+Jamieson, K., and Talwalkar, A.
+2016. Non-stochastic
+Best Arm Identiﬁcation and Hyperparameter Optimization.
+In Gretton, A., and Robert, C. C., eds., Proceedings of the
+19th International Conference on Artiﬁcial Intelligence and
+Statistics, volume 51 of Proceedings of Machine Learning
+Research, 240–248. Cadiz, Spain: PMLR.
+Li, L., and Talwalkar, A. 2019. Random search and re-
+producibility for neural architecture search. arXiv preprint
+arXiv:1902.07638.
+Li, L.; Jamieson, K. G.; DeSalvo, G.; Rostamizadeh, A.; and
+Talwalkar, A. 2016. Efﬁcient Hyperparameter Optimization
+and Inﬁnitely Many Armed Bandits. CoRR abs/1603.06560.
+Li, L.; Jamieson, K. G.; Rostamizadeh, A.; Gonina, E.;
+Hardt, M.; Recht, B.; and Talwalkar, A. 2018. Massively
+Parallel Hyperparameter Tuning. CoRR abs/1810.05934.
+Nemenyi, P. 1963. Distribution-free Multiple Comparisons.
+Ph.D. Dissertation, Princeton University.
+Olson, R. S., and Moore, J. H. 2016. TPOT: A Tree-based
+Pipeline Optimization Tool for Automating Machine Learn-
+ing. In Hutter, F.; Kotthoff, L.; and Vanschoren, J., eds., Pro-
+ceedings of the Workshop on Automatic Machine Learning,
+volume 64 of Proceedings of Machine Learning Research,
+66–74. New York, New York, USA: PMLR.
+Pfahringer, B.; Bensusan, H.; and Giraud-Carrier, C. G.
+2000. Meta-Learning by Landmarking Various Learning Al-
+gorithms. In Proceedings of the Seventeenth International
+Conference on Machine Learning, ICML ’00, 743–750. San
+Francisco, CA, USA: Morgan Kaufmann Publishers Inc.
+Sommer, J.; Sarigiannis, D.; and Parnell, T. 2019. Learn-
+ing to Tune XGBoost with XGBoost.
+arXiv preprint
+arXiv:1909.07218.
+Thornton, C.; Hutter, F.; Hoos, H. H.; and Leyton-Brown,
+K. 2013. Auto-WEKA: Combined Selection and Hyperpa-
+rameter Optimization of Classiﬁcation Algorithms. In Pro-
+ceedings of the 19th ACM SIGKDD International Confer-
+ence on Knowledge Discovery and Data Mining, KDD ’13,
+847–855. New York, NY, USA: ACM.
+Valkov, L.; Jenatton, R.; Winkelmolen, F.; and Archambeau,
+C. 2018. A simple transfer-learning extension of Hyper-
+band. In NeurIPS Workshop on Meta-Learning.
+Vanschoren, J.; van Rijn, J. N.; Bischl, B.; and Torgo, L.
+2013. OpenML: Networked Science in Machine Learning.
+SIGKDD Explorations 15(2):49–60.
+Yang, C.; Akimoto, Y.; Kim, D. W.; and Udell, M. 2018.
+OBOE: Collaborative Filtering for AutoML Initialization.
+CoRR abs/1808.03233.
+
+

@@ -1,0 +1,787 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+9
+6
+6
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+REGULARIZING NEURAL NETWORKS BY STOCHASTICALLY TRAINING LAYER
+ENSEMBLES
+
+Alex Labach and Shahrokh Valaee
+
+University of Toronto
+Department of Electrical and Computer Engineering
+Toronto, Canada
+
+ABSTRACT
+
+Dropout and similar stochastic neural network regularization
+methods are often interpreted as implicitly averaging over a
+large ensemble of models. We propose STE (stochastically
+trained ensemble) layers, which enhance the averaging prop-
+erties of such methods by training an ensemble of weight ma-
+trices with stochastic regularization while explicitly averag-
+ing outputs. This provides stronger regularization with no ad-
+ditional computational cost at test time. We show consistent
+improvement on various image classiﬁcation tasks using stan-
+dard network topologies.
+Index Terms— neural networks, regularization, dropout,
+model averaging, ensemble methods
+
+1. INTRODUCTION
+
+In order to generalize well to new inputs, modern deep neu-
+ral networks require heavy regularization. While many tech-
+niques for achieving this have been proposed, dropout [1] and
+related methods have become some of the most widely used
+approaches [2]. Dropout works by randomly removing neu-
+rons from a neural network with a certain probability at each
+training step, then using the full network at test time. It is
+commonly interpreted as implicitly averaging over an ensem-
+ble of networks, where the ensemble contains all possible net-
+works obtained by removing a subset of neurons [1, 3, 4, 5].
+The regularization power of dropout then comes from this av-
+eraging, where individual elements of the network ensemble
+may be overﬁtted, but averaging them reduces this effect.
+We introduce STE (stochastically trained ensemble) lay-
+ers, which add explicit averaging to dropout and related regu-
+larization methods 1 . In place of a standard dense neural net-
+work layer, we propose using multiple different weight matri-
+ces and bias vectors to transform inputs. Dropout or a similar
+method is applied to all resulting values, and corresponding
+outputs are then averaged together before an activation func-
+tion is applied, optionally followed by dropout again. Our re-
+sults suggest that training multiple sets of weights and biases
+
+1 Sample code can be found at https://github.com/j201/
+keras- ste- layers
+
+together in this fashion along with dropout provides stronger
+regularization than dropout alone.
+Our proposed method is related to various established en-
+semble methods in machine learning. This includes bagging,
+boosting, and mixture of expert methods, where multiple in-
+stances of a machine learning model are each trained on a
+subset of the input space or training set and collaborate during
+inference [6, 7]. While our method also stochastically trains
+multiple weight matrices on different subsets of the training
+set, after training, averaging is applied to produce a single
+weight matrix for use in inference. It therefore functions as a
+regularization method for a single instance of a model rather
+than a technique for using multiple instances of a model dur-
+ing inference.
+A recent related method is fraternal dropout [8], which
+regularizes recurrent neural networks by applying two sets
+of dropout masks, then using a loss function that promotes
+similarity in the resulting outputs and invariance to dropout
+masks. While our proposed method has similar goals, we in-
+sert averaging directly into dense layers and use a standard
+loss function, achieving regularization through ensemble av-
+eraging rather than explicitly promoting invariance to dropout
+masks. Our method also operates on dense layers rather than
+recurrent neural networks. Finally, our method varies from
+both model averaging methods and fraternal dropout in that it
+applies to individual layers rather than entire networks and in
+that we directly average weights and biases at test time rather
+than activations or outputs.
+
+2. PROPOSED METHOD
+
+To introduce our notation, a standard dense neural network
+layer with M inputs and N outputs implements the following
+function:
+
+y = f (Wx + b),
+
+(1)
+where x ∈ RM is the layer input, W ∈ RN ×M is a weight
+matrix, b ∈ RN is a bias vector, f (·) is an activation function
+applied elementwise, and y ∈ RN is the layer output. The
+weights and biases are learned parameters.
+
+2019 IEEE. Personal use of this material is permitted. Permission from IEEE must be obtained for all other uses, in any current or future media, including
+reprinting/republishing this material for advertising or promotional purposes, creating new collective works, for resale or redistribution to servers or lists, or
+reuse of any copyrighted component of this work in other works.
+
+ 
+ 
+ 
+ 
+ 
+ 
+W(1)x + b(1)
+
+Dropout
+
+x
+
+W(2)x + b(2)
+
+...
+
+Dropout
+
+Averaging
+
+f (·)
+
+y
+
+...
+
+W(A)x + b(A)
+
+Dropout
+
+Fig. 1: Diagram of an STE layer using dropout for noise. Inputs are transformed using multiple independent weight matrices and bias vectors,
+then noise is added using dropout, corresponding outputs are averaged together, and ﬁnally the activation function is applied. Note that
+dropout can additionally be used on the layer output. At test time, weight matrices and biases are averaged to produce a single weight matrix
+and bias vector.
+
+STE layers act as a replacement for dense layers by trans-
+forming x using A different weight matrices and bias vec-
+tors, applying some noise, and then averaging the results to
+produce a vector of length N before applying the activation
+function. We refer to A as the averaging factor of the layer.
+Mathematically, an STE layer with M inputs and N outputs
+is of the form:
+
+(cid:33)
+
+y = f
+
+n(W(i) , x, b(i) )
+
+,
+
+(2)
+
+(cid:32)
+
+A(cid:88)
+
+i=1
+
+1
+A
+
+where n(W(i) , x, b(i) ) represents an operation that imple-
+ments the transformation W(i)x + b(i) , but with some type
+of noise added during training. The vectors produced by each
+application of n(·) are then averaged together. All weight ma-
+trices and bias vectors are initialized independently.
+At test time, the noise operation n(. . .) must become
+W(i)x + b(i) or some afﬁne transformation of this. This
+allows the following property to hold.
+
+Theorem 1. At test time, an STE layer with M inputs and N
+outputs operates as a dense layer with the same number of
+inputs and outputs.
+
+Proof. At test time, n(. . .) produces C(W(i)x+ b(i) )+ d for
+some C ∈ RN ×N and d ∈ RN . The layer output is therefore
+given by:
+
+C(W(i)x + b(i) ) + d
+
+(cid:33)
+
+(cid:17)(cid:33)
+
+(3)
+
+(4)
+
+Cb(i) + d
+
+(cid:105)(cid:33)
+(cid:16)
+
+A(cid:88)
+
+i=1
+
+1
+A
+
+(cid:32)
+(cid:32)(cid:32)
+
+1
+A
+
+A(cid:88)
+(cid:104)
+A(cid:88)
+
+i=1
+
+y = f
+
+= f
+
+(cid:80)A
+(cid:80)A
+
+i=1
+
+1
+A
+1
+A
+
+i=1
+
+CW(i)
+
+1
+x +
+A
+(cid:0)Cb(i) + d(cid:1) ∈ RN .
+
+which is equivalent to a dense layer with the weight matrix
+i=1 CW(i) ∈ RN ×M and the bias vector
+
+This means that an STE layer acts as a regularization
+method, incurring no additional computational cost at test
+
+time compared to a dense layer of the same dimensions, re-
+gardless of the value of A.
+In contrast, model averaging
+methods require running inference on multiple model in-
+stances, which is computationally costly. It is important to
+note that the injection of different noise values to each mem-
+ber of the ensemble during training is exactly what makes it
+impossible to combine weight matrices in a similar fashion
+during training, ensuring diversity across the ensemble.
+We mainly investigate the use of dropout [1] to provide
+noise, leading to the following equation during training:
+
+y = f
+
+m(i) ◦ (W(i)x + b(i) )
+
+,
+
+(5)
+
+(cid:32)
+
+A(cid:88)
+
+i=1
+
+1
+A
+
+(cid:80)A
+(cid:32)
+
+A(cid:88)
+
+i=1
+
+1
+A
+
+(cid:33)
+
+(cid:33)
+
+where each m(i) is an independent length-N vector of i.i.d.
+samples from Bernoulli(p) and ◦ represents element-wise
+multiplication. This method is illustrated in Figure 1. At
+test time the element-wise multiplication by m(i) is replaced
+with multiplication by E[m(i)
+j ] = p. This is equivalent to
+a dense layer with the weight matrix p
+bias vector p
+We also explore applying a dropout mask directly to
+weights, which leads to the following equation:
+
+i=1 W(i) and the
+
+(cid:80)A
+
+i=1 b(i) .
+
+A
+
+A
+
+y = f
+
+(M(i) ◦ W(i) )x + b(i)
+
+,
+
+(6)
+
+where each M(i) is an independent N × M matrix of i.i.d.
+samples from Bernoulli(p). This is a generalization of drop-
+connect [9], which represents the special case A = 1. We
+differ from [9] and use the same approach as with dropout
+at test time, replacing multiplication by mask elements with
+multiplication by E[M (i)
+Whereas dropout and related methods create pseudo-
+ensembles of models [5], STE layers additionally use an
+explicit ensemble of separate weights and biases. A different
+initial sets of weights are sampled, and the use of indepen-
+dent noise for each causes each to follow a different path
+
+jk ].
+
+Table 1: Comparison of STE layers to standard dense layers in an MLP with and without dropout. Results are averaged over ﬁve tests with
+sample standard deviations provided. Lower loss and higher accuracy are better.
+
+Dataset
+
+CIFAR-10
+CIFAR-100
+SVHN
+
+No
+regularization
+Loss
+Accuracy
+1.351±0.009
+53.2±0.06
+3.224±0.01
+25.3±0.6
+0.759±0.009
+81.5±0.07
+
+Standard
+dropout
+Loss
+Accuracy
+1.266±0.01
+56.4±0.3
+2.971±0.009
+29.8±0.3
+0.568±0.005
+85.7±0.1
+
+STE layers
+using dropout
+Loss
+Accuracy
+32.0±0.2
+
+57.0±0.2
+86.3±0.09
+
+1.236±0.003
+2.836±0.004
+0.489±0.002
+
+STE layers
+using dropconnect
+Loss
+Accuracy
+1.237±0.006
+56.9±0.4
+2.845±0.003
+0.507±0.001
+85.8±0.1
+
+32.2±0.1
+
+Table 2: Comparison of STE layers to standard dense layers in LeNet-5 with and without dropout. Results are averaged over ﬁve tests with
+sample standard deviations provided. Lower loss and higher accuracy are better.
+
+Dataset
+
+CIFAR-10
+CIFAR-100
+SVHN
+
+No
+regularization
+Loss
+Accuracy
+1.234±0.02
+57.1±0.8
+3.165±0.04
+24.9±0.8
+0.505±0.01
+85.3±0.4
+
+Standard
+dropout
+Loss
+Accuracy
+1.166±0.02
+60.7±0.5
+3.038±0.04
+26.5±0.5
+0.479±0.003
+
+86.6±0.2
+
+STE layers
+using dropout
+Loss
+Accuracy
+
+1.030±0.007
+2.937±0.03
+0.468±0.004
+
+64.6±0.4
+27.2±0.3
+86.6±0.2
+
+STE layers
+using dropconnect
+Loss
+Accuracy
+1.037±0.02
+64.0±0.01
+3.017±0.01
+26.0±0.6
+0.472±0.004
+86.3±0.1
+
+towards some local minimum. As with bagging methods [6],
+we understand the role of averaging outputs as reducing the
+variance caused by neural network learning arriving at sub-
+optimal minima. A major difference from bagging is that the
+weights in STE layers can be directly averaged at test time,
+as opposed to running multiple models and averaging their
+outputs. This is possible because STE layers train weight
+ensembles together in a single layer, causing them to learn in
+such a way that groups of activations within a neural network
+correspond to each other and can be averaged. We empiri-
+cally analyze this effect in the following section and show
+that the resulting weight matrices remain diverse.
+STE layers can also be seen as promoting a network rep-
+resentation that is more robust to different weight initializa-
+tions and noise than dense layers. By incorporating multiple
+weight initialization samples and independent applications of
+noise, the sensitivity to any particular realization is reduced.
+This has a similar effect to regularization approaches that ex-
+plicitly promote invariance with respect to dropout masks [8].
+
+3. EXPERIMENTS
+
+We evaluate using STE layers instead of dense hidden lay-
+ers in a multi-layer perceptron (MLP) as well as replacing
+fully connected layers in two standard convolutional neural
+network topologies: LeNet-5 [10] and AlexNet [11]. These
+networks are tested on three image classiﬁcation datasets:
+CIFAR-10 [12], CIFAR-100 [12], and SVHN [13]. Our result
+metrics are cross-entropy loss and top-1 accuracy in percent.
+We normalize all datasets to have zero mean and unit standard
+deviation.
+We primarily compare STE layers to dense layers that use
+standard dropout regularization with p = 0.5. We test STE
+layers using either dropout or dropconnect internally, both
+with p = 0.5, but additionally apply dropout to the layer out-
+
+puts, again with p = 0.5. For comparison, we also report
+results obtained without any regularization methods applied
+to the dense layers. We use A = 8 for the MLP and LeNet-5
+tests, but A = 2 for AlexNet tests, since higher values were
+found to degrade training. Both dense and STE layer weights
+are initialized using Glorot uniform initialization [14] and bi-
+ases are initialized to zero. We always use a dense layer as
+the output layer, not an STE layer. The MLP used for test-
+ing has two hidden layers with 2 048 neurons each and ReLU
+activation functions. Since AlexNet is designed for larger im-
+ages than those in the datasets used, when training and testing
+it, we upsample images by a factor of seven using bilinear
+interpolation.
+We train using SGD optimization with Nesterov momen-
+tum of 0.9, a minibatch size of 128, and learning rate decay δ
+after each minibatch such that the learning rate at iteration n
+is reduced by a factor 1/(1+ δn). To avoid bias, learning rates
+and decay rates are tuned to produce optimal results with stan-
+dard dropout regularization rather than our proposed method.
+For the MLP, we use an initial learning rate of 1 × 10−2 with
+a decay rate of 1 × 10−4 and train for 128 epochs. For LeNet-
+5, we use an initial learning rate of 1 × 10−2 with a decay rate
+of 3 × 10−4 and train for 256 epochs. For AlexNet, we use an
+initial learning rate of 1 × 10−3 with a decay rate of 3 × 10−5
+and train for 150 epochs. Ten percent of data is randomly held
+back for validation. For testing, we restore the weights from
+the epoch with lowest validation loss.
+
+3.1. Results and Analysis
+
+Results on the test partition of each dataset are shown in Ta-
+bles 1 to 3. In all cases, lower test loss is achieved using STE
+layers compared to standard dense layers with dropout regu-
+larization. Top-1 accuracy remains the same in some cases,
+but for the most part, it improves when using STE layers.
+
+Table 3: Comparison of STE layers to standard dense layers in AlexNet with and without dropout. Results are averaged over ﬁve tests with
+sample standard deviations provided. Lower loss and higher accuracy are better.
+
+Dataset
+
+CIFAR-10
+CIFAR-100
+SVHN
+
+No
+regularization
+Loss
+Accuracy
+0.843±0.02
+72.4±0.7
+2.709±0.03
+35.5±0.4
+0.391±0.02
+90.3±0.3
+
+Standard
+dropout
+Loss
+Accuracy
+0.604±0.006
+80.9±0.3
+1.921±0.02
+50.6±0.5
+0.265±0.01
+93.5±0.2
+
+STE layers
+using dropout
+Loss
+Accuracy
+
+0.577±0.01
+1.730±0.02
+0.231±0.003
+
+81.1±0.5
+53.7±0.4
+94.0±0.05
+
+STE layers
+using dropconnect
+Loss
+Accuracy
+0.600±0.01
+81.0±0.2
+1.858±0.01
+50.5±0.7
+0.237±0.005
+93.9±0.2
+
+Table 4: The number of parameters trained for the experiments de-
+scribed in this paper. Note that at test time, STE layer parameters
+are averaged so that there is no additional cost compared to standard
+dense layers.
+Model
+
+MLP
+LeNet-5
+AlexNet
+Dense
+STE
+Dense
+STE
+Dense
+STE
+10.5M 83.9M 1.7M 13.9M 45.5M 88.5M
+10.7M 84.1M 1.7M 13.9M 45.9M 88.9M
+10.5M 83.9M 1.7M 13.9M 45.5M 88.5M
+
+CIFAR-10
+CIFAR-100
+SVHN
+
+Fig. 2: Two sample activation vectors within an STE layer before
+averaging, using a trained LeNet-5 model with two test images from
+CIFAR-10 as inputs. Columns correspond to values that will be av-
+eraged together.
+
+This improvement can be dramatic, as seen with the 3.9%
+increase with LeNet-5 on CIFAR-10. In general, STE lay-
+ers are shown to improve performance, which we interpret
+as them providing more effective regularization, allowing the
+neural networks to generalize more effectively on the given,
+relatively small, datasets.
+For the most part, using dropconnect as the noise method
+within STE layers shows worse performance than using
+dropout. However, STE layers with dropconnect still out-
+perform dense layers with dropout.
+It may be possible to
+improve its relative performance by tuning p, which we did
+not investigate in the interest of minimizing tuned hyper-
+parameters in our proposed method. Other noise methods
+could also be investigated, such as multiplicative Gaussian
+noise [15]. However, given that dropout is generally thought
+to be versatile and effective for stochastically training neural
+networks, it is unclear whether this could provide signiﬁcant
+beneﬁts.
+Using STE layers allows for much larger networks to be
+trained with no additional cost at test time. Table 4 shows the
+number of parameters trained in our experiments when us-
+ing dense layers versus STE layers. The averaging causes the
+
+weights of neurons that are averaged together to become cor-
+related, simplifying the learning task and allowing for weights
+to be directly averaged together. However, the use of dropout
+or other noise maintains diversity within each ensemble. This
+diversity allows weight averaging at test time to produce a
+regularized network. The correlation between activations is
+illustrated in ﬁg. 2, which shows activations within a trained
+STE layer before averaging. Activations that are averaged
+together are clearly correlated, but far from identical, demon-
+strating that the weight matrices within the ensemble have ar-
+rived at different minima within the optimization space.
+Note that for the sake of comparison, only the averaging
+factor was tuned for STE layer-speciﬁc tests. Further tuning
+of optimizer parameters, noise parameters, adding additional
+regularization, etc. could improve results in practice.
+
+4. CONCLUSIONS
+
+We ﬁnd that STE layers can effectively use ensemble aver-
+aging to regularize neural networks, with no additional cost
+at test time. We show consistent improvements compared to
+dropout regularization using standard neural network topolo-
+gies and standard image classiﬁcation datasets. While model
+averaging methods are common in machine learning, our pro-
+posed method differs from most established methods in that it
+allows weights and biases to be directly averaged at test time,
+thereby functioning as a regularization method. STE layers
+are based on dense neural network layers, but there is clear
+potential for similar methods to work in neural networks with
+different kinds of layers, including convolutional neural net-
+works, recurrent neural networks, residual neural networks,
+and neural networks with attention mechanisms.
+
+5. REFERENCES
+
+[1] Geoffrey E Hinton, Nitish Srivastava, Alex Krizhevsky,
+Ilya Sutskever, and Ruslan R Salakhutdinov, “Improv-
+ing neural networks by preventing co-adaptation of fea-
+ture detectors,” arXiv preprint arXiv:1207.0580, 2012.
+
+[2] Alex Labach, Hojjat Salehinejad, and Shahrokh Valaee,
+“Survey of dropout methods for deep neural networks,”
+arXiv preprint arXiv:1904.13310, 2019.
+
+[3] David Warde-Farley,
+Ian J. Goodfellow, Aaron
+Courville, and Yoshua Bengio, “An empirical analysis
+of dropout in piecewise linear networks,”
+in Pro-
+ceedings of the International Conference on Learning
+Representations (ICLR), 2014.
+
+[15] Nitish Srivastava, Geoffrey E Hinton, Alex Krizhevsky,
+Ilya Sutskever, and Ruslan Salakhutdinov, “Dropout:
+a simple way to prevent neural networks from overﬁt-
+ting.,” Journal of Machine Learning Research, vol. 15,
+no. 1, pp. 1929–1958, 2014.
+
+[4] Pierre Baldi and Peter J Sadowski,
+“Understanding
+dropout,” in Advances in Neural Information Process-
+ing Systems 26, pp. 2814–2822. Curran Associates, Inc.,
+2013.
+
+[5] Philip Bachman, Ouais Alsharif, and Doina Precup,
+“Learning with pseudo-ensembles,”
+in Advances in
+Neural Information Processing Systems 27, pp. 3365–
+3373. Curran Associates, Inc., 2014.
+
+[6] Thomas G. Dietterich, “Ensemble methods in machine
+learning,” in Multiple Classiﬁer Systems, Berlin, Hei-
+delberg, 2000, pp. 1–15, Springer Berlin Heidelberg.
+
+[7] Saeed Masoudnia and Reza Ebrahimpour, “Mixture of
+experts: a literature survey,” Artiﬁcial Intelligence Re-
+view, vol. 42, no. 2, pp. 275–293, Aug 2014.
+[8] Konrad ˙Zołna, Devansh Arpit, Dendi Suhubdy, and
+Yoshua Bengio, “Fraternal dropout,” arXiv preprint
+arXiv:1711.00066, 2018.
+
+[9] Li Wan, Matthew Zeiler, Sixin Zhang, Yann Le Cun, and
+Rob Fergus, “Regularization of neural networks using
+dropconnect,” in International conference on machine
+learning, 2013, pp. 1058–1066.
+
+[10] Yann LeCun, L ´eon Bottou, Yoshua Bengio, and Patrick
+Haffner, “Gradient based learning applied to document
+recognition,”
+in Proceedings of the IEEE, 1998, pp.
+2278–2324.
+
+[11] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hin-
+ton, “Imagenet classiﬁcation with deep convolutional
+neural networks,” in Advances in neural information
+processing systems, 2012, pp. 1097–1105.
+
+[12] Alex Krizhevsky, “Learning multiple layers of features
+from tiny images,” University of Toronto, 05 2012.
+
+[13] Yuval Netzer, Tao Wang, Adam Coates, Alessandro Bis-
+sacco, Bo Wu, and Andrew Y. Ng,
+“Reading digits
+in natural images with unsupervised feature learning,”
+in NIPS Workshop on Deep Learning and Unsupervised
+Feature Learning, 2011.
+
+[14] Xavier Glorot and Yoshua Bengio,
+“Understanding
+the difﬁculty of training deep feedforward neural net-
+works.,” in Proceedings of the International Conference
+on Artiﬁcial Intelligence and Statistics. AISTATS, 2010,
+vol. 9, pp. 249–256.
+
+

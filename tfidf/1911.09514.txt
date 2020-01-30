@@ -1,0 +1,2162 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+M
+
+.
+
+t
+
+a
+
+t
+
+s
+
+[
+
+1
+v
+4
+1
+5
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Continual Learning with Adaptive Weights (CLAW)
+
+Tameem Adela,∗, Han Zhaob , Richard E. Turnera,c
+
+aDepartment of Engineering, University of Cambridge, UK
+bMachine Learning Department, Carnegie Mel lon University
+cMicrosoft Research, Cambridge, UK
+
+Abstract
+
+Approaches to continual learning aim to successfully learn a set of related tasks
+
+that arrive in an online manner. Recently, several frameworks have been devel-
+
+oped which enable deep learning to be deployed in this learning scenario. A key
+
+modelling decision is to what extent the architecture should be shared across
+
+tasks. On the one hand, separately modelling each task avoids catastrophic
+
+forgetting but it does not support transfer learning and leads to large models.
+
+On the other hand, rigidly specifying a shared component and a task-speciﬁc
+
+part enables task transfer and limits the model size, but it is vulnerable to
+
+catastrophic forgetting and restricts the form of task-transfer that can occur.
+
+Ideally, the network should adaptively identify which parts of the network to
+
+share in a data driven way. Here we introduce such an approach called Contin-
+
+ual Learning with Adaptive Weights (CLAW), which is based on probabilistic
+
+modelling and variational inference. Experiments show that CLAW achieves
+
+state-of-the-art performance on six benchmarks in terms of overall continual
+
+learning performance, as measured by classiﬁcation accuracy, and in terms of
+
+addressing catastrophic forgetting.
+
+1. Introduction
+
+Continual learning (CL), sometimes called lifelong or incremental learning,
+
+refers to an online framework where the knowledge acquired from learning tasks
+
+∗Corresponding author
+
+Email address: tah47@cam.ac.uk,tameem.hesham@gmail.com (Tameem Adel)
+
+ 
+ 
+ 
+ 
+ 
+ 
+in the past is kept and accumulated so that it can be reused in the present and
+
+future. Data belonging to diﬀerent tasks could potentially be non i.i.d. (Schlim-
+
+mer and Fisher, 1986; Sutton and Whitehead, 1993; Ring, 1997; Schmidhuber,
+
+2013; Nguyen et al., 2018; Schmidhuber, 2018). A continual learner must be
+
+able to learn a new task, crucially, without forgetting previous tasks (Ring,
+
+1995; Srivastava et al., 2013; Schwarz et al., 2018; Serra et al., 2018; Hu et al.,
+
+2019).
+
+In addition, CL frameworks should continually adapt to any domain
+
+shift occurring across tasks. The learning updates must be incremental – i.e,
+
+the model is updated at each task only using the new data and the old model,
+
+without access to all previous data (from earlier tasks) – due to speed, security
+
+and privacy constraints. A compromise must be found between adapting to new
+
+tasks and enforcing stability to preserve knowledge from previous tasks. Exces-
+
+sive adaptation could lead to inadvertent forgetting of how to perform earlier
+
+tasks. Indeed, catastrophic forgetting is one of the main pathologies in contin-
+
+ual learning (McCloskey and Cohen, 1989; Ratcliﬀ, 1990; Robins, 1993, 1995;
+
+French, 1999; Pape et al., 2011; Goodfellow et al., 2014a; Achille et al., 2018;
+
+Kemker et al., 2018; Kemker and Kanan, 2018; Diaz-Rodriguez et al., 2018;
+
+Zeno et al., 2018; Ahn et al., 2019; Parisi et al., 2019; Pfulb and Gepperth,
+
+2019; Ra jasegaran et al., 2019).
+
+Many approaches to continual learning employ an architecture which is di-
+
+vided a priori into (i) a slowly evolving, global part; and (ii) a quickly evolving,
+
+task-speciﬁc, local part. This is one way to enable multi-task transfer whilst
+
+mitigating catastrophic forgetting, which has proven to be eﬀective (Rusu et al.,
+
+2016b; Fernando et al., 2017; Yoon et al., 2018), albeit with limitations. Speci-
+
+fying a priori the shared global, and task-speciﬁc local parts in the architecture
+
+restricts ﬂexibility. As more complex and heterogeneous tasks are considered,
+
+one would like a more ﬂexible, data-driven approach to determine the appropri-
+
+ate amount of sharing across tasks. Here, we aim at automating the architecture
+
+adaptation process so that each neuron of the network can either be kept intact,
+
+i.e. acting as global, or adapted to the new task locally. Our proposed varia-
+
+tional inference framework is ﬂexible enough to learn the range within which the
+
+2
+
+adaptation parameters can vary. We introduce for each neuron one binary pa-
+
+rameter controlling whether or not to adapt, and two parameters to control the
+
+magnitude of adaptation. All parameters are learnt via variational inference.
+
+We introduce our framework as an expansion of the variational continual learn-
+
+ing algorithm (Nguyen et al., 2018), whose variational and sequential Bayesian
+
+nature makes it convenient for our modelling and architecture adaptation pro-
+
+cedure. Our modelling ideas can also be applied to other continual learning
+
+frameworks, see the Appendix for a brief discussion.
+
+We highlight the following contributions: (1) A modelling framework which
+
+ﬂexibly automates the adaptation of local and global parts of the (multi-task)
+
+continual architecture. This optimizes the tradeoﬀ between mitigating catas-
+
+trophic forgetting and improving task transfer. (2) A probabilistic variational
+
+inference algorithm which supports incremental updates with adaptively learned
+
+parameters. (3) The ability to combine our modelling and inference approaches
+
+without any signiﬁcant augmentation of the architecture (no new neurons are
+
+needed). (4) State-of-the-art results in six experiments on ﬁve datasets, which
+
+demonstrate the eﬀectiveness of our framework in terms of overall accuracy and
+
+reducing catastrophic forgetting.
+
+1.1. Related Work
+
+We brieﬂy discuss three related approaches to continual learning: (a) regu-
+
+larisation based, (b) architecture based and (c) memory based. We provide more
+
+details of related work in Section Appendix A in the Appendix. (a) A com-
+
+plementary approach to CLAW is the regularisation-based approach to balance
+
+adaptability with catastrophic forgetting: a level of stability is kept via protect-
+
+ing parameters that greatly inﬂuence the prediction against radical changes,
+
+while allowing the rest of the parameters to change without restriction (Li and
+
+Hoiem, 2016; Lee et al., 2017; Zenke et al., 2017; Chaudhry et al., 2018; Kim
+
+et al., 2018; Nguyen et al., 2018; Srivastava et al., 2013; Schwarz et al., 2018;
+
+Vuorio et al., 2018; Aljundi et al., 2019c). The elastic weight consolidation
+
+(EWC) algorithm by Kirkpatrick et al. (2017) is a seminal example, where a
+
+3
+
+quadratic penalty is imposed on the diﬀerence between parameter values of the
+
+old and new tasks. One limitation is the high level of hand tuning required.
+
+(b) The architecture-based approach aims to deal with stability and adaptation
+
+issues by a ﬁxed division of the architecture into global and local parts (Rusu
+
+et al., 2016b; Fernando et al., 2017; Shin et al., 2017; Kaplanis et al., 2018;
+
+Xu and Zhu, 2018; Yoon et al., 2018; Li et al., 2019b). (c) The memory-based
+
+approach relies on episodic memory to store data (or pseudo-data) from previ-
+
+ous tasks (Ratcliﬀ, 1990; Robins, 1993, 1995; Thrun, 1996; Schmidhuber, 2013;
+
+Hattori, 2014; Mocanu et al., 2016; Rebuﬃ et al., 2017; Kamra et al., 2017;
+
+Shin et al., 2017; Rolnick et al., 2018; van de Ven and Tolias, 2018; Wu et al.,
+
+2018; Titsias et al., 2019). Limitations include overheads for tasks such as data
+
+storage, replay, and optimisation to select (or generate) the points. CLAW can as
+
+well be seen as a combination of a regularisation-based approach (the variational
+
+inference mechanism) and a modelling approach which automates the architec-
+
+ture building process in a data-driven manner, avoiding the overhead resulting
+
+from either storing or generating data points from previous tasks. CLAW is also
+
+orthogonal to (and simple to combine with, if needed) memory-based methods.
+
+2. Background on Variational Continual Learning (VCL)
+
+In this paper, we use Variational Continual Learning (VCL, Nguyen et al.,
+
+2018) as the underlying continual learning framework. However, our methods
+
+apply to other frameworks, see Appendix (Section Appendix A.1). VCL is a
+
+variational Bayesian framework where the posterior of the model parameters θ is
+learnt and updated continually from a sequence of T datasets, {x(n)
+where t = 1, 2, . . . , T and Nt is the size of the dataset associated with the
+t-th task. More speciﬁcally, denote by p(y |θ , x) the probability distribution
+returned by a discriminative classiﬁer with input x, output y and parameters
+θ . For Dt = {y (n)
+n=1 , we approximate the intractable posterior p(θ |D1:t ) after
+
+t }Nt
+, y (n)
+n=1 ,
+
+t
+
+t }Nt
+
+4
+
+observing the ﬁrst t datasets via a tractable variational distribution qt as:1
+where q0 is the prior p, p(Dt |θ) = (cid:81)Nt
+qt (θ) ≈ 1
+qt−1 (θ) p(Dt |θ),
+Zt
+|θ , x(n)
+), and Zt is the normaliz-
+ing constant which does not depend on θ but only on the data D. This frame-
+work allows the approximate posterior qt (θ) to be updated incrementally from
+the previous approximate posterior qt−1 (θ) in an online fashion. In VCL, the
+
+n=1 p(y (n)
+t
+
+(1)
+
+t
+
+approximation in (1) is performed by minimizing the following KL-divergence
+over a family Q of tractable distributions:
+
+(cid:16)
+
+(cid:17)
+
+.
+
+qt (θ) = argmin
+
+q∈Q
+
+KL
+
+q(θ) (cid:107) 1
+Zt
+
+qt−1 (θ) p(Dt |θ)
+
+(2)
+
+This framework can be enhanced to further mitigate catastrophic forgetting
+
+by using a coreset (Nguyen et al., 2018), i.e. a representative set of data from
+
+previously observed tasks that can serve as memory and can be revisited before
+
+making a decision. As discussed in the Related Work, this leads to overhead
+
+costs of memory and optimisation (selecting most representative data points).
+
+Previous work on VCL considered simple models without automatic architecture
+
+building or adaptation.
+
+3. Our CLAW Approach
+
+In earlier CL approaches, the parts of the network architecture that are
+
+shared among the learnt tasks are designated a priori. To alleviate this rigidity
+
+and to eﬀectively balance adaptation and stability, we propose a multi-task,
+
+continual model in which the adaptation of the architecture is data-driven by
+
+learning which neurons need to be adapted as well as the maximum adapta-
+
+tion capacity for each. All the model parameters (including those used for
+
+adaptation) are estimated via an eﬃcient variational inference algorithm which
+
+1Here we suppress the dependence on the inputs in p(θ |D1:t ) and p(Dt |θ) to lighten nota-
+tion.
+
+5
+
+incrementally learns from data of the successive tasks, without a need to store
+
+(nor generate) data from previous tasks and with no expansion in the network
+
+size.
+
+3.1. Model ling
+
+With model parameters θ , the overall variational ob jective we aim at max-
+
+lihood:
+
+(cid:16)
+
+(3)
+
+imising at task with index t is equivalent to the following online marginal like-
+(cid:2) log p(y (n) |x(n) , θ)(cid:3).
+We propose a framework where the architecture, whose parameters are θ , is
+
+qt (θ) (cid:107) qt−1 (θ)
+
+L(θ) = −KL
+
++
+
+Eqt (θ)
+
+(cid:17)
+
+Nt(cid:88)
+n=1
+
+ﬂexibly adapted based on the available tasks, via a learning procedure that will
+
+be described below. With each task, we automate the adaptation of the neuron
+
+contributions. Both the adaptation decisions (i.e. whether or not to adapt) and
+
+the maximum allowed degree of adaptation for every neuron are learnt. We refer
+
+to the binary adaptation variable as α. There is another variable s that is learnt
+
+in a multi-task fashion to control the maximum degree of adaptation, such that
+1+e−a − 1 limits how far the task-speciﬁc weights can diﬀer
+the expression b = s
+from the global weights, in case the respective neuron is to be adapted. The
+
+parameter a depicts unconstrained adaptation, as described later.2
+
+We illustrate the proposed model to perform this adaptation by learning the
+
+probabilistic contributions of the diﬀerent neurons within the network architec-
+ture on a task-by-task basis. We follow this with the inference details. Steps of
+• For a task T , the classiﬁer that we are modeling outputs: (cid:80)NT
+(cid:2) log p(y (n) |x(n) , wT )(cid:3)
+the proposed modeling are listed as follows:
+.
+
+n=1
+
+2We learn parameters α, s and a, with corresponding b, for each neuron but we avoid
+
+using the neuron indices here, as well as in other locations like (4), (6) and (7), for better
+
+readability.
+
+6
+
+• The task-speciﬁc weights wT can be expressed in terms of their global coun-
+terparts as follows:
+
+wT = (1 + bT αT ) ◦ w.
+
+(4)
+
+The symbol ◦ denotes an element-wise (Hadamard) multiplication.
+• For each task T and each neuron j at layer i, αT
+i,j is a binary variable which in-
+dicates whether the corresponding weight is adapted (αT
+i,j = 1) or unadapted
+Initially assume that the adaptation probability αT
+i,j follows a
+i,j ∼ Bernoulli(pi,j ). Since this
+3 , αT
+Bernoulli is not straightforward to optimise, and to adopt a scalable inference
+
+(αT
+i,j = 0).
+Bernoulli distribution with probability pi,j
+
+procedure based on continuous latent variables, we replace this Bernoulli with
+
+a Gaussian that has an equivalent mean and variance from which we draw
+
+αT
+i,j . For the sake of attaining higher ﬁdelity than what is granted by a stan-
+dard Gaussian, we base our inference on a variational Gaussian estimation.
+
+Though in a context diﬀerent from continual learning and with diﬀerent es-
+
+timators, the idea of replacing Bernoulli with an equivalent Gaussian has
+
+proven to be eﬀective with dropout (Srivastava et al., 2014; Kingma et al.,
+
+2015).
+
+The approximation of the Bernoulli distribution by the corresponding Gaus-
+
+sian distribution is achieved by matching the mean and variance. The mean
+and variance of the Bernoulli distribution are pi,j , pi,j (1 − pi,j ), respectively.
+A Gaussian distribution with the same mean and variance is used to ﬁt αT
+i,j ∼ N (pi,j , pi,j (1 − pi,j )).
+αT
+
+i,j .
+
+(5)
+
+• The variable bT controls the strength of the adaptation and it limits the range
+of adaptation via:
+
+1 + bT =
+
+s
+1 + e−aT .
+
+(6)
+
+3There can be a parameter pi per layer i instead of one pi,j for each neuron j at each layer
+
+i, but we opt for the latter for the sake of gaining further adaptation ﬂexibility.
+
+7
+
+So that the maximum adaptation is s. The variable aT is an unconstrained
+
+adaptation value, similar to that in (Swieto janski and Renals, 2014). The
+
+addition of 1 is to facilitate the usage of a probability distribution while still
+
+keeping an adaptation range allowing for the attenuation or ampliﬁcation of
+
+each neuron’s contribution.
+• Before facing the ﬁrst dataset and learning task t = 1, the prior on the weights
+q0 (w) = p(w) is chosen to be a log-scale prior, which can be expressed as:
+p(log |w|) ∝ c, where c is a constant. The log-scale prior can alternatively be
+described as:
+
+p(|w|) ∝ 1
+
+|w| .
+
+(7)
+
+At a high level, adapting neuron contributions can be seen as a generalisation
+
+of attention mechanisms in the context of continual learning. Applying this
+
+adaptation procedure to the input leads to an attention mechanism. However,
+
+our approach is more general since we do not apply it only to the very bottom
+
+(i.e. input) layer, but throughout the whole network. We next show how our
+
+variational inference mechanism enables us to learn the adaptation parameters.
+
+3.2. Inference
+
+We describe the details related to the proposed variational inference mech-
+
+anism. The adaptation parameters are included within the variational parame-
+
+ters.
+
+The (unadapted version of the) model parameters θ consist of the weight vec-
+
+tors w. To automate adaptation, we perform inference on pi,j , which would have
+
+otherwise been a hyperparameter of the prior (Louizos et al., 2017; Molchanov
+
+et al., 2017; Ghosh et al., 2018). Multiplying w by (1 + bα) where α is dis-
+tributed according to (5), then from (4) with random noise variable  ∼ N (0, 1):
+
+i,j = γi,j (1 + bi,jpi,j + bi,j
+
+pi,j (1 − pi,j )),
+
+wT
+q(wi,j |γi,j ) ∼ N
+
+(cid:18)
+
+i,jpi,j (1 − pi,j )
+γi,j (1 + bi,jpi,j ), b2
+i,j γ 2
+
+.
+
+(8)
+
+(cid:113)
+
+8
+
+(cid:19)
+
+From (7) and (8), the corresponding KL-divergence between the variational
+posterior of w, q(w|γ ) and the prior p(w) is as follows. The subscripts are
+removed when q in turn is used as a subscript for improved readability. The
+
+variational parameters are γi,j and pi,j .
+
+(cid:16)
+
+(cid:17)
+
+q(wi,j |γi,j ) (cid:107) p(wi,j )
+= Eq(w|γ ) log[q(wi,j |γi,j )/p(wi,j )] =
+KL
+Eq(w|γ ) log q(wi,j |γi,j ) − Eq(w|γ ) log p(wi,j ) = −H(q(wi,j |γi,j )) − Eq(w|γ ) log p(wi,j )
+(cid:17) − Eq(w|γ) log
+(9)
+= −0.5
+1+ log(2π)+ log(b2
+= −log bi,j − 0.5 log pi,j − 0.5 log(1 − pi,j) + c+ Eq(w|γ) log ||,
+
+i,jpi,j (1 − pi,j ))
+
+(cid:16)
+
+1
+
+||
+
+(10)
+
+(11)
+
+where the switch from (9) to (10) is due to the entropy computation (Bernardo
+and Smith, 2000) of the Gaussian q(wi,j |γi,j ) deﬁned in (8). The switch from (10)
+to (11) is due to using a log-scale prior, similar to Appendix C in (Kingma et al.,
+2015) and to Section 4.2 in (Molchanov et al., 2017). Eq(w|γ ) log || is computed
+via an accurate approximation similar to equation (14) in (Molchanov et al.,
+
+2017), with slightly diﬀerent values of k1 , k2 and k3 . This is a very close ap-
+proximation via numerically pre-computing Eq(w|γ ) log || using a third degree
+polynomial (Kingma et al., 2015; Molchanov et al., 2017).
+
+This is the form of the KL-divergence between the approximate posterior
+
+after the ﬁrst task and the prior. Afterwards, it is straightforward to see how
+
+this KL-divergence applies for the subsequent tasks in a manner similar to (2),
+
+but while taking into account the new posterior form and original prior.
+
+The KL-divergence expression derived in (11) is to be minimised. By min-
+
+imising (11) with respect to pi,j and then using samples from the respective
+
+distributions to assign values to αi,j , adapted contributions of each neuron j at
+
+each layer i of the network are learnt per task. Values of pi,j are constrained
+
+between 0 and 1 during training via pro jected gradient descent.
+
+9
+
+3.2.1. Learning the maximum adaptation values
+
+Using (6) to express the value of bi,j , and neglecting the constant term
+
+therein since it does not aﬀect the optimisation, the KL-divergence in (11) is
+
+equivalent to:
+
+(cid:16)
+
+(cid:17) ≈
+
+q(wi,j |γi,j ) (cid:107) p(wi,j )
+KL
+− log si,j + log(1 + e−ai,j ) − 0.5 log pi,j − 0.5 log(1 − pi,j) + c+ Eq(w|γ) log ||.
+(12)
+
+Values of ai,j are straightforwardly learnt by minimising (12) with respect
+
+to ai,j . This subsection explains how to learn the maximum adaptation variable
+
+si,j . Values of the maximum si,j of the logistic function deﬁned in (6) are
+
+learnt from multiple tasks. For each neuron j at layer i, there is a general
+
+value si,j and another value that is speciﬁc for each task t, referred to as si,j,t .
+
+This is similar to the meta-learning procedure proposed in (Finn et al., 2017).
+
+The following procedure to learn s is performed for each task t such that: (i)
+
+the optimisation performed to learn a task-speciﬁc value si,j,t beneﬁts from
+
+the warm initialisation with the general value si,j rather than a random initial
+
+condition; and then (ii) the new information obtained from the current task t
+
+is ultimately reﬂected back to update the general value si,j .
+
+• First divide the sample Nt into two halves. For the ﬁrst half, depart from the
+general value of si,j as an initial condition, and use the assigned data examples
+neuron j at layer i, refer to the second term in (3), (cid:80)Nt
+(cid:2) log p(y (n) |x(n) , θ)(cid:3)
+from task t to learn the task-speciﬁc values si,j,t for the current task t. For
+as ft (x, y , si,j ). The set of parameters θ contains s as well as other parame-
+
+Eqt (θ)
+
+n=1
+
+ters, but we focus here on s in the f notation since the following procedure is
+
+developed to optimise s. Also, refer to the loss of the (classiﬁcation) function
+f as Err(f ) = CE(f (x, θ)(cid:107)y), where CE stands for the cross-entropy:
+
+si,j,t = si,j − 2ω1
+
+Nt
+
+∇si,j
+
+Err(ft (xd , yd , si,j )).
+
+(13)
+
+Nt /2(cid:88)
+d=1
+
+10
+
+• Now use the second half of the data from task t to update the general learnt
+value si,j :
+
+Err(ft (xd , yd , si,j,t )).
+
+(14)
+
+si,j = si,j − 2ω2
+
+Nt
+
+∇si,j
+
+Nt(cid:88)
+d=1+Nt /2
+
+Where ω1 and ω2 are step-size parameters.
+
+When testing on samples from task t after having faced future tasks t +
+
+1, t + 2, . . ., the value of si,j used is the learnt si,j,t . There is only one value per
+
+neuron, so the overhead resulting from storing such values is negligible.
+
+The key steps of the algorithm are listed in Algorithm 1.
+
+Algorithm 1 Continual Learning with Adaptive Weights (CLAW)
+Input: A sequence of T datasets, {x(n)
+n=1 , where t = 1, 2, . . . , T and Nt
+is the size of the dataset associated with the t-th task.
+
+t }Nt
+, y (n)
+
+t
+
+Output: qt (θ), where θ are the model parameters.
+Initialise all p(|wi,j |) with a log-scale prior, as in (7).
+for t = 1 . . . T do
+Disclose the dataset {x(n)
+for i = 1 . . . # layers do
+
+t }Nt
+, y (n)
+
+t
+
+n=1 for the current task t.
+
+for j = 1 . . . # neurons at layer i do
+
+Compute pi,j using stochastic gradient descent on (11).
+
+Compute si,j,t using (13).
+
+Update the corresponding general value si,j using (14).
+
+end for
+
+end for
+
+end for
+
+At task t, the algorithmic complexity of a single joint update of the pa-
+
+rameters θ based on the additive terms in (12) is O(M ELD2 ), where L is the
+
+number of layers in the network, D is the (largest) number of neurons within a
+
+single layer, E is the number of samples taken from the random noise variable
+
+, and M is the minibatch size. Each α is obtained by taking one sample from
+
+11
+
+the corresponding p, so that does not result in an overhead in terms of the
+
+complexity.
+
+4. Experiments
+
+Our experiments mainly aim at evaluating the following: (i) the overall per-
+
+formance of the introduced CLAW, depicted by the average classiﬁcation accuracy
+
+over all the tasks; (ii) the extent to which catastrophic forgetting can be mit-
+
+igated when deploying CLAW; and (iii) the achieved degree of positive forward
+
+transfer. The experiments demonstrate the eﬀectiveness of CLAW in achieving
+
+state-of-the-art continual learning results measured by classiﬁcation accuracy
+
+and by the achieved reduction in catastrophic forgetting. We also perform ab-
+
+lations in Section Appendix D in the Appendix which exhibit the relevance of
+
+each of the proposed adaptation parameters.
+
+We perform six experiments on ﬁve datasets. The datasets in use are:
+
+MNIST (LeCun et al., 1998), notMNIST (Butalov, 2011), Fashion-MNIST (Xiao
+
+et al., 2017), Omniglot (Lake et al., 2011) and CIFAR-100 (Krizhevsky and
+
+Hinton, 2009). We compare the results obtained by CLAW to six diﬀerent state-
+
+of-the-art continual learning algorithms: the VCL algorithm (Nguyen et al.,
+
+2018) (original form and one with a coreset), the elastic weight consolidation
+
+(EWC) algorithm (Kirkpatrick et al., 2017), the progress and compress (P&C)
+
+algorithm (Schwarz et al., 2018), the reinforced continual learning (RCL) algo-
+
+rithm (Xu and Zhu, 2018), the one referred to as functional regularisation for
+
+continual learning (FRCL) using Gaussian processes (Titsias et al., 2019) and
+
+the learn-to-grow (LTG) algorithm (Li et al., 2019b).
+
+4.1. Overal l Classiﬁcation Accuracy
+
+Our main metric is the all-important classiﬁcation accuracy. We consider
+
+six continual learning experiments, based on the MNIST, notMNIST, Fashion-
+
+MNIST, Omniglot and CIFAR-100 datasets. The introduced CLAW is compared
+
+to two VCL versions: VCL with no coreset and VCL with a 200-point core-
+
+set assembled by the K-center method (Nguyen et al., 2018), EWC, P&C, RCL,
+
+12
+
+FRCL (its TR version) and LTG4 . All the reported classiﬁcation accuracy values
+
+reﬂect the average classiﬁcation accuracy over all tasks the learner has trained
+
+on so far. More speciﬁcally, assume that the continual learner has just ﬁn-
+
+ished training on a task t, then the reported classiﬁcation accuracy at time t
+
+is the average accuracy value obtained from testing on equally sized sets each
+
+belonging to one of the tasks 1, 2, . . . , t. For all the classiﬁcation experiments,
+
+statistics reported are averages of ten repetitions. Statistical signiﬁcance and
+
+standard error of the average classiﬁcation accuracy obtained after completing
+
+the last two tasks of each experiment are displayed in Section Appendix B in
+
+the Appendix.
+
+As can be seen in Figure 1, CLAW achieves state-of-the-art classiﬁcation ac-
+
+curacy in all the six experiments. The minibatch size is 128 for Split MNIST
+
+and 256 for all the other experiments. More detailed descriptions of the results
+
+of every experiment are given next:
+
+Permuted MNIST Using MNIST, Permuted MNIST is a standard con-
+
+tinual learning benchmark (Goodfellow et al., 2014a; Kirkpatrick et al., 2017;
+
+Zenke et al., 2017). For each task t, the corresponding dataset is formed by per-
+
+forming a ﬁxed random permutation process on labeled MNIST images. This
+
+random permutation is unique per task, i.e. it diﬀers for each task. For the hy-
+
+perparameter λ of EWC, which controls the overall contribution from previous
+
+data, we experimented with two values, λ = 1 and λ = 100. We report the
+
+latter since it has always outperformed EWC with λ = 1 in this experiment.
+
+EWC with λ = 100 has also previously produced the best EWC classiﬁcation
+
+results (Nguyen et al., 2018). In this experiment, fully connected single-head
+
+networks with two hidden layers are used. There are 100 hidden units in each
+
+layer, with ReLU activations. Adam (Kingma and Ba, 2015) is the optimiser
+
+used in the 6 experiments with η = 0.001, β1 = 0.9 and β2 = 0.999. Further
+
+4Whenever there is no validation process performed to indicate the hyperparameter values
+
+of competitors or characteristics of neural network architectures, this is done for the sake of
+
+comparing on common ground with the best settings, as speciﬁed in the respective papers.
+
+13
+
+experimental details are given in Section Appendix C in the Appendix. Results
+
+of the accumulated classiﬁcation accuracy, averaged over tasks, on a test set are
+
+displayed in Figure 1a. After 10 tasks, CLAW achieves signiﬁcantly (check the
+
+Appendix) higher classiﬁcation results than all the competitors.
+
+Split MNIST In this MNIST based experiment, ﬁve binary classiﬁcation
+
+tasks are processed in the following sequence: 0/1, 2/3, 4/5, 6/7, and 8/9
+
+(Zenke et al., 2017). The architecture used consists of fully connected multi-
+
+head networks with two hidden layers, each consisting of 256 hidden units with
+
+ReLU activations. As can be seen in Figure 1b, CLAW achieves the highest
+
+classiﬁcation accuracy.
+
+Split notMNIST It contains 400,000 training images, and the classes are
+
+10 characters, from A to J. Each image consists of one character, and there are
+
+diﬀerent font styles. The ﬁve binary classiﬁcation tasks are: A/F, B/G, C/H,
+
+D/I, and E/J. The networks used here contain four hidden layers, each contain-
+
+ing 150 hidden units with ReLU activations. CLAW achieves a clear improvement
+
+in classiﬁcation accuracy over competitors (Figure 1c).
+
+Split Fashion-MNIST Fashion-MNIST is a dataset whose size is the same
+
+as MNIST but it is based on diﬀerent (and more challenging) 10 classes. The ﬁve
+
+binary classiﬁcation tasks here are: T-shirt/Trouser, Pullover/Dress, Coat/Sandals,
+
+Shirt/Sneaker, and Bag/Ankle boots. The architecture used is the same as in
+
+Split notMNIST. In most of the continual learning tasks (including the more
+
+signiﬁcant, later ones) CLAW achieves a clear classiﬁcation improvement (Fig-
+
+ure 1d).
+
+Omniglot This is a sequential learning task of handwritten characters of
+
+50 alphabets (a total of over 1,600 characters with 20 examples each) belong-
+
+ing to the Omniglot dataset (Lake et al., 2011). We follow the same way via
+
+which this task has been used in continual learning before (Schwarz et al., 2018;
+
+Titsias et al., 2019); handwritten characters from each alphabet constitute a
+
+separate task. We thus have 50 tasks, which also allows to evaluate the scala-
+
+bility of the frameworks in comparison. The model used is a CNN. To deal with
+
+the convolutions in CLAW, we used the idea proposed and referred to as the local
+
+14
+
+reparameterisation trick by Kingma et al. (2014, 2015), where a single global pa-
+
+rameter is employed per neuron activation in the variational distribution, rather
+
+than employing parameters for every constituent weight element5 . Further de-
+
+tails about the CNN used are given in Section Appendix C. The automatically
+
+adaptable CLAW achieves better classiﬁcation accuracy (Figure 1e).
+CIFAR-100 This dataset consists of 60,000 colour images of size 32 × 32.
+It contains 100 classes, with 600 images per class. We use a split version CIFAR-
+
+100. Similar to Lopez-Paz and Ranzato (2017), we perform a 20-task experiment
+
+with a disjoint subset of ﬁve classes per task. CLAW achieves signiﬁcantly higher
+
+classiﬁcation accuracy (Figure 1f) -also higher than the previous state of the art
+
+on CIFAR-100 by Kemker and Kanan (2018). Details of the used CNN are in
+
+Section Appendix C.
+
+A conclusion that can be taken from Figure 1(a-f ) is that CLAW consistently
+
+achieves state-of-the-art results (in all the 6 experiments). It can also be seen
+
+that CLAW scales well. For instance, the diﬀerence between CLAW and the best
+
+competitor is more signiﬁcant with Split notMNIST than it is with the ﬁrst two
+
+experiments, which are based on the smaller and less challenging MNIST. Also,
+
+CLAW achieves good results with Omniglot and CIFAR-100.
+
+4.2. Catastrophic Forgetting
+
+To assess catastrophic forgetting, we show how the accuracy on the initial
+
+task varies over the course of the training procedure on the remaining tasks
+
+(Schwarz et al., 2018). Since Omniglot (and CIFAR-100) contain a larger num-
+
+ber of tasks: 50 (20) tasks, i.e. 49 (19) remaining tasks after the initial task, this
+
+setting is more relevant for Omniglot and CIFAR-100. We nonetheless display
+
+the results for Split MNIST, Split notMNIST, Split Fashion-MNIST, Omniglot
+
+and CIFAR-100. As can be seen in Figure 2, CLAW (at times jointly) achieves
+
+state-of-the-art performance retention degrees. Among the competitors, P&C
+
+and LTG also achieve high performance retention degrees.
+
+5For more details, see Section 2.3 in (Kingma et al., 2015).
+
+15
+
+(a) Permuted MNIST.
+
+(b) Split MNIST.
+
+(c) Split notMNIST.
+
+(d) Split Fashion-MNIST.
+
+(e) Omniglot.
+
+(f ) CIFAR-100.
+
+Figure 1: Average test classiﬁcation accuracy vs. the number of observed tasks in 6 experi-
+
+ments. CLAW achieves signiﬁcantly higher classiﬁcation results than the competing continual
+
+learning frameworks. Statistical signiﬁcance values are presented in Section Appendix B in
+
+the Appendix. The value of λ for EWC is 10,000 in (c), and 100 in the other experiments.
+
+Best viewed in colour.
+
+16
+
+246810Tasks86889092949698100Classification accuracy (%)Permuted MNIST12345Tasks949596979899100Classification accuracy (%)Split MNIST12345Tasks9293949596979899100Classification accuracy (%)Split notMNIST12345Tasks87888990919293949596Classification accuracy (%)Split Fashion-MNIST4647484950Tasks767880828486Classification accuracy (%)Omniglot1617181920Tasks6065707580859095Classification accuracy (%)CIFAR-100CLAWVCLVCL + K-center CoresetEWCP&CRCLFRCLLTGAn empirical conclusion that can be made out of this and the previous exper-
+
+iment, is that CLAW achieves better overall continual learning results, partially
+
+thanks to the way it addresses catastrophic forgetting. The idea of adapting the
+
+architecture by adapting the contributions of neurons of each layer also seems to
+
+be working well with datasets like Omniglot and CIFAR-100, giving directions
+
+for imminent future work where CLAW can be extended for other application
+
+areas based on CNNs.
+
+4.3. Positive Forward Transfer
+
+The purpose of this experiment is to assess the impact of learning previous
+
+tasks on the current task. In other words, we want to evaluate whether an algo-
+
+rithm avoids negative transfer, by evaluating the relative performance achieved
+
+on a unique task after learning a varying number of previous tasks (Schwarz
+
+et al., 2018). From Figure 3, we can see that CLAW achieves state-of-the-art
+
+results in 4 out of the 5 experiments (at par in the ﬁfth) in terms of avoiding
+
+negative transfer.
+
+5. Conclusion
+
+We introduced a continual learning framework which learns how to adapt
+
+its architecture from the tasks and data at hand, based on variational inference.
+
+Rather than rigidly dividing the architecture into shared and task-speciﬁc parts,
+
+our approach adapts the contributions of each neuron. We achieve that without
+
+having to expand the architecture with new layers or new neurons. Results
+
+of six diﬀerent experiments on ﬁve datasets demonstrate the strong empirical
+
+performance of the introduced framework, in terms of the average overall con-
+
+tinual learning accuracy and forward transfer, and also in terms of eﬀectively
+
+alleviating catastrophic forgetting.
+
+17
+
+(a) Split MNIST.
+
+(b) Split notMNIST.
+
+(c) Split Fashion-MNIST.
+
+(d) Omniglot.
+
+(e) CIFAR-100.
+
+Figure 2: Evaluating catastrophic forgetting by measuring performance retention. Classiﬁ-
+
+cation accuracy of the initial task is monitored along with the progression of tasks. Results
+
+are displayed for ﬁve datasets. CLAW is the least forgetful algorithm since performance levels
+
+achieved on the initial task do not degrade as much as in the other methods after facing new
+
+tasks. The legend and λ values for EWC are the same as in Figure 1. Best viewed in colour.
+
+18
+
+12345Tasks97.097.598.098.599.099.5100.0Initial-task performance (%)Split MNIST12345Tasks949596979899100Initial-task performance (%)Split notMNIST12345Tasks8990919293949596Initial-task performance (%)Split Fashion-MNIST1020304050Tasks606570758085Initial-task performance (%)Omniglot1617181920Tasks707580859095Initial-task performance (%)CIFAR-100CLAWVCL + K-center CoresetP&CRCLFRCLLTG(a) Split MNIST.
+
+(b) Split notMNIST.
+
+(c) Split Fashion-MNIST.
+
+(d) Omniglot.
+
+(e) CIFAR-100.
+
+Figure 3: Evaluating Forward transfer, or to what extent a continual learning framework can
+
+avoid negative transfer. The impact of learning previous tasks on a speciﬁc task (the last
+
+task) is inspected and used as a proxy for evaluating forward transfer. This is performed by
+
+evaluating the relative performance achieved on a unique task after learning a varying number
+
+of previous tasks. This means that the value at x-axis = 1 refers to the learning accuracy
+
+19
+
+of the last task after having learnt solely one task (only itself ), the value at 2 refers to the
+
+learning accuracy of the last task after having learnt two tasks (an additional previous task),
+
+etc. Overall, CLAW achieves state-of-the-art results in 4 out of the 5 experiments (at par in the
+
+ﬁfth) in terms of avoiding negative transfer. Best viewed in colour.
+
+12345Tasks98.0098.2598.5098.7599.0099.2599.5099.75100.00Final-task performance (%)Split MNIST12345Tasks98.0098.2598.5098.7599.0099.2599.5099.75100.00Final-task performance (%)Split notMNIST12345Tasks95.295.395.495.595.695.795.895.9Final-task performance (%)Split Fashion-MNIST4546474849Tasks767880828486Final-task performance (%)Omniglot1516171819Tasks65707580859095Final-task performance (%)CIFAR-100CLAWVCL + K-center CoresetEWCP&CRCLFRCLLTGReferences
+
+Achille, A., Eccles, T., Matthey, L., Burgess, C., Watters, N., Lerchner, A.,
+
+Higgins, I., 2018. Life-long disentangled representation learning with cross-
+
+domain latent homologies. Advances in neural information processing systems
+
+(NIPS).
+
+Ahn, H., Lee, D., Cha, S., Moon, T., 2019. Uncertainty-based continual learning
+
+with adaptive regularization. arXiv preprint arXiv:1905.11614.
+
+Aljundi, R., Caccia, L., Belilovsky, E., Caccia, M., Lin, M., Charlin, L., Tuyte-
+
+laars, T., 2019a. Online continual learning with maximally interfered retrieval.
+
+Advances in neural information processing systems (NeurIPS).
+
+Aljundi, R., Lin, M., Goujaud, B., Bengio, Y., 2019b. Gradient based sample
+
+selection for online continual learning. Advances in neural information pro-
+
+cessing systems (NeurIPS).
+
+Aljundi, R., Rohrbach, M., Tuytelaars, T., 2019c. Selﬂess sequential learning.
+
+International Conference on Learning Representations (ICLR).
+
+Bakker, B., Heskes, T., 2003. Task clustering and gating for Bayesian multitask
+
+learning. Journal of Machine Learning Research (JMLR) 4, 83–99.
+
+Bernardo, J., Smith, A., 2000. Bayesian theory. John Wiley & Sons.
+
+Butalov,
+
+Y.,
+
+2011.
+
+The
+
+notMNIST
+
+dataset.
+
+http://yaroslavvb.com/upload/notMNIST/.
+
+Carpenter, G., Grossberg, S., 1987. A massively parallel architecture for a self-
+
+organizing neural pattern recognition machine. Computer vision, graphics,
+
+and image processing 37, 54–115.
+
+Caruana, R., 1997. Multi-task learning. Machine Learning.
+
+Chaudhry, A., Dokania, P., Ajanthan, T., Torr, P., 2018. Riemannian walk
+
+for incremental learning: Understanding forgetting and intransigence. arXiv
+
+preprint arXiv:1801.10112.
+
+20
+
+Choi, E., Lee, K., Choi, K., 2019. Autoencoder-based incremental class learning
+
+without retraining on old data. arXiv preprint arXiv:1907.07872.
+
+Diaz-Rodriguez, N., Lomonaco, V., Filliat, D., Maltoni, D., 2018. Dont forget,
+
+there is more than forgetting: new metrics for Continual Learning. NIPS
+
+Continual Learning Workshop.
+
+Du, X., Charan, G., Liu, F., Cao, Y., 2019. Single-net continual learning with
+
+progressive segmented training (PST). arXiv preprint arXiv:1905.11550.
+
+Ebrahimi, S., Elhoseiny, M., Darrell, T., Rohrbach, M., 2019. Uncertainty-
+
+guided continual
+
+learning with Bayesian neural networks. arXiv preprint
+
+arXiv:1906.02425.
+
+Fernando, C., Banarse, D., Blundell, C., Zwols, Y., Ha, D., Rusu, A., Pritzel,
+
+A., Wierstra, D., 2017. PathNet: Evolution channels gradient descent in super
+
+neural networks. arXiv preprint arXiv:1701.08734.
+
+Finn, C., Abbeel, P., Levine, S., 2017. Model-agnostic meta-learning for fast
+
+adaptation of deep networks. International Conference on Machine Learning
+
+(ICML).
+
+French, R., 1999. Catastrophic forgetting in connectionist networks. Trends in
+
+cognitive sciences 3, 128–135.
+
+Ghosh, S., Yao, J., Doshi-Velez, F., 2018. Structured variational learning of
+
+Bayesian neural networks with horseshoe priors. International Conference on
+
+Machine Learning (ICML).
+
+Goodfellow, I., 2016. NIPS 2016 tutorial: Generative adversarial networks.
+
+arXiv preprint arXiv:1701.00160.
+
+Goodfellow, I., Mirza, M., Xiao, D., Courville, A., Bengio, Y., 2014a. An empiri-
+
+cal investigation of catastrophic forgetting in gradient-based neural networks.
+
+International Conference on Learning Representations (ICLR).
+
+21
+
+Goodfellow, I., Pouget-Abadie, J., Mirza, M., Xu, B., Warde-Farley, D., Ozair,
+
+S., Courville, A., Bengio, Y., 2014b. Generative adversarial nets. Advances in
+
+neural information processing systems (NIPS), 2672–2680.
+
+Goodfellow, I., Warde-Farley, D., Mirza, M., Courville, A., Bengio, Y., 2013.
+
+Maxout networks. International Conference on Machine Learning (ICML).
+
+Hattori, M., 2014. A biologically inspired dual-network memory model for re-
+
+duction of catastrophic forgetting. Neurocomputing 134, 262–268.
+
+He, X., Sygnowski, J., Galashov, A., Rusu, A., Teh, Y. W., Pascanu, R.,
+
+2019. Task agnostic continual learning via meta learning. arXiv preprint
+
+arXiv:1906.05201.
+
+Heskes, T., 2000. Empirical Bayes for learning to learn.
+
+Hu, W., Lin, Z., Liu, B., Tao, C., Tao, Z., Ma, J., Zhao, D., Yan, R., 2019.
+
+Overcoming catastrophic forgetting via model adaptation. International Con-
+
+ference on Learning Representations (ICLR).
+
+Isele, D., Cosgun, A., 2018. Selective experience replay for lifelong learning.
+
+arXiv preprint arXiv:1802.10269.
+
+Javed, K., White, M., 2019. Meta-learning representations for continual learn-
+
+ing. Advances in neural information processing systems (NeurIPS).
+
+Jung, H., Ju, J., Jung, M., Kim, J., 2016. Less-forgetting learning in deep neural
+
+networks. arXiv preprint arXiv:1607.00122.
+
+Kamra, N., Gupta, U., Liu, Y., 2017. Deep generative dual memory network for
+
+continual learning. arXiv preprint arXiv:1710.10368.
+
+Kaplanis, C., Shanahan, M., Clopath, C., 2018. Continual reinforcement learn-
+
+ing with complex synapses. International Conference on Machine Learning
+
+(ICML).
+
+22
+
+Kemker, R., Kanan, C., 2018. FearNet: Brain-inspired model for incremental
+
+learnings. International Conference on Learning Representations (ICLR).
+
+Kemker, R., McClure, M., Abitino, A., Hayes, T., Kanan, C., 2018. Measuring
+
+catastrophic forgetting in neural networks. AAAI Conference on Artiﬁcial
+
+Intelligence 32.
+
+Kim, D., Bae, J., Jo, Y., Choi, J., 2019. Incremental learning with maximum en-
+
+tropy regularization: Rethinking forgetting and intransigence. arXiv preprint
+
+arXiv:1902.00829.
+
+Kim, H., Kim, S., Lee, J., 2018. Keep and learn: Continual learning by con-
+
+straining the latent space for knowledge preservation in neural networks. MIC-
+
+CAI.
+
+Kingma, D., Ba, J., 2015. Adam: A Method for Stochastic Optimization. Inter-
+
+national Conference on Learning Representations (ICLR).
+
+Kingma, D., Rezende, D., Mohamed, S., Welling, M., 2014. Semi-supervised
+
+learning with deep generative models. Advances in neural information pro-
+
+cessing systems (NIPS) 28, 3581–3589.
+
+Kingma, D., Salimans, T., Welling, M., 2015. Variational dropout and the local
+
+reparameterization trick. Advances in neural information processing systems
+
+(NIPS), 2575–2583.
+
+Kirkpatrick, J., Pascanu, R., Rabinowitz, N., Veness, J., Desjardins, G., Rusu,
+
+A., Milan, K., Quan, J., Ramalho, T., Grabska-Barwinska, A., Hassabis, D.,
+
+Clopath, C., Kumaran, D., Hadsell, R., 2017. Overcoming catastrophic for-
+
+getting in neural networks. Proceedings of the National Academy of Sciences
+
+(PNAS).
+
+Krizhevsky, A., Hinton, G., 2009. Learning multiple layers of features from tiny
+
+images. Technical Report, University of Toronto.
+
+23
+
+Lake, B., Salakhutdinov, R., Gross, J., Tenenbaum, J., 2011. One shot learning
+
+of simple visual concepts. Proceedings of the Cognitive Science Society 33.
+
+LeCun, Y., Bottou, L., Bengio, Y., Haﬀner, P., 1998. Gradient-based learning
+
+applied to document recognition. In Proceedings of the IEEE 86 (11), 2278–
+
+2324.
+
+Lee, S., Kim, J., Jun, J., Ha, J., Zhang, B., 2017. Overcoming catastrophic
+
+forgetting by incremental moment matching. Advances in neural information
+
+processing systems (NIPS).
+
+Li, H., Enshaeifar, S., Ganz, F., Barnaghi, P., 2019a. Continual learning in deep
+
+neural network by using a Kalman optimiser. ICML Workshop.
+
+Li, X., Zhou, Y., Wu, T., Socher, R., Xiong, C., 2019b. Learn to grow: A con-
+
+tinual structure learning framework for overcoming catastrophic forgetting.
+
+International Conference on Machine Learning (ICML).
+
+Li, Z., Hoiem, D., 2016. Learning without forgetting. European Conference on
+
+Computer Vision (ECCV).
+
+Lin, M., Fu, J., Bengio, Y., 2018. Conditional computation for continual learn-
+
+ing. NIPS Continual Learning Workshop.
+
+Lopez-Paz, D., Ranzato, M., 2017. Gradient episodic memory for continual
+
+learning. Advances in neural information processing systems (NIPS).
+
+Louizos, C., Ullrich, K., Welling, M., 2017. Bayesian compression for deep learn-
+
+ing. Advances in neural information processing systems (NIPS), 3288–3298.
+
+McCloskey, M., Cohen, N., 1989. Catastrophic interference in connectionist net-
+
+works: The sequential learning problem. Psychology of Learning and Motiva-
+
+tion.
+
+Mocanu, D., Vega, M., Eaton, E., Stone, P., Liotta, A., 2016. Online contrastive
+
+divergence with generative replay: Experience replay without storing data.
+
+arXiv preprint arXiv:1610.05555.
+
+24
+
+Molchanov, D., Ashukha, A., Vetrov, D., 2017. Variational dropout sparsiﬁes
+
+deep neural networks. International Conference on Machine Learning (ICML),
+
+2498–2507.
+
+Nguyen, C., Li, Y., Bui, T., Turner, R., 2018. Variational continual learning.
+
+International Conference on Learning Representations (ICLR).
+
+Ostapenko, O., Puscas, M., Klein, T., Jahnichen, P., Nabi, M., 2019. Learning
+
+to remember: A synaptic plasticity driven framework for continual learning.
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recog-
+
+nition (CVPR).
+
+Pape, L., Gomez, F., Ring, M., Schmidhuber, J., 2011. Modular deep belief
+
+networks that do not forget. IEEE International Joint Conference on Neural
+
+Networks (IJCNN).
+
+Parisi, G., Kemker, R., Part, J., Kanan, C., Wermter, S., 2019. Continual life-
+
+long learning with neural networks: A review. Neural Networks.
+
+Park, D., Hong, S., Han, B., Lee, K., 2019. Continual learning by asym-
+
+metric loss approximation with single-side overestimation. arXiv preprint
+
+arXiv:1908.02984.
+
+Pfulb, B., Gepperth, A., 2019. A comprehensive, application-oriented study
+
+of catastrophic forgetting in DNNs. International Conference on Learning
+
+Representations (ICLR).
+
+Ra jasegaran, J., Hayat, M., Khan, S., Khan, F., Shao, L., 2019. Random path
+
+selection for incremental learning. Advances in neural information processing
+
+systems (NeurIPS).
+
+Ratcliﬀ, R., 1990. Connectionist models of recognition memory: Constraints
+
+imposed by learning and forgetting functions. Psychological Review.
+
+Rebuﬃ, S., Kolesnikov, A., Sperl, G., Lampert, C., 2017. iCaRL: Incremental
+
+classiﬁer and representation learning. Proceedings of the IEEE Conference on
+
+Computer Vision and Pattern Recognition (CVPR).
+
+25
+
+Riemer, M., Cases, I., Ajemian, R., Liu, M., I.Rish, Tu, Y., Tesauro, G., 2019.
+
+Learning to learn without forgetting by maximizing transfer and minimizing
+
+interference. International Conference on Learning Representations (ICLR).
+
+Ring, M., 1995. Continual learning in reinforcement environments. Ph.D. thesis,
+
+University of Texas, Austin.
+
+Ring, M., 1997. CHILD: A ﬁrst step towards continual learning. Machine Learn-
+
+ing.
+
+Robins, A., 1993. Catastrophic forgetting in neural networks: The role of re-
+
+hearsal mechanisms. IEEE Artiﬁcial Neural Networks and Expert Systems,
+
+65–68.
+
+Robins, A., 1995. Catastrophic forgetting, rehearsal and pseudorehearsal. Con-
+
+nection Science 7, 123–146.
+
+Rolnick, D., Ahuja, A., Schwarz, J., Lillicrap, T., Wayne, G., 2018. Experience
+
+replay for continual learning. arXiv preprint arXiv:1811.11682.
+
+Rusu, A., Rabinowitz, N., Desjardins, G., Soyer, H., Kirkpatrick, J.,
+
+Kavukcuoglu, K., Pascanu, R., Hadsell, R., 2016a. Progressive neural net-
+
+works. arXiv preprint arXiv:1606.04671.
+
+Rusu, A., Vecerik, M., Rothoerl, T., Heess, N., Pascanu, R., Hadsell, R., 2016b.
+
+Sim-to-Real robot learning from pixels with progressive nets. arXiv preprint
+
+arXiv:1610.04286.
+
+Schlimmer, J., Fisher, D., 1986. A case study of incremental concept induction.
+
+The National Conference on Artiﬁcial Intelligence.
+
+Schmidhuber, J., 2013. Powerplay: Training an increasingly general problem
+
+solver by continually searching for the simplest still unsolvable problem. Fron-
+
+tiers in psychology 4.
+
+Schmidhuber,
+
+J.,
+
+2018. One big net
+
+for
+
+everything. arXiv preprint
+
+arXiv:1802.08864.
+
+26
+
+Schwarz, J., Luketina, J., Czarnecki, W., Grabska-Barwinska, A., Teh, Y. W.,
+
+Pascanu, R., Hadsell, R., 2018. Progress & compress: A scalable framework
+
+for continual learning. International Conference on Machine Learning (ICML).
+
+Serra, J., Suris, D., Miron, M., Karatzoglou, A., 2018. Overcoming catastrophic
+
+forgetting with hard attention to the task. International Conference on Ma-
+
+chine Learning (ICML).
+
+Shin, H., Lee, J., Kim, J., Kim, J., 2017. Continual learning with deep generative
+
+replay. Advances in neural information processing systems (NIPS).
+
+Srivastava, N., Hinton, G., Krizhevsky, A., Sutskever, I., Salakhutdinov, R.,
+
+2014. Dropout: A simple way to prevent neural networks from overﬁtting.
+
+Journal of Machine Learning Research (JMLR) 15, 1929–1958.
+
+Srivastava, R., Masci, J., Kazerounian, S., Gomez, F., Schmidhuber, J., 2013.
+
+Compete to compute. Advances in neural information processing systems
+
+(NIPS).
+
+Stickland, A., Murray, I., 2019. BERT and PALs: Pro jected attention layers
+
+for eﬃcient adaptation in multi-task learning. International Conference on
+
+Machine Learning (ICML).
+
+Sutton, R., Whitehead, S., 1993. Online learning with random representations.
+
+International Conference on Machine Learning (ICML).
+
+Swieto janski, P., Renals, S., 2014. Learning hidden unit contributions for unsu-
+
+pervised speaker adaptation of neural network acoustic models. IEEE Spoken
+
+Language Technology Workshop (SLT).
+
+Teng, D., Dasgupta, S., 2019. Continual learning via online leverage score sam-
+
+pling. arXiv preprint arXiv:1908.00355.
+
+Thrun, S., 1996. Explanation-based neural network learning: A lifelong learning
+
+approach. Springer Science & Business Media 357.
+
+27
+
+Titsias, M., Schwarz, J., Matthews, A., Pascanu, R., Teh, Y. W., 2019. Func-
+
+tional regularisation for continual learning using Gaussian processes. arXiv
+
+preprint arXiv:1901.11356.
+
+van de Ven, G., Tolias, A., 2018. Generative replay with feedback connections
+
+as a general strategy for continual learning. arXiv preprint arXiv:1809.10635.
+
+Vuorio, R., Cho, D., Kim, D., Kim, J., 2018. Meta continual learning. arXiv
+
+preprint arXiv:1806.06928.
+
+Wu, C., Herranz, L., Liu, X., Wang, Y., van de Weijer, J., Raducanu, B.,
+
+2018. Memory replay GANs: Learning to generate new categories without
+
+forgetting. Advances in neural information processing systems (NIPS).
+
+Xiao, H., Rasul, K., Vollgraf, R., 2017. Fashion-MNIST: a novel
+
+image
+
+dataset for benchmarking machine learning algorithms. arXiv preprint
+
+arXiv:1708.07747.
+
+Xu, J., Ma, J., Zhu, Z., 2019. Bayesian Optimized Continual Learning with
+
+Attention Mechanism. arXiv preprint arXiv:1905.03980.
+
+Xu, J., Zhu, Z., 2018. Reinforced continual learning. Advances in neural infor-
+
+mation processing systems (NIPS).
+
+Yoon, J., Kim, S., Yang, E., Hwang, S., 2019. ORACLE: Order robust adaptive
+
+continual learning. arXiv preprint arXiv:1902.09432.
+
+Yoon, J., Yang, E., Lee, J., Hwang, S., 2018. Lifelong learning with dynamically
+
+expandable networks. International Conference on Learning Representations
+
+(ICLR).
+
+Zenke, F., Poole, B., Ganguli, S., 2017. Continual learning through synaptic
+
+intelligence. International Conference on Machine Learning (ICML).
+
+Zeno, C., Golan, I., Hoﬀer, E., Soudry, D., 2018. Task agnostic continual learn-
+
+ing using online variational Bayes. NIPS Bayesian Deep Learning Workshop.
+
+28
+
+Appendix
+
+We begin by brieﬂy summarising the contents of the Appendix below:
+• Related works are described in Section Appendix A, followed by a brief
+discussion on the potential applicability of CLAW to another continual
+
+learning (CL) framework in Section Appendix A.1.
+• In Section Appendix B, we provide the statistical signiﬁcance and stan-
+dard error of the average classiﬁcation accuracy results obtained after
+
+completing the last two tasks from each experiment.
+• Further experimental details are given in Section Appendix C.
+• In Section Appendix D and Figures D.4- D.8, we display the results
+of performed ablations which manifest the relevance of each adaptation
+
+parameter.
+
+Appendix A. Related Work
+
+A complementary approach to CLAW, which could be combined with it, is the
+
+regularisation-based approach to balance adaptability with catastrophic forget-
+
+ting: a level of stability is kept via protecting parameters that greatly inﬂuence
+
+the prediction against radical changes, while allowing the rest of the parame-
+
+ters to change without restriction (Li and Hoiem, 2016; Vuorio et al., 2018).
+
+In (Zenke et al., 2017), the regulariser is based on synapses where an impor-
+
+tance measure is locally computed at each synapse during training, based on
+
+their respective contributions to the change in the global loss. During a task
+
+change, the less important synapses are given the freedom to change whereas
+
+catastrophic forgetting is avoided by preventing the important synapses from
+
+changing (Zenke et al., 2017). The elastic weight consolidation (EWC) algo-
+
+rithm, introduced by Kirkpatrick et al. (2017), is a seminal example of this
+
+approach where a quadratic penalty is imposed on the diﬀerence between pa-
+
+rameter values of the old and new tasks. One limitation of EWC, which is
+
+29
+
+rather alleviated by using minibatch or stochastic estimates, appears when the
+
+output space is not low-dimensional, since the diagonal of the Fisher informa-
+
+tion matrix over parameters of the old task must be computed, which requires a
+
+summation over all possible output labels (Kirkpatrick et al., 2017; Zenke et al.,
+
+2017; Schwarz et al., 2018). In addition, the regularisation term involves a sum
+
+over all previous tasks with a term from each and a hand-tuned hyperparame-
+
+ter that alters the weight given to it. The accumulation of this leads to a lot
+
+of hand-tuning. The work in (Chaudhry et al., 2018) is based on penalising
+
+conﬁdent ﬁtting to the uncertain knowledge by a maximum entropy regulariser.
+
+Another seminal algorithm based on regularisation, which can be applied
+
+to any model, is variational continual learning (VCL) (Nguyen et al., 2018)
+
+which formulates CL as a sequential approximate (variational) inference prob-
+
+lem. However, VCL has only been applied to simple architectures, not involving
+
+any automatic model building or adaptation. The framework in (Lee et al.,
+
+2017) incrementally matches the moments of the posterior of a Bayesian neural
+
+network that has been trained on the ﬁrst and then the second task, and so
+
+on. Other algorithms pursue regularisation approaches based on sparsity (Sri-
+
+vastava et al., 2013; Kim et al., 2018). For example, the work in (Aljundi et al.,
+
+2019c) encourages sparsity on the neuron activations to alleviate catastrophic
+
+forgetting. The l2 distance between the top hidden activations of the old and
+
+new tasks is used for regularisation in (Jung et al., 2016). This approach has
+
+achieved good results, but is computationally expensive due to the necessity of
+
+computing at least a forward pass for every new data point through the net-
+
+work representing the old task (Zenke et al., 2017). Other regularisation-based
+
+continual learning algorithms include (Ebrahimi et al., 2019; Park et al., 2019).
+
+Another approach is the architecture-based one where the principal aim is to
+
+administer both the stability and adaptation issues via dividing the architecture
+
+into reusable parts that are less prone to changes, and other parts especially de-
+
+voted to individual tasks (Rusu et al., 2016b; Fernando et al., 2017; Yoon et al.,
+
+2018; Du et al., 2019; He et al., 2019; Li et al., 2019a; Xu et al., 2019). To
+
+learn a new task in the work by Rusu et al. (2016a), the whole network from
+
+30
+
+the previous task is ﬁrst copied then augmented with a new part of the archi-
+
+tecture. Although this is eﬀective in eradicating catastrophic forgetting, there
+
+is a clear scalability issue since the architecture growth can be prohibitively
+
+high, especially with an increasing number of tasks. The work introduced in (Li
+
+et al., 2019b) bases its continual learning on neural architecture search, whereas
+
+the representation in (Javed and White, 2019) is optimised such that online
+
+updates minimize the error on all samples while limiting forgetting. The frame-
+
+work proposed by Xu and Zhu (2018) interestingly aims at solving this neural
+
+architecture structure learning problem, while balancing the tradeoﬀ between
+
+adaptation and stability, via designed reinforcement learning (RL) strategies.
+
+When facing a new task, the optimal number of neurons and ﬁlters to add to
+
+each layer is cast as a combinatorial optimisation problem solved by an RL
+
+strategy whose reward signal is a function of validation accuracy and network
+
+complexity. Another RL based framework is the one presented by Kaplanis
+
+et al. (2018) where catastrophic forgetting is mitigated at multiple time scales
+
+via RL agents with a synaptic model inspired by neuroscience. Bottom layers
+
+(those near the input) are generally shared among the diﬀerent tasks, while
+
+layers near the output are task-speciﬁc. Since the model structure is usually
+
+divided a priori and no automatic architecture learning nor adaptation takes
+
+place, alteration on the shared layers can still cause performance loss on earlier
+
+tasks due to forgetting (Shin et al., 2017). A clipped version of maxout networks
+
+(Goodfellow et al., 2013) is developed in (Lin et al., 2018) where parameters are
+
+partially shared among examples. The method in (Ostapenko et al., 2019) is
+
+based a dynamic network expansion accomplished by a generative adversarial
+
+network.
+
+The memory-based approach, which is the third inﬂuential approach to ad-
+
+dress the adaptation-catastrophic forgetting tradeoﬀ, relies on episodic memory
+
+to store data (or pseudodata) from previous tasks (Ratcliﬀ, 1990; Robins, 1993,
+
+1995; Hattori, 2014; Rolnick et al., 2018; Teng and Dasgupta, 2019). A ma jor
+
+limitation of the memory-based approach is that data from previous tasks may
+
+not be available in all real-world problems (Shin et al., 2017; Choi et al., 2019).
+
+31
+
+Another limitation is the overhead resulting from the memory requirements,
+
+e.g. storage, replay, etc.
+
+In addition, the optimisation required to select the
+
+best observation to replay for future tasks is a source of further overhead (Tit-
+
+sias et al., 2019). In addition to the explicit replay form, some works have been
+
+based on generative replay (Thrun, 1996; Schmidhuber, 2013; Mocanu et al.,
+
+2016; Rebuﬃ et al., 2017; Kamra et al., 2017; Shin et al., 2017; van de Ven and
+
+Tolias, 2018; Wu et al., 2018). Notably, Shin et al. (2017) train a deep genera-
+
+tive model based on generative adversarial networks (GANs, Goodfellow et al.,
+
+2014b; Goodfellow, 2016) to mimic past data. This mitigates the aforemen-
+
+tioned problem, albeit at the added cost of the training of the generative model
+
+(Schwarz et al., 2018) and sharing its parameters. Alleviating catastrophic for-
+
+getting via replay mechanisms has also been adopted in reinforcement learning,
+
+e.g. (Isele and Cosgun, 2018; Rolnick et al., 2018). A similar approach was
+
+introduced by Lopez-Paz and Ranzato (2017) where gradients of the previous
+
+task (rather than data examples) are stored so that a trust region consisting
+
+of gradients of all previous tasks can be formed to reduce forgetting. Other
+
+algorithms based on replay mechanisms include (Aljundi et al., 2019a,b).
+
+Equivalent tradeoﬀs to the one between adaptation and stability can be
+
+found in the literature since the work in (Carpenter and Grossberg, 1987), in
+
+which a balance was needed to resolve the stability-plasticity dilemma, where
+
+the latter refers to the ability to rapidly adapt to new tasks. The works intro-
+
+duced in (Chaudhry et al., 2018; Kim et al., 2019) shed light on the tradeoﬀ
+
+between adaptation and stability, where they explore measures of intransigence
+
+and forgetting. The former refers to the inability to adapt to new tasks and
+
+data, whereas an increase in the latter clearly signiﬁes an instability problem.
+
+Other recent works tackling the same tradeoﬀ include (Riemer et al., 2019)
+
+where the transfer-interference (interference is catastrophic forgetting) tradeoﬀ
+
+is optimised for the sake of maximising transfer and minimising interference by
+
+an algorithm based on experience replay and meta-learning. Other recent algo-
+
+rithms include the ORACLE algorithm by Yoon et al. (2019), which addresses
+
+the sensitivity of a continual learner to the order of tasks it encounters by es-
+
+32
+
+tablishing an order robust learner that represents the parameters of each task
+
+as a sum of task-shared and task-speciﬁc parameters. The algorithm in (Tit-
+
+sias et al., 2019) achieves functional regularisation by performing approximate
+
+inference over the function (instead of parameter) space. They use a Gaussian
+
+process obtained by assuming the weights of the last neural network layer to
+
+be Gaussian distributed. Our model is also related to the multi-task learning
+
+approach (Caruana, 1997; Heskes, 2000; Bakker and Heskes, 2003; Stickland and
+
+Murray, 2019).
+
+Appendix A.1. Applicability of CLAW to Other CL Frameworks
+
+As mentioned in the main document, ideas of the proposed CLAW can be
+
+applied to continual learning frameworks other than VCL. The latter is more
+
+relevant for the inference part of CLAW since both are based on variational infer-
+
+ence. As per the modeling ideas, e.g. the binary adaptation parameter depicting
+
+whether or not to adapt, and the maximum allowed adaptation, these can be
+
+integrated within other continual learning frameworks. For example, the algo-
+
+rithm in Xu and Zhu (2018) utilises reinforcement learning to adaptively expand
+
+the network. The optimal number of nodes and ﬁlters to be added is cast as a
+
+combinatorial optimisation problem. In CLAW, we do not expand the network.
+
+As such, an extension of the work in (Xu and Zhu, 2018) can be inspired by
+
+CLAW where not only the number of nodes and ﬁlters to be added is decided for
+
+each task, but also a soft and more general version where an adaptation based
+
+on the same network size is performed such that the network expansion needed
+
+in (Xu and Zhu, 2018) can be further moderated.
+
+Appendix B. Statistical Signiﬁcance and Standard Error
+
+In this section, we provide information about the statistical signiﬁcance and
+
+standard error of CLAW and the competing continual learning frameworks. In
+
+Table B.1, we list the average accuracy values (Figure 1 in the main document)
+
+obtained after completing the last two tasks from each of the six experiments. A
+
+33
+
+bold entry in Table B.1 denotes that the classiﬁcation accuracy of an algorithm
+
+is signiﬁcantly higher than its competitors. Signiﬁcance results are identiﬁed
+
+using a paired t-test with p = 0.05. Each average accuracy value is followed
+
+by the corresponding standard error. Average classiﬁcation accuracy resulting
+
+from CLAW is signiﬁcantly higher than its competitors on the 6 experiments.
+
+Table B.1: Average test classiﬁcation accuracy of the last two tasks in each of the six exper-
+
+iments: Permuted MNIST, Split MNIST, Split notMNIST, Split Fashion-MNIST, Omniglot
+
+and CIFAR-100, followed by the corresponding standard error. A bold entry denotes that
+
+the classiﬁcation accuracy of an algorithm is signiﬁcantly higher than its competitors. Signiﬁ-
+
+cance results are identiﬁed using a paired t-test with p = 0.05. Average classiﬁcation accuracy
+
+resulting from CLAW is signiﬁcantly higher than its competitors on the 6 experiments.
+
+Classiﬁcation accuracy
+
+Permuted MNIST (task 9)
+
+Permuted MNIST (task 10)
+
+Split MNIST (task 4)
+
+Split MNIST (task 5)
+
+Split notMNIST (task 4)
+
+Split notMNIST (task 5)
+
+Split Fashion-MNIST (task 4)
+
+Split Fashion-MNIST (task 5)
+
+Omniglot (task 49)
+
+Omniglot (task 50)
+
+CIFAR-100 (task 19)
+
+CIFAR-100 (task 20)
+
+CLAW
+
+VCL
+99.2 ± 0.2 % 93.5 ± 0.3 %
+99.2 ± 0.1 % 92.1 ± 0.3 %
+99.2 ± 0.2 % 98.6 ± 0.3 %
+99.1 ± 0.2 % 97.0 ± 0.4 %
+98.7 ± 0.3 % 95.8 ± 0.4 %
+98.4 ± 0.2 % 92.1 ± 0.3 %
+93.2 ± 0.2 % 90.0 ± 0.3 %
+92.5 ± 0.2 % 88.0 ± 0.2 %
+84.5 ± 0.2 % 81.1 ± 0.3 %
+84.6 ± 0.3 % 80.7 ± 0.3 %
+95.6 ± 0.3 % 78.7 ± 0.4 %
+95.6 ± 0.3 % 77.2 ± 0.4 %
+
+VCL + Coreset
+95.5 ± 0.3 %
+95 ± 0.5 %
+98.7 ± 0.2 %
+98.4 ± 0.3 %
+96.9 ± 0.5 %
+96.0 ± 0.3 %
+90.7 ± 0.2 %
+88.5 ± 0.4 %
+81.8 ± 0.3 %
+81.1 ± 0.4 %
+80.8 ± 0.3 %
+79.9 ± 0.4 %
+
+EWC
+P&C
+RCL
+FRCL
+LTG
+92.1 ± 0.4 % 94.4 ± 0.3 % 96.4 ± 0.5 % 98.4 ± 0.4 % 98.7 ± 0.3 %
+90.2 ± 0.4 % 94.1± 0.6 % 96.3 ± 0.3 % 98.4± 0.5 % 98.65 ± 0.3 %
+94.9 ± 0.4 % 97.3 ± 0.5 % 97.8 ± 0.7 % 98.2 ± 0.3 % 98.7 ± 0.2 %
+94.2 ± 0.5 % 96.4 ± 0.4 % 97.5 ± 0.6 % 98.1 ± 0.2 % 98.3 ± 0.3 %
+92.9 ± 0.4 % 97.8 ± 0.4 % 97.7 ± 0.2 % 96.1 ± 0.6 % 97.8 ± 0.3 %
+92.3 ± 0.4 % 96.9 ± 0.5 % 97.3 ± 0.5 % 95.2 ± 0.7 % 97.4 ± 0.3 %
+89.4 ± 0.4 % 91.4 ± 0.3 % 91.1 ± 0.3 % 90.4 ± 0.2 % 92.5 ± 0.4 %
+87.6 ± 0.3 % 90.8 ± 0.2 % 89.7 ± 0.4 % 87.7 ± 0.4 % 91.1 ± 0.3 %
+78.2 ± 0.3 % 82.8 ± 0.2 % 80.1 ± 0.4 % 79.9 ± 0.3 % 83.6 ± 0.3 %
+77.3 ± 0.3 % 82.7 ± 0.3 % 80.2 ± 0.4 % 79.8 ± 0.5 % 83.5 ± 0.3 %
+63.1 ± 0.5 % 68.3 ± 0.6 % 63.7 ± 0.6 % 77.4 ± 0.7 % 86.2 ± 0.4 %
+62.4 ± 0.4 % 65.5 ± 0.6 % 60.4 ± 0.6 % 76.8 ± 0.6 % 85.6 ± 0.5 %
+
+Appendix C. Other Experimental Details
+
+Here are some additional details about the datasets in use:
+
+The MNIST dataset is used in both the Permuted MNIST and Split MNIST
+
+experiments. The MNIST (Mixed National Institute of Standards and Technol-
+
+ogy) dataset (LeCun et al., 1998) is a handwritten digit dataset. Each MNIST
+image consists of 28 × 28 pixels, which is also the pixel size of the notMNIST
+and Fashion-MNIST datasets. The MNIST dataset contains a training set of
+
+34
+
+60,000 instances and a test set of 10,000 instances.
+
+As mentioned in the main document, each experiment is repeated ten times.
+
+Data is randomly split into three partitions, training, validation and test. A
+
+portion of 60% of the data is reserved for training, 20% for validation and 20%
+
+for testing. Statistics reported are the averages of these ten repetitions.
+
+Number of epochs required per task to reach a saturation level for CLAW (and
+
+the bulk of the methods in comparison) was 10 epochs for all experiments except
+
+for Omniglot and CIFAR-100 (15 epochs). Used values of ω1 and ω2 are 0.05
+
+and 0.02, respectively.
+
+For Omniglot, we used a network similar to the one used in (Schwarz et al.,
+2018), which consists of 4 blocks of 3 × 3 convolutions with 64 ﬁlters, followed by
+a ReLU and a 2 × 2 max-pooling. The same CNN is used for CIFAR-100. CLAW
+achieves clearly higher classiﬁcation accuracy on both Omniglot and CIFAR-100
+
+(Figures 1e and 1f).
+
+Appendix D. Ablations
+
+The plots displayed in this section empirically demonstrate how important
+
+the main adaptation parameters are in achieving the classiﬁcation performance
+
+levels reached by CLAW. In each of the Figures D.4- D.9, the classiﬁcation perfor-
+
+mance of CLAW is compared to the following three cases: 1) when the parameter
+
+controlling the maximum degree of adaptation is not learnt in a multi-task fash-
+
+ion, i.e. when the respective general value si,j is used instead of si,j,t . 2) when
+
+adaptation always happens, i.e. the binary variable denoting the adaptation
+
+decision is always activated. 3) when adaptation never takes place. The diﬀer-
+
+ences in classiﬁcation accuracy between CLAW and each of the other three plots
+
+in Figures D.4- D.9 empirically demonstrate the relevance of each adaptation
+
+parameter.
+
+35
+
+Figure D.4: Ablations for Permuted MNIST.
+
+Figure D.5: Ablations for Split MNIST.
+
+36
+
+246810Tasks8486889092949698100Classification accuracy (%)Permuted MNISTCLAWNo adapt. (p=0)Always adapt. (p=1)Always general s, no ML12345Tasks949596979899100Classification accuracy (%)Split MNISTCLAWNo adapt. (p=0)Always adapt. (p=1)Always general s, no MLFigure D.6: Ablations for Split notMNIST.
+
+Figure D.7: Ablations for Split Fashion-MNIST.
+
+37
+
+12345Tasks9293949596979899100Classification accuracy (%)Split notMNISTCLAWNo adapt. (p=0)Always adapt. (p=1)Always general s, no ML12345Tasks87888990919293949596Classification accuracy (%)Split Fashion-MNISTCLAWNo adapt. (p=0)Always adapt. (p=1)Always general s, no MLFigure D.8: Ablations for Omniglot.
+
+Figure D.9: Ablations for CIFAR-100.
+
+38
+
+4647484950Tasks767880828486Classification accuracy (%)OmniglotCLAWNo adapt. (p=0)Always adapt. (p=1)Always general s, no ML1617181920Tasks868890929496Classification accuracy (%)CIFAR-100CLAWNo adapt. (p=0)Always adapt. (p=1)Always general s, no ML

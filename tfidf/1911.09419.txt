@@ -1,0 +1,1284 @@
+Learning Hierarchy-Aware Knowledge Graph Embeddings for Link Prediction
+
+Zhanqiu Zhang,∗ Jianyu Cai,∗ Yongdong Zhang, Jie Wang†
+
+University of Science and Technology of China
+{zzq96, jycai}@mail.ustc.edu.cn
+{zhyd73, jiewangx}@ustc.edu.cn
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+9
+1
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Knowledge graph embedding, which aims to represent en-
+tities and relations as low dimensional vectors (or matrices,
+tensors, etc.), has been shown to be a powerful technique
+for predicting missing links in knowledge graphs. Existing
+knowledge graph embedding models mainly focus on model-
+ing relation patterns such as symmetry/antisymmetry, inver-
+sion, and composition. However, many existing approaches
+fail to model semantic hierarchies, which are common in
+real-world applications. To address this challenge, we pro-
+pose a novel knowledge graph embedding model—namely,
+Hierarchy-Aware Knowledge Graph Embedding (HAKE)—
+which maps entities into the polar coordinate system. HAKE
+is inspired by the fact that concentric circles in the polar coor-
+dinate system can naturally reﬂect the hierarchy. Speciﬁcally,
+the radial coordinate aims to model entities at different levels
+of the hierarchy, and entities with smaller radii are expected
+to be at higher levels; the angular coordinate aims to distin-
+guish entities at the same level of the hierarchy, and these en-
+tities are expected to have roughly the same radii but differ-
+ent angles. Experiments demonstrate that HAKE can effec-
+tively model the semantic hierarchies in knowledge graphs,
+and signiﬁcantly outperforms existing state-of-the-art meth-
+ods on benchmark datasets for the link prediction task.
+
+1
+
+Introduction
+
+Knowledge graphs are usually collections of
+factual
+triples—(head entity, relation, tail entity), which represent
+human knowledge in a structured way. In the past few years,
+we have witnessed the great achievement of knowledge
+graphs in many areas, such as natural language processing
+(Zhang et al. 2019), question answering (Huang et al. 2019),
+and recommendation systems (Wang et al. 2018).
+Although commonly used knowledge graphs contain bil-
+lions of triples, they still suffer from the incompleteness
+problem that a lot of valid triples are missing, as it is imprac-
+tical to ﬁnd all valid triples manually. Therefore, knowledge
+graph completion, also known as link prediction in knowl-
+edge graphs, has attracted much attention recently. Link pre-
+diction aims to automatically predict missing links between
+entities based on known links. It is a challenging task as we
+
+∗Equal contribution.
+†Corresponding author.
+
+not only need to predict whether there is a relation between
+two entities, but also need to determine which relation it is.
+Inspired by word embeddings (Mikolov et al. 2013) that
+can well capture semantic meaning of words, researchers
+turn to distributed representations of knowledge graphs (aka,
+knowledge graph embeddings) to deal with the link predic-
+tion problem. Knowledge graph embeddings regard entities
+and relations as low dimensional vectors (or matrices, ten-
+sors), which can be stored and computed efﬁciently. More-
+over, like in the case of word embeddings, knowledge graph
+embeddings can preserve the semantics and inherent struc-
+tures of entities and relations. Therefore, other than the link
+prediction task, knowledge graph embeddings can also be
+used in various downstream tasks, such as triple classiﬁca-
+tion (Lin et al. 2015), relation inference (Guo, Sun, and Hu
+2019), and search personalization (Nguyen et al. 2019).
+The success of existing knowledge graph embedding
+models heavily relies on their ability to model connectivity
+patterns of the relations, such as symmetry/antisymmetry,
+inversion, and composition (Sun et al. 2019). For example,
+TransE (Bordes et al. 2013), which represent relations as
+translations, can model the inversion and composition pat-
+terns. DistMult (Yang et al. 2015), which models the three-
+way interactions between head entities, relations, and tail
+entities, can model the symmetry pattern. RotatE (Sun et
+al. 2019), which represents entities as points in a complex
+space and relations as rotations, can model relation patterns
+including symmetry/antisymmetry, inversion, and composi-
+tion. However, many existing models fail to model semantic
+hierarchies in knowledge graphs.
+Semantic hierarchy is a ubiquitous property in knowl-
+edge graphs. For instance, WordNet (Miller 1995) con-
+tains the triple [arbor/cassia/palm, hypernym, tree], where
+“tree” is at a higher level
+than “arbor/cassia/palm” in
+the hierarchy. Freebase (Bollacker et al. 2008) con-
+tains the triple [England, /location/location/contains, Ponte-
+fract/Lancaster], where “Pontefract/Lancaster” is at a lower
+level than “England” in the hierarchy. Although there exists
+some work that takes the hierarchy structures into account
+(Xie, Liu, and Sun 2016; Zhang et al. 2018), they usually re-
+quire additional data or process to obtain the hierarchy infor-
+mation. Therefore, it is still challenging to ﬁnd an approach
+
+ 
+ 
+ 
+ 
+ 
+ 
+that is capable of modeling the semantic hierarchy automat-
+ically and effectively.
+In this paper, we propose a novel knowledge graph
+embedding model—namely, Hierarchy-Aware Knowledge
+Graph Embedding (HAKE). To model the semantic hierar-
+chies, HAKE is expected to distinguish entities in two cate-
+gories: (a) at different levels of the hierarchy; (b) at the same
+level of the hierarchy. Inspired by the fact that entities that
+have the hierarchical properties can be viewed as a tree, we
+can use the depth of a node (entity) to model different levels
+of the hierarchy. Thus, we use modulus information to model
+entities in the category (a), as the size of moduli can reﬂect
+the depth. Under the above settings, entities in the category
+(b) will have roughly the same modulus, which is hard to
+distinguish. Inspired by the fact that the points on the same
+circle can have different phases, we use phase information to
+model entities in the category (b). Combining the modulus
+and phase information, HAKE maps entities into the polar
+coordinate system, where the radial coordinate corresponds
+to the modulus information and the angular coordinate cor-
+responds to the phase information. Experiments show that
+our proposed HAKE model can not only clearly distinguish
+the semantic hierarchies of entities, but also signiﬁcantly and
+consistently outperform several state-of-the-art methods on
+the benchmark datasets.
+Notations Throughout this paper, we use lower-case letters
+h, r , and t to represent head entities, relations, and tail enti-
+ties, respectively. The triplet (h, r, t) denotes a fact in knowl-
+edge graphs. The corresponding boldface lower-case letters
+h, r and t denote the embeddings (vectors) of head entities,
+relations, and tail entities. The i-th entry of a vector h is de-
+noted as [h]i . Let k denote the embedding dimension.
+Let ◦ : Rn × Rn → Rn denote the Hadamard product
+between two vectors, that is,
+
+[a ◦ b]i = [a]i · [b]i ,
+
+and (cid:107) · (cid:107)1 , (cid:107) · (cid:107)2 denote the (cid:96)1 and (cid:96)2 norm, respectively.
+
+2 Related Work
+
+In this section, we will describe the related work and the key
+differences between them and our work in two aspects—the
+model category and the way to model hierarchy structures in
+knowledge graphs.
+
+Model Category
+
+Roughly speaking, we can divide knowledge graph embed-
+ding models into three categories—translational distance
+models, bilinear models, and neural network based models.
+Table 1 exhibits several popular models.
+
+Translational distance models describe relations as
+
+translations from source entities to target entities. TransE
+isfy h + r ≈ t, where h, r, t ∈ Rn , and deﬁnes the corre-
+(Bordes et al. 2013) supposes that entities and relations sat-
+sponding score function as fr (h, t) = −(cid:107)h+ r− t(cid:107)1/2 . How-
+ever, TransE does not perform well on 1-N, N-1 and N-N re-
+lations (Wang et al. 2014). TransH (Wang et al. 2014) over-
+comes the many-to-many relation problem by allowing enti-
+ties to have distinct representations given different relations.
+
+2 −θ2
+
+2 ≈ θ2
+
+The score function is deﬁned as fr (h, t) = −(cid:107)h⊥ + r− t⊥(cid:107)2 ,
+where h⊥ and t⊥ are the projections of entities onto relation-
+speciﬁc hyperplanes. ManifoldE (Xiao, Huang, and Zhu
+2016) deals with many-to-many problems by relaxing the
+hypothesis h + r ≈ t to (cid:107)h + r − t(cid:107)2
+r for each valid
+triple. In this way, the candidate entities can lie on a mani-
+is deﬁned as fr (h, t) = −((cid:107)h+r− t(cid:107)2
+fold instead of exact point. The corresponding score function
+r )2 . More recently,
+to better model symmetric and antisymmetric relations, Ro-
+tatE (Sun et al. 2019) deﬁnes each relation as a rotation from
+source entities to target entities in a complex vector space.
+The score function is deﬁned as fr (h, t) = −(cid:107)h ◦ r − t(cid:107)1 ,
+where h, r, t ∈ Ck and |[r]i | = 1.
+Bilinear models product-based score functions to match
+latent semantics of entities and relations embodied in their
+vector space representations. RESCAL (Nickel, Tresp, and
+Kriegel 2011) represents each relation as a full rank matrix,
+and deﬁnes the score function as fr (h, t) = h(cid:62)Mr t, which
+can also be seen as a bilinear function. As full rank matri-
+ces are prone to overﬁtting, recent works turn to make addi-
+tional assumptions on Mr . For example, DistMult (Yang et
+al. 2015) assumes Mr to be a diagonal matrix, and ANAL-
+OGY (Liu, Wu, and Yang 2017) supposes that Mr is nor-
+mal. However, these simpliﬁed models are usually less ex-
+pressive and not powerful enough for general knowledge
+graphs. Differently, ComplEx (Trouillon et al. 2016) extends
+DistMult by introducing complex-valued embeddings to bet-
+ter model asymmetric and inverse relations. HolE (Nickel,
+Rosasco, and Poggio 2016) combines the expressive power
+of RESCAL with the efﬁciency and simplicity of DistMult
+by using the circular correlation operation.
+
+Neural network based models have received greater at-
+
+tention in recent years. For example, MLP (Dong et al. 2014)
+and NTN (Socher et al. 2013) use a fully connected neu-
+ral network to determine the scores of given triples. ConvE
+(Dettmers et al. 2018) and ConvKB (Nguyen et al. 2018)
+employ convolutional neural networks to deﬁne score func-
+tions. Recently, graph convolutional networks are also intro-
+duced, as knowledge graphs obviously have graph structures
+(Schlichtkrull et al. 2018).
+Our proposed model HAKE belongs to the translational
+distance models. More speciﬁcally, HAKE shares similari-
+ties with RotatE (Sun et al. 2019), in which the authors claim
+that they use both modulus and phase information. How-
+ever, there exist two major differences between RotatE and
+HAKE. Detailed differences are as follows.
+(a) The aims are different. RotatE aims to model the rela-
+tion patterns including symmetry/antisymmetry, inver-
+sion, and composition. HAKE aims to model the seman-
+tic hierarchy, while it can also model all the relation pat-
+terns mentioned above.
+(b) The ways to use modulus information are different. Ro-
+tatE models relations as rotations in the complex space,
+which encourages two linked entities to have the same
+modulus, no matter what the relation is. The different
+moduli in RotatE come from the inaccuracy in training.
+Instead, HAKE explicitly models the modulus informa-
+tion, which signiﬁcantly outperforms RotatE in distin-
+
+Table 1: Details of several knowledge graph embedding models, where ◦ denotes the Hadamard product, f denotes a activation
+function, ∗ denotes 2D convolution, and ω denotes a ﬁlter in convolutional layers. ¯· denotes conjugate for complex vectors in
+ComplEx model and 2D reshaping for real vectors in ConvE model.
+
+Model
+
+TransE (Bordes et al. 2013)
+TransR (Lin et al. 2015)
+ManifoldE (Xiao, Huang, and Zhu 2016)
+RotatE (Sun et al. 2019)
+RESCAL (Nickel, Tresp, and Kriegel 2011)
+DistMult (Yang et al. 2015)
+ComplEx (Trouillon et al. 2016)
+ConvE (Dettmers et al. 2018)
+
+HAKE
+
+Score Function fr (h, t)
+−(cid:107)h + r − t(cid:107)1/2
+−(cid:107)Mr h + r − Mr t(cid:107)2
+−((cid:107)h + r − t(cid:107)2
+
+2 − θ2
+
+r )2
+
+−(cid:107)h ◦ r − t(cid:107)2
+
+h(cid:62)Mr t
+
+h(cid:62)diag(r)t
+Re(h(cid:62)diag(r)¯t)
+
+f (vec(f ([¯r, ¯h] ∗ ω))W)t
+−(cid:107)hm ◦ rm − tm (cid:107)2 − λ(cid:107) sin((hp + rp − tp )/2)(cid:107)1
+
+Parameters
+h, r, t ∈ Rk
+h, r, t ∈ Rk
+
+h, t ∈ Rd , r ∈ Rk , Mr ∈ Rk×d
+h, r, t ∈ Ck , |ri | = 1
+
+h, t ∈ Rk , Mr ∈ Rk×k
+h, r, t ∈ Rk
+h, r, t ∈ Ck
+h, r, t ∈ Rk
+hm , tm ∈ Rk ,rm ∈ Rk
+
++ ,
+
+hp , rp , tp ∈ [0, 2π)k , , λ ∈ R
+
+guishing entities at different levels of the hierarchy.
+
+Hierarchy-Aware Knowledge Graph Embedding
+
+The Ways to Model Hierarchy Structures
+
+Another related problem is how to model hierarchy struc-
+tures in knowledge graphs. Some recent work considers the
+problem in different ways. Li et al. (2016) embed entities
+and categories jointly into a semantic space and designs
+models for the concept categorization and dataless hierar-
+chical classiﬁcation tasks. Zhang et al. (2018) use clustering
+algorithms to model the hierarchical relation structures. Xie,
+Liu, and Sun (2016) proposed TKRL, which embeds the
+type information into knowledge graph embeddings. That
+is, TKRL requires additional hierarchical type information
+for entities.
+Different from the previous work, our work
+(a) considers the link prediction task, which is a more com-
+mon task for knowledge graph embeddings;
+(b) can automatically learn the semantic hierarchy in
+knowledge graphs without using clustering algorithms;
+(c) does not require any additional information other than
+the triples in knowledge graphs.
+
+3 The Proposed HAKE
+
+In this section, we introduce our proposed model HAKE. We
+ﬁrst introduce two categories of entities that reﬂect the se-
+mantic hierarchies in knowledge graphs. Afterwards, we in-
+troduce our proposed HAKE that can model entities in both
+of the categories.
+
+Two Categories of Entities
+
+To model the semantic hierarchies of knowledge graphs, a
+knowledge graph embedding model must be capable of dis-
+tinguishing entities in the following two categories.
+(a) Entities at different levels of the hierarchy. For example,
+“mammal” and “dog”, “run” and ”move”.
+(b) Entities at the same level of the hierarchy. For example,
+“rose” and “peony”, “truck” and ”lorry”.
+
+To model both of
+the above categories, we propose
+a hierarchy-aware knowledge graph embedding model—
+HAKE. HAKE consists of two parts—the modulus part and
+the phase part—which aim to model entities in the two dif-
+ferent categories, respectively. Figure 1 gives an illustration
+of the proposed model.
+To distinguish embeddings in the different parts, we use
+em (e can be h or t) and rm to denote the entity embedding
+and relation embedding in the modulus part, and use ep (e
+can be h or t) and rp to denote the entity embedding and
+relation embedding in the phase part.
+The modulus part aims to model the entities at differ-
+ent levels of the hierarchy. Inspired by the fact that entities
+that have hierarchical property can be viewed as a tree, we
+can use the depth of a node (entity) to model different levels
+of the hierarchy. Therefore, we use modulus information to
+model entities in the category (a), as moduli can reﬂect the
+depth in a tree. Speciﬁcally, we regard each entry of hm and
+tm , that is, [hm ]i and [tm ]i , as a modulus, and regard each
+entry of rm , that is, [r]i , as a scaling transformation between
+two moduli. We can formulate the modulus part as follows:
+hm ◦ rm = tm , where hm , tm ∈ Rk , and rm ∈ Rk
+The corresponding distance function is:
+
++ .
+
+dr,m (hm , tm ) = (cid:107)hm ◦ rm − tm (cid:107)2 .
+
+Note that we allow the entries of entity embeddings to be
+negative but restrict the entries of relation embeddings to be
+positive. This is because that the signs of entity embeddings
+can help us to predict whether there exists a relation between
+two entities. For example, if there exists a relation r between
+h and t1 , and no relation between h and t2 , then (h, r, t1 ) is a
+positive sample and (h, r, t2 ) is a negative sample. Our goal
+is to minimize dr (hm , t1,m ) and maximize dr (hm , t2,m ), so
+as to make a clear distinction between positive and nega-
+tive samples. For the positive sample, [h]i and [t1 ]i tend to
+share the same sign, as [rm ]i > 0. For the negative sample,
+the signs of [hm ]i and [t2,m ]i can be different if we initial-
+ize their signs randomly. In this way, dr (hm , t2,m ) is more
+
+The distance function of HAKE is:
+
+dr (h, t) = dr,m (hm , tm ) + λdr,p (hp , tp ),
+
+where λ ∈ R is a parameter that learned by the model. The
+corresponding score function is
+
+fr (h, t) = dr (h, t) = −dr,m (h, t) − λdr,p (h, t).
+
+When two entities have the same moduli, then the mod-
+ulus part dr,m (hm , tm ) = 0. However, the phase part
+dr,p (hp , tp ) can be very different. By combining the modu-
+lus part and the phase part, HAKE can model the entities in
+both the category (a) and the category (b). Therefore, HAKE
+can model semantic hierarchies of knowledge graphs.
+When evaluating the models, we ﬁnd that adding a mix-
+ture bias to dr,m (h, t) can help to improve the performance
+of HAKE. The modiﬁed dr,m (h, t) is given by:
+d(cid:48)
+where 0 < r(cid:48)
+m < 1 is a vector that have the same dimension
+with rm . Indeed, the above distance function is equivalent to
+d(cid:48)
+
+r,m (h, t) = (cid:107)hm ◦ rm + (hm + tm ) ◦ r(cid:48)
+m − tm(cid:107)2 ,
+
+r,m (h, t) = (cid:107)hm ◦ ((1 − r(cid:48)
+m )/(rm + r(cid:48)
+m )) − tm(cid:107)2 ,
+
+m )/(rm + r(cid:48)
+
+where / denotes the element-wise division operation. If we
+let rm ← (1 − r(cid:48)
+m ), then the modiﬁed distance
+function is exactly the same as the original one when com-
+pare the distances of different entity pairs. For notation con-
+venience, we still use dr,m (h, t) = (cid:107)hm ◦ rm − tm (cid:107)2 to
+represent the modulus part. We will conduct ablation studies
+on the bias in the experiment section.
+
+Loss Function
+
+To train the model, we use the negative sampling loss func-
+tions with self-adversarial training (Sun et al. 2019):
+
+L = − log σ(γ − dr (h, t))
+p(h(cid:48)
+i , r, t(cid:48)
+i ) log σ(dr (h(cid:48)
+
+− n(cid:88)
+
+i , t(cid:48)
+
+i ) − γ ),
+
+i=1
+
+where γ is a ﬁxed margin, σ is the sigmoid function, and
+i ) is the ith negative triple. Moreover,
+
+(h(cid:48)
+i , r, t(cid:48)
+p(h(cid:48)
+j , r, t(cid:48)
+j |{(hi , ri , ti )}) =
+
+j , t(cid:48)
+i , t(cid:48)
+is the probability distribution of sampling negative triples,
+where α is the temperature of sampling.
+
+exp αfr (h(cid:48)
+i exp αfr (h(cid:48)
+
+j )
+i )
+
+(cid:80)
+
+4 Experiments and Analysis
+
+This section is organized as follows. First, we introduce the
+experimental settings in detail. Then, we show the effective-
+ness of our proposed model on three benchmark datasets.
+Finally, we analyze the embeddings generated by HAKE,
+and show the results of ablation studies. The code of HAKE
+is available on GitHub at https://github.com/MIRALab-
+USTC/KGE-HAKE.
+
+Figure 1: Simple illustration of HAKE. In a polar coordinate
+system, the radial coordinate aims to model entities at differ-
+ent levels of the hierarchy, and the angular coordinate aims
+to distinguish entities at the same level of the hierarchy.
+
+likely to be larger than dr (hm , t1,m ), which is exactly what
+we desire. We will validate this argument by experiments in
+Section 4 of the supplementary material.
+Further, we can expect the entities at higher levels of the
+hierarchy to have smaller modulus, as these entities are more
+close to the root of the tree.
+If we use only the modulus part to embed knowledge
+graphs, then the entities in the category (b) will have the
+same modulus. Moreover, suppose that r is a relation that
+reﬂects the same semantic hierarchy, then [r]i will tend to be
+one, as h ◦ r ◦ r = h holds for all h. Hence, embeddings
+of the entities in the category (b) tend to be the same, which
+makes it hard to distinguish these entities. Therefore, a new
+module is required to model the entities in the category (b).
+The phase part aims to model the entities at the same
+level of the semantic hierarchy. Inspired by the fact that
+points on the same circle (that is, have the same modulus)
+can have different phases, we use phase information to dis-
+tinguish entities in the category (b). Speciﬁcally, we regard
+each entry of hp and tp , that is, [hp ]i and [tp ]i as a phase, and
+regard each entry of rp , that is, [rp ]i , as a phase transforma-
+tion. We can formulate the phase part as follows:
+
+(hp + rp )mod 2π = tp , where hp , rp , tp ∈ [0, 2π)k .
+
+The corresponding distance function is:
+
+dr,p (hp , tp ) = (cid:107) sin((hp + rp − tp )/2)(cid:107)1 ,
+
+where sin(·) is an operation that applies the sine function
+to each element of the input. Note that we use a sine func-
+(cid:107)hp + rp − tp(cid:107)1 , as phases have periodic characteristic. This
+tion to measure the distance between phases instead of using
+distance function shares the same formulation with that of
+pRotatE (Sun et al. 2019).
+Combining the modulus part and the phase part, HAKE
+maps entities into the polar coordinate system, where the
+radial coordinate and the angular coordinates correspond to
+the modulus part and the phase part, respectively. That is,
+HAKE maps an entity h to [hm ; hp ], where hm and hp are
+tively, and [ · ; · ] denotes the concatenation of two vectors.
+generated by the modulus part and the phase part, respec-
+Obviously, ([hm ]i , [hp ]i ) is a 2D point in the polar coordi-
+(cid:26)hm ◦ rm = tm , where hm , tm ∈ Rk , rm ∈ Rk
+nate system. Speciﬁcally, we formulate HAKE as follows:
+
++ ,
+(hp + rp )mod 2π = tp , where hp , tp , rp ∈ [0, 2π)k .
+
+!"#+%#"&∘%&DeviceSupportShelfBookendSourceLampLight("%#%&!|"#+%#−(#||"&∘%&−(&|Experimental Settings
+
+We evaluate our proposed models on three commonly used
+knowledge graph datasets—WN18RR (Toutanova and Chen
+2015), FB15k-237 (Dettmers et al. 2018), and YAGO3-10
+(Mahdisoltani, Biega, and Suchanek 2013). Details of these
+datasets are summarized in Table 2.
+WN18RR, FB15k-237, and YAGO3-10 are subsets of
+WN18 (Bordes et al. 2013), FB15k (Bordes et al. 2013), and
+YAGO3 (Mahdisoltani, Biega, and Suchanek 2013), respec-
+tively. As pointed out by Toutanova and Chen (2015) and
+Dettmers et al. (2018), WN18 and FB15k suffer from the
+test set leakage problem. One can attain the state-of-the-art
+results even using a simple rule based model. Therefore, we
+use WN18RR and FB15k-237 as the benchmark datasets.
+Evaluation Protocol Following Bordes et al. (2013), for
+each triple (h, r, t) in the test dataset, we replace either the
+head entity h or the tail entity t with each candidate entity to
+create a set of candidate triples. We then rank the candidate
+triples in descending order by their scores. It is worth noting
+that we use the “Filtered” setting as in Bordes et al. (2013),
+which does not take any existing valid triples into accounts
+at ranking. We choose Mean Reciprocal Rank (MRR) and
+Hits at N (H@N) as the evaluation metrics. Higher MRR or
+H@N indicate better performance.
+Training Protocol We use Adam (Kingma and Ba 2015)
+as the optimizer, and use grid search to ﬁnd the best hy-
+perparameters based on the performance on the validation
+datasets. To make the model easier to train, we add an ad-
+ditional coefﬁcient to the distance function, i.e., dr (h, t) =
+
+λ1dr,m (hm , tm ) + λ2dr,p (hp , tp ), where λ1 , λ2 ∈ R.
+
+Baseline Model One may argue that the phase part is unnec-
+essary, as we can distinguish entities in the category (b) by
+allowing [r]i to be negative. We propose a model—ModE—
+that uses only the modulus part but allow [r]i < 0. Speciﬁ-
+cally, the distance function of ModE is
+dr (h, t) = (cid:107)h ◦ r − t(cid:107)2 , where h, r, t ∈ Rk .
+
+Main Results
+
+In this part, we show the performance of our proposed
+models—HAKE and ModE—against existing state-of-the-
+art methods, including TransE (Bordes et al. 2013), DistMult
+(Yang et al. 2015), ComplEx (Trouillon et al. 2016), ConvE
+(Dettmers et al. 2018), and RotatE (Sun et al. 2019).
+Table 3 shows the performance of HAKE, ModE, and sev-
+eral previous models. Our baseline model ModE shares sim-
+ilar simplicity with TransE, but signiﬁcantly outperforms it
+on all datasets. Surprisingly, ModE even outperforms more
+complex models such as DistMult, ConvE and Complex on
+all datasets, and beats the state-of-the-art model—RotatE—
+on FB15k-237 and YAGO3-10 datasets, which demonstrates
+the great power of modulus information. Table 3 also shows
+that our HAKE signiﬁcantly outperforms existing state-of-
+the-art methods on all datasets.
+WN18RR dataset consists of two kinds of relations: the
+symmetric relations such as similar to, which link entities
+in the category (b); other relations such as hypernym and
+member meronym, which link entities in the category (a).
+Actually, RotatE can model entities in the category (b) very
+
+Table 2: Statistics of datasets. The symbols #E and #R de-
+note the number of entities and relations, respectively. #TR,
+#VA, and #TE denote the size of train set, validation set, and
+test set, respectively.
+
+Dataset
+WN18RR
+FB15k-237
+YAGO3-10
+
+#E
+40,493
+14,541
+123,182
+
+#R
+11
+237
+37
+
+#TR
+86,835
+272,115
+1,079,040
+
+#VA
+3,034
+17,535
+5,000
+
+#TE
+3,134
+20,466
+5,000
+
+well (Sun et al. 2019). However, HAKE gains a 0.021 higher
+MRR, a 2.4% higher H@1, and a 2.4% higher H@3 against
+RotatE, respectively. The superior performance of HAKE
+compared with RotatE implies that our proposed model can
+better model different levels in the hierarchy.
+FB15k-237 dataset has more complex relation types
+and fewer entities, compared with WN18RR and YAGO3-
+10. Although there are relations that reﬂect hierarchy in
+FB15k-237, there are also lots of relations, such as “/loca-
+tion/location/time zones” and “/ﬁlm/ﬁlm/prequel”, that do
+not lead to hierarchy. The characteristic of this dataset ac-
+counts for why our proposed models doesn’t outperform the
+previous state-of-the-art as much as that of WN18RR and
+YAGO3-10 datasets. However, the results also show that our
+models can gain better performance so long as there ex-
+ists semantic hierarchies in knowledge graphs. As almost all
+knowledge graphs have such hierarchy structures, our model
+is widely applicable.
+YAGO3-10 datasets contains entities with high relation-
+speciﬁc indegree (Dettmers et al. 2018). For example, the
+link prediction task (?, hasGender, male) has over 1000
+true answers, which makes the task challenging. Fortunately,
+we can regard “male” as an entity at higher level of the hi-
+erarchy and the predicted head entities as entities at lower
+level. In this way, YAGO3-10 is a dataset that clearly has se-
+mantic hierarchy property, and we can expect that our pro-
+posed models is capable of working well on this dataset. Ta-
+ble 3 validates our expectation. Both ModE and HAKE sig-
+niﬁcantly outperform the previous state-of-the-art. Notably,
+HAKE gains a 0.050 higher MRR, 6.0% higher H@1 and
+4.6% higher H@3 than RotatE, respectively.
+
+Analysis on Relation Embeddings
+
+In this part, we ﬁrst show that HAKE can effectively model
+the hierarchy structures by analyzing the moduli of relation
+embeddings. Then, we show that the phase part of HAKE
+can help us to distinguish entities at the same level of the
+hierarchy by analyzing the phases of relation embeddings.
+In Figure 2, we plot the distribution histograms of moduli
+of six relations. These relations are drawn from WN18RR,
+FB15k-237, and YAGO3-10. Speciﬁcally, the relations in
+Figures 2a, 2c, 2e and 2f are drawn from WN18RR. The
+relation in Figure 2d is drawn from FB15k-237. The rela-
+tion in Figure 2b is drawn from YAGO3-10. We divide the
+relations in Figure 2 into three groups.
+(A) Relations in Figures 2c and 2d connect the entities at
+the same level of the semantic hierarchy;
+
+Table 3: Evaluation results on WN18RR, FB15k-237 and YAGO3-10 datasets. Results of TransE and RotatE are taken from
+Nguyen et al. (2018) and Sun et al. (2019), respectively. Other results are taken from Dettmers et al. (2018).
+
+WN18RR
+
+FB15k-237
+
+YAGO3-10
+
+TransE
+DistMult
+ConvE
+ComplEx
+RotatE
+ModE
+HAKE
+
+MRR H@1 H@3 H@10 MRR H@1 H@3 H@10 MRR H@1 H@3 H@10
+.226
+-
+-
+.501
+.294
+-
+-
+.465
+-
+-
+-
+-
+.43
+.39
+.44
+.49
+.241
+.155
+.263
+.419
+.34
+.24
+.38
+.54
+.43
+.40
+.44
+.52
+.325
+.237
+.356
+.501
+.44
+.35
+.49
+.62
+.44
+.41
+.46
+.51
+.247
+.158
+.275
+.428
+.36
+.26
+.40
+.55
+.476
+.428
+.492
+.571
+.338
+.241
+.375
+.533
+.495
+.402
+.550
+.670
+.472
+.427
+.486
+.564
+.341
+.244
+.380
+.534
+.510
+.421
+.562
+.660
+
+.545
+
+.462
+
+.596
+
+.694
+
+.497
+
+.452
+
+.516
+
+.582
+
+.346
+
+.250
+
+.381
+
+.542
+
+Figure 3: Distribution histograms of phases of two relations
+that reﬂect the same hierarchy. The relations in Figure (a)
+and (b) are drawn from WN18RR and FB15k-237, respec-
+tively.
+
+(A) take values around one, which leads to that the head en-
+tities and tail entities have approximately the same moduli.
+In the group (B), most entries of the relations take values less
+than one, which results in that the head entities have smaller
+moduli than the tail entities. The cases in the group (C) are
+contrary to that in the group (B). These results show that
+our model can capture the semantic hierarchies in knowl-
+edge graphs. Moreover, compared with ModE, the relation
+embeddings’ moduli of HAKE have lower variances, which
+shows that HAKE can model hierarchies more clearly.
+As mentioned above, relations in the group (A) reﬂect the
+same semantic hierarchy, and are expected to have the mod-
+uli of about one. Obviously, it is hard to distinguish entities
+linked by these relations only using the modulus part. In Fig-
+ure 3, we plot the phases of the relations in the group (A).
+The results show that the entities at the same level of the hi-
+erarchy can be distinguished by their phases, as many phases
+have the values of π .
+
+Analysis on Entity Embeddings
+
+In this part, to further show that HAKE can capture the se-
+mantic hierarchies between entities, we visualize the embed-
+dings of several entity pairs.
+We plot the entity embeddings of two models: the previ-
+ous state-of-the-art RotatE and our proposed HAKE. RotatE
+regards each entity as a group of complex numbers. As a
+complex number can be seen as a point on a 2D plane, we
+
+Figure 2: Distribution histograms of moduli of some rela-
+tions. The relations are drawn from WN18RR, FB15k-237
+and YAGO3-10 dataset. The relation in (d) is /celebri-
+ties/celebrity/celebrity friends/celebrities/friendship/friend.
+Let friend denote the relation for simplicity.
+
+(B) Relations in Figures 2a and 2b represent that tail entities
+are at higher levels than head entities of the hierarchy;
+(C) Relations in Figures 2e and 2f represent that tail entities
+are at lower levels than head entities of the hierarchy.
+As described in the model description section, we ex-
+pect entities at higher levels of the hierarchy to have small
+moduli. The experiments validate our expectation. For both
+ModE and HAKE, most entries of the relations in the group
+
+0123400.050.10.150.20.25ModEHAKE(a)hypernym012300.020.040.06ModEHAKE(b)isLocatedIn0.9511.0500.10.20.30.4ModEHAKE(c)similarto0123400.020.040.060.080.1ModEHAKE(d)friend01200.050.10.150.20.25ModEHAKE(e)membermeronym0123400.020.040.060.080.1ModEHAKE(f)haspart0200.20.40.6(a)similarto0200.10.20.30.40.5(b)friendTable 4: Ablation results on WN18RR, FB15k-237 and YAGO3-10 datasets. The symbols m, p, and b represent the modulus
+part, the phase part, and the mixture bias term, respectively.
+
+WN18RR
+
+FB15k-237
+
+YAGO3-10
+
+m p
+
+(cid:88)
+
+(cid:88)
+(cid:88) (cid:88)
+
+b MRR H@1 H@3 H@10 MRR H@1 H@3 H@10 MRR H@1 H@3 H@10
+.240
+.047
+.404
+.527
+.258
+.121
+.333
+.508
+.476
+.374
+.541
+.658
+.465
+.423
+.480
+.550
+.324
+.226
+.361
+.519
+.480
+.383
+.532
+.664
+.496
+.449
+.336
+.239
+.373
+.533
+.522
+.429
+.581
+.693
+
+.584
+
+.517
+
+(cid:88) (cid:88) (cid:88) .497
+
+.452
+
+.516
+
+.582
+
+.346
+
+.250
+
+.381
+
+.542
+
+.545
+
+.462
+
+.596
+
+.694
+
+Table 5: Comparison results with TKRL models (Xie, Liu,
+and Sun 2016) on FB15k dataset. RHE, WHE, RHE+STC,
+and WHE+STC are four versions of TKRL model , of which
+the results are taken from the original paper.
+
+HAKE RHE WHE RHE+STC WHE+STC
+.694
+.696
+.731
+.734
+
+.884
+
+H@10
+
+can plot the entity embeddings on a 2D plane. As for HAKE,
+we have mentioned that it maps entities into the polar coor-
+dinate system. Therefore, we can also plot the entity embed-
+dings generated by HAKE on a 2D plane based on their po-
+lar coordinates. For a fair comparison, we set k = 500. That
+is, each plot contains 500 points, and the actual dimension
+of entity embeddings is 1000. Note that we use the loga-
+rithmic scale to better display the differences between entity
+embeddings. As all the moduli have values less than one, af-
+ter applying the logarithm operation, the larger radii in the
+ﬁgures will actually represent smaller modulus.
+Figure 4 shows the visualization results of three triples
+from the WN18RR dataset. Compared with the tail entities,
+the head entities in Figures 4a, 4b, and 4c are at lower lev-
+els, similar levels, higher levels in the semantic hierarchy,
+respectively. We can see that there exist clear concentric cir-
+cles in the visualization results of HAKE, which demon-
+strates that HAKE can effectively model the semantic hi-
+erarchies. However, in RotatE, the entity embeddings in all
+three subﬁgures are mixed, making it hard to distinguish en-
+tities at different levels in the hierarchy.
+
+Ablation Studies
+
+In this part, we conduct ablation studies on the modulus part
+and the phase part of HAKE, as well as the mixture bias
+item. Table 4 shows the results on three benchmark datasets.
+We can see that the bias can improve the performance of
+HAKE on nearly all metrics. Speciﬁcally, the bias improves
+the H@1 score of 4.7% on YAGO3-10 dataset, which illus-
+trates the effectiveness of the bias.
+We also observe that the modulus part of HAKE does not
+perform well on all datasets, due to its inability to distin-
+guish the entities at the same level of the hierarchy. When
+only using the phase part, HAKE degenerates to the pRotatE
+model (Sun et al. 2019). It performs better than the modulus
+part, because it can well model entities at the same level of
+
+Figure 4: Visualization of the embeddings of several entity
+pairs from WN18RR dataset.
+
+the hierarchy. However, our HAKE model signiﬁcantly out-
+performs the modulus part and the phase part on all datasets,
+which demonstrates the importance to combine the two parts
+for modeling semantic hierarchies in knowledge graphs.
+
+Comparison with Other Related Work
+
+We compare our models with TKRL models (Xie, Liu, and
+Sun 2016), which also aim to model the hierarchy structures.
+For the difference between HAKE and TKRL, please refer to
+the Related Work section. Table 5 shows the H@10 scores of
+
+-10010-10010RotatEsensitizationirritation-10010-10010HAKEsensitizationirritation(a)(sensitization,hypernym,irritation)-10010-10010RotatEaskinquire-10010-10-50510HAKEaskinquire(b)(ask,verbgroup,inquire)-10010-10010RotatEIrenidaeOscines-20020-20-1001020HAKEIrenidaeOscines(c)(Irenidae,membermeronym,Oscines)HAKE and TKRLs on FB15k dataset. The best performance
+of TKRL is .734 obtained by the WHE+STC version, while
+the H@10 score of our HAKE model is .884. The results
+show that HAKE signiﬁcantly outperforms TKRL, though it
+does not require additional information.
+
+5 Conclusion
+
+To model the semantic hierarchies in knowledge graphs,
+we propose a novel hierarchy-aware knowledge graph em-
+bedding model—HAKE—which maps entities into the po-
+lar coordinate system. Experiments show that our proposed
+HAKE signiﬁcantly outperforms several existing state-of-
+the-art methods on benchmark datasets for the link predic-
+tion task. A further investigation shows that HAKE is capa-
+ble of modeling entities at both different levels and the same
+levels in the semantic hierarchies.
+
+References
+
+Bollacker, K.; Evans, C.; Paritosh, P.; Sturge, T.; and Taylor,
+J. 2008. Freebase: A collaboratively created graph database
+for structuring human knowledge. In SIGMOD.
+Bordes, A.; Usunier, N.; Garcia-Dur ´an, A.; Weston, J.; and
+Yakhnenko, O. 2013. Translating embeddings for modeling
+multi-relational data. In NeurIPS.
+Dettmers, T.; Pasquale, M.; Pontus, S.; and Riedel, S. 2018.
+Convolutional 2d knowledge graph embeddings. In AAAI.
+Dong, X.; Gabrilovich, E.; Heitz, G.; Horn, W.; Lao, N.;
+Murphy, K.; Strohmann, T.; Sun, S.; and Zhang, W. 2014.
+Knowledge vault: A web-scale approach to probabilistic
+knowledge fusion. In SIGKDD.
+Guo, L.; Sun, Z.; and Hu, W. 2019. Learning to exploit
+long-term relational dependencies in knowledge graphs. In
+ICML.
+Huang, X.; Zhang, J.; Li, D.; and Li, P. 2019. Knowledge
+graph embedding based question answering. In WSDM.
+Kingma, D. P., and Ba, J. 2015. Adam: A method for
+stochastic optimization. In ICLR.
+Li, Y.; Zheng, R.; Tian, T.; Hu, Z.; Iyer, R.; and Sycara, K.
+2016. Joint embedding of hierarchical categories and enti-
+ties for concept categorization and dataless classiﬁcation. In
+COLING.
+Lin, Y.; Liu, Z.; Sun, M.; Liu, Y.; and Zhu, X. 2015. Learn-
+ing entity and relation embeddings for knowledge graph
+completion. In AAAI.
+Liu, H.; Wu, Y.; and Yang, Y. 2017. Analogical inference
+for multi-relational embeddings. In ICML.
+Mahdisoltani, F.; Biega, J.; and Suchanek, F. M.
+2013.
+Yago3: A knowledge base from multilingual wikipedias. In
+CIDR.
+Mikolov, T.; Sutskever, I.; Chen, K.; Corrado, G.; and Dean,
+J. 2013. Distributed representations of words and phrases
+and their compositionality. In NeurIPS.
+Miller, G. A. 1995. Wordnet: A lexical database for english.
+Commun. ACM.
+
+Nguyen, D. Q.; Nguyen, T. D.; Nguyen, D. Q.; and Phung,
+D. 2018. A novel embedding model for knowledge base
+completion based on convolutional neural network.
+In
+NAACL.
+Nguyen, D. Q.; Vu, T.; Nguyen, T. D.; Nguyen, D. Q.; and
+Phung, D. 2019. A Capsule Network-based Embedding
+Model for Knowledge Graph Completion and Search Per-
+sonalization. In NAACL.
+Nickel, M.; Rosasco, L.; and Poggio, T. 2016. Holographic
+embeddings of knowledge graphs. In AAAI.
+Nickel, M.; Tresp, V.; and Kriegel, H.-P. 2011. A three-
+way model for collective learning on multi-relational data.
+In ICML.
+Schlichtkrull, M.; Kipf, T. N.; Bloem, P.; Van Den Berg, R.;
+Titov, I.; and Welling, M. 2018. Modeling relational data
+with graph convolutional networks. In ESWC.
+Socher, R.; Chen, D.; Manning, C. D.; and Ng, A. Y. 2013.
+Reasoning with neural tensor networks for knowledge base
+completion. In NeurIPS.
+Sun, Z.; Deng, Z.-H.; Nie, J.-Y.; and Tang, J. 2019. Ro-
+tate: Knowledge graph embedding by relational rotation in
+complex space. In ICLR.
+Toutanova, K., and Chen, D. 2015. Observed versus la-
+tent features for knowledge base and text inference. In The
+Workshop on CVSC.
+Trouillon, T.; Welbl, J.; Riedel, S.; Gaussier, E.; and
+Bouchard, G. 2016. Complex embeddings for simple link
+prediction. In ICML.
+Wang, Z.; Zhang, J.; Feng, J.; and Chen, Z. 2014. Knowl-
+edge graph embedding by translating on hyperplanes.
+In
+AAAI.
+Wang, H.; Zhang, F.; Wang, J.; Zhao, M.; Li, W.; Xie, X.;
+and Guo, M. 2018. Ripplenet: Propagating user prefer-
+ences on the knowledge graph for recommender systems. In
+CIKM.
+Xiao, H.; Huang, M.; and Zhu, X. 2016. From one point
+to a manifold: Knowledge graph embedding for precise link
+prediction. In IJCAI.
+Xie, R.; Liu, Z.; and Sun, M. 2016. Representation learning
+of knowledge graphs with hierarchical types. In IJCAI.
+Yang, B.; Yih, S. W.-t.; He, X.; Gao, J.; and Deng, L. 2015.
+Embedding entities and relations for learning and inference
+in knowledge bases. In ICLR.
+Zhang, Z.; Zhuang, F.; Qu, M.; Lin, F.; and He, Q. 2018.
+Knowledge graph embedding with hierarchical relation
+structure. In EMNLP.
+Zhang, Z.; Han, X.; Liu, Z.; Jiang, X.; Sun, M.; and Liu,
+Q. 2019. ERNIE: Enhanced language representation with
+informative entities. In ACL.
+
+Appendix
+
+In this appendix, we will provide analysis on relation pat-
+terns, negative entity embeddings, and moduli of entity em-
+beddings. Then, we will give more visualization results on
+semantic hierarchies.
+
+A. Analysis on Relation Patterns
+
+In this section, we prove that our HAKE model can infer the
+(anti)symmetry, inversion and composition relation patterns.
+Detailed propositions and their proofs are as follows.
+Proposition 1. HAKE can infer the (anti)symmetry pattern.
+Proof. If r(x, y) and r(y , x) hold, we have
+
+
+
+xm ◦ rm = ym ,
+ym ◦ rm = xm ,
+(xp + rp )mod 2π = yp ,
+(yp + rp )mod 2π = xp .
+
+Then we have
+
+xm ◦ rm ◦ rm = xm ⇒ rm ◦ rm = 1,
+
+(rp + rp )mod 2π = 0.
+
+Otherwise, if r(x, y) and ¬r(y , x) hold, we have
+
+rm ◦ rm (cid:54)= 1,
+
+(rp + rp )mod 2π (cid:54)= 0.
+
+Proposition 2. HAKE can infer the inversion pattern.
+Proof. If r1 (x, y) and r2 (y , x) hold, we have
+
+xm ◦ r1,m = ym ,
+ym ◦ r2,m = xm ,
+(xp + r1,p )mod 2π = yp ,
+(yp + r2,p )mod 2π = xp .
+xm ◦ r1,m ◦ r2,m = xm ⇒ r1,m = r−1
+(r1,p + r2,p )mod 2π = 0.
+
+2,m ,
+
+Then, we have
+
+
+
+
+
+Proposition 3. HAKE can infer the composition pattern.
+Proof. If r1 (x, z ), r2 (x, y) and r3 (y , z ) hold, we have
+
+xm ◦ r1,m = zm ,
+xm ◦ r2,m = ym ,
+ym ◦ r3,m = zm ,
+(xp + r1,p )mod 2π = zp ,
+(xp + r2,p )mod 2π = yp ,
+(yp + r3,p )mod 2π = zp .
+
+Then we have
+
+xm ◦ r2m ◦ r3m ◦ zm = xm ◦ r1m ◦ zm
+
+⇒ r1m = r2m ◦ r3m ,
+(r1 p − r2 p − r3 p )mod 2π = 0.
+
+(a) WN18RR
+
+(b) FB15k-237
+
+Figure 5: Illustration of the negative modulus of linked and
+unlinked entity pairs. For each pair of entities h and t, if
+there is a link between h and t, we label them as “Linked”.
+Otherwise, we label them as “Unlinked”. The x-axis rep-
+resents the number of i that [hm ]i and [tm ]i have different
+signs, the y-axis represents the frequency.
+
+(a) WN18RR
+
+(b) YAGO3-10
+
+Figure 6: Histograms of the modulus of entity embeddings.
+Compared with RotatE, the modulus of entity embeddings in
+HAKE are more dispersed, making it to have more potential
+to model the semantic hierarchies.
+
+B. Analysis on Negative Entity Embeddings
+
+We denote the linked entity pairs as the set of entity pairs
+linked by some relation, and denote the unlinked entity
+pairs as the set of entity pairs that no triple contains in the
+train/valid/test dataset. It is worth noting that the unlinked
+paris may contain valid triples, as the knowledge graph is in-
+complete. For both the linked and the unlinked entity pairs,
+we count the embedding entries of two entities that have dif-
+ferent signs. Figure 5 shows the result.
+For the linked entity pairs, as we expected, most of the en-
+tries have the same sign. Due to the large amount of unlinked
+entity pairs, we randomly sample a part of them for plotting.
+For the unlinked entity pairs, around half of the entries have
+different signs, which is consistent with the random initial-
+ization. The results support our hypothesis that the negative
+signs of entity embeddings can help our model to distinguish
+positive and negative triples.
+
+C. Analysis on Moduli of Entity Embeddings
+
+Figure 6 shows the modulus of entity embeddings. We can
+observe that RotatE encourages the modulus of embeddings
+to be the same, as the relations are modeled as rotations in
+a complex space. Compared with RotatE, the modulus of
+entity embeddings in HAKE are more dispersed, making it
+to have more potential to model the semantic hierarchies.
+
+010020030000.10.20.3LinkedUnlinked020040060000.10.2LinkedUnlinked00.050.100.020.040.060.08RotatEHAKE00.10.20.300.010.020.030.04RotatEHAKED. More Results on Semantic Hierarchies
+
+In this part, we visualize more triples from WN18RR. We
+plot the head and tail entities on 2D planes using the same
+method as that in the main text. The visualization results are
+in Figure 7, where the subcaptions demonstrate the corre-
+sponding triples. The ﬁgures show that, compared with Ro-
+tatE, our HAKE model can better model the entities both in
+different hierarchies and in the same hierarchy.
+
+(a) (hammer, hypernym, power tool)
+
+(b) (occupy, verb group, consume)
+
+(c) (Arab League, member meronym, Morocco)
+
+Figure 7: Visualization of several entity embeddings from
+WN18RR dataset.
+
+-10010-10010RotatEhammerpower_tool-10010-10010HAKEhammerpower_tool-10010-10010RotatEoccupyconsume-10010-10-50510HAKEoccupyconsume-10010-10010RotatEArab_LeagueMorocco-20020-20-1001020HAKEArab_LeagueMorocco

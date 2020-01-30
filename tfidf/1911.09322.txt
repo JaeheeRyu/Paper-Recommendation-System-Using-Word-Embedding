@@ -1,0 +1,644 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+2
+2
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+DATA PROXY G ENERAT ION FOR FA ST AND E FFIC I EN T N EURA L
+ARCH I T EC TUR E S EARCH
+
+A PR E PR IN T
+
+Minje Park
+
+Intel Corporation
+minje.park@intel.com
+
+November 22, 2019
+
+AB STRACT
+
+Due to the recent advances on Neural Architecture Search (NAS), it gains popularity in designing
+best networks for speciﬁc tasks. Although it shows promising results on many benchmarks and
+competitions, NAS still suffers from its demanding computation cost for searching high dimensional
+architectural design space, and this problem becomes even worse when we want to use a large-scale
+dataset. If we can make a reliable data proxy for NAS, the efﬁciency of NAS approaches increase
+accordingly. Our basic observation for making a data proxy is that each example in a speciﬁc dataset
+has a different impact on NAS process and most of examples are redundant from a relative accuracy
+ranking perspective, which we should preserve when making a data proxy. We propose a systematic
+approach to measure the importance of each example from this relative accuracy ranking point of
+view, and make a reliable data proxy based on the statistics of training and testing examples. Our
+experiment shows that we can preserve the almost same relative accuracy ranking between all possible
+network conﬁgurations even with 10-20× smaller data proxy.
+Keywords Deep Learning · Neural Architecture Search · Data Proxy
+
+1
+
+Introduction
+
+Neural Architecture Search (NAS) is an emerging technique for automating the design of artiﬁcial neural networks.
+Although it shows promising results on diverse benchmarks and competitions, it suffers from its demanding computation
+cost for searching high dimensional architecture design space. This problem becomes even worse when we want to use
+large-scale dataset. For example, it takes hours or days to get the best model for CIFAR dataset, which is commonly
+known as a small dataset compared to other practical datasets (e.g. ImageNet), even with multiple high-end GPU
+system. In this paper, we propose a systematic approach for creating a data proxy and increasing the efﬁciency of NAS
+process by an order of magnitude. Data proxy, if properly constructed, can be applied to any kind of NAS methods.
+Our basic observation is that each example of training data has a different impact on NAS process from a relative
+accuracy ranking perspective. That means some subsets of examples are more important when we compare different
+architectures than others. We introduce the notion of probe networks for efﬁciently measuring the impact given with
+the base network, search space, and target task. Our experiment shows that even with 10-20× smaller data proxy we
+can keep the relative accuracy ranking of all possible network conﬁgurations. Figure 1 illustrates how our data proxy
+generator boosts NAS process. To the best of our knowledge, our proposed method is the ﬁrst attempt to make data
+proxy in a systematical manner.
+
+2 Related Work
+
+There have been several ideas for accelerating NAS process. The ﬁrst approach is to use proxy tasks. They search
+building blocks with partially-trained models with fewer iterations [1, 2, 3, 4] or reuse the result of training with a
+smaller dataset which is not a subset of target task but different task (e.g. using CIFAR for searching building blocks for
+
+ 
+ 
+ 
+ 
+ 
+ 
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+Figure 1: Data proxy generator analyzes the original data based on the given base network and search space to
+preserve the relative accuracy ranking between possible network conﬁgurations with a small set of probe networks. Our
+experiment with ResNet and CIFAR shows 10-20× smaller data proxy works for searching the best network.
+
+ImageNet classiﬁcation network) [1] or make a difﬁculty-sorted data proxy with resampling [5, 6]. Although there
+have been no concrete analysis on this bottom-up approach, this paradigm is widely adopted due to its simplicity and
+efﬁciency.
+The second approach is to use a set of pre-trained models to estimate the accuracy of an arbitrary model during NAS
+process [7, 8, 9]. This approach uses fully-trained models but it does not actually trained a model during NAS but
+makes an accuracy estimator based on a set of already-trained models. If there are enough number of pre-trained models
+representing the entire search space properly, this would be a good solution for fast (or even interactive) NAS. However,
+typical NAS dimension is very high, and it requires a large number of pre-trained models to estimate accuracy precisely.
+That means it also requires a huge computation for NAS.
+Recently many researchers tries to alleviate these problems by adapting gradient-based methods [10, 11, 12] and
+one-shot training with the concept of over-parameterized networks [13]. These methods reduces computational burden
+by an order of magnitude compared to the classical reinforcement training methods. Note that our data proxy approach
+is complementary with most of known methods including gradient-based and/or one-shot methods.
+
+3 Data Proxy Generation
+
+Our data proxy problem can be formulated as a constrained optimization problem as follows:
+• Objective: Create a data proxy Dproxy which is a subset of the original data Doriginal , and its size (number of
+examples) is not greater than x% of the original data.
+• Constraint: For every network conﬁguration pair (Ni , Nj ) in the search space, Accuracy(Ni , Dproxy ) should
+
+be higher than Accuracy(Nj , Dproxy ) if Accuracy(Ni , Doriginal ) is higher than Accuracy(Nj , Doriginal ).
+
+A naïve approach for this problem is to make every possible subset of data and check that the condition holds for every
+possible network conﬁguration pairs. Obviously this approach is not feasible even for small dataset and search space.
+Our basic observation on this problem is that some samples are more important than other samples when we rank
+relative accuracy among possible network conﬁgurations within the search space. For example, let’s assume that we
+remove some samples from the training data and draw a complete relative accuracy table between all pairs of network
+conﬁgurations. If removing those samples does not change the relative accuracy table, we can safely discard those
+samples during NAS process. However, if removing some samples signiﬁcantly changes the relative accuracy table, we
+should keep those samples when we make a data proxy. Figure 2 illustrates an example of how different subsets affect
+the relative accuracy ranking.
+Based on this observation our next problem is how to effectively measure the importance of each sample from a relative
+with the search space. For each sample sk ∈ Doriginal we can draw a relative accuracy ranking table Ti for this
+accuracy ranking perspective. Let’s assume that we have a complete list of all possible network conﬁgurations given
+speciﬁc sample (actually each cell only contains one of four possible states (cid:104)T rue, F alse(cid:105) for a single sample). We can
+compare this with the original table Tref . When we compare these two tables there are four different cases as follows:
+• Case1 Samples are correctly classiﬁed regardless of network architecture.
+• Case2 Samples are incorrectly classiﬁed regardless of network architecture.
+• Case3 Accuracy(Ni ) > Accuracy(Nj ) in Tref , and sample sk is correctly classiﬁed with Ni and incorrectly
+classiﬁed with Nj or vice versa.
+• Case4 Accuracy(Ni ) > Accuracy(Nj ) in Tref , but sample sk is incorrectly classiﬁed with Ni and correctly
+classiﬁed with Nj or vice versa.
+
+2
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+Figure 2: Relative accuracy among 12×12 network conﬁguration pairs of ResNet20 variants on CIFAR10. Yellow
+cell indicates there is no relative accuracy change, and dark cell indicates relative accuracy with subsampled data has
+been changed compared to the original training data. (left) Random 5% subsampling of the original data (right) Data
+proxy consisting of 5% of the original data generated by our method. Note that our method maintains the best network
+conﬁguration (index indicated by green box) while random approach fails.
+
+Since Case1 and Case2 provides no information when we measure the importance of each sample, we will focus on
+Case3 and Case4. Our objective is to ﬁnd a subset of the original data as a data proxy for NAS and we want to keep
+the ordering of accuracy with this subset. Samples in Case3 meet this requirement and thus we will assign higher
+importance value. Contrarily we need to avoid samples from Case4 when we make a data proxy and assign a low
+importance value for these samples.
+After assigning importance of each sample, we apply stochastic resampling method with the keeping probability of
+each sample equals to the normalized importance to meet the constraint of the data proxy size as follows:
+
+Dproxy = Resample(Doriginal , {keep_probi }), where keep_probi =
+
+(cid:80)
+
+Importancei
+i∈N Importancei
+
+.
+
+Importance of i-th sample can be one of four constant values depending on which case this sample belongs to. Basically
+this can be done by counting the number of conﬁguration pairs. For example we can assign {2, 1, 6, 1} importance
+values to each case after identifying the case of each sample. This means Case3 samples have six times more chances
+to be resampled in the reduced data proxy. It’s not recommended to set the importance values of other cases to zero
+since we need some fractions of the original data to make the training process converge. Table 1 describes the detailed
+procedure of our data proxy generation scheme (including probe networks explained in Section 3.1).
+
+3.1 Probe Networks
+
+One remaining problem is that we need to prepare and train all possible network conﬁgurations to measure sample
+importance collectively. To reduce this computation cost, we use a set of k selected networks as representatives, which
+are called probe networks, rather than using a complete list of all possible network conﬁgurations. One of simplest
+and most natural choice of probe networks is to use two boundary network conﬁgurations from a compute complexity
+perspective. The upper boundary model is the most complex model we can make during search process, and the lower
+boundary model is the lightest one. There is an obvious trade-off between the number of probe networks and the
+reliability of measured importance. Throughout our experiment we found that these two boundary probe networks
+(k == 2) serve our purpose well. Depending on the dimensionality of search space and the complexity of base network
+more probe networks can be used if you need more reliability by sacriﬁcing data proxy generation time.
+
+3.2 Similarity of Examples
+
+Our goal is to keep the relative ranking of accuracy, and the accuracy is measured with test data. So, we need to measure
+the importance value not with training examples but with test ones. However, resampling should be done for training
+data. To set importance values of training examples, we need a similarity mapping function from test examples to
+training ones. A common choice for deﬁning similarity is using the intermediate layer output of deep neural network
+and apply standard distance metric functions like Euclidean or cosine distances. To efﬁciently ﬁnd the nearest test
+samples of each training example, we can create a nearest neighbor mapping function based on the features extracted
+from the upper boundary network (which is the most capable network presumably). Depending on the dimensionality
+
+3
+
+Algorithm 1: Data Proxy Generation
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+Input: Doriginal , Nbase , S earchS pace, ratio;
+
+Output: Dproxy ;
+1. Train a pair of probe networks with the original training data Doriginal
+2. Probe networks consists of two boundary network conﬁgurations of the search space Nupper and Nlower
+3. For each sample of test (or validation) data si , set the importance value Importancetest
+according to the
+following criteria:
+• c1 when both Nlower and Nupper correctly classify
+• c2 when both Nlower and Nupper incorrectly classify
+
+i
+
+• c3 when both Accuracy(Nlower , Doriginal ) is lower than Accuracy(Nupper , Doriginal ) and only
+• c4 when both Accuracy(Nlower , Doriginal ) is not lower than Accuracy(Nupper , Doriginal ) and only
+
+Nupper correctly classiﬁes
+
+Nlower correctly classiﬁes
+4. Extract features (intermediate layer output) Fi from {si } by using Nupper
+5. Reduce the dimensionality of Fi by using PCA (or any decomposition method)
+6. Construct a nearest neighbor map N earestN eighborF (·)
+7. For each train sample ti , set Importancetrain
+
+as Importancetest
+
+i
+
+8. Set keep probability keep_probi of each train sample as
+9. Resample the original data Doriginal to create a data proxy Dproxy with {keep_probi }
+
+i
+
+(cid:80)
+
+N earestN eighborF (ti )
+Importancetrain
+i∈N Importancetrain
+
+i
+
+of feature it’s recommended to apply dimensionality reduction method such as Principal Component Analysis before
+constructing a nearest neighbor mapping function.
+
+3.3 Reducing the Number of Class Labels
+
+For some data sets like CIFAR100 or ImageNet, some labels contain too small number of examples. Further reduction
+on these labels make the training not converged since each output neuron does not generate enough amount of gradient
+for back propagation. In this case, we can remove the label itself. Just like we set the importance of each train sample,
+we can use aggregated importance value of each label as the importance of that label, and apply the same logic to reduce
+the number of class labels. Another possible option is to merge some labels according to its similarity and make a
+super-label which contains more examples for each label. We use the ﬁrst approach since merging classes requires
+robust label-to-label distance metric. For example, if our target data proxy size is 10% of the original data, we ﬁrst
+remove some labels to create a 20% of the original size with label-wise importance values, and then remove some
+samples with sample-wise importance values to create the ﬁnal 10% data proxy.
+
+4 Experiment
+
+Our ﬁrst experiment is how this data proxy affects typical neural architecture search. We used ResNet20 as a base
+network, and deﬁned the following 12 different network conﬁgurations by changing the number of base ﬁlters (B),
+kernel size (K), and multiplier (M) [14]. Table 1 summarizes the accuracy of each conﬁguration with and without
+data proxy on CIFAR10 [15], which consists of 50000 training samples and 10 classes (each class has 5000 samples).
+As a baseline for comparison, we used random uniform resampling method. We applied the same optimizer (Adam),
+batch size, learning rate policy and other training parameters to minimize the impact of different training-related
+hyperparameters.
+When we reduce the training data to 10%, both approaches worked quite well. The correlation score between the
+accuracy trained with the original data and that with the proxy data is above 0.97, which is high enough for neural
+architecture comparison. However, when we reduced the data proxy size to 5% our data proxy approach works better
+than random approach. The correlation score is increased from 0.922 to 0.965, which is similar to 10% data proxy case.
+More importantly, the best network conﬁguration is consistent with the full data case when we used our data proxy
+approach but random selection approach fails to ﬁnd the best conﬁguration (bold text indicates the highest accuracy for
+
+4
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+10% (random)
+0.5865
+0.6499
+0.6197
+0.6502
+0.6668
+0.7147
+0.6746
+0.7044
+0.6983
+
+ID
+B, K, M 100% (original)
+1
+8, 3, 2
+0.832
+2
+8, 3, 4
+0.8802
+3
+8, 5, 2
+0.8494
+4
+8, 5, 4
+0.8792
+5
+16, 3, 2
+0.8814
+6
+16, 3, 4
+0.9096
+7
+16, 5, 2
+0.8873
+8
+16, 5, 4
+0.9069
+9
+32, 3, 2
+0.9008
+10
+32, 3, 4
+11
+32, 5, 2
+0.9049
+0.716
+0.7048
+12
+32, 5, 4
+0.9096
+0.7305
+0.7295
+Correlation score
+1.0
+0.976
+0.972
+0.922
+Table 1: ResNet20 variations on CIFAR10 with and without data proxy
+
+5% (random)
+0.5343
+0.5613
+0.5484
+0.5803
+0.5791
+0.6203
+0.5912
+0.6372
+0.5967
+0.6309
+0.6401
+
+10% (ours)
+0.6076
+0.6552
+0.6068
+0.6524
+0.6788
+0.7152
+0.6823
+0.7161
+0.6998
+
+0.9123
+
+0.7358
+
+0.7302
+
+0.6428
+
+5% (ours)
+0.4762
+0.5353
+0.4922
+0.5464
+0.5321
+0.5821
+0.5551
+0.595
+0.5613
+
+0.6161
+
+0.5782
+0.5964
+0.965
+
+ID
+B, K, M 100% (original)
+1
+8, 3, 2
+0.4971
+2
+8, 3, 4
+0.6095
+3
+8, 5, 2
+0.5319
+4
+8, 5, 4
+0.6097
+5
+16, 3, 2
+0.6244
+6
+16, 3, 4
+0.6679
+7
+16, 5, 2
+0.6324
+8
+16, 5, 4
+0.6644
+9
+32, 3, 2
+0.6609
+10
+32, 3, 4
+11
+32, 5, 2
+0.6533
+0.7073
+12
+32, 5, 4
+0.6907
+0.7409
+Correlation score
+1.0
+0.955
+0.975
+Table 2: ResNet20 variations on CIFAR100 with and without data proxy
+
+10% (random)
+0.6128
+0.667
+0.6454
+0.6691
+0.6844
+0.705
+0.6713
+0.726
+0.6987
+0.7249
+0.7116
+
+10% (ours)
+0.55
+0.6343
+0.6107
+0.656
+0.6768
+0.7098
+0.6777
+0.7002
+0.6996
+
+0.6959
+
+0.7327
+
+0.756
+
+each data sampling). When we use 10% data proxy, training time is reduced from 25sec per epoch to 3sec per epoch
+which is 8 times faster training speed. The speed gain can further increase when we use 5% data proxy to 1.6sec (single
+nVidia GTX1080). Please note that the absolute accuracy is not relevant since our goal is to get the relatively best
+network architecture among possible network conﬁgurations.
+In our next experiment, we used CIFAR100 [15] which consists of 100 classes and each class contains 500 samples. If
+we reduce each class independently as we did in CIFAR10, there remains average 50 samples per class and training
+is not converged since each output neuron can not generate enough amount of gradient for back propagation. As we
+explained in Section 3.3, we ﬁrst reduced the number of samples to 50%, and then dropped the labels which have
+lower keep probability samples to meet the ﬁnal 10% target (20 classes are left). We used the same base network and
+conﬁgurations with our ﬁrst experiment (refer to Table 1). As shown in Table 2, both approaches work quite well but
+our data proxy scheme is still better than random selection and ﬁnds the same best network conﬁguration of full data
+training. Unfortunately, when we reduced the data to 5% of the original size both approaches were not converged.
+As our ﬁnal experiment we used a different base network, EfﬁcientNet-B0 [2], which is generated by NAS with
+reinforcement learning. It consists of a set of mobile inverted bottleneck blocks [1], and we deﬁned three conﬁguration
+hyperparameters for this network, which are subsets of the original search parameters.
+• Repeats: {[1, 2, 2, 2, 2, 3, 1], [1, 2, 2, 3, 3, 4, 1]} (two conﬁgurations, r1, r2)
+• Kernel sizes: {[3, 3, 3, 3, 3, 3, 3], [3, 3, 5, 3, 5, 5, 3]} (two conﬁgurations, k1, k2)
+• Number of ﬁlters: {[18, 16, 16, 24, 48, 68, 116], [24, 16, 20, 32, 64, 90, 152], [32, 16, 24, 40, 80, 112, 192]}
+(three conﬁgurations, f1, f2, f3)
+
+5
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+10% (random)
+0.6985
+0.684
+0.7091
+0.6862
+0.728
+
+ID Conﬁguration
+1
+r1, k1, f1
+2
+r1, k1, f2
+3
+r1, k1, f3
+4
+r1, k2, f1
+5
+r1, k2, f2
+6
+r1, k2, f3
+7
+r2, k1, f1
+0.7024
+8
+r2, k1, f2
+0.706
+9
+r2, k1, f3
+0.6811
+10
+r2, k2, f1
+0.67
+11
+r2, k2, f2
+0.6867
+12
+r2, k2, f3
+0.69
+Correlation score
+1.0
+0.171
+0.612
+Table 3: EfﬁcientNet-B0 variations on CIFAR10 with and without data proxy
+
+100% (original)
+0.8767
+0.8838
+0.8934
+0.8735
+0.885
+0.8917
+0.868
+0.8746
+0.8905
+0.8745
+0.8913
+
+0.897
+
+0.7309
+
+10% (ours)
+0.6565
+0.6629
+0.6943
+0.6789
+0.655
+0.688
+0.6861
+0.6442
+0.6842
+0.6688
+0.703
+
+0.7228
+
+We created 12 different network conﬁgurations based on this conﬁguration hyperparameters. Table 3 summarizes the
+result of accuracy on CIFAR10 with and without data proxy. Unlike ResNet20 case, we found that the correlation
+scores are low. We think EfﬁcientNet-B0 has a very deep architecture and CIFAR10 from scratch training does not
+work well for this base network. However, our data proxy scheme still works much better than random selection, and
+successfully select the best network conﬁguration consistent with that of using the full training data. The signiﬁcant
+difference between the baseline and ours in this challenging setting implies our data proxy generation scheme reﬂects
+sample importance properly from a relative accuracy ranking point of view.
+
+5 Conclusion
+
+We proposed a novel method for generating data proxy which can be generally applicable for any kind of neural
+architecture search. Our method relies on the observation that the importance of each training sample given with search
+space and conﬁguration differs from each other, and we estimate the importance with a small set of probe networks.
+Based on the estimated importance, we successfully reduce the size of training data more than 10 times while keeping
+the relative accuracy almost intact with all possible network conﬁgurations. To the best of our knowledge, our work is
+the ﬁrst systematic approach for reducing training data for neural architecture search, and we expect to open a new
+research direction for pursuing the efﬁciency of NAS from the data optimization point of view.
+
+References
+
+[1] Mingxing Tan, Bo Chen, Ruoming Pang, Vijay Vasudevan, and Quoc V. Le. MnasNet: platform-aware neural
+architecture search for mobile. Computer Vision and Pattern Recognition, 2019.
+[2] Mingxing Tan and Quoc V. Le. EfﬁcientNet: rethinking model scaling for convolutional neural networks.
+International Conference on Machine Learning (ICML), 2019.
+[3] Weinan Zhang Song Han Yong Yu Han Cai, Jiacheng Yang. Path-level network transformation for efﬁcient
+architecture search. International Conference on Machine Learning (ICML), 2018.
+[4] Bowen Baker, Otkrist Gupta, Ramesh Raskar, and Nikhil Naik. Practical neural network performance prediction
+for early stopping. arXiv preprint 1705.10823, 2017.
+[5] Sam Shleifer and Eric Prokop. Proxy datasets for training convolutional neural networks. arXiv preprint
+1906.04887, 2019.
+[6] Sam Shleifer and Eric Prokop. Using small proxy datasets to accelerate hyperparameter search. arXiv preprint
+1906.04887, 2019.
+[7] Boyang Deng, Junjie Yan, and Dahua Lin. Peephole: Predicting network performance before training. arXiv
+prerint 1712.03351, 2017.
+[8] Roxana Istrate, Florian Scheidegger, Giovanni Mariani, Dimitrios S. Nikolopoulos, Costas Bekas, and A. Cris-
+tiano I. Malossi. TAPAS: train-less accuracy predictor for architecture search. arXiv preprint 1806.00250,
+2018.
+
+6
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+[9] Xiaoliang Dai, Peizhao Zhang, Bichen Wu, Hongxu Yin, Fei Sun, Yanghan Wang, Marat Dukhan, Yunqing Hu,
+Yiming Wu, Yangqing Jia, Peter Vajda, Matt Uyttendaele, and Niraj K. Jha. ChamNet: towards efﬁcient network
+design through platform-aware model adaptation. Computer Vision and Pattern Recognition, 2019.
+[10] Yiming Yang Hanxiao Liu, Karen Simonyan. DARTS: differentiable architecture search. arXiv preprint
+arXiv:1806.09055, 2018.
+[11] Bichen Wu, Xiaoliang Dai, Peizhao Zhang, Yanghan Wang, Fei Sun, Yiming Wu, Yuandong Tian, Peter Vajda,
+Yangqing Jia, and Kurt Keutzer. FBNet: hardware-aware efﬁcient convnet design via differentiable neural
+architecture search. Computer Vision and Pattern Recognition, 2019.
+[12] Song Han Han Cai, Ligeng Zhu. ProxylessNas: direct neural architecture search on target task and hardware.
+International Conference on Learning Representations (ICLR), 2019.
+[13] James M Ritchie Nick Weston Andrew Brock, Theodore Lim. Smash: one-shot model architecture search through
+hypernetworks. International Conference on Learning Representations (ICLR), 2018.
+[14] Shaoqing Ren Jian Sun Kaiming He, Xiangyu Zhang. Identity mappings in deep residual networks. ECCV, 2016.
+[15] Alex Krizhevsky. Learning multiple layers of features from tiny images. Technical Report, 2009.
+
+7
+
+

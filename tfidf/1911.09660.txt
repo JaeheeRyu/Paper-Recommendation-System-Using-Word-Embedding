@@ -1,0 +1,877 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+M
+
+.
+
+t
+
+a
+
+t
+
+s
+
+[
+
+1
+v
+0
+6
+6
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+E ST IMAT ING UNCERTA IN TY O F EARTHQUAK E RU P TUR E U S ING
+
+BAYE S IAN N EURA L N ETWORK
+
+A PR E PR IN T
+
+Sabber Ahamed
+
+sabbers@gmail.com
+
+November 22, 2019
+
+AB STRACT
+
+Bayesian neural networks (BNN) are the probabilistic model that combines the strengths of both
+
+neural network (NN) and stochastic processes. As a result, BNN can combat overﬁtting and perform
+
+well in applications where data is limited. Earthquake rupture study is such a problem where data is
+
+insufﬁcient, and scientists have to rely on many trial and error numerical or physical models. Lack of
+
+resources and computational expenses, often, it becomes hard to determine the reasons behind the
+
+earthquake rupture. In this work, a BNN has been used (1) to combat the small data problem and
+
+(2) to ﬁnd out the parameter combinations responsible for earthquake rupture and (3) to estimate
+
+the uncertainty associated with earthquake rupture. Two thousand rupture simulations are used to
+
+train and test the model. A simple 2D rupture geometry is considered where the fault has a Gaussian
+
+geometric heterogeneity at the center, and eight parameters vary in each simulation. The test F1-score
+
+of BNN (0.8334), which is 2.34% higher than plain NN score. Results show that the parameters of
+
+rupture propagation have higher uncertainty than the rupture arrest. Normal stresses play a vital role
+
+in determining rupture propagation and are also the highest source of uncertainty, followed by the
+
+dynamic friction coefﬁcient. Shear stress has a moderate role, whereas the geometric features such as
+
+the width and height of the fault are least signiﬁcant and uncertain.
+
+Keywords Earthquake · Bayesian Neural network · Rupture simulation · Variational inference
+
+1
+
+Introduction
+
+Hazards due to earthquakes are a threat to economic losses and human life worldwide. The type of hazards depends
+
+on the strength of the earthquake, local topography, built structures, and subsurface geology. A large earthquake
+
+produces high-intensity ground motion that causes damage to structures like buildings, bridges, and dams and takes
+
+ 
+ 
+ 
+ 
+ 
+ 
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+many lives. Seismic hazard analysis (SHA) is the process to estimate the risk associated with these damages. SHA
+
+requires historical earthquakes information and detailed geological data, but unfortunately, we lack detailed surface and
+
+subsurface geologic information. Consequently, this leads to uncertainty in hazard estimation.
+
+Numerical or physical models, on the other hand, can be used to generate synthetic data that supplement existing data.
+
+However, these models based studies like dynamic earthquake rupture simulations need initial information of the fault
+
+and the surrounding region. Such initial data can include the stress-state, frictional, and material properties of the fault.
+
+However, the parameters are also not well constrained and not always available [Duan and Oglesby, 2006, Peyrat et al.,
+
+2001, Ripperger et al., 2008, Kame et al., 2003]. Since earthquake rupture is a highly nonlinear process, determining
+
+the right parameter combinations is essential for the right simulation. Different initial conditions may lead to different
+
+results; therefore, we may not capture the real scenario of an actual earthquake rupture. The parameter combinations
+
+are often determined by making simplifying assumptions or taking a trial and error approach, which is computationally
+
+expensive [Douilly et al., 2015, Ripperger et al., 2008, Peyrat et al., 2001]. Therefore, high computational costs limit
+
+the applicability of the simulations to integrate into seismic hazard analysis.
+
+In recent years, machine learning (ML) approaches have been successfully used to solve many geophysical problems
+
+that have limited data and involve computational expense. For example, Ahamed and Daub [2019] developed a neural
+
+network and random forest algorithms to predict if an earthquake can break through a fault with geometric heterogeneity.
+
+The authors used only 1600 rupture simulations data points for developing a neural network and random forest models.
+
+The authors were able to extract different patterns of the parameter responsible for earthquake rupture. The authors ﬁnd
+
+that the models can predict rupture status within a fraction of a second, which is a signiﬁcant improvement where a
+
+single simulation takes about two hours of wall-clock time on eight processors.
+
+ML are also used in seismic event detection [Rouet-Leduc et al., 2017], earthquake detection [Perol et al., 2018],
+
+identifying faults from unprocessed raw seismic data [Last et al., 2016] and to predict broadband earthquake ground
+
+motions from 3D physics-based numerical simulations [Paolucci et al., 2018]. All the examples show that the potential
+
+of ML to solve many unsolved earthquake problems.
+
+The generalization of a machine learning model usually depends on the quality and the amount of data. A bad quality or
+
+small amount of data may increase the uncertainty associated with each prediction [Hoeting et al., 1999, Blei et al.,
+
+2017, Gal et al., 2017]. Prediction uncertainty estimation is vital in many applications: diseases detection [Leibig et al.,
+
+2017, Liu et al., 2018, Nair et al., 2019], autonomous vehicle driving [Kendall et al., 2015, McAllister et al., 2017,
+
+Burton et al., 2017], and estimating risk [Hoeting et al., 1999, Tong and Koller, 2001, Uusitalo, 2007]. Therefore,
+
+calculating uncertainty is also equally crucial as improving the model accuracy. All of the ML-based earthquake studies
+
+mentioned above avoid prediction uncertainty estimation.
+
+To overcome the problem of insufﬁcient data of earthquake rupture, I extend the work of Ahamed and Daub [2019]
+
+using the Bayesian neural network. Unless plain neural network, BNN works better with a small amount of data and
+
+provide prediction uncertainty. In this paper, I describe a workﬂow of (1) developing BNN, (2) estimating prediction
+
+2
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+uncertainty, and (3) ﬁnding parameter combinations responsible for rupture. Identifying the source of uncertainty is
+
+vital to understand the physics of earthquake rupture and estimate seismic risk. I also describe a technique that combines
+
+BNN and permutation importance to ﬁnd the source of uncertainty.
+
+2 Rupture simulations and data processing
+
+Figure 1: (a) The schematic diagram shows a zoomed view of the two-dimensional fault geometry. The domain is
+32 km long along the strike of the fault and 24 kilometers wide across the fault. The rupture starts to nucleate 10 km
+to the left of the barrier and propagates from the hypocenter towards the barrier, (b) Linear slip-weakening friction
+law for an earthquake fault. The fault begins to slip when the shear stress reaches or exceeds the peak strength of τs .
+τs decreases linearly with slip to a constant dynamic friction τd over critical slip distance (dc ). The shear strength is
+linearly proportional to the normal stress σn , and the friction coefﬁcient varies with slip between µs and µd .
+
+Two thousand of earthquake rupture simulations were used in this work created by Ahamed and Daub [2019]. The
+
+simulations two-dimensional rupture illustrated in ﬁgure. 1. The domain is 32 km long and 24 km wide. Figure 1a
+
+shows the zoomed view of the original domain for better visualization of the fault barrier. Simulations were created
+
+using fdfault [Daub, 2017], which is a ﬁnite difference code for numerical simulation of elastodynamic fracture
+
+and friction problems. The code solves the elastodynamic wave equation coupled to a friction law describing the
+
+failure process. In each simulation, fault slip is calculated based on the initial stress conditions, the elastodynamic
+
+wave equations, and frictional failure on that fault. The fault has a Gaussian geometric heterogeneity at the center.
+
+Rupture is nucleated 10 km to the left of the barrier and propagates towards the barrier. The linear slip-weakening
+
+law determines the strength of the fault (ﬁgure. 1b). The fault starts to break when the shear stress (τ ) exceeds the
+peak strength τs = µsσn , where µs and σn are the static friction coefﬁcient and normal stress, respectively. Over a
+critical slip distance dc , the friction coefﬁcient reduces linearly to constant dynamic friction µd . In each simulations,
+eight parameters are varied: x and y components of normal stresses (sxx and syy), shear stress (sxy), dynamic friction
+coefﬁcient, friction drop (µs − µd ), critical slip distance (dc ), and width and height of the fault.
+One thousand six hundred simulations are used to train, and the remaining 400 are used to test the model. The training
+
+dataset has an imbalance class proportion of ruptures arrest (65%) and ruptures propagation (35%). To avoid the biases
+
+3
+
+NucleationStarts hereDistance along strike (km)Distance across fault (km)081624321.00.50.0-0.5-1.0Shear StressSlipτs = µsσnτd = µdσndc = Critical slip distancex-axisy-axis(a) Rupture domain(b) Slip weakening lawFault barrierA PR E PR IN T - NOV EMB ER 22 , 2019
+
+toward rupture arrest, I upsampled the rupture propagation examples. Before training, all the data were normalized by
+
+subtracting mean and dividing by standard deviation.
+
+3 Neural network (NN)
+
+Neural networks are computing systems inspired by how neurons are connected in the brain [Rosenblatt, 1958]. Several
+
+nodes are interconnected and organized in layers in a neural network. Each node is also known as a neuron. A layer can
+
+be connected to an arbitrary number of hidden layers of arbitrary size. However, increasing the number of hidden layers
+
+not always improve the performance but may force the model to generalize well on the training data but unseen (test)
+
+data, which is also known as overﬁtting [Hinton et al., 2012, Lawrence and Giles, 2000, Lawrence et al., 1997]. As
+
+a result, selecting the number of layers and nodes in each layer is one of the challenges of using neural networks in
+
+practice.
+
+4 Bayesian Neural network (BNN)
+
+Figure 2: The schematic diagram shows the architecture of the Bayesian neural network used in this work. The network
+has one input layer with eight parameters, one hidden layer with twelve nodes, and an output layer with a single node.
+Weights between input and hidden layers are deﬁned by w0
+ij , which are normally distributed. i, j are the node input and
+hidden layer node index. Similarly, w1
+jk is the normal distribution of weights between the hidden and the output layer.
+µ and σ are the mean and standard deviation, respectively. At the output node, the network produces a distribution of
+prediction scores between 0 and 1.
+
+In a traditional neural network, weights are assigned as a single value or point estimate, whereas in BNN, weights are
+
+considered as a probability distribution. These probability distributions of network weights are used to estimate the
+
+4
+
+yixiInputw0ij ~N(µ, σ)w1ij~N(µ, σ)A PR E PR IN T - NOV EMB ER 22 , 2019
+
+uncertainty in weights and predictions. Figure 2 shows a schematic diagram of a BNN where weights are normally
+
+distributed. The posterior of the weights are calculated using Bayes theorem as:
+
+P (W |X) =
+
+P (X|W )P (W )
+P (X)
+
+(1)
+
+Where, X is the data, P (X|W ) is the likelihood of observing X, given weights (W ), P (W ) is the prior belief of the
+weights, and the denominator P (X) is the probability of data which is also known as evidence. It requires integrating
+over all possible values of the weights as:
+
+(cid:90)
+
+(cid:90)
+
+5
+
+P (X) =
+
+P (X|W )P (W )dW.
+
+(2)
+
+Integrating all over the indeﬁnite weights in evidence makes it hard to ﬁnd a closed-form analytical solution. As a
+
+result, simulation or numerical based alternative approaches such as Monte Carlo Markov chain (MCMC), variational
+
+inference(VI) are considered. MCMC sampling has been the vital inference method in modern Bayesian statistics.
+
+Scientists widely studied and applied in many applications. However, the technique is slow for large datasets or complex
+
+models. Variational inference (VI), on the other hand, is faster than other methods. It has also been applied to solve
+
+many large scale computationally expensive neuroscience and computer vision problems [Blei et al., 2017].
+
+In VI, a new distribution Q(W |θ) is considered that approximates the true posterior P (W |X). Q(W |θ) is parameterized
+by θ over W and VI ﬁnds the right set of θ that minimizes the divergence of two distributions through optimization:
+
+Q∗ (W ) = argmin
+
+θ
+
+KL [Q(W |θ)||P (W |X)]
+
+(3)
+
+In the above equation-3, KL or Kullback–Leibler divergence is a non-symmetric and information theoretic measure of
+similarity (relative entropy) between true and approximated distributions [Kullback, 1997]. The KL-divergence between
+Q(W |θ) and P (W |X) is deﬁned as:
+
+KL [Q(W |θ)||P (W |X)] =
+
+Replacing the P (W |X) using equation-1 we get:
+
+Q(W |θ) log
+
+Q(W |θ)
+P (W |X)
+
+dW
+
+(4)
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+(cid:90)
+(cid:90)
+(cid:90)
+
+KL [Q(W |θ)||P (W |X)] =
+=
+
+=
+
+dW
+
+Q(W |θ)P (X)
+Q(W |θ) log
+P (X|W )P (W )
+Q(W |θ) [log Q(W |θ)P (X) − log P (X|W )P (W )] dW
+Q(W |θ) log
+Q(W |θ)
+dW +
+Q(W |θ) log P (X)dW −
+P (W )
+
+(cid:90)
+
+(cid:90)
+
+(5)
+
+(6)
+
+Q(W |θ) log P (X|W )dW
+
+Taking the expectation with respect to Q(W |θ), we get:
+
+(cid:20)
+
+KL [Q(W |θ)||P (W |X)] = E
+
+log
+
+Q(W |θ)
+P (W )
+
+(cid:21)
+
++ log P (X) − E [log P (X|W )]
+
+(7)
+
+(8)
+
+The above equation still shows the dependency of log P (X) that makes difﬁcult KL to compute. An alternative objective
+function is therefore, derived by adding log P (X) with negative KL divergence. log P (X) is a constant with respect to
+Q(W |θ). The new function is called as the evidence of lower bound (ELBO) and expressed as:
+
+(cid:20)
+
+(cid:21)
+
+ELBO(Q) = E [log P (X|W )] − E
+Q(W |θ)
+log
+P (W )
+= E [log P (X|W )] − K L [Q(W |θ)||P (W |X)]
+
+(9)
+
+(10)
+
+The ﬁrst term is called likelihood, and the second term is the negative KL divergence between a variational distribution
+
+and prior weight distribution. Therefore, ELBO balances between the likelihood and the prior. The ELBO objective
+
+function can be optimized to minimize the KL divergence using different optimizing algorithms like gradient descent.
+
+5 Train the BNN
+
+The BNN has the same NN architecture used in Ahamed and Daub [2019] to compare the performance between them. If
+
+BNN performs better than that of NN or has similar performance, BNN provides an additional advantage of prediction
+
+uncertainty. Like NN, BNN has one input layer with eight parameters, one hidden layer with twelve nodes and one
+
+output layer (Figure 2). A nonlinear activation function ReLu [Hahnloser et al., 2000] is used at the hidden layer. ReLu
+
+passes all the values greater than zero and sets any negative output to be zero. Output layer uses sigmoid activation
+
+function, which converts the outputs zero and one.
+
+Prior weights and biases are normally distributed with zero mean and one standard deviation. Figure 3 shows the log
+density of prior and posterior weights (wk
+ij ) and biases (bk
+j ). i and j are the index of the input and hidden layer nodes. i
+ranges from 0 to 7, and j ranges from 0 to 11. k is the index that maps two layers. As an example, w0
+15 is the weight
+
+6
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+between the ﬁrst input node and the ﬁfth hidden node. The output node of the last layer produces a distribution of
+
+prediction scores between 0 and 1. The prediction distributions are used to compute standard deviation, which is the
+
+uncertainty metric.
+
+Adam optimization (extension of stochastic gradient descent) is used to minimize the KL divergence by ﬁnding a
+
+suitable variational parameter θ . The initial learning rate is 0.5, which exponentially decays as the training progresses.
+
+To train the network I use Edward [Tran et al., 2016, 2017], TensoFlow [Abadi et al., 2015] and Scikit-learn [Pe-
+
+dregosa et al., 2011]. Edward is a Python-based Bayesian deep learning library for probabilistic modeling, inference,
+
+and criticism. All the training data, codes, and the corresponding visualizations can be found on the project Github
+
+repository: https://github.com/msahamed/earthquake_physics_bayesian_nn
+
+5.1 Prior and posterioir weight distribution
+
+Figure 3: The graph shows the distribution of prior and posterior mean weights (a) w0 (b) w1 and biases (c) b0 (d) b1 .
+Both location of the mean and magnitude of density of the posterior distributions (weights and biases) are noticeably
+different from the priors which indicates that BNN has learned from the data and adjusted the posterior accordingly.
+
+To evaluate the model, 1000 posterior samples of w0
+
+jk , b0 and b1 are used. Figure 3 shows the prior and posterior
+distribution of mean weight and biases. Posterior location of mean and magnitude of the density of the weights and
+
+ij , w1
+
+biases are different from their priors. For example, the location of w0 shifts toward non-negative value, while the
+
+density remains similar. Whereas, the w1 , b0 , and b1 have a different posterior mean location and density than their
+
+prior. The differences between prior and posterior indicate that the BNN has learned from the data and adjusted the
+
+posterior distribution accordingly.
+
+7
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+5.2 BNN classiﬁcation result
+
+The performance of the BNN is evaluated using 400 test simulations. Since 1000 posterior samples are used, the BNN
+
+is able to produce 100 prediction scores for a given example. The scores are then used to determine the prediction
+
+class and associated uncertainty (standard deviation). To determine the proper class of the examples, the ﬁrst mean
+
+prediction score is calculated from the 1000 prediction scores for each example. Then an optimal threshold is computed
+
+that maximizes the model F-1 score (0.54). If the mean prediction score of an example is greater or equal to the optimal
+
+threshold, then the earthquake is classiﬁed as propagated, and otherwise, arrested. Uncertainty is the standard deviation
+
+of the prediction scores. F-1 score is the harmonic mean of the true positive rate and precision of the model. Table 1
+
+shows the confusion matrix that contains information about actual and predicted classiﬁcations. The test accuracy of
+
+the BNN is 83.34%, which is 2.34% higher than NN. BNN also reduces the four false positives (FP) and three false
+
+negatives (FN). Table 2 shows the detail classiﬁcation report of the model performance. The results imply that BNN has
+
+the potential to improve performance. Since BNN produces distributions of score rather than a point estimation, BNN
+
+can better generalize the unseen data and thus help reduce overﬁtting.
+
+Table 1: Confusion matrix of 400 test data
+Actual propagated Actual arrested
+TN = 226
+FN = 46
+FP = 22
+TP = 106
+
+Predicted propagated
+Predicted arrested
+
+Class
+Rupture arrested
+Rupture propagated
+Average/Total
+
+Table 2: Classiﬁcation resultsof 400 test data
+Precision Recall
+F1 score
+0.91
+0.83
+0.87
+0.70
+0.83
+0.76
+0.84
+0.83
+0.83
+
+support
+272
+128
+400
+
+6 Uncertainity analysis
+
+Uncertainty analysis helps make a better decision and to estimate risk accurately. In the following subsection, I discuss
+
+different types of uncertainties (network uncertainty, prediction uncertainty, and feature uncertainty) estimated from
+
+BNN and their implication on the underlying causes for an earthquake rupture. I also discuss how uncertainty can help
+
+us understand physics and ﬁnd the parameter combinations responsible for an earthquake rupture.
+
+6.1 Network uncertainity
+
+Estimating the uncertainty of neural network parameters (weights) helps us understand the behavior of the black box.
+
+The illustration in Figure 4 shows the mean and standard deviation of W 0 and W 1 . W 0 maps the inputs to the hidden
+
+layer nodes, whereas W 1 maps the output node of the output layer to the nodes of the hidden layer. The colors in each
+
+cell indicate the magnitude of a weight that connects two nodes. In the input and hidden layer, the ReLu activation
+
+function is used. ReLu passes all the positive output while setting negative output as zero. At the output layer, sigmoid
+
+8
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+Figure 4: The illustration shows the posterior mean and standard deviations of w0 and w1 . (a) w0 that map the inputs
+to the nodes of the hidden layer. The eight input parameters and the twelve nodes are on the horizontal and vertical
+scale, respectively. The colors in each cell are the magnitudes of mean weight. (b) w1 maps the hidden layer to the
+output layer. (c) The standard deviation of w0 . Shear stress connected to the node-4 of the hidden layer has the highest
+uncertainty. Similarly, the weights associated with the input parameters and the node-5 have high uncertainty as well.
+Whereas, the weights associated with the input parameters and the nodes 7-11 have relatively low uncertainty. (d)
+Uncertainty of the weights associated with the hidden layer nodes and the output node. Weights in Node-8 and 7 have
+high uncertainty while the rest of the weights have relatively low uncertainty.
+
+activation is used, which pushes the larger weights toward one and smaller or negative weights toward zero. Therefore,
+
+Positive and high magnitude of weights contributes toward the earthquake rupture and vice versa.
+
+An interesting observation is that when nodes in the hidden layer connects to friction drop, dynamic friction, shear, and
+
+normal stresses have variable positive and negative weights in w0 , the corresponding node in w1 have either strongly
+
+positive or negative. For example, node-12 has both positive and negative weights in w0 , and the corresponding node
+
+in w1 has a high positive weight. Similarly, node-4 has a substantial negative weight in w1 , and the corresponding
+nodes in w0 have both positive and negative weights. On the other hand, width, height, and dc have a similar magnitude
+of weights, and the corresponding nodes in w1 have a moderate magnitude of weights. Thus the variable weights
+
+make friction drop, dynamic friction, shear, and normal stresses inﬂuential on the prediction score. Therefore, for any
+
+combined patterns of the input features, we now can detect the important features and the source uncertainties.
+
+For example, node-10 of w1 has positive weight (Figure 4b). In w0 , the corresponding connecting input features,
+
+friction drop, and shear stress have positive weight and low uncertainty, whereas the rest of the features have a similar
+
+magnitude of weight. The combination of high friction drop and shear stress weight and low rest of the feature weight
+
+increase the prediction score, thus likely to cause rupture to propagate. Friction drop and normal stress also have high
+
+uncertainty (Figure 4c). For this combination of patterns, friction drops and normal stress inﬂuences the prediction
+
+strongly and are also the sources of uncertainty. Thus it gives us the ability to investigate any rupture propagation
+
+example in terms of uncertainty.
+
+9
+
+HeightWidthsxxsxysyyDynamicFricFricDropdc123456789101112HiddenUnits(a)Meanofw0−2−1012OutputUnit123456789101112(b)Meanofw1−3.0−1.50.01.53.0HeightWidthsxxsxysyyDynamicFricFricDropdc123456789101112HiddenUnits(c)Std.ofw00.60.81.01.21.4OutputUnit123456789101112(d)Std.ofw10.51.01.52.02.5A PR E PR IN T - NOV EMB ER 22 , 2019
+
+Figure 5: The graph shows (a) frequency and (b) standard deviation of posterior prediction scores of the test data.
+Prediction scores are skewed toward the left side while slightly less on the right. The observation is consistent with the
+proportion of the rupture arrest (272) and rupture propagation (120) in the test data. Prediction scores close to zero are
+related to rupture arrest, and scores around one are the rupture propagation. Standard deviations are high with scores
+around 0.5.
+
+6.2 Prediction uncertainity
+
+Figure 5a and b show the frequency and standard deviation of test data prediction scores. The distribution is more
+
+skewed toward smaller scores than the higher ones. Scores close to zero are associated with rupture arrest, whereas the
+
+scores close to one are rupture propagations. The observation is consistent with the class proportion of the test data.
+
+Rupture arrest has a higher number of examples (272) than rupture propagation (120). Figure 5a shows that scores
+
+roughly between 0.35 and 0.75 have a fewer number of examples and have high uncertainty. The likely reason for the
+
+high uncertainty is that the examples have both rupture propagation and arrest properties. As a result, the model gets
+
+confused to classify the example correctly; thus, the misclassiﬁcation rate is high in this region. The performance of the
+
+network could be improved if sufﬁcient similar example data are added to the training dataset.
+
+6.3 Feature uncertainity
+
+Figure 6: The illustration shows (a) permutation feature importyance and (b) their uncertanitities.
+
+I use the permutation importance method to determine the source of uncertainty of the test data. Permutation impor-
+
+tance is a model agnostic method that measures the inﬂuencing capacity of a feature by shufﬂing it and measuring
+
+10
+
+0.00.20.40.60.81.0PredictionProbabilities020406080Frequency(a)Frequencyofpredictionscores0.00.20.40.60.81.0PredictionProbabilities0.00.20.4Standarddeviation(b)StandarddeviationofpredictionscoressxxsyymudheightsdropsxydcwidthFeatures−0.06−0.04−0.020.00DeviationofF1score(a)PermutationfeatureimportancesyymudsxxsdropsxyheightdcwidthFeatures0.000.050.100.150.20Uncertainity(b)UncertainityoffeaturesRuptureArrestA PR E PR IN T - NOV EMB ER 22 , 2019
+
+corresponding global performance deviation. If a feature is a good predictor, then altering its values will result in a
+
+signiﬁcant reduction in a model’s global performance. The shufﬂed feature with the highest performance deviation is
+
+the most important and vice versa. In this work, F-1 score the performance measuring metric.
+
+Figure 6(a) shows the permutation importance of all the features. Normal stresses (sxx and syy) have the highest F-1
+
+score deviation, which is approximate 7% less than the base performance, followed by the dynamic friction coefﬁcient.
+
+Geometric feature width has the least contribution role to determine the earthquake rupture. These observations are
+
+consistent with the observation of Ahamed and Daub [2019], where the authors rank the features based on the random
+
+forest feature importance algorithm.
+
+Since BNN produces a distribution of prediction scores, it can compute the standard deviation (uncertainty) for each
+
+shufﬂed feature. Figure 6(b) shows the uncertainty of each feature of earthquake rupture propagates and arrest class.
+
+All features have higher uncertainty in the rupture propagation class compare to the rupture arrest. In both classes, the
+major portion of uncertainty comes from normal stresses. Shear stress, height, width, and critical distance (dc ) have a
+similar amount of uncertainty in both of the classes. The dynamic friction coefﬁcient and friction drop are also the
+
+comparable uncertainty source in rupture to propagate while it is slightly less in earthquake arrest.
+
+The above observations imply that normal stress and friction parameters have a greater role in determining the earthquake
+
+rupture the local fault surface. Although the height and width of a fault are not a signiﬁcant source of uncertainty, they
+
+play a stronger role in inﬂuencing the other features. For example, in a complex rough fault, the variation of the bending
+
+angle of barriers affects stress perturbation, consequently increases the uncertainties. If the angle near the bend is sharp,
+
+the variation in traction at the releasing and restraining bend is more prominent. Whereas if the barrier is broad, the
+
+stress perturbation at the restraining and releasing bend is less noticeable. Chester and Chester [2000] ﬁnd a similar
+
+observation that fault geometry impacts the orientation and magnitude of principal stress.
+
+7 Discussion and conclusion
+
+In recent years, deep learning has been used to solve many real-life problems and achieves state of the art performance.
+
+For example, face recognition, language translation, self-driving cars, disease identiﬁcation, and many more. Many of
+
+such successful application requires millions of data points to train the model to achieve a state of the art performance.
+
+However, many applications are limited to data. Therefore, it has been a barrier to use deep learning to solve many
+
+other real-life problems like earthquake rupture. A Bayesian neural network, on the other hand, can perform well and
+
+achieve excellent performance even in the small dataset.
+
+In the wok, I use a Bayesian neural network to combat the small data problem and to estimate the uncertainty in
+
+earthquake rupture. Two thousand rupture simulations generated by Ahamed and Daub [2019] are used to train and test
+
+the model. Each 2D simulation has a fault with a Gaussian geometric heterogeneity at the center. Eight fault parameters
+
+normal shear stress, height, and width of the fault, stress drop, dynamic friction coefﬁcient, critical distance vary in
+
+11
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+each simulation. 1600 simulations are used to train the BNN, and 400 of them are used to test the generalization of the
+
+model. The BNN has the same architecture as of NN of Ahamed and Daub [2019].
+
+The test F1 score is 0.8334, which is 2.34% higher than NN. All the features have a higher uncertainty in rupture
+
+propagation than the rupture arrest. The highest sources of uncertainty come from normal stresses, followed by the
+
+dynamic friction coefﬁcient. Therefore, these features have a higher inﬂuencing capacity in determining the prediction
+
+score. Shear stress has a moderate role, but the geometric features such as the width and height of the fault are least
+
+signiﬁcant in determining rupture. Test examples with prediction scores around 0.5 have a higher uncertainty than those
+
+with low (0-0.30) and high (0.7-1.0) prediction scores. Cases with prediction scores around 0.5 have mixed properties
+
+of rupture propagation and arrest.
+
+References
+
+Benchun Duan and David D. Oglesby. Heterogeneous fault stresses from previous earthquakes and the effect on
+dynamics of parallel strike-slip faults. Journal of Geophysical Research: Solid Earth, 111(5), 2006. ISSN 21699356.
+
+doi: 10.1029/2005JB004138.
+
+Sophie Peyrat, Kim Olsen, and Raúl Madariaga. Dynamic modeling of the 1992 Landers earthquake. Journal of
+Geophysical Research: Solid Earth (1978–2012), 106(B11):26467–26482, 2001.
+
+J Ripperger, PM Mai, and J-P Ampuero. Variability of near-ﬁeld ground motion from dynamic earthquake rupture
+simulations. Bulletin of the seismological society of America, 98(3):1207–1228, 2008.
+
+Nobuki Kame, James R Rice, and Renata Dmowska. Effects of prestress state and rupture velocity on dynamic fault
+branching. Journal of Geophysical Research: Solid Earth (1978–2012), 108(B5), 2003.
+
+R Douilly, H Aochi, E Calais, and AM Freed. 3D dynamic rupture simulations across interacting faults: The Mw 7.0,
+2010, Haiti earthquake. Journal of Geophysical Research: Solid Earth, 2015.
+
+Sabber Ahamed and Eric G Daub. Machine learning approach to earthquake rupture dynamics. arXiv preprint
+arXiv:1906.06250, 2019.
+
+Bertrand Rouet-Leduc, Claudia Hulbert, Nicholas Lubbers, Kipton Barros, Colin J. Humphreys, and Paul A. Johnson.
+Machine learning predicts laboratory earthquakes. Geophysical Research Letters, 2017. ISSN 1944-8007. doi:
+
+10.1002/2017GL074677. URL http://dx.doi.org/10.1002/2017GL074677. 2017GL074677.
+
+Thibaut Perol, Michaël Gharbi, and Marine Denolle. Convolutional neural network for earthquake detection and
+location. Science Advances, 4(2):e1700578, 2018.
+
+Mark Last, Nitzan Rabinowitz, and Gideon Leonard. Predicting the maximum earthquake magnitude from seismic data
+in Israel and its neighboring countries. PloS one, 11(1):e0146101, 2016.
+
+12
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+Roberto Paolucci, Filippo Gatti, Maria Infantino, Chiara Smerzini, Ali Güney Özcebe, and Marco Stupazzini. Broadband
+ground motions from 3D physics-based numerical simulations using artiﬁcial neural networks. Bulletin of the
+Seismological Society of America, 108(3A):1272–1286, 2018.
+
+Jennifer A Hoeting, David Madigan, Adrian E Raftery, and Chris T Volinsky. Bayesian model averaging: a tutorial.
+Statistical science, pages 382–401, 1999.
+
+David M Blei, Alp Kucukelbir, and Jon D McAuliffe. Variational inference: A review for statisticians. Journal of the
+American Statistical Association, 112(518):859–877, 2017.
+
+Yarin Gal, Riashat Islam, and Zoubin Ghahramani. Deep bayesian active learning with image data. In Proceedings of
+the 34th International Conference on Machine Learning-Volume 70, pages 1183–1192. JMLR. org, 2017.
+
+Christian Leibig, Vaneeda Allken, Murat Seçkin Ayhan, Philipp Berens, and Siegfried Wahl. Leveraging uncertainty
+information from deep neural networks for disease detection. Scientiﬁc reports, 7(1):17816, 2017.
+
+Fang Liu, Zhaoye Zhou, Alexey Samsonov, Donna Blankenbaker, Will Larison, Andrew Kanarek, Kevin Lian,
+
+Shivkumar Kambhampati, and Richard Kijowski. Deep learning approach for evaluating knee mr images: achieving
+high diagnostic performance for cartilage lesion detection. Radiology, 289(1):160–169, 2018.
+
+Tanya Nair, Doina Precup, Douglas L Arnold, and Tal Arbel. Exploring uncertainty measures in deep networks for
+multiple sclerosis lesion detection and segmentation. Medical Image Analysis, page 101557, 2019.
+
+Alex Kendall, Vijay Badrinarayanan, and Roberto Cipolla. Bayesian segnet: Model uncertainty in deep convolutional
+encoder-decoder architectures for scene understanding. arXiv preprint arXiv:1511.02680, 2015.
+
+Rowan McAllister, Yarin Gal, Alex Kendall, Mark Van Der Wilk, Amar Shah, Roberto Cipolla, and Adrian Vivian
+
+Weller. Concrete problems for autonomous vehicle safety: Advantages of bayesian deep learning. International Joint
+
+Conferences on Artiﬁcial Intelligence, Inc., 2017.
+
+Simon Burton, Lydia Gauerhof, and Christian Heinzemann. Making the case for safety of machine learning in highly
+automated driving. In International Conference on Computer Safety, Reliability, and Security, pages 5–16. Springer,
+
+2017.
+
+Simon Tong and Daphne Koller. Active learning for parameter estimation in bayesian networks. In Advances in neural
+information processing systems, pages 647–653, 2001.
+
+Laura Uusitalo. Advantages and challenges of bayesian networks in environmental modelling. Ecological modelling,
+
+203(3-4):312–318, 2007.
+
+Eric G Daub. Finite difference code for earthquake faulting. https://github.com/egdaub/fdfault/commit/
+
+b74a11b71a790e4457818827a94b4b8d3aee7662, 2017.
+
+13
+
+A PR E PR IN T - NOV EMB ER 22 , 2019
+
+Frank Rosenblatt. The perceptron: A probabilistic model for information storage and organization in the brain.
+Psychological review, 65(6):386, 1958.
+
+Geoffrey E Hinton, Nitish Srivastava, Alex Krizhevsky, Ilya Sutskever, and Ruslan R Salakhutdinov. Improving neural
+networks by preventing co-adaptation of feature detectors. arXiv preprint arXiv:1207.0580, 2012.
+
+Steve Lawrence and C Lee Giles. Overﬁtting and neural networks: conjugate gradient and backpropagation. In Neural
+Networks, 2000. IJCNN 2000, Proceedings of the IEEE-INNS-ENNS International Joint Conference on, volume 1,
+
+pages 114–119. IEEE, 2000.
+
+Steve Lawrence, C Lee Giles, and Ah Chung Tsoi. Lessons in neural network training: Overﬁtting may be harder than
+expected. In AAAI/IAAI, pages 540–545, 1997.
+
+Solomon Kullback. Information theory and statistics. Courier Corporation, 1997.
+
+Richard HR Hahnloser, Rahul Sarpeshkar, Misha A Mahowald, Rodney J Douglas, and H Sebastian Seung. Digital
+selection and analogue ampliﬁcation coexist in a cortex-inspired silicon circuit. Nature, 405(6789):947, 2000.
+
+Dustin Tran, Alp Kucukelbir, Adji B. Dieng, Maja Rudolph, Dawen Liang, and David M. Blei. Edward: A library for
+probabilistic modeling, inference, and criticism. arXiv preprint arXiv:1610.09787, 2016.
+
+Dustin Tran, Matthew D. Hoffman, Rif A. Saurous, Eugene Brevdo, Kevin Murphy, and David M. Blei. Deep
+probabilistic programming. In International Conference on Learning Representations, 2017.
+
+Martín Abadi, Ashish Agarwal, Paul Barham, Eugene Brevdo, Zhifeng Chen, Craig Citro, Greg S. Corrado, Andy
+
+Davis, Jeffrey Dean, Matthieu Devin, Sanjay Ghemawat, Ian Goodfellow, Andrew Harp, Geoffrey Irving, Michael
+
+Isard, Yangqing Jia, Rafal Jozefowicz, Lukasz Kaiser, Manjunath Kudlur, Josh Levenberg, Dandelion Mané, Rajat
+
+Monga, Sherry Moore, Derek Murray, Chris Olah, Mike Schuster, Jonathon Shlens, Benoit Steiner, Ilya Sutskever,
+
+Kunal Talwar, Paul Tucker, Vincent Vanhoucke, Vijay Vasudevan, Fernanda Viégas, Oriol Vinyals, Pete Warden,
+
+Martin Wattenberg, Martin Wicke, Yuan Yu, and Xiaoqiang Zheng. TensorFlow: Large-scale machine learning on
+
+heterogeneous systems, 2015. URL https://www.tensorflow.org/. Software available from tensorﬂow.org.
+
+Fabian Pedregosa, Gaël Varoquaux, Alexandre Gramfort, Vincent Michel, Bertrand Thirion, Olivier Grisel, Mathieu
+Blondel, Peter Prettenhofer, Ron Weiss, Vincent Dubourg, et al. Scikit-learn: Machine learning in python. Journal of
+machine learning research, 12(Oct):2825–2830, 2011.
+
+Frederick M Chester and Judith S Chester. Stress and deformation along wavy frictional faults. Journal of Geophysical
+Research: Solid Earth, 105(B10):23421–23430, 2000.
+
+14
+
+

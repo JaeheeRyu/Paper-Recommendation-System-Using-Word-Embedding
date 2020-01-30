@@ -1,0 +1,1243 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+M
+
+.
+
+t
+
+a
+
+t
+
+s
+
+[
+
+2
+v
+9
+7
+0
+4
+0
+
+.
+
+9
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Building Calibrated Deep Models via Uncertainty Matching with Auxiliary
+Interval Predictors
+
+Jayaraman J. Thiagarajan† ∗ , Bindya Venkatesh‡ , Prasanna Sattigeri+ ,
+Peer-Timo Bremer†
+
+†Lawrence Livermore National Laboratory, ‡Arizona State University, + IBM Research AI
+jjayaram@llnl.gov, bindya.venkatesh@asu.edu, psattig@us.ibm.com, bremer5@llnl.gov
+
+Abstract
+
+With rapid adoption of deep learning in critical applications,
+the question of when and how much to trust these models of-
+ten arises, which drives the need to quantify the inherent un-
+certainties. While identifying all sources that account for the
+stochasticity of models is challenging, it is common to aug-
+ment predictions with conﬁdence intervals to convey the ex-
+pected variations in a model’s behavior. We require prediction
+intervals to be well-calibrated, reﬂect the true uncertainties,
+and to be sharp. However, existing techniques for obtaining
+prediction intervals are known to produce unsatisfactory re-
+sults in at least one of these criteria. To address this challenge,
+we develop a novel approach for building calibrated estima-
+tors. More speciﬁcally, we use separate models for predic-
+tion and interval estimation, and pose a bi-level optimization
+problem that allows the former to leverage estimates from the
+latter through an uncertainty matching strategy. Using experi-
+ments in regression, time-series forecasting, and object local-
+ization, we show that our approach achieves signiﬁcant im-
+provements over existing uncertainty quantiﬁcation methods,
+both in terms of model ﬁdelity and calibration error.
+
+Introduction
+
+Data-driven learning methods, in particular deep learning,
+have led to incredible advances in a wide variety of commer-
+cial AI applications, and are rapidly being adopted in high
+impact applications such as healthcare, autonomous driv-
+ing, and scientiﬁc discovery. Consequently, it has become
+critical to enable deep models to reliably assess their con-
+ﬁdence in scenarios different from the training regime and
+to verify that predictions arise from generalizable patterns
+rather than artifacts in the training data. In practice, a variety
+of sources including data sampling errors, model approxi-
+mations and the inherent data uncertainties can contribute
+to stochasticity in deep models (Gal 2016). Hence, captur-
+ing these uncertainties when making predictions can shed
+light onto when and how much to trust the results (Leibig
+et al. 2017a; Ching et al. 2018; Kendall and Gal 2017;
+
+∗This work was performed under the auspices of the U.S. De-
+partmentof Energy by Lawrence Livermore National Laboratory
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+under Contract DE-AC52-07NA27344.
+Intelligence (www.aaai.org). All rights reserved.
+
+Levasseur, Hezaveh, and Wechsler 2017). Furthermore, ac-
+curate uncertainty estimates are essential for solving a va-
+riety of practical machine learning challenges including
+knowledge transfer (Wen et al. 2019), active learning (Wang
+et al. 2016), and anomaly detection (Leibig et al. 2017b).
+In recent years, several classes of uncertainty estima-
+tion techniques have been proposed (Gal and Ghahramani
+2016; Gal, Hron, and Kendall 2017; Lakshminarayanan,
+Pritzel, and Blundell 2017; Ghahramani 2015). An inher-
+ent limitation of these uncertainty quantiﬁcation (UQ) tech-
+niques is the lack of suitable validation strategies. A typ-
+ical workaround is to evaluate prediction intervals (PIs)
+via their calibration, without distinguishing the uncertainty
+sources (Heskes 1997): A PI is well calibrated if the likeli-
+hood of true target falling in the interval is consistent with
+the conﬁdence level of the interval. In the context of cali-
+bration, most existing UQ methods in deep learning are not
+inherently calibrated (Kuleshov, Fenner, and Ermon 2018).
+In this paper, we argue that producing well-calibrated pre-
+diction intervals requires the identiﬁcation of informative
+and uninformative uncertainties. When a model is equally
+conﬁdent in all parts of the data space, the uncertainties are
+considered uninformative. In practice, it is typical to use an
+additional recalibration dataset to reﬁne the uncertainty es-
+timates. In contrast, we propose to effectively leverage the
+informative uncertainties from a model through the use of
+an auxiliary interval estimator that is exclusively optimized
+for the calibration objective, and a novel uncertainty match-
+ing process. More speciﬁcally, we use a primary network for
+producing mean estimates with prediction uncertainties and
+an auxiliary network for obtaining calibrated PIs, and for-
+mulate a bi-level optimization approach for jointly training
+the two networks. To this end, we develop two uncertainty
+matching strategies to leverage the intervals during the mean
+estimation process, namely Sigma Fit and IQR Fit. By incor-
+porating the calibration step into the training process, our
+method is able to produce predictive models with signiﬁ-
+cantly improved accuracy as well as better calibration.
+
+Contributions:
+
+• A novel framework to produce reliable prediction inter-
+vals in continuous-valued regression, that are sharp and
+
+ 
+ 
+ 
+ 
+ 
+ 
+well calibrated for any required conﬁdence level;
+• An approach to estimate means and prediction intervals
+as a bi-level optimization and an alternating optimization
+strategy for model inference;
+• A new regularization for estimating means along with pre-
+diction uncertainties based on uncertainty matching;
+• Two different uncertainty matching strategies, namely
+Sigma Fit and IQR Fit; and
+• A rigorous evaluation on different use-cases and model
+architectures including regression with FCNs, time-series
+forecasting with LSTMs and object localization with
+CNNs, all producing better generalization performance
+and calibration error compared to the state of the art.
+
+Related Work
+
+Broadly,
+there are two important sources of prediction
+uncertainties in deep models: epistemic uncertainty, also
+known as model uncertainty that can be eliminated given
+enough training data, and aleatoric uncertainty, which de-
+pends on stochasticity inherent to the data. A variety of es-
+timators have been proposed in the literature for measuring
+these uncertainties, most often with classiﬁcation models.
+For example, Bayesian neural nets (Blundell et al. 2015),
+Monte-Carlo dropout (Gal and Ghahramani 2016), concrete
+dropout (Gal, Hron, and Kendall 2017) and ensemble tech-
+niques (Lakshminarayanan, Pritzel, and Blundell 2017) are
+commonly utilized to estimate the epistemic uncertainties.
+On the other hand, Tagasovska et al. recently proposed a
+conditional quantile based estimator for measuring aleatoric
+uncertainties (Tagasovska and Lopez-Paz 2018).
+Due to the lack of suitable evaluation mechanisms for
+validating the quality of these estimates, it is common to
+utilize calibration as a quality metric. Interestingly, it has
+been reported in several studies that these estimators are not
+inherently calibrated (Kuleshov, Fenner, and Ermon 2018).
+Consequently, a large class of techniques that are aimed at
+calibrating pre-trained classiﬁers has been developed (Guo
+et al. 2017; Seo, Seo, and Han 2019; Nixon et al. 2019;
+Kuleshov and Liang 2015). In comparison, calibration for
+regression tasks has received limited attention (Gneiting
+and Raftery 2007; Kuleshov, Fenner, and Ermon 2018;
+Levi et al. 2019). For example, a two-stage recalibration
+technique was proposed in (Kuleshov, Fenner, and Ermon
+2018) which re-calibrates the PI estimates from the classi-
+ﬁer model. This approach requires sufﬁcient i.i.d. data to
+perform recalibration and can arbitrarily alter the true uncer-
+tainties to achieve the calibration objective (Levi et al. 2019).
+Another important limitation of recalibration methods is that
+they do not distinguish between informative and uninfor-
+mative uncertainties. In order to circumvent this challenge,
+recently, Levi et al. proposed to match the heteroscedas-
+tic variances to the residuals from the predictions (Levi et
+al. 2019), through a strategy similar to temperature scal-
+ing (Guo et al. 2017). In contrast, our approach attempts to
+utilize the informative uncertainties for producing calibrated
+intervals, through an auxiliary interval estimator model and
+a novel uncertainty matching strategy.
+
+Figure 1: An illustration of our approach to produce PI,
+for any speciﬁed conﬁdence α, and perform PI-regularized
+mean estimation via a bi-level optimization technique.
+
+Proposed Approach
+
+In this section, we describe the proposed approach (see Fig-
+ure 1) for building deep predictive models, which employs
+a novel uncertainty matching strategy to produce estimators
+that are both accurate and well-calibrated.
+Notations. Denoting the input data by x ⊂ X ∈ Rd , our
+goal is to build a predictive model F : x (cid:55)→ y, where
+y ⊂ Y ∈ R and an interval estimator I : x (cid:55)→ R2 . Here,
+X and Y indicate spaces of inputs and outputs respectively.
+Note, the model I produces δu and δ l , which denote widths
+of the interval in the positive/negative direction respectively,
+thus producing a total interval width w = δu + δ l . The mod-
+els F and I are described using parameters Θ and Φ respec-
+tively. A labeled dataset of N samples is comprised of tuples
+{(xi , yi )}, i = 1, · · · , N . We denote all estimated quanti-
+ties with a hat symbol, e.g. ˆy = F (x). Though our focus is
+on predicting continuous-valued outputs, the proposed tech-
+niques can be easily generalized to classiﬁcation problems.
+
+Formulation
+
+In this paper, we hypothesize that integrating the task of
+calibration into the predictive modeling process can pro-
+vide useful regularization to its optimization, thus producing
+higher ﬁdelity models that are also well-calibrated. To this
+end, our approach employs two separate models – one for
+predicting the target and the other for estimating the predic-
+tion intervals, and pose a bi-level optimization formulation
+that allows the mean estimator to identify prediction uncer-
+tainties that are the most informative for matching the inter-
+vals from the PI estimator. Let F (x; Θ) denote the mean es-
+timator and I (x; Φ∗ )denote the PI estimator parameterized
+by Θ and Φ respectively. The overall objective is
+
+LF (Θ; x, y, I (x; Φ∗ )) ,
+min
+s.t. Φ∗ = arg min
+LI (Φ; x, F (x; Θ)).
+
+Θ
+
+Φ
+
+(1)
+
+Here, the ﬁrst term represents an improved mean estimator
+that takes the intervals into account for identifying informa-
+tive uncertainties, and the second term exclusively optimizes
+for calibration, based on the current mean estimator. Intu-
+itively, the auxiliary task of obtaining prediction intervals,
+i.e., minimizing LI , is used to regularize the primary task
+of ﬁtting a predictive model by constraining its uncertainty
+
+Mean Estimation NetworkPrediction Interval (PI) Network(or)Training dataAlgorithm 1: Building calibrated deep predictive mod-
+els.
+Input: Labeled data {(xi , yi )}N
+i=1 , Desired calibration
+level α, Number of epochs nm and nc .
+Output: Trained mean and interval estimators F and I
+Initialization:Randomly initialize parameters Θ∗ , Φ∗ ;
+while not converged do
+for nm epochs do
+Compute intervals δu
+Compute loss function LF using Eq. (7) for
+Sigma Fit or Eq. (10) for IQR Fit ;
+
+i = I (xi ; Φ∗ ) ;
+i , δ l
+
+Update Θ∗ = arg minΘ LF ;
+
+for nc epochs do
+Obtain predictions ˆyi = F (xi ; Θ∗ ) ;
+Compute loss function LI using Eq. (5) ;
+
+Update Φ∗ = arg minΦ LI ;
+
+end
+
+end
+end
+
+optimize for parameters Θ. The F network is designed to
+predict the target along with uncertainty estimates, and the
+loss function LF is designed such that the ﬁdelity of the pre-
+dictions is measured with respect to the true targets, while
+the uncertainties are guided by the interval estimates from
+I . We ﬁnd that, by allowing the structure of estimated un-
+certainties to follow the pseudo-supervisory signal from I ,
+one can obtain higher quality estimates ˆy. Now, we explain
+the two proposed strategies for uncertainty matching.
+a. Sigma Fit: In this variant, the predictive model F is de-
+signed as a heteroscedastic neural network, i.e. it returns
+mean and variance estimates (ˆyi , ˆσ2
+i ) for a given sample xi ,
+and is optimized using the heteroscedastic loss (Gal 2016).
+Note that, this loss function is deﬁned by assuming the pre-
+dictions to follow a Gaussian distribution, and the estimated
+variances from the HNN can be used to estimate intervals
+for different levels of calibration α,
+
+PI = [ˆy − z(1−α)/2 ˆσ , ˆy + z(1−α)/2 ˆσ ],
+
+(6)
+where z indicates the z−score (i.e. z(1−α)/2 = 1.96, for
+95% calibration). We enforce the estimated ˆσ to match the
+appropriately scaled version of the interval width w , based
+on the calibration level achieved by I on the training dataset.
+Formally, the optimization objective can be written as:
+
+estimates to match the estimated intervals. We refer to this
+process as uncertainty matching. Though this can be imple-
+mented with any existing uncertainty estimation technique,
+we use heteroscedastic neural networks (HNN) and condi-
+tional quantile estimators in our setup.
+PI Estimator Design. While the mean estimate is a random
+variable, an interval estimate is a random interval. For an
+output variable y, let yl and yu denote its lower and up-
+per bounds. While an interval does or does not contain a
+certain value, a random interval has a certain probability
+of containing a value. Suppose that p(yl ≤ y ≤ yu ) =
+α, where α ∈ [0, 1], then the random interval [yl , yu ] is re-
+ferred as a 100 × α% interval of y. When this holds, we
+expect that when we sample a large number of xi from a
+validation set and predict F (xi ) and I (xi ), then yi will be
+contained in I (xi ) 100 × α% of the trials.
+The PI estimator network is designed to produce inter-
+vals that are well-calibrated and can reﬂect the underlying
+prediction uncertainties. In contrast to existing approaches
+which attempt to produce uncertainties that can be calibrated
+to any α by applying appropriate scaling, our method oper-
+ates with a speciﬁc α and implements the calibration task as
+a differentiable function. As expressed in Eq. (1), the loss LI
+estimator network F . We use the following term to optimize
+is constructed based on the current state of Θ for the mean
+for the quality of calibration, which measures the empirical
+probability of the true target lying in the estimated intervals:
+
+Lemce =
+
+(ˆyi − δ l
+i ) ≤ yi ≤ (ˆyi + δu
+i )
+
+1
+
+(2)
+
+Sigmoid(η × (yi − yl
+i − yi )), where ˆyl
+i = ˆyi − δ l
+i )(yu
+ˆyu
+i = ˆyi + δu
+
+where 1 is the indicator function and ˆyi = F (xi ; Θ) are the
+mean predictions. We implement the indicator function as
+i ,
+i , and η is a large scaling factor. This empiri-
+cal objective does not require any distributional assumption
+on data. Next, in order to ensure that the intervals reﬂect
+the underlying uncertainty, the widths wi are matched to the
+residual r from F .
+
+(cid:12)(cid:12)(cid:12)(cid:12)(cid:12)α − 1
+
+N
+
+N(cid:88)
+
+i=1
+
+(cid:104)
+
+(cid:105)(cid:12)(cid:12)(cid:12)(cid:12)(cid:12) ,
+
+Lnoise =
+
+0.5 ∗ wi − |ri |
+
+,
+
+(3)
+
+where (cid:107).(cid:107)1 denotes the (cid:96)1 norm, wi = δu
+ual ri = yi − F (xi ; Θ). Finally, the widths of estimated
+i and the resid-
+intervals are regularized to avoid non-trivial solutions of ar-
+bitrarily large intervals.
+
+i + δ l
+i − yi(cid:107)1 + (cid:13)(cid:13)yi − ˆyl
+(cid:107)ˆyu
+
+i
+
+N(cid:88)
+
+Lsharp =
+
+(cid:13)(cid:13)1 .
+
+i=1
+
+Hence the overall objective can be written as:
+
+Φ∗ = arg min
+
+Φ
+
+LI
+
+= arg min
+
+Φ
+
+Lemce + βnLnoise + βsLsharp ,
+
+(5)
+
+where βn , βs are penalty terms.
+
+Mean Estimation with Uncertainty Matching. As formu-
+
+lated in Eq. (1), the goal is to leverage the calibrated inter-
+vals from the PI estimator, through uncertainty matching, to
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:18)
+
+N(cid:88)
+
+i=1
+
+(cid:19)(cid:13)(cid:13)(cid:13)(cid:13)1
+
+N(cid:88)
+
+i=1
+
+(4)
+
+LF =
+
+1
+N
+
+(cid:107)yi − F (xi ; Θ)(cid:107)2
+2σ2
+
+2
+
+i
+
++
+
+1
+2
+
+i +λm (cid:107)σi−γ
+log σ2
+
+(cid:107)1 ,
+
+wi
+2
+
+(7)
+where λm is a penalty term, the scale γ = 1/z(1−αv )/2 with
+αv being the calibration level achieved by I .
+b. IQR Fit: In this strategy, we propose to obtain uncertainty
+estimates based on conditional quantiles of the target y and
+enforce them to match the intervals from the PI estimator.
+Let F (y) = P (y ≤ y) be the strictly monotonic cumula-
+tive distribution function of y assuming real values y and
+F −1 (τ ) = inf {y : F (y = y) ≥ τ } denotes the quantile
+
+thus leads to superior quality mean estimates and highly cal-
+ibrated intervals. While each of the steps are run for nm
+and nc epochs respectively, the outer loop is executed until
+convergence. In all our experiments, both hyper-parameters
+nm and nc are set at 10 and the algorithm returns opti-
+mized parameter estimates for F and I . It is important
+to note that, we do not require any additional recalibra-
+tion step for the validation/testing stages, in contrast to
+approaches such as (Kuleshov, Fenner, and Ermon 2018;
+Platt and others 1999). Figure 2 illustrates the convergence
+behavior of the proposed approach for a regression task on
+two datasets. We observe that, as the algorithm progresses,
+the proposed approach produces well-calibrated intervals
+that are also sharp (measured using the average of inter-
+val widths wi ). More importantly, the uncertainty matching
+based regularization produces much improved quality pre-
+dictors, as evidenced by the improvements to the prediction
+quality (measured using RMSE).
+
+Empirical Studies
+
+In this section, we present empirical studies to compare the
+proposed approach against popularly adopted methods for
+producing prediction intervals. More speciﬁcally, we consid-
+ered three different use cases where the goal was to predict
+continuous valued target variables – regression, forecasting
+with time-series data and object localization in images (i.e.
+predicting bounding boxes).
+
+Experiment Setup
+
+Hyper-parameter Choices: We used Algorithm 1 to solve
+the optimization problem in Eq. (1), based on the two pro-
+posed strategies, namely Sigma Fit and IQR Fit. We used the
+following hyper-parameter choices for all experiments: The
+penalties for the loss LI in Eq. (5) were ﬁxed at βn = 0.1
+and βs = 0.3 respectively. For the Sigma Fit method, the
+penalty for the uncertainty matching term was set at λm =
+0.5. Similarly, the hyper-parameters for constructing the loss
+LF for IQR Fit, we used λm = 0.4, λu = λl = 0.3. While
+the outer loop in Algorithm 1 was run until convergence,
+both the mean estimator and the PI estimator networks were
+trained for nm = nc = 10 epochs in each iteration.
+Evaluation Metrics: For both regression and time-series
+forecasting applications, we used the standard root mean
+square error (RMSE) metric to evaluate the quality of mean
+predictions. In the case of object localization, we used the
+intersection-over-union (IoU) metric, that measures the ratio
+between the area under intersection of the true and predicted
+bounding boxes, and the area under union of both bounding
+boxes. Since our primary objective is to produce calibrated
+estimators, we evaluate the quality of prediction intervals on
+the held-out validation set using the calibration error metric,
+CEα , which is the same as the Lemce term in Eq. (2). In
+order to ensure that the PI estimator network does not pro-
+duce a degenerate solution (arbitrarily large intervals that are
+always calibrated), we included the Lsharp term in Eq. (5).
+Hence, we also evaluate how well that constraint is met us-
+ing the average width metric: AWα = 1
+
+(cid:80)N
+
+i + δu
+i ).
+
+i=1 (δ l
+
+N
+
+Figure 2: Convergence behavior of the proposed approach
+on the held-out test data for the Boston housing (top) and
+Parkinsons (bottom) datasets, for a target calibration level
+of 95% and 99% respectively : As the algorithm progresses,
+we observe that both the RMSE and calibration consistently
+improve. At the same time, the interval widths become sharp
+even while achieving high calibration.
+
+distribution function for 0 ≤ τ ≤ 1. Quantile regression is
+aimed at inferring a desired quantile τ for the target y, when
+the input x = x, i.e., F −1 (τ |x = x). This model can be es-
+timated using the pinball loss (Koenker and Hallock 2001):
+
+(cid:26)τ (y − ˆy),
+
+if y − ˆy ≥ 0,
+
+N(cid:88)
+
+(8)
+
+Lτ (y, ˆy) =
+
+(1 − τ )(ˆy − y), otherwise.
+Recently, (Tagasovska and Lopez-Paz 2018) showed that the
+inter-quantile range (IQR) between upper and lower quan-
+tiles can produce calibrated estimates of the aleatoric uncer-
+tainties. Hence, we propose an uncertainty estimator similar
+to (Tagasovska and Lopez-Paz 2018), where the α prediction
+interval can be obtained around the median as:
+
+IQR(x; τ u , τ l ) = F (x|τ = τ u , Θ) − F (x|τ = τ l , Θ), (9)
+τ u = (1 + α)/2, τ l = (1 − α)/2.
+
+Given the interval estimates from the PI network, the loss
+function LF can be constructed as:
+
+1
+(cid:107)yi − F (xi ; Θ)(cid:107)2
+2 + λuLτ u (yi , F (xi ; Θ))
+LF =
+N
++ λlLτ l (yi , F (xi ; Θ)) + λm (cid:107)IQR(xi ) − wi (cid:107)1 .
+
+i=1
+
+(10)
+
+Algorithm
+
+The overall algorithm, which repeats the regularized mean
+estimation and the interval prediction in an alternating fash-
+ion, is provided in Algorithm 1. The mean estimator takes
+the intervals into account for its update. Similarly, we in-
+clude the residual structure from the mean estimator for in-
+terval estimation. For a ﬁxed interval, the improved mean
+estimate can increase the calibration error (CE) by achiev-
+ing a higher likelihood even for smaller α. However, when
+reupdating the interval estimator, we expect the widths to
+become sharper to reduce CE. This collaborative process
+
+020406080100Iteration4.04.55.05.56.06.57.07.5Test RMSE020406080100Iteration0.750.800.850.900.95Calibration Level in Test Data020406080100Iteration0.250.300.350.400.45Average CI Width in Test Data020406080100Iteration2.02.53.03.5Test RMSE020406080100Iteration0.910.920.930.940.950.960.970.980.991.00Calibration Level in Test Data020406080100Iteration0.150.200.250.30Average CI Width in Test DataTable 1: Test RMSE from the regression experiments on 6 UCI benchmark datasets. For all cases, the results showed are for the
+case of α = 0.9, i.e. 90% calibration. The results reported were obtained by averaging over 5 random trials.
+
+Method
+
+MC Dropout
+Concrete Dropout
+Quantile Estimator
+BNN
+HNN
+Sigma Fit
+IQR Fit
+
+0.144
+0.152
+0.159
+
+0.138
+0.138
+0.138
+
+0.686
+0.745
+0.737
+0.823
+0.714
+0.599
+
+0.581
+
+Crime Red Wine White Wine
+0.139
+
+0.748
+0.764
+0.782
+0.871
+0.757
+0.702
+
+0.691
+
+Parkinsons Boston Auto MPG
+
+2.78
+3.1
+2.91
+2.493
+2.842
+
+2.017
+
+2.206
+
+5.51
+5.88
+4.802
+4.025
+4.762
+4.088
+
+4.011
+
+4.61
+5.19
+4.32
+
+3.07
+
+3.98
+3.23
+3.18
+
+(a) Boston Housing
+
+(b) White Wine
+
+(c) Parkinsons
+
+(d) Auto MPG
+
+Figure 3: Evaluating the quality of estimated intervals - For each dataset, we plot the expected calibration vs observed calibration
+on test data to demonstrate the generality of the proposed PI estimator, when compared to baselines. Further, we plot expected
+calibration vs average PI width to show how the estimated intervals compare to existing uncertainty estimators.
+
+Baselines: We compare against the following baseline tech-
+niques that are commonly adopted to produce prediction in-
+tervals, in lieu of simple point-estimates. Though there exists
+an entire class of recalibration methods (Kuleshov, Fenner,
+and Ermon 2018), which utilizes an additional recalibration
+dataset to reﬁne the learned estimator with a calibration ob-
+jective, our focus is on single-shot calibration methods.
+MC Dropout (Gal and Ghahramani 2016): In this approach,
+dropout in deep neural networks is cast as an approxi-
+mate Bayesian inference in deep Gaussian processes. Using
+dropout during both train and test phases simulates Monte-
+Carlo sampling from the network with non-deterministic
+weights, thus capturing epistemic uncertainties. For all ex-
+periments, the dropout probability was set at 0.5.
+Concrete Dropout (Gal, Hron, and Kendall 2017): This was
+designed to automatically tune the dropout probability based
+on data characteristics, and hence it is expected to produce
+better calibrated intervals in comparison to MC Dropout.
+Bayesian Neural Networks (BNN) (Blundell et al. 2015):
+In this approach, the underlying distribution on network
+
+weights are approximated with a Gaussian (variational ap-
+proximation), and the posterior inference based on observed
+data is then carried out by sampling from this approximate
+distribution, thus capturing epistemic uncertainties.
+Quantile Estimator (Tagasovska and Lopez-Paz 2018):
+Inter-quantile range from conditional quantiles of predictors
+can be used to estimate the aleatoric uncertainties and hence
+prediction intervals for a given α conﬁdence can be obtained
+by choosing appropriate upper and lower quantiles.
+Heteroscedastic Neural Networks (HNN) (Kendall and Gal
+2017): Using the Gaussian likelihood formulation, the data
+dependent observation noise, i.e. aleatoric uncertainties, can
+be captured through the heteroscedastic loss.
+
+Regression using Fully Connected Networks
+
+In this experiment, we considered the problem of regressing
+to a continuous target variable from high-dimensional fea-
+tures. For each dataset, we used a random 80/20 split for
+train/test, and we report the averaged results obtained from
+5 random trials. As a preprocessing step, we rescaled the
+
+0.100.300.500.700.900.99Expected Calibration Level0.100.300.500.700.900.99Observed Calibration LevelConcrete DropoutQuantile EstimatorBNNProposed (Sigma Fit)Proposed (IQR Fit)0.100.300.500.700.900.99Expected Calibration Level102101100Sharpness (Average CI Width)Concrete DropoutQuantile EstimatorBNNProposed (Sigma Fit)Proposed (IQR Fit)0.100.300.500.700.900.99Expected Calibration Level0.100.300.500.700.900.99Observed Calibration LevelConcrete DropoutQuantile EstimatorBNNProposed (Sigma Fit)Proposed (IQR Fit)0.100.300.500.700.900.99Expected Calibration Level102101100Sharpness (Average CI Width)Concrete DropoutQuantile EstimatorBNNProposed (Sigma Fit)Proposed (IQR Fit)0.100.300.500.700.900.99Expected Calibration Level0.100.300.500.700.900.99Observed Calibration LevelConcrete DropoutQuantile EstimatorBNNProposed (Sigma Fit)Proposed (IQR Fit)0.100.300.500.700.900.99Expected Calibration Level102101100Sharpness (Average CI Width)Concrete DropoutQuantile EstimatorBNNProposed (Sigma Fit)Proposed (IQR Fit)0.100.300.500.700.900.99Expected Calibration Level0.100.300.500.700.900.99Observed Calibration LevelConcrete DropoutQuantile EstimatorBNNProposed (Sigma Fit)Proposed (IQR Fit)0.100.300.500.700.900.99Expected Calibration Level102101100Sharpness (Average CI Width)Concrete DropoutQuantile EstimatorBNNProposed (Sigma Fit)Proposed (IQR Fit)Table 2: Results from the time-series forecasting experiments - We report the test RMSE, calibration error and average width
+metrics for each of the cases, when α was set to 0.95.
+
+Method
+
+Metric NSW2013 Bike Sharing TAS2016
+
+Trafﬁc
+
+Beijing Air Quality
+
+MC Dropout
+
+Concrete Dropout
+
+Quantile Estimator
+
+BNN
+
+HNN
+
+Sigma Fit
+
+IQR Fit
+
+RMSE
+
+CE0.95
+AW0.95
+
+RMSE
+
+CE0.95
+AW0.95
+
+RMSE
+
+CE0.95
+AW0.95
+
+RMSE
+
+CE0.95
+AW0.95
+
+RMSE
+
+CE0.95
+AW0.95
+
+RMSE
+
+CE0.95
+AW0.95
+
+RMSE
+
+CE0.95
+AW0.95
+
+125.48
+0.04
+587.54
+153.16
+0.046
+696.19
+131.18
+0.07
+533.31
+153.16
+0.046
+696.19
+124.59
+0.008
+452.05
+
+90.31
+0.002
+
+424.59
+94.85
+0.003
+421.63
+
+62.68
+0.30
+90.94
+64.81
+0.277
+96.67
+65.19
+0.22
+99.34
+64.81
+0.277
+96.67
+64.38
+0.004
+199.64
+58.97
+0.005
+169.81
+
+53.65
+0.002
+
+182.34
+
+22.12
+0.196
+50.37
+23.11
+0.145
+53.58
+23.44
+0.19
+49.17
+23.11
+0.145
+53.58
+22.81
+0.013
+91.24
+17.95
+0.009
+77.71
+
+17.64
+0.005
+
+80.44
+
+2.03E+08
+0.037
+8.39E+08
+2.25E+08
+0.073
+8.93E+08
+2.07E+08
+0.07
+8.6E+08
+2.25E+08
+0.073
+8.93E+08
+1.36E+08
+0.014
+5.62E+08
+1.27E+08
+0.006
+5.49E+08
+
+1.21E+08
+0.003
+
+5.43E+08
+
+22.42
+0.177
+38.53
+22.46
+0.12
+48.42
+22.45
+0.11
+49.17
+22.46
+0.12
+48.42
+22.83
+0.028
+98.95
+
+18.65
+
+0.011
+88.19
+19.43
+
+0.01
+
+87.48
+
+0.66
+0.02
+2.52
+0.65
+0.105
+2.73
+0.77
+0.241
+2.71
+0.65
+0.105
+2.73
+0.72
+0.041
+6.16
+
+0.53
+
+0.007
+2.99
+0.62
+
+0.004
+
+3.11
+
+target data into the range [0, 1] before training the models.
+Datasets: We considered 6 datasets from the UCI reposi-
+tory (Dua and Graff 2017), which ranged between 7 and 124
+in their dimensionality, and between 391 and 4898 in terms
+of sample size: crime, red wine quality, white wine quality,
+parkinsons, boston housing and auto mpg.
+Model Architecture: For all approaches, we used a fully
+connected network with 5 linear layers, each followed by a
+ReLU activation function, and the MSE loss for training.
+Results: A meaningful interval is one that reﬂects the in-
+formative uncertainties in data or modeling process and is
+well calibrated. Hence, we measure the quality of calibra-
+tion achieved using the proposed approach at different cal-
+ibration levels α - (i) expected calibration vs observed cal-
+ibration; and (ii) expected calibration vs average PI width.
+While the former evidences the generality of the PI estimator
+to unseen test data, the latter shows how the estimated inter-
+vals compare to conventional uncertainty estimators. Similar
+to the ﬁndings of existing studies, we also ﬁnd that exist-
+ing approaches such as MC Dropout, Concrete Dropout and
+BNN are not well calibrated. In comparison, we found the
+heteroscedastic neural networks to be better calibrated. Fig-
+ure 3 shows the results for 4 different datasets (rest in supple-
+mentary) and we ﬁnd that the proposed approach achieves
+signiﬁcantly improved calibration, when compared to the
+baseline methods. Interestingly, from the average PI width
+plots, we ﬁnd that the estimated intervals are typically larger
+than the aleatoric uncertainties from the quantile estima-
+
+tor, while being much lower than the estimates from BNNs.
+Finally, from Table 1, it is apparent the uncertainty match-
+ing process leads to improved regularization, thus producing
+higher-quality mean estimates.
+
+Time-series Forecasting using LSTMs
+
+In this study, we consider the problem of forecasting in time-
+varying data by leveraging information from the past sam-
+sample x[t + 1] using the observations x[t − k : t + 1].
+ples. More speciﬁcally, we attempt to look-ahead by one
+Datasets: We considered 6 time-series datasets: NSW2013
+and TAS2016 annual electricity demand recordings from
+the Australian Energy Market Operator; bike sharing, air
+quality, Beijing PM2.5 and network trafﬁc datasets from
+UCI (Dua and Graff 2017). In each case, we used k = 24
+steps in the past to look ahead, and overall we used the ﬁrst
+30% of the time-steps for training and the rest for testing.
+Model Architecture: Our architecture comprised of a RNN
+with LSTM units (2 layers with 128 hidden dimensions) and
+a linear layer for making the ﬁnal prediction.
+Results: For this study, we ran all experiments with the de-
+sired level of calibration ﬁxed at α = 0.95, and report the
+RMSE, CE0.95 and AW0.95 metrics obtained using the dif-
+ferent approaches in Table 2. As it can be seen, the proposed
+alternating optimization achieves the lowest calibration er-
+ror in all cases, and more importantly, consistently produces
+higher-ﬁdelity mean estimators. Figure 4 illustrates the pre-
+
+(a) NSW2016
+
+(b) Air Quality
+
+(c) TAS2016
+
+(d) Bike Sharing
+
+Figure 4: Forecasting: Prediction intervals obtained using the proposed IQR Fit method for the calibration level α = 0.95 on
+the test data. It can be seen that in all cases, our method produces sharp intervals that are well calibrated.
+
+Table 3: Results from the object localization experiments -
+We report the performance of the best performing baseline
+and the proposed IQR Fit at α = 0.95
+
+HNN
+
+IQR Fit
+
+CE0.95 AW0.95 CE0.95 AW0.95
+
+x
+y
+w
+h
+
+IoU
+
+0.11
+0.14
+0.12
+0.15
+
+31.72
+26.33
+28.87
+29.14
+0.468
+
+0.01
+0.02
+0.04
+0.04
+
+18.67
+16.42
+20.51
+21.13
+
+0.557
+
+diction intervals obtained using IQR Fit for a few cases,
+where the quality of calibration is clearly evident.
+
+Object Localization using CNNs
+
+The third study involved the application of the proposed
+approaches to object localization in images using convolu-
+tional neural networks. We posed the problem of localizing
+as predicting a bounding box around the object. Each bound-
+ing box is characterized by 4 regression targets – (x, y) co-
+ordinates of the left-bottom corner, height h and width w .
+Datasets: For this experiment, we used the Caltech Birds
+(CUB) dataset (Welinder et al. 2010), which is comprised of
+11, 788 images belonging 200 different categories of birds.
+Model Architecture: We performed transfer learning from a
+ResNet-18 model, pre-trained on imagenet classiﬁcation, to
+carry out this prediction. We allowed ﬁne-tuning of the last
+residual block and the ﬁnal prediction layer during training.
+Results: For brevity, we report results only from the best
+performing baseline method, HNN, and the proposed IQR
+Fit technique. Similar to the forecasting experiment, we used
+α = 0.95. As seen in Table 3, the proposed approach signif-
+icantly outperforms the baseline in terms of calibration er-
+ror, while also meeting the sharpness constraint enforced in
+our optimization. Finally, the IoU score improvement clearly
+demonstrates the ﬁdelity of the mean estimator. Figure 5 il-
+lustrates the prediction intervals (mean prediction showed in
+green) obtained using IQR Fit for a few example cases.
+
+Figure 5: Illustration of prediction intervals estimated using
+the proposed IQR Fit approach. In each case, the mean pre-
+diction is marked in green.
+
+Conclusions
+
+In this work, we proposed a framework to build calibrated
+models for continuous-valued regression problems. By for-
+mulating the problems of estimating means and prediction
+intervals as a bi-level optimization, we showed that the
+model can effectively capture the informative uncertainties
+to produce well-calibrated intervals. Further, we found that,
+this alternating optimization also leads to better regulariza-
+tion of the mean estimator, thus improving its generalization
+signiﬁcantly. From our empirical studies, we ﬁnd that the
+proposed approach is effective across different data modal-
+ities, model architectures and applications. Though our ap-
+proach was demonstrated using HNN-based and quantile-
+based aleatoric uncertainty estimators, any existing UQ tech-
+nique can be integrated into our approach. This work also
+emphasizes the need to rigorously study the process of pro-
+ducing calibrated intervals based on prediction uncertainties.
+
+10203040Time Step60007000800090001000011000TruePredicted (95% CI)10203040Time Step152025303540TruePredicted (95% CI)10203040Time Step600700800900100011001200TruePredicted (95% CI)10203040Time Step0200400600800TruePredicted (95% CI)[Leibig et al. 2017a] Leibig, C.; Allken, V.; Ayhan, M. S.;
+Berens, P.; and Wahl, S. 2017a. Leveraging uncertainty in-
+formation from deep neural networks for disease detection.
+Scientiﬁc reports 7(1):17816.
+[Leibig et al. 2017b] Leibig, C.; Allken, V.; Ayhan, M. S.;
+Berens, P.; and Wahl, S. 2017b. Leveraging uncertainty in-
+formation from deep neural networks for disease detection.
+Scientiﬁc reports 7(1):17816.
+[Levasseur, Hezaveh, and Wechsler 2017] Levasseur, L. P.;
+Hezaveh, Y. D.; and Wechsler, R. H. 2017. Uncertain-
+ties in parameters estimated with neural networks: Ap-
+plication to strong gravitational lensing.
+arXiv preprint
+arXiv:1708.08843.
+[Levi et al. 2019] Levi, D.; Gispan, L.; Giladi, N.; and Fe-
+taya, E. 2019. Evaluating and calibrating uncertainty predic-
+tion in regression tasks. arXiv preprint arXiv:1905.11659.
+[Nixon et al. 2019] Nixon, J.; Dusenberry, M.; Zhang, L.;
+Jerfel, G.; and Tran, D. 2019. Measuring calibration in deep
+learning. arXiv preprint arXiv:1904.01685.
+[Platt and others 1999] Platt, J., et al. 1999. Probabilistic
+outputs for support vector machines and comparisons to reg-
+ularized likelihood methods. Advances in large margin clas-
+siﬁers 10(3):61–74.
+[Seo, Seo, and Han 2019] Seo, S.; Seo, P. H.; and Han, B.
+2019. Learning for single-shot conﬁdence calibration in
+deep neural networks through stochastic inferences. In Pro-
+ceedings of the IEEE Conference on Computer Vision and
+Pattern Recognition, 9030–9038.
+[Tagasovska and Lopez-Paz 2018] Tagasovska, N.,
+and
+Lopez-Paz, D. 2018. Frequentist uncertainty estimates for
+deep learning. arXiv preprint arXiv:1811.00908.
+[Wang et al. 2016] Wang, K.; Zhang, D.; Li, Y.; Zhang, R.;
+and Lin, L. 2016. Cost-effective active learning for deep im-
+age classiﬁcation. IEEE Transactions on Circuits and Sys-
+tems for Video Technology 27(12):2591–2600.
+[Welinder et al. 2010] Welinder, P.; Branson, S.; Mita, T.;
+Wah, C.; Schroff, F.; Belongie, S.; and Perona, P. 2010.
+Caltech-UCSD Birds 200. Technical Report CNS-TR-2010-
+001, California Institute of Technology.
+[Wen et al. 2019] Wen, J.; Zheng, N.; Yuan, J.; Gong, Z.; and
+Chen, C. 2019. Bayesian uncertainty matching for unsuper-
+vised domain adaptation. arXiv preprint arXiv:1906.09693.
+
+References
+
+[Blundell et al. 2015] Blundell,
+C.;
+Cornebise,
+J.;
+Kavukcuoglu, K.; and Wierstra, D. 2015. Weight uncer-
+tainty in neural networks. arXiv preprint arXiv:1505.05424.
+[Ching et al. 2018] Ching, T.; Himmelstein, D. S.; Beaulieu-
+Jones, B. K.; Kalinin, A. A.; Do, B. T.; Way, G. P.; Fer-
+rero, E.; Agapow, P.-M.; Zietz, M.; Hoffman, M. M.; et al.
+2018. Opportunities and obstacles for deep learning in bi-
+ology and medicine. Journal of The Royal Society Interface
+15(141):20170387.
+[Dua and Graff 2017] Dua, D., and Graff, C. 2017. UCI ma-
+chine learning repository.
+[Gal and Ghahramani 2016] Gal, Y., and Ghahramani, Z.
+2016. Dropout as a bayesian approximation: Representing
+model uncertainty in deep learning. In international confer-
+ence on machine learning, 1050–1059.
+[Gal, Hron, and Kendall 2017] Gal, Y.; Hron,
+J.;
+and
+Kendall, A. 2017. Concrete dropout. In Advances in Neural
+Information Processing Systems, 3581–3590.
+[Gal 2016] Gal, Y. 2016. Uncertainty in deep learning.
+Ph.D. Dissertation, PhD thesis, University of Cambridge.
+[Ghahramani 2015] Ghahramani, Z.
+2015.
+Probabilis-
+tic machine learning and artiﬁcial intelligence. Nature
+521(7553):452.
+[Gneiting and Raftery 2007] Gneiting, T., and Raftery, A. E.
+2007. Strictly proper scoring rules, prediction, and esti-
+mation.
+Journal of the American Statistical Association
+102(477):359–378.
+[Guo et al. 2017] Guo, C.; Pleiss, G.; Sun, Y.; and Wein-
+berger, K. Q. 2017. On calibration of modern neural net-
+works. In Proceedings of the 34th International Conference
+on Machine Learning-Volume 70, 1321–1330. JMLR. org.
+[Heskes 1997] Heskes, T. 1997. Practical conﬁdence and
+prediction intervals. In Advances in neural information pro-
+cessing systems, 176–182.
+[Kendall and Gal 2017] Kendall, A., and Gal, Y. 2017. What
+uncertainties do we need in bayesian deep learning for com-
+puter vision? In Advances in neural information processing
+systems, 5574–5584.
+[Koenker and Hallock 2001] Koenker, R., and Hallock, K. F.
+2001. Quantile regression. Journal of economic perspectives
+15(4):143–156.
+[Kuleshov and Liang 2015] Kuleshov, V., and Liang, P. S.
+2015. Calibrated structured prediction. In Advances in Neu-
+ral Information Processing Systems, 3474–3482.
+[Kuleshov, Fenner, and Ermon 2018] Kuleshov, V.; Fenner,
+N.; and Ermon, S.
+2018. Accurate uncertainties for
+deep learning using calibrated regression. arXiv preprint
+arXiv:1807.00263.
+[Lakshminarayanan, Pritzel, and Blundell 2017]
+Lakshminarayanan, B.; Pritzel, A.; and Blundell, C.
+2017. Simple and scalable predictive uncertainty estimation
+using deep ensembles. In Advances in Neural Information
+Processing Systems, 6402–6413.
+
+

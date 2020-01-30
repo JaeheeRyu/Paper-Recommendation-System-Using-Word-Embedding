@@ -1,0 +1,1372 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+I
+
+A
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+5
+6
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Generalized Planning with Positive and Negative Examples
+
+Javier Segovia-Aguas1 , Sergio Jim ´enez2 and Anders Jonsson3
+
+1 IRI - Institut de Rob `otica i Inform `atica Industrial, CSIC-UPC
+2VRAIN - Valencian Research Institute for Artiﬁcial Intelligence, Universitat Polit `ecnica de Val `encia
+3Universitat Pompeu Fabra
+
+Abstract
+
+Generalized planning aims at computing an algorithm-like
+structure (generalized plan) that solves a set of multiple plan-
+ning instances. In this paper we deﬁne negative examples for
+generalized planning as planning instances that must not be
+solved by a generalized plan. With this regard the paper ex-
+tends the notion of validation of a generalized plan as the
+problem of verifying that a given generalized plan solves the
+set of input positives instances while it fails to solve a given
+input set of negative examples. This notion of plan validation
+allows us to deﬁne quantitative metrics to asses the general-
+ization capacity of generalized plans. The paper also shows
+how to incorporate this new notion of plan validation into a
+compilation for plan synthesis that takes both positive and
+negative instances as input. Experiments show that incorpo-
+rating negative examples can accelerate plan synthesis in sev-
+eral domains and leverage quantitative metrics to evaluate the
+generalization capacity of the synthesized plans.
+
+Introduction
+
+Generalized planning studies the computation of plans
+that can solve a family of planning instances
+that
+share a common structure (Hu and De Giacomo 2011;
+Srivastava, Immerman, and Zilberstein 2011;
+Jim ´enez, Segovia-Aguas, and Jonsson 2019). Since gener-
+alized planning is computationally expensive, a common
+approach is to synthesize a generalized plan starting from
+a set of small instances and validate it on larger instances.
+This approach is related to the principle of Machine Learn-
+ing (ML), in which a model is trained on a training set and
+validated on a test set (Mitchell 1997).
+Traditionally,
+generalized
+planning
+has
+only
+fo-
+cused
+on solvable
+instances, both
+for plan
+syn-
+thesis
+and
+for
+validation
+(Winner and Veloso 2003;
+Bonet, Palacios, and Geffner 2010; Hu and Levesque 2011;
+Srivastava et al. 2011;
+Hu and De Giacomo 2013;
+Segovia-Aguas, Jim ´enez, and Jonsson 2018;
+Segovia-Aguas, Celorrio, and Jonsson 2019).
+How-
+ever, many computational problems
+in AI beneﬁt
+from negative examples, e.g. SAT approaches that ex-
+ploit
+clause
+learning (Angluin, Frazier, and Pitt 1992),
+
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+Π:
+
+q0
+
+paint(X )
+
+q1
+
+inc(X )
+
+q2
+
+inc(X )
+
+q3
+
+R
+
+paint(X )
+
+q1
+
+q0
+
+inc(X )
+
+q2
+
+R
+
+Π∗ :
+
+inc(X )
+
+R
+
+a) Three goal conﬁgurations.
+
+Π+ :
+
+q0
+
+paint(X )
+
+q1
+
+inc(X )
+
+q2
+
+inc(X )
+
+q3
+
+paint(X )
+
+b) Algorithm-like plans.
+
+Figure 1: a) Robot in 2 × 1, 6 × 1 and 1 × 1 corridors; b) Three
+candidate generalized plans.
+
+grammar
+induction
+(Parekh, Honavar, and others 2000),
+program synthesis (Alur et al. 2018) and model
+learn-
+ing (Camacho and McIlraith 2019). If used appropriately,
+negative examples can help reduce the solution space and
+accelerate the search for a solution.
+In this paper we introduce negative examples for gener-
+alized planning as input planning instances that should not
+be solved by a generalized plan. An intuitive way to come
+up with negative examples for solutions that generalize is
+to ﬁrst synthesize a solution with exclusively positive exam-
+ples, and identify cases for which the solution did not gener-
+alize as desired, somewhat akin to clause learning in satisﬁ-
+ability problems (Biere et al. 2009). Imagine that we aim to
+synthesize the generalized plan (paint(X ), inc(X ), inc(X ))+
+that makes a robot paint every odd cell black in a N × 1 cor-
+ridor, starting from the leftmost cell (we use Kleene notation
+to represent regular expressions, and Z + indicates the repe-
+tition of Z at least once). Action paint(X ) paints the current
+cell black while inc(X ) increments the robot’s X coordinate.
+The positive example of a 2 × 1 corridor (whose goal conﬁg-
+uration is illustrated at Figure 1a) is solvable by all three
+
+ 
+ 
+ 
+ 
+ 
+ 
+automata plans in Figure 1b) (acceptor states are marked
+with overlines e.g., q ). These automata plans, namely Π,
+Π∗ and Π+ , compactly represent the three sets of sequential
+
+plans (paint(X ), inc(X ), inc(X )), (paint(X ), inc(X ), inc(X ))∗
+
+and (paint(X ), inc(X ), inc(X ))+ . Hence the single positive
+example of a 2 × 1 corridor is not enough to discriminate
+among these three generalized plans. Adding a second posi-
+tive example, the 6 × 1 corridor in Figure 1a), discards plan
+Π. Adding a third 1 × 1 negative example, where the initial
+and goal robot cell are the same and no cell is required to be
+painted, discards Π∗ preventing over-generalization because
+Π∗ solves this negative example.
+The problem of deriving generalized plans has been a
+longstanding open challenge. Compared to previous work
+on generalized planning, the contributions of this paper are:
+
+1. Negative examples to more precisely specify the seman-
+tics of an aimed generalized plan.
+
+2. A new approach for the synthesis of plans that can gen-
+eralize from smaller input examples thanks to negative
+examples.
+
+3. The deﬁnition of quantitative evaluation metrics to as-
+sess the generalization capacity of generalized plans.
+
+The paper is organized as follows. We start with some
+background notation of classical planning and generalized
+planning (GP). Then we formalize the concept of a neg-
+ative example for generalized planning. We continue with
+a description of a generalized planning problem with posi-
+tive and negative examples that can be compiled to classical
+planning. We show proofs of soundness and completeness
+for the two main tasks in GP that are synthesis and valida-
+tion. We continue with the experiments where we compare
+the impact of negative examples, and ﬁnally we conclude
+with a discussion on the presented work.
+
+Background
+
+This
+section
+formalizes
+the
+planning models
+used
+in
+this work
+as well
+as
+planning
+pro-
+grams
+(Segovia-Aguas, Celorrio, and Jonsson 2019),
+an
+algorithm-like representation for plans that can generalize.
+
+Classical planning with conditional effects
+
+We use F to denote the set of ﬂuents (propositional vari-
+ables) describing a state. A literal l is a valuation of a ﬂuent
+f ∈ F , i.e. l = f or l = ¬f . A set of literals L on F rep-
+resents a partial assignment of values to ﬂuents (WLOG we
+assume that L does not assign conﬂicting values to any ﬂu-
+ent). Given L, ¬L = {¬l : l ∈ L} is the complement of L.
+Finally, we use L(F ) to denote the set of all literal sets on
+F , i.e. all partial assignments of values to ﬂuents. A state s
+is a set of literals such that |s| = |F |, i.e. a total assignment
+of values to ﬂuents. The number of states is then 2|F | .
+A classical planning frame is a tuple Φ = hF, Ai, where
+F is a set of ﬂuents and A is a set of actions with condi-
+tional effects. Conditional effects can compactly deﬁne ac-
+tions whose precise effects depend on the state where the
+action is executed. Each action a ∈ A has a set of literals
+
+pre(a), called the precondition, and a set of conditional ef-
+fects, cond(a). Each conditional effect C ⊲ E ∈ cond(a)
+is composed of a set of literals C (the condition) and E
+(the effect). Action a is applicable in state s if and only if
+pre(a) ⊆ s, and the resulting set of triggered effects is
+
+eﬀ (s, a) =
+
+[
+
+E ,
+
+C⊲E∈cond(a),C⊆s
+
+i.e. effects whose conditions hold in s. The result of applying
+a in s is the successor state θ(s, a) = (s \ ¬eﬀ (s, a)) ∪
+
+eﬀ (s, a).
+
+A classical planning problem with conditional effects is
+a tuple P = hF, A, I , Gi, where F is a set of ﬂuents and
+A is a set of actions with conditional effects as deﬁned for a
+planning frame, I is an initial state and G is a goal condition,
+i.e. a set of literals to achieve.
+A solution for a classical planning problem P can be
+speciﬁed using different representation formalisms, e.g. a
+sequence of actions, a partially ordered plan, a policy, etc.
+Here we deﬁne a sequential plan for P as an action sequence
+π = ha1 , . . . , an i whose execution induces a state sequence
+hs0 , s1 , . . . , sn i such that s0 = I and, for each i such that
+1 ≤ i ≤ n, ai is applicable in si−1 and generates the succes-
+sor state si = θ(si−1 , ai ). The plan π solves P if and only
+if G ⊆ sn , i.e. if the goal condition is satisﬁed following the
+execution of π in I .
+
+Planning programs
+
+Given a planning frame Φ = hF, Ai, a planning pro-
+gram (Segovia-Aguas, Celorrio, and Jonsson 2019) is a se-
+quence of instructions Π = hw0 , . . . , wn i. Each instruction
+wi , 0 ≤ i ≤ n, is associated with a program line i and is
+drawn from the set of instructions I = A ∪ Igo ∪ {end},
+where Igo = { go(i′ , !f ) : 0 ≤ i′ ≤ n, f ∈ F } is the set of
+goto instructions. In other words, each instruction is either
+a planning action a ∈ A, a goto instruction go(i′ , !f ) or a
+termination instruction end.
+The execution model for a planning program Π is a pro-
+gram state (s, i), i.e. a pair of a planning state s ⊆ L(F )
+(with |s| = |F |), and a program counter 0 ≤ i ≤ n. Given a
+program state (s, i), the execution of instruction wi on line i
+is deﬁned as follows:
+• If wi ∈ A, the new program state is (s′ , i + 1), where
+s′ = θ(s, w) is the successor for planning state s and
+action w.
+• If wi = go(i′ , !f ), the program state becomes (s, i + 1) if
+f ∈ s, and (s, i′ ) otherwise. Conditions in Goto instruc-
+tions can represent arbitrary formulae since f can be a
+derived ﬂuent (Lotinac et al. 2016).
+
+• If wi = end, execution terminates.
+
+To execute a planning program Π on a planning problem
+P = hF, A, I , Gi, the initial program state is set to (I , 0),
+i.e. the initial state of P and program line 0. A program Π =
+hw0 , . . . , wn i solves a planning problem P = hF, A, I , Gi
+iff the execution terminates in a program state (s, i) that sat-
+isﬁes the goal conditions, i.e. wi = end and G ⊆ s.
+
+Segovia-Aguas, Celorrio, and Jonsson (2019) contains a
+detailed analysis of the failure conditions on planning pro-
+grams, which we summarize here as follows:
+Corollary 1 (Planning Program Failure). If a planning pro-
+gram Π fails to solve a planning problem P , the only possi-
+ble sources of failure are:
+1. Incomplete Program. Execution terminates in program
+state (s, i) but the goal condition does not hold, i.e. (wi =
+
+end) ∧ (G 6⊆ s).
+
+2. Inapplicable Action. Executing an action wi ∈ A in pro-
+gram state (s, i) fails because its precondition does not
+hold, i.e. pre(w) 6⊆ s.
+3. Inﬁnite Loop. The program execution enters into an inﬁ-
+nite loop that never reaches an end instruction.
+
+Generalized planning
+
+We deﬁne a generalized planning problem as a ﬁnite set of
+classical planning problems P = {P1 , . . . , PT } that are
+deﬁned on the same planning frame Φ. Therefore, P1 =
+
+hF, A, I1 , G1 i, . . . , PT = hF, A, IT , GT i share the same
+
+ﬂuents and actions but differ in the initial state and goals.
+A planning program Π solves a given generalized plan-
+ning problem P iff Π solves every planning problem Pt ∈
+P , 1 ≤ t ≤ T .
+Segovia-Aguas, Celorrio, and Jonsson (2019)
+showed
+that a program Π that solves a generalized planning task
+P can be synthesized by deﬁning a new classical planning
+problem Pn = hFn , An , In , Gn i, where n is a bound on the
+number of program lines. A solution plan π for Pn programs
+instructions on the available empty lines (building the n-line
+program Π), and validates Π on each input problem Pt ∈ P .
+The ﬂuent set is deﬁned as Fn = F ∪ Fpc ∪ Fins ∪ Ftest ∪
+{done}, where:
+• Fpc = {pci : 0 ≤ i ≤ n} models the program counter,
+• Fins = {insi,w : 0 ≤ i ≤ n, w ∈ I ∪ {nil}} models the
+program lines (nil indicates an empty line),
+• Ftest = {testt : 1 ≤ t ≤ T } indicates the classical
+planning problem Pt ∈ P .
+Each instruction w ∈ I is modeled as a planning action,
+with one copy endt of the termination instruction per input
+problem Pt . Preconditions for the goto and end instructions
+are deﬁned as pre(go(i′ , !f )) = ∅ and pre(endt ) = Gt ∪
+{testt}. The authors deﬁne two actions for each instruction
+w and line i: a programming action P (wi ) for programming
+w on line i, and an execution action E (wi ) that uses the
+previous execution model to execute w on line i:
+pre(P (wi )) = pre(w) ∪ {pci , insi,nil },
+cond(P (wi )) = {∅ ⊲ {¬insi,nil , insi,w }},
+pre(E (wi )) = pre(w) ∪ {pci , insi,w }.
+The effect of E (wi ) depends on the type of instruction:
+
+cond(E (wi )) = cond(w) ∪ {∅ ⊲ {¬pci , pci+1 }}, w ∈ A,
+cond(E (wi )) = {∅ ⊲ {¬pci}} ∪ {{f } ⊲ {pci+1}}
+∪ {{¬f } ⊲ {pci′ }},
+w = go(i′ , !f ),
+w = endt , t < T ,
+
+cond(E (wi )) = resett+1 ,
+
+cond(E (wi )) = {∅ ⊲ {done}},
+
+w = endT .
+
+Initial State
+
+Goal State
+
+1 2 3 4 5 6
+
+6 5 4 3 2 1
+
+1 2 3 4 5 6
+
+6 5 2 3 4 1
+
+Figure 2: Positive example (upper row) and negative example
+(lower row) for the generalized planning task of reversing a list.
+
+The conditional effect resett+1 resets the program state to
+(It+1 , 0), preparing execution on the next problem Pt+1 .
+The initial state is In = I1 ∪{pc0}∪{insi,nil : 0 ≤ i ≤ n}
+indicating that, initially, the program lines are empty and the
+program counter is at the ﬁrst line. The goal is Gn = {done}
+and can only be achieved after solving sequentially all the
+instances in the generalized planning problem.
+
+Negative examples in generalized planning
+
+This section extends the previous generalized planning for-
+malism to include negative examples for the validation and
+synthesis of programs.
+
+Negative examples as classical planning problems
+
+Negative examples are additional solution constraints to
+more precisely specify the semantics of an aimed general-
+ized plan and prevent undesired generalizations.
+
+Deﬁnition 1 (Negative examples in generalized planning).
+Given a generalized planning problem P , a negative exam-
+ple is a classical planning instance P − = hF, A, I − , G− i
+that must not be solved by solutions to P .
+
+Figure
+
+2
+
+shows
+
+(1, 2, 3, 4, 5, 6)/(6, 5, 4, 3, 2, 1)
+
+an
+input/output
+pair
+that
+represents a posi-
+tive example for computing a generalized plan that reverse
+lists of any size. This example can be encoded as a classical
+planing problem, where the set of ﬂuents are the state
+variables necessary for encoding a list of arbitrary size plus
+two pointers over the list nodes. The initial state encodes,
+using these ﬂuents, the particular list (1, 2, 3, 4, 5, 6). The
+goal condition encodes the target
+Finally, actions encode the swapping of the content of
+two pointers as well as actions for moving the pointers
+along the list. In this regard, the input/output example
+
+list (6, 5, 4, 3, 2, 1).
+
+(1, 2, 3, 4, 5, 6)/(6, 5, 4, 3, 2, 1) is a positive example while
+(1, 2, 3, 4, 5, 6)/(6, 5, 2, 3, 4, 1) or
+(4, 3, 2, 1)/(2, 3, 4, 1)
+
+are negative examples for the generalized planning task of
+reversing lists.
+In this work both positive and negative examples are clas-
+sical planning problems P1 = hF, A, I1 , G1 i, . . . , PT =
+hF, A, IT , GT i deﬁned on the same ﬂuent set F and ac-
+tion set A. Each problem Pt ∈ P , 1 ≤ t ≤ T en-
+codes an input speciﬁcation in its initial state It while
+Gt encodes the speciﬁcation of its associated output. Al-
+though the examples share actions, each action in A can
+have different interpretations in different states due to con-
+ditional effects. For instance, back to the example of Fig-
+ure 1, we can encode individual planning tasks with dif-
+
+SAT
+
+Positives
+
+Negatives
+
+UNSAT
+
+P1+ , . . . , PT +
+
+PT + +1 , . . . , PT
+
+Figure 3: Taxonomy of instances in generalized planning.
+
+ferent corridor sizes (the set of ﬂuents F can include ﬂu-
+ents of type max(N ) that encode different corridor bound-
+aries (Segovia-Aguas, Celorrio, and Jonsson 2019)).
+Negative examples should not be confused with un-
+solvable planning instances. The goals of negative exam-
+ples are reachable from the given initial state (see Fig-
+ure 3). For instance the goals of the negative example
+
+(1, 2, 3, 4, 5, 6)/(6, 5, 2, 3, 4, 1) shown in Figure 2 can be
+
+reached from the associated initial state by applying the
+corresponding actions to swap the content of pointers and
+moving appropriately those pointers. On the other hand
+(4, 3, 2, 1)/(1, 1, 1, 1) would represent an UNSAT classical
+planning instance, because (1, 1, 1, 1) is not reachable start-
+ing from (4, 3, 2, 1) and provided the mentioned actions for
+reversing lists.
+
+Program validation with negative examples
+
+In generalized planning the process of plan validation is im-
+plicitly required as part of plan synthesis, since computing
+a solution plan requires us to validate it on all the given in-
+put instances. Next, we extend the notion of validation to
+consider also negative examples.
+
+Deﬁnition 2 (Program Validation with Positive and Negative
+examples). Given a program Π and a set of classical plan-
+ning problems P = {P1 , . . . , PT } labeled either as posi-
+tive or negative, validation is the task of verifying whether Π
+solves each P ∈ P labeled as positive, while it fails to solve
+each P ∈ P that is labeled as negative.
+
+Validating a sequential plan on a classical planing
+problem is straightforward because either a validation
+proof, or a failure proof, is obtained by executing the
+plan starting from the initial state of the planning prob-
+lems (Howey, Long, and Fox 2004). Validating a program
+on a classical planning problem is no longer straightforward
+because it requires a mechanism for detecting inﬁnite loops
+(checking failure conditions 1. and 2. is however straightfor-
+ward).
+The execution of plans with control ﬂow on a
+given planning problem is compilable into classical
+planning. Examples
+are
+compilations
+for GOLOG
+procedures
+(Baier, Fritz, and McIlraith 2007),
+Finite
+State
+Controllers
+(Bonet, Palacios, and Geffner 2010;
+Segovia-Aguas, Jim ´enez, and Jonsson 2018) or planning
+programs
+(Segovia-Aguas, Jim ´enez, and Jonsson 2016;
+Segovia-Aguas, Celorrio, and Jonsson 2019). These com-
+pilations encode the cross product of the given planning
+problem and the automata corresponding to the plan to
+
+execute. The plan is valid iff the compiled problem is
+solvable. If a classical planner proves the compiled problem
+is unsolvable, then the plan is invalid because its execution
+necessarily failed.
+Besides
+current
+planners
+do
+not
+excel
+at
+proving
+that
+a
+given
+problem
+is
+unsolv-
+able (Eriksson, R ¨oger, and Helmert 2017), none of
+the
+cited compilations can identify the precise source of a
+failed plan execution. Next, we show that the classical
+planning compilation for the synthesis of planning pro-
+grams (Segovia-Aguas, Celorrio, and Jonsson 2019) can be
+updated with a mechanism for detecting inﬁnite loops, that
+is taken from an approach for the computation of inﬁnite
+plans (Patrizi et al. 2011). This updated compilation can
+identify the three possible sources of execution failure
+(namely incomplete programs, inapplicable actions and
+inﬁnite loops) of a program in a given classical planning
+problem. What is more, the compilation can be further
+updated for solving generalized planning problems with
+positive and negative examples.
+
+A compilation for program validation
+
+Given a generalized planning task P = {P1 , . . . , PT } and a
+program Π, program validation is compilable into a planning
+instance P ′
+n , Gn i, that extends Pn from the
+background Section . The extended ﬂuent set is F ′
+Fneg ∪ Fcopy , where
+
+n = hF ′
+n , A′
+n , I ′
+
+n = Fn ∪
+
+• Fneg = {checked, holds, stored, acted, loop} contains
+ﬂags for identifying the source of execution failures,
+
+• Fcopy = {copyf , correctf : f ∈ F ∪ Fpc } contains the
+ﬂuents used to store a copy of the program state with the
+aim of identifying inﬁnite loops.
+Unlike An , the action set A′
+n does not contain program-
+ming action (these actions are only necessary for program
+synthesis but not for program validation). However, A′
+n con-
+tains a new type of action called check action that veriﬁes
+whether the precondition of an instruction holds. For an in-
+struction w and line i, the check action C (wi ) is deﬁned as
+
+pre(C (wi )) ={pci , insi,w , ¬checked, ¬loop},
+cond(C (wi )) ={∅ ⊲ {checked}} ∪ {pre(w) ⊲ {holds}}.
+
+After applying C (wi ), execution fails if holds is false, ei-
+ther because the goal condition Gt is not satisﬁed when we
+apply a termination instruction endt , or because the precon-
+dition pre(w) of the action w ∈ A does not hold (which
+corresponds precisely to failure conditions 1. and 2. above).
+A similar mechanism has been previously developed for
+computing explanations/excuses of when a plan cannot be
+found (G ¨obelbecker et al. 2010).
+Each execution action E (wi ) is deﬁned as before, but we
+add precondition {checked, holds} and the conditional effect
+∅ ⊲ {¬checked, ¬holds, acted}. As a result, C (wi ) has to
+be applied before E (wi ), and E (wi ) is only applicable if
+execution does not fail (i.e. if holds is true).
+To identify inﬁnite loops A′
+n is extended with three new
+actions:
+
+• store, which stores a copy of the current program state.
+pre(store) = {¬checked, ¬stored, acted},
+cond(store) = {∅ ⊲ {stored, ¬acted}}
+
+∪ {{f } ⊲ {copyf } : ∀f ∈ F ∪ Fpc }.
+
+This action can be applied only once, after an action ex-
+ecution E (wi ) and before checking an action C (wi ). It
+simply uses conditional effects to store a copy of the pro-
+gram state (s, i) in the ﬂuents of type copyf .
+• compare, which compares the current program state (s, i)
+with the stored copy.
+
+pre(compare) = {¬checked, stored, acted, ¬loop},
+cond(compare) = {∅ ⊲ {¬stored, ¬acted, loop}}
+∪{{f , copyf } ⊲ {correctf } : f ∈ F ∪ Fpc }
+
+∪{{¬f , ¬copyf } ⊲ {correctf } : f ∈ F ∪ Fpc }.
+
+The result of the comparison is in the ﬂuents of type
+correctf . Note that acted is not true after applying store
+so, to satisfy the precondition of compare, we have to ap-
+ply an execution action ﬁrst (otherwise the current pro-
+gram state would trivially equal the stored copy). For a
+ﬂuent f to be correct, either it is true in both the current
+program state and the stored copy, or it is false in both.
+• process, which processes the outcome of the comparison.
+pre(process) = {loop} ∪ {correctf : f ∈ F ∪ Fpc },
+cond(process) = {∅ ⊲ {¬loop, checked}}.
+This action can only be applied if all ﬂuents in F ∪ Fpc
+are correct, adds ﬂuent checked, and resets other auxiliary
+ﬂuents to false. The purpose of adding checked is to match
+the state of other failure conditions (checked is true and
+holds is false).
+Finally, A′
+n contain also actions skipt , 1 ≤ t ≤ T , that
+terminate program execution as a result of a failure condi-
+tion. These actions are applicable once a failure condition is
+detected, of either type (checked is true and holds is false).
+pre(skipt ) = {testt , checked, ¬holds},
+cond(skipt ) = cond(endt )
+∪ {∅ ⊲ {¬checked, ¬stored}}
+
+∪ {∅ ⊲ {¬copyf , ¬correctf : f ∈ F ∪ Fpc }}.
+
+Note that the action applied immediately before skipt
+identiﬁes the source of the execution failure of the program
+Π on Pt . This action is either:
+1. C (endt,i ), identifying an incomplete program.
+2. C (wi ) such that w ∈ A, which proves that w ∈ A is an
+inapplicable action.
+
+3. process, identifying that the execution of the program en-
+tered an inﬁnite loop.
+The precondition ¬stored is added to all check actions
+C (endt,i ), to avoid saving a stored copy of the program state
+from one input instance to the next. The goal condition is the
+same as before and in the initial state I ′
+n the instructions of
+the program Π are already programmed in the initial state:
+
+I ′
+n = I1 ∪ {pc0} ∪ {insi,w : 0 ≤ i ≤ n ∧ wi ∈ Π}.
+
+Program synthesis with positive and negative
+examples
+
+We deﬁne a generalized planning problem with positive and
+negative examples as a ﬁnite set of classical planning in-
+stances P = {P1 , . . . , PT + , . . . , PT } that belong to the
+same planning frame. In this set there are T + positive and
+T − negative instances such that T = T + + T − (see Fig-
+ure 3). We assume that at least one positive instance is nec-
+essary (T + > 0) because otherwise, the one-instruction pro-
+gram 0.end, covers any negative instance whose goals are
+not satisﬁed in the initial state.
+To synthesize programs for generalized planning with
+positive and negative examples we extend the compilation
+n with programming instructions. The output of the ﬁ-
+nal extension of the compilation is a new planning instance
+
+P ′
+
+P ′′
+
+n , Gn i:
+
+n = hF ′′
+
+n , A′′
+n , I ′′
+
+P ′
+
+• The ﬂuent set F ′′
+n is identical to that of the compilation
+n , except that F ′′
+n now includes a ﬂuent negex, which is
+used to constrain the application of actions E (endt,i ) and
+skipt , respectively. By adding a precondition ¬negex to
+E (endt,i ) and a precondition negex to skipt , we require
+program execution to succeed for positive examples, and
+to fail for negative examples.
+• The action set A′′
+n is identical to A′
+n except that we rein-
+troduce programming actions P (wi ) in the action set A′′
+and we add a precondition ¬negex to E (endt,i ) and a pre-
+condition negex to skipt to require program execution to
+succeed for positive examples, and to fail for negative ex-
+amples. Moreover, precondition negex is added to all ac-
+tions related to inﬁnite loop detection (e.g. store, compare
+and process).
+• All program lines are now empty in I ′′
+n (so they can
+be programmed) and the goal condition is still Gn =
+{done}, like in the original compilation.
+
+n
+
+Theorem 1 (Soundness). Any plan π that solves the plan-
+ning instance P ′′
+n induces a planning program Π that solves
+the corresponding generalized planning task with positive
+and negative examples P = {P1 , . . . , PT + , . . . , PT }.
+
+Proof. To solve the planning instance P ′′
+n , a solution π has to use
+programming actions P (wi ) to program the instructions on empty
+program lines, effectively inducing a planning program Π. Once
+an instruction w is programmed on line i, it cannot be altered and
+can only be executed using the given execution model (that is, us-
+ing a check action C (wi ) to test its precondition, followed by an
+execution action E (wi ) to apply its effects). To achieve the goal
+Gn = {done}, π has to simulate the execution of Π on each input
+instance Pt , 1 ≤ t ≤ T , terminating with either E (endt,i ) or skipt ,
+which are the only two actions that allow us to move on to the next
+input instance (if t < T ) or add ﬂuent done (if t = T ). Because
+of the preconditions of E (endt,i ) and skipt , termination has to end
+with E (endt,i ) if Pt is a positive example, and with skipt if Pt is
+negative proving that Π solves each positive example and fails to
+solve each negative example.
+
+Theorem 2 (Completeness).
+If
+there exists a pro-
+gram Π within n program lines that solves P =
+{P1 , . . . , PT + , . . . , PT } then there exists a classical plan π
+that solves P ′′
+n .
+
+Proof. We can build a preﬁx of plan π using programming actions
+that insert the instructions of Π on each program line. Now, we de-
+termine the remaining actions of π building a postﬁx that simulates
+the execution of Π on each input instance Pt ∈ P . Since Π solves
+each positive example and fails to solve each negative example, it
+means that there exists an action sequence that simulates the execu-
+tion of Π on Pt and ends with action E (endt,i ) (if Pt is a positive
+example) and with skipt (if Pt is negative).
+
+Experiments
+
+This section reports the empirical performance of our ap-
+proach for the synthesis and evaluation of programs for gen-
+eralized planning1. All experiments are run on an Intel Core
+i5 2.90GHz x 4 with a memory limit of 4GB and 600 sec-
+onds of planning timeout. In order to compare with previous
+approaches, we use Fast Downward (Helmert 2006) in the
+LAMA-2011 setting (Richter, Westphal, and Helmert 2011)
+to synthesize and evaluate programs using the presented
+compilations.
+Experiments are carried out over the following general-
+ized planning tasks. The Green Block consist of a tower of
+blocks where only one greenish block exists and must be col-
+lected. In Fibonacci the aim is to output the correct number
+in the Fibonacci sequence. In Gripper a robot has to move
+a number of balls from room A to room B, and in List the
+aim is to visit all elements of a linked list. Finally, in Trian-
+gular Sum we must calculate the triangular sum represented
+with the formula y = PN
+0 x. We also introduce in this paper
+RoboPainter (RP), where a robot should paint, given differ-
+ent constraints, odd cells in a corridor (see Figure 1).
+
+Computing programs with positive and negative
+examples
+
+For
+the synthesis of programs that solve the previ-
+ous
+generalized planning tasks, we
+compare
+two
+versions of our compilation, PN-Lite and PN, with
+the
+results
+from some
+problems whose
+solutions
+where
+solved
+and
+reported
+as “One Procedure”
+in
+Segovia-Aguas, Jim ´enez, and Jonsson
+(2016). We
+use PN to denote the version with positive and negative
+examples that detect the three possible failures of a planning
+program, whereas PN-Lite is a simpler sound version that
+detects incomplete programs and inapplicable actions but
+not inﬁnite loops.
+In this experiment we have run almost 100 random conﬁg-
+urations with at most 5 instances that could be either positive
+or negative (where at least one is forced to be positive, see
+the previous section). The idea behind this experiment is to
+evaluate the use of negative examples as counter-examples
+to prevent undesired generalizations of programs that are
+synthesized from small input instances. Some domains from
+previous approaches are simple enough that they can gener-
+alize from few positive instances, so our compilations will
+only add complexity to the domain, requiring extra search-
+ing time required for failure detection.
+
+1The source code, benchmarks and scripts are in the Automated
+Programming Framework (Segovia-Aguas 2017) such that any ex-
+perimental data in the paper can be reproduced.
+
+n
+
+In Table 1, columns PN-Lite and PN report the obtained
+results when we synthesize programs that are validated on
+both positive and negative examples. Recall that the P ′′
+compilation has additional ﬂuents and actions compared to
+Pn , which imposes an extra searching time. However, in-
+cluding negative examples often makes it possible to syn-
+thesize programs from fewer positive examples and with
+fewer ﬂuents (planning instances of smaller size) which,
+in general, increases the percentage of programs found.
+Also, the process of synthesis from few examples is a
+beneﬁt in generalized planning compilations akin to few-
+shot learning (Lake, Salakhutdinov, and Tenenbaum 2015;
+Camacho and McIlraith 2019).
+We brieﬂy describe the best solutions that generalize for
+each domain in Table 1. In Green Block, we repeat the drop
+and unstack instructions while the green block is not hold,
+then we collect the holding green block. In the Fibonacci
+domain there are 4 variables called A, B, C and D that rep-
+resent Fn , n, Fn−1 and Fn−2 respectively. The program as-
+signs C to D, then A to C, then adds D to A and decreases
+B, repeating this sequence while B is different from 0. The
+planning program found in Gripper picks up a ball with the
+left hand, moves to room B, drops the ball, and goes back
+until no more balls are in room A. The List program vis-
+its the current node, moves to the next node and repeats the
+process until it reaches the tail. Finally, the program for Tri-
+angular Sum has a variable A initialized to 0 and countdown
+variable B that is added iteratively to A.
+
+Evaluating generalized plans with test sets of
+positive and negative examples
+
+Negative examples are useful for deﬁning quantitative met-
+rics that evaluate the coverage of generalized plans with re-
+spect to a test set of unseen examples. Given a labeled clas-
+sical planning instance P and a program Π:
+
+• If P is labeled as positive and Π solves P this means P
+is a true positive. Otherwise, if Π fails to solve P this
+means P is a false positive.
+
+• If P is labeled as a negative example and Π solves P this
+means P is a false negative. Otherwise, if Π fails to solve
+P this means P is a true negative.
+
+Our notion of positive and negative examples allows us to
+adopt metrics from ML for the evaluation of planning solu-
+tions that generalize with respect to a test set. These metrics
+are more informative than simply counting the number of
+positive examples covered by a solution and also consider
+the errors made over the test set (Davis and Goadrich 2006):
+• Precision, pr(Π) =
+(p+p− ) , and Recall, re(Π) =
+(p+n− ) , where p is the number of positive examples
+solved by Π, p− the number of false positives (classical
+planing problems labeled as negative that are solved by
+Π) and n− is the number of false negatives (instances la-
+beled as positive examples that cannot be solved by Π).
+
+p
+
+p
+
+• Accuracy is a more informed metric frequently used in
+p+n+p−+n− . In our case, n represents the
+number of negative examples unsolved by the program Π.
+
+ML, ac(Π) =
+
+p+n
+
+Only Positive
+PN-Lite
+PN
+n max(T ) Avg. Search(s)
+Found(%) Avg. Search(s)
+Found(%) Avg. Search(s)
+5
+5
+64.58
+50%
+140.44
+60%
+86.43
+4
+5
+45.40
+81.25%
+154.35
+67.5%
+99.12
+5
+5
+190.14
+25%
+93.96
+27.5%
+-
+4
+5
+48.19
+43.75%
+67.77
+27.5%
+107.14
+3
+5
+0.04
+31.25%
+0.07
+27.5%
+0.21
+3
+5
+143.36
+100%
+192.13
+100%
+141.74
+
+Found(%)
+40%
+90%
+0%
+27.5%
+45%
+100%
+
+RoboPainter
+Green Block
+Fibonacci
+Gripper
+List
+T. Sum
+
+Table 1: Program synthesis with positive and negative examples: number of program lines (n), max number of input instances (T), average
+search time (secs) and, percentage of found solutions (with only positive and with positive and negative examples).
+
+re(ΠP )
+
+pr(ΠP)
+
+ac(ΠP )
+
+re(ΠPN-Lite)
+
+pr(ΠPN-Lite)
+
+ac(ΠPN-Lite)
+
+RoboPainter
+Green Block
+Fibonacci
+Gripper
+List
+T. Sum
+
+71.74% 100.00% 95.19%
+68.86%
+80.93%
+91.48%
+17.86%
+71.43%
+85.47%
+41.54%
+85.71%
+87.68%
+8.08% 72.73% 81.89%
+71.74% 100.00% 95.19%
+
+70.90%
+60.48%
+22.22%
+62.38%
+5.96%
+75.63%
+
+100.00%
+75.00%
+100.00%
+88.73%
+65.00%
+100.00%
+
+94.58%
+88.76%
+85.97%
+91.35%
+81.00%
+95.57%
+
+re(ΠPN)
+pr(ΠPN)
+ac(ΠPN )
+75.63% 100.00% 95.57%
+80.89% 88.38% 94.43%
+-%
+-%
+-%
+35.44%
+84.88%
+86.30%
+4.75%
+47.22%
+80.27%
+70.90% 100.00% 94.58%
+
+Table 2: Program evaluation wrt a set of positive and negative tests using the recall, precision and accuracy metrics. The -% symbol refers
+either to value not found because of an invalid operation.
+
+P ′
+
+For this experiment we considered the planning program
+as given, i.e. the computed programs in the previous syn-
+thesis experiment. Then we compile a set of positive and
+negative instances but include the planning program in the
+initial state instead of having empty lines (as in the Pn and
+n compilations). The execution of the computed programs
+on these instances must solve the positive instances while
+failing to solve the negative instances, verifying plan failure
+due to a failed condition or the detection of an inﬁnite loop,
+as explained in the previous section.
+We have used a framework for validating planning pro-
+grams that reports success or speciﬁes the source of failure
+when executing the program for each randomly generated
+planning instance. The results are shown in Table 2 where
+we report the precision, accuracy and recall of programs
+synthesized using only positive examples, and programs syn-
+thesized using the positive and negative examples. The list
+domain is the only case where positive examples yield to a
+better accuracy, while the rest of domains using positive and
+negatives improves only positives in all metrics.
+
+Conclusion
+
+Generalized planning provides an interesting framework to
+bridge the gap between ML and AI planning (Geffner 2018).
+On the one hand generalized planning follows a model based
+approach with declarative deﬁnitions of actions and goals, as
+AI planning. On the other hand generalized planning, as in-
+ductive ML, computes solutions that generalize over a set
+of input examples. Generalized planning has however little
+work dedicated to the assessment of the generality of plans
+beyond the given input planning tasks (positive examples
+only). ML however, has a long tradition on the empirical
+assessment of the generality of solutions. The fact that our
+compilation identiﬁes the source of failures of program ex-
+ecution on a particular planning instance allows us to intro-
+duce negative examples and to bring the evaluation machin-
+
+ery from ML to deﬁne evaluation metrics that empirically
+assess the generality of plans beyond the given input plan-
+ning tasks, e.g. using test sets.
+Model
+checking
+(Clarke, Grumberg, and Peled 1999)
+provides effective solvers
+for automatically verifying
+correctness properties for diverse ﬁnite-state systems.
+More precisely when actions have non-deterministic
+effects, program validation becomes
+complex since
+it
+requires proving that all
+the possible program ex-
+ecutions reach the goals.
+In such a scenario, model
+checking (Clarke, Grumberg, and Peled 1999) and non-
+deterministic planning,
+like POMDP planning,
+are
+deﬁnitely more suitable approaches for plan valida-
+tion (Hoffmann 2015). An interesting research direction is
+to study how to leverage model checking techniques for the
+synthesis of generalized planning form both positive and
+negative examples. Plan constraints are also a compact way
+of expressing negative information for planning and reduce
+the space of possible solution plans. Plan constraints have
+already been introduced to different planning models using
+the LTL formalism (Baier, Bacchus, and McIlraith 2009;
+Bauer and Haslum 2010; Patrizi, Lipovetzky, and Geffner 2013;
+Camacho et al. 2017).
+
+Acknowledgments
+
+The research leading to these results has received fund-
+ing from the European Unions Horizon 2020 research and
+innovation programme under grant agreement no. 731761,
+IMAGINE; and it is partially supported by grant TIN-2015-
+67959 and the Maria de Maeztu Units of Excellence Pro-
+gramme MDM-2015-0502, MEC, Spain. Sergio Jim ´enez
+is supported by the Ramon y Cajal program, RYC-2015-
+18009, the Spanish MINECO project TIN2017-88476-C2-
+1-R, and the generalitat valenciana project GV/2019/082.
+Anders Jonsson is partially supported by the Spanish grants
+TIN2015-67959 and PCIN-2017-082.
+
+References
+
+[Alur et al. 2018] Alur, R.; Singh, R.; Fisman, D.; and Solar-
+Lezama, A. 2018. Search-based program synthesis. Com-
+munications of the ACM 61(12):84–93.
+
+[Angluin, Frazier, and Pitt 1992] Angluin, D.; Frazier, M.;
+and Pitt, L. 1992. Learning conjunctions of horn clauses.
+Machine Learning 9(2-3):147–164.
+
+[Baier, Bacchus, and McIlraith 2009] Baier, J. A.; Bacchus,
+F.; and McIlraith, S. A. 2009. A heuristic search approach
+to planning with temporally extended preferences. Artiﬁcial
+Intelligence 173(5-6):593–618.
+
+[Baier, Fritz, and McIlraith 2007] Baier, J. A.; Fritz, C.; and
+McIlraith, S. A. 2007. Exploiting procedural domain con-
+trol knowledge in state-of-the-art planners. In International
+Conference on Automated Planning and Scheduling, 26–33.
+
+[Bauer and Haslum 2010] Bauer, A., and Haslum, P. 2010.
+Ltl goal speciﬁcations revisited. In ECAI, volume 10, 881–
+886.
+
+[Biere et al. 2009] Biere, A.; Heule, M.; van Maaren, H.;
+and Walsh, T. 2009. Conﬂict-driven clause learning sat
+solvers. Handbook of Satisﬁability, Frontiers in Artiﬁcial
+Intelligence and Applications 131–153.
+
+[Bonet, Palacios, and Geffner 2010] Bonet, B.; Palacios, H.;
+and Geffner, H. 2010. Automatic derivation of ﬁnite-state
+machines for behavior control. In AAAI.
+
+[Camacho and McIlraith 2019] Camacho, A., and McIlraith,
+S. A. 2019. Learning interpretable models expressed in
+linear temporal logic. In International Conference on Auto-
+mated Planning and Scheduling, volume 29, 621–630.
+
+[Camacho et al. 2017] Camacho, A.; Triantaﬁllou, E.;
+Muise, C.; Baier, J. A.; and McIlraith, S. A. 2017. Non-
+deterministic planning with temporally extended goals: Ltl
+over ﬁnite and inﬁnite traces. In AAAI.
+
+[Clarke, Grumberg, and Peled 1999] Clarke, E. M.; Grum-
+berg, O.; and Peled, D. 1999. Model checking. MIT press.
+
+[Davis and Goadrich 2006] Davis, J., and Goadrich, M.
+2006. The relationship between precision-recall and roc
+curves. In ICML, 233–240. ACM.
+
+[Eriksson, R ¨oger, and Helmert 2017] Eriksson, S.; R ¨oger,
+G.; and Helmert, M. 2017. Unsolvability certiﬁcates for
+classical planning.
+In International Conference on Auto-
+mated Planning and Scheduling.
+
+[Geffner 2018] Geffner, H. 2018. Model-free, model-based,
+and general intelligence. In IJCAI.
+
+[G ¨obelbecker et al. 2010] G ¨obelbecker, M.; Keller, T.; Eye-
+rich, P.; Brenner, M.; and Nebel, B. 2010. Coming up with
+good excuses: What to do when no plan can be found. Cog-
+nitive Robotics 10081.
+
+[Helmert 2006] Helmert, M. 2006. The Fast Downward
+Planning System. Journal of Artiﬁcial Intelligence Research
+26:191–246.
+
+[Hoffmann 2015] Hoffmann, J. 2015. Simulated penetration
+testing: From ”dijkstra” to ”turing test++”. In International
+Conference on Automated Planning and Scheduling, 364–
+372.
+
+[Howey, Long, and Fox 2004] Howey, R.; Long, D.; and
+Fox, M. 2004. Val: Automatic plan validation, continuous
+effects and mixed initiative planning using pddl. In ICTAI,
+294–301. IEEE.
+[Hu and De Giacomo 2011] Hu, Y., and De Giacomo, G.
+2011. Generalized planning: Synthesizing plans that work
+for multiple environments.
+In International Joint Confer-
+ences on Artiﬁcial Intelligence.
+
+[Hu and De Giacomo 2013] Hu, Y., and De Giacomo, G.
+2013. A generic technique for synthesizing bounded ﬁnite-
+state controllers. In International Conference on Automated
+Planning and Scheduling.
+[Hu and Levesque 2011] Hu, Y., and Levesque, H. J. 2011. A
+correctness result for reasoning about one-dimensional plan-
+ning problems. In International Joint Conferences on Artiﬁ-
+cial Intelligence, 2638–2643.
+[Jim ´enez, Segovia-Aguas, and Jonsson 2019] Jim ´enez,
+S.;
+Segovia-Aguas, J.; and Jonsson, A. 2019. A review of
+generalized planning. The Knowledge Engineering Review
+34.
+
+[Lake, Salakhutdinov, and Tenenbaum 2015] Lake, B. M.;
+Salakhutdinov, R.; and Tenenbaum, J. B. 2015. Human-
+level concept learning through probabilistic program induc-
+tion. Science 350(6266):1332–1338.
+[Lotinac et al. 2016] Lotinac, D.;
+Segovia-Aguas,
+J.;
+Jim ´enez, S.; and Jonsson, A. 2016. Automatic generation
+of high-level state features for generalized planning.
+In
+International Joint Conferences on Artiﬁcial Intelligence.
+[Mitchell 1997] Mitchell, T. M. 1997. Machine Learning.
+New York, NY, USA: McGraw-Hill, Inc., 1 edition.
+
+[Parekh, Honavar, and others 2000] Parekh, R.; Honavar, V.;
+et al. 2000. Grammar inference, automata induction, and
+language acquisition. Handbook of natural language pro-
+cessing 727–764.
+[Patrizi et al. 2011] Patrizi, F.; Lipoveztky, N.; De Giacomo,
+G.; and Geffner, H. 2011. Computing inﬁnite plans for ltl
+goals using a classical planner. In International Joint Con-
+ferences on Artiﬁcial Intelligence.
+[Patrizi, Lipovetzky, and Geffner 2013] Patrizi, F.; Lipovet-
+zky, N.; and Geffner, H. 2013. Fair ltl synthesis for non-
+deterministic systems using strong cyclic planners. In Inter-
+national Joint Conferences on Artiﬁcial Intelligence.
+
+[Richter, Westphal, and Helmert 2011] Richter, S.; West-
+phal, M.; and Helmert, M. 2011. Lama 2008 and 2011. In
+International Planning Competition.
+
+[Segovia-Aguas, Celorrio, and Jonsson 2019] Segovia-
+Aguas, J.; Celorrio, S. J.; and Jonsson, A. 2019. Computing
+programs for generalized planning using a classical planner.
+Artiﬁcial Intelligence.
+[Segovia-Aguas, Jim ´enez, and Jonsson 2016] Segovia-
+Aguas, J.; Jim ´enez, S.; and Jonsson, A. 2016. Generalized
+planning with procedural domain control knowledge.
+In
+International Conference on Automated Planning and
+Scheduling.
+
+[Segovia-Aguas, Jim ´enez, and Jonsson 2018] Segovia-
+Aguas, J.; Jim ´enez, S.; and Jonsson, A. 2018. Computing
+
+hierarchical ﬁnite state controllers with classical planning.
+Journal of Artiﬁcial Intelligence Research 62:755–797.
+
+[Segovia-Aguas 2017] Segovia-Aguas,
+J.
+2017.
+Automated
+programming
+framework.
+https://github.com/aig- upf/automated- programming- framework.
+Accessed: 2019-11-12.
+
+[Srivastava et al. 2011] Srivastava, S.; Immerman, N.; Zil-
+berstein, S.; and Zhang, T. 2011. Directed search for gener-
+alized plans using classical planners. In International Con-
+ference on Automated Planning and Scheduling, 226–233.
+
+[Srivastava, Immerman, and Zilberstein 2011] Srivastava,
+S.; Immerman, N.; and Zilberstein, S.
+2011. A new
+representation and associated algorithms for generalized
+planning. Artiﬁcial Intelligence 175(2):615–647.
+
+[Winner and Veloso 2003] Winner, E., and Veloso, M. 2003.
+Distill: Learning domain-speciﬁc planners by example. In
+ICML, 800–807.
+
+

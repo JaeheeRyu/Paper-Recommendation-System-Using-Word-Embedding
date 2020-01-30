@@ -1,0 +1,1138 @@
+Mechanism Design with Predicted Task Revenue for Bike Sharing Systems
+
+Hongtao Lv,1 Chaoli Zhang,1 Zhenzhe Zheng,1 Tie Luo,2 Fan Wu,1 ∗ Guihai Chen1
+
+1 Department of Computer Science and Engineering, Shanghai Jiao Tong University, China
+{lvhongtao, chaoli zhang, zhengzhenzhe}@sjtu.edu.cn, tluo@mst.edu, fwu@sjtu.edu.cn, gchen@cs.sjtu.edu.cn
+2 Department of Computer Science, Missouri University of Science and Technology, USA
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+T
+
+G
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+6
+0
+7
+7
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Bike sharing systems have been widely deployed around the
+world in recent years. A core problem in such systems is
+to reposition the bikes so that the distribution of bike sup-
+ply is reshaped to better match the dynamic bike demand.
+When the bike-sharing company or platform is able to pre-
+dict the revenue of each reposition task based on historic
+data, an additional constraint is to cap the payment for each
+task below its predicted revenue. In this paper, we propose
+an incentive mechanism called TruPreTar to incentivize users
+to park bicycles at locations desired by the platform toward
+rebalancing supply and demand. TruPreTar possesses four
+important economic and computational properties such as
+truthfulness and budget feasibility. Furthermore, we prove
+that even when the payment budget is tight, the total rev-
+enue still exceeds or equals the budget. Otherwise, TruPre-
+Tar achieves 2-approximation as compared to the optimal
+(revenue-maximizing) solution, which is close to the lower
+bound of at least
+2 that we also prove. Using an industrial
+dataset obtained from a large bike-sharing company, our ex-
+periments show that TruPreTar is effective in rebalancing bike
+supply and demand and, as a result, generates high revenue
+that outperforms several benchmark mechanisms.
+
+√
+
+Introduction
+
+Bike sharing is a new transportation mode with many ben-
+eﬁts in offering convenience and ﬂexibility as well as low-
+ering economic cost. By 2015, more than 7000 bike shar-
+ing systems have been deployed around the world (Laporte,
+Meunier, and Calvo 2015). However, the ﬂexibility of bike
+sharing systems, in particular the “anywhere-parking” con-
+venience, brings forth a serious issue of imbalance between
+the distribution of bike supply and demand. This leads to
+many users being unable to ﬁnd a bicycle nearby when they
+need it, and ultimately affects company revenue adversely.
+Hence, there is an urgent need to rebalance the supply and
+demand by repositioning the bicycles, which we refer to as
+a bike rebalancing problem.
+There are two approaches to solving this problem. One
+is to relocate bicycles by the staff of the bike-sharing com-
+pany or platform, for example using trucks. This involves
+
+∗F. Wu is the corresponding author.
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+route planning and typically uses linear programming tech-
+niques, as has been extensively studied under static mod-
+els (Maggioni et al. 2019; Schuijbroek, Hampshire, and
+Van Hoeve 2017) and dynamic models (Kek et al. 2009;
+Angeloudis, Hu, and Bell 2014). However, this approach is
+costly and not eco-friendly in terms of carbon footprint.
+Another approach is to design incentive mechanisms to
+motivate users to reposition bicycles at platform-desired lo-
+cations for rebalancing supply and demand. This falls un-
+der the research area of crowdsourcing (Fricker and Gast
+2016) which takes advantage of the power of crowd to com-
+plete tasks that are otherwise difﬁcult (Luo et al. 2016). With
+this idea, Ghosh and Varakantham (2017) proposed a solu-
+tion that generates repositioning tasks together with the use
+of bike trailers, and pays users using the Vickrey-Clarke-
+Groves (VCG) mechanism. Singla et al. (2015) introduced a
+crowdsourcing method that offers users monetary incentive
+for parking their bikes at recommended locations.
+However, most of existing mechanisms for this problem
+have not considered the predicted revenue (or value) of a
+repositioning task. Such predicted values are made avail-
+able in recent years, due to the prosperity of deep learn-
+ing technique which can well predict the bike demand
+in such systems (Yang et al. 2016; Li and Zheng 2019;
+Zhang et al. 2016). With this predictive power, the expected
+revenue or value of a repositioning task can be easily ob-
+tained. Therefore, the platform would assign a task to a user
+only if the payment to the user does not exceed the predicted
+revenue. This constraint is akin to the “reserve price” in for-
+ward auctions which are used to promote revenue. In our
+problem, it is used to better control the payments and thereby
+increase the proﬁt of the platform. This constraint is gener-
+ally overlooked in prior work on bike sharing or crowdsourc-
+ing (Angelopoulos et al. 2018; Gagan Goel and Singla 2013;
+Vaze 2017). For instance with classic budget feasible mech-
+anisms such as (Singer 2010), the payment to a winning user
+is determined by the bids of other users and/or the budget.
+But in our case, this payment is invalid if it is above the value
+of the task assigned to the winning user.
+In this paper, we propose a solution called Truthful
+and budget-feasible incentive mechanism with Predicted
+Task revenue (TruPreTar) for the bike rebalancing problem,
+which we model as a reverse auction. In this auction, users
+bid for repositioning tasks and the platform determines task
+
+ 
+ 
+ 
+ 
+ 
+ 
+allocation and user payments. We ﬁrst show that several
+widely used auctions and pricing mechanisms do not apply
+to this problem. Then we present the design of TruPreTar
+and show that it is an effective solution that satisﬁes several
+desired economic and computational properties. In addition,
+we prove two important theoretical guarantees backed by
+our mechanism on revenue. Finally, we evaluate the perfor-
+mance of TruPreTar via simulations using a real industrial
+dataset obtained from a large bike-sharing company.
+Our main contributions are summarized as follows:
+• We model the bike rebalancing problem under a crowd-
+sourcing framework using a reverse auction model. Im-
+portantly, we incorporate a bipartite graph into the
+auction—with a payment constraint—to determine the al-
+location rule and the payment rule for the auction. The
+payment constraint also implies the establishment of a
+connection between (bike) demand prediction and incen-
+tive mechanism design.
+• We propose a mechanism TruPreTar which satisﬁes de-
+sired properties including incentive compatibility, bud-
+get feasibility, individual rationality, and computational
+efﬁciency. Notably, we achieve this by novelly combin-
+ing Myerson’s Lemma and a greedy weighted maximum
+matching technique.
+• We prove two important
+theoretical guarantees for
+TruPreTar: When the budget is tight, it ensures that the
+platform revenue is no less than its budget, under a prac-
+tical large-market assumption. When the budget is sufﬁ-
+cient, TruPreTar achieves a 2-approximation ratio as com-
+pared to the optimal solution which maximizes revenue.
+We show that the lower bound of the approximation ra-
+tio is at least
+2 which means our ratio is rather close.
+Putting in practice perspectives, we provide a guideline
+of how to use this result to set company budget in real
+dynamic systems.
+• We evaluate the effectiveness of our mechanism via exten-
+sive experiments using a real dataset from a large bike-
+sharing company. The results show that our mechanism
+outperforms other benchmark mechanisms in terms of
+revenue and proﬁt.
+
+√
+
+Model
+
+Consider a dynamic bike sharing system in which a batch
+of n users N = {1, 2, . . . , n} have hired their bicycles and
+not parked them yet. There is also a set of m discrete bicycle
+parking lots or locations1 L = {1, 2, . . . , m}, where each lo-
+cation can accommodate multiple bicycles but is conceptu-
+ally considered a point on a map. We assume that each user’s
+destination is known to the platform when she hires a bicy-
+cle, since it can be either reported by the user, as is the prac-
+tice adopted by some companies (e.g., HelloBike in China),
+or predicted using historic information (Liu et al. 2018). The
+platform aims to incentivize the users to park their bicycles
+
+1We do not consider continuous locations because many coun-
+tries such as Singapore and China have nowadays stipulated munic-
+ipal regulations to restrict shared bikes to be parked at designated
+locations rather than arbitrarily.
+
+at system-desired locations for rebalancing the supply and
+demand of bicycles. Each user has a maximum relocation
+range h, out of which they would not accept a repositioning
+task; in other words, h is the maximum “extra mile” they are
+willing to relocate.
+Similar to the concept of ﬁrst come ﬁrst served ﬂow in
+(Waserhole, Jost, and Brauner 2013), we assume that a bi-
+cycle that is parked earlier will have a higher probability to
+be hired than a bicycle parked later at the same location. As
+such, each bicycle has a different probability of being hired.
+Accordingly, we deﬁne a repositioning task tlx as “park your
+bicycle at location l as the x-th bicycle”, and it is associ-
+ated with an expected revenue rlx . As mentioned earlier, rlx
+can be derived from bike demand predication at the location
+(Yang et al. 2016; Li and Zheng 2019).
+To assign the tasks to users, we construct a bipartite graph
+G = {N , T , E }, where the left nodes are the set of users
+N , and the right nodes are the set of tasks T . Since there
+are maximum n possible tasks at each location, there are
+totally m × n tasks in T . The set E is the edges between
+users and tasks indicating the feasibility of assignment: an
+edge between i and tlx means that location l is within the
+maximum relocation range of user i. For notation simplicity,
+henceforth we use j to denote a task tlx when there is no
+ambiguity.
+Each user i has a relocation cost ci which is a private value
+known to user i only. She bids for a task and claims a cost
+bi which is not necessarily equal to ci . Each task j has an
+expected revenue (or “value” as we use interchangeably) rj
+for the platform. We aim to design an incentive mechanism
+that consists of an allocation rule and a payment rule, where
+the allocation rule speciﬁes which task is allocated to which
+user, i.e., the matched pairs (i, j ), and the payment rule spec-
+iﬁes a payment pi for each matched user i. The utility of a
+user is deﬁned as pi − ci . In addition, the platform has a bud-
+get B for all the rebalancing tasks. We want our mechanism
+to satisfy the following desirable properties:
+• Incentive Compatibility: a user can maximize her utility
+only by bidding truthfully, i.e., bi = ci . This property is
+also known as truthfulness or strategy-proofness.
+• Individual Rationality for both users and platform: the
+payment to each winning (i.e., matched) user should be
+no less than her cost, i.e., pi ≥ ci ; the payment for each
+matched task should also be no more than its value, i.e.,
+pi ≤ rj (rj is similar to the reserve price in the mecha-
+nism design theory).
+than the budget, i.e., (cid:80)
+• Budget Feasibility: the overall payment should be no more
+• Computational Efﬁciency: the mechanism should termi-
+nate in polynomial time.
+
+(i,j )∈M pi ≤ B .
+
+(cid:80)
+
+Our objective is to maximize the platform revenue R =
+(i,j )∈M rj , where M = {(i, j )} is the set of matched user-
+task pairs. Thus, the problem of revenue maximization via
+
+task allocation can be formulated as
+
+(cid:88)
+
+max R =
+
+(i,j )∈M
+
+rj
+s.t. pi ≤rj ,
+∀(i, j ) ∈ M
+pi ≥bi ,
+∀(i, j ) ∈ M
+pi ≤ B
+
+(cid:88)
+
+(i,j )∈M
+
+(1)
+
+In addition to revenue, we also evaluate platform proﬁt
+which is deﬁned as
+
+(cid:88)
+
+rj − (cid:88)
+
+(i,j )∈M
+
+(i,j )∈M
+
+P r =
+
+pi .
+
+Infeasibility of Existing Mechanisms
+
+In this section, we show that some widely used mechanisms
+are not feasible for the bike rebalancing problem.
+VCG mechnism. This is a classical mechnism that is
+strategy-proof and maximizes social welfare. However, it
+does not guarantee budget feasibility as required in our case.
+Proof by counter-example: see Figure 1 (a), where the plat-
+form has budget 1 and there are two users {a, b} both with
+a small cost ; the two tasks {1, 2} both have value 1 and
+there are two edges {(a, 1), (b, 2)}. The VCG mechanism
+will output matching M = {(a, 1), (b, 2)} and the payment
+for each user is 1. Thus, the overall payment exceeds the
+budget and hence the mechanism is not budget feasible.
+
+(a) B = 1
+
+(b) B (cid:29) 5
+
+(c) B (cid:29) 6
+
+Figure 1: Counter examples for existing mechanisms.
+
+Singer’s mechanism. Proposed in (Singer 2010), this is
+another well-known mechanism yet is budget feasible. It
+greedily allocates user-task pairs with the highest ratio of
+rj /bi , but does not consider the individual rationality of
+the platform (i.e., pi ≤ rj ). If we adapt the mechanism
+by adding the constraint into the payment rule, it will no
+longer guarantee incentive compatibility. To illustrate this,
+see Figure 1 (b), the platform has sufﬁcient budget, and
+there are two users {a, b} with costs ca = 2, cb = 1,
+two tasks {1, 2} with values r1 = 2, r2 = 3, and three
+
+edges {(a, 1), (a, 2), (b, 2)}. The adapted mechanism out-
+puts match M = {(a, 1), (b, 2)}, and pa = 2. However,
+if user a misreports her cost to be a small number , she will
+be allocated task 2 and her payment becomes 3, making her
+better off.
+graph with (cid:80) rj ≤ B and then use the optimal (i.e., max-
+Optimal matching. The third method is to choose a sub-
+imum) matching (that maximizes platform revenue) to al-
+locate tasks, where the payments to winners are set to the
+values of their matched tasks. Not only does this mech-
+anism has zero proﬁt for the platform, but more impor-
+tantly, it is also not truthful. To see this, consider Figure 1
+(c), where the budget is sufﬁcient, and there are two users
+{a, b} with costs ca = 1, cb = 1, three tasks {1, 2, 3}
+with values r1 = 1, r2 = 3, r3 = 2, and four edges
+{(a, 1), (a, 2), (b, 2), (b, 3)}. The optimal matching will out-
+put match M = {(a, 2), (b, 3)} since it achieves maximized
+revenue and the payments are pa = 3 and pb = 2. How-
+ever, if user b untruthfully bids a cost of 3 instead of 1, then
+she will be assigned task 2 instead of 3 because task value
+must be no less than the cost. Therefore, she will receive a
+higher payment than bidding truthfully. Therefore, incentive
+compatibility is violated.
+In fact, we will prove in Theorem 4 that there is no opti-
+mal mechanism that can satisfy the four properties simulta-
+neously. Therefore, inspired by (Zhang, Wu, and Bei 2018),
+we propose an approximate mechanism (i.e., TruPreTar) in
+this paper.
+
+Mechanism Design of TruPreTar
+
+In this section, we present our proposed mechanism TruPre-
+Tar for the bike rebalancing problem. We ﬁrst introduce a
+notion called right-perfect matching in a bipartite graph.
+Deﬁnition 1 A right-perfect matching in a bipartite graph
+G is a matching with size |T |, where T is the set of right
+nodes in graph G.
+In other words, we say a bipartite graph has a right-perfect
+matching if all tasks in the graph on the right can be matched
+to a user on the left. It is easy to see that a right-perfect
+matching is also a maximum matching of a bipartite graph.
+The key idea of TruPreTar is to maintain a subgraph G(cid:48)
+that always has a right-perfect matching. TruPreTar sorts all
+the tasks and users together in decreasing order of their val-
+ues (costs), and then iterates over this sorted list. The mech-
+anism tries to include more tasks with high values in G(cid:48) and
+delete more users with high costs from it until the budget is
+exhausted or all elements are processed.
+The complete pseudo-code of the mechanism TruPreTar
+is presented in Algorithm 1. In the mechanism, we maintain
+a variable of the remaining budget B (cid:48) which is initially set
+as B . Once a user i is matched with payment pi , we update
+B (cid:48) as B (cid:48) − pi . In addition, we update a decreasing global
+price P during the algorithm process. Intuitively, for each
+element in the iteration of the sorted list, if it is a task j , the
+task and its afﬁliated edges (the connected user should be
+unmatched) will be added to G(cid:48) if two conditions are satis-
+ﬁed after adding them: 1) G(cid:48) still has a right-perfect match-
+ing and 2) the upper bound of the payment for all tasks in
+
+Algorithm 1: TruPreTar: a truthful and budget feasible
+incentive mechanism with predicted task revenue
+Input: Bipartite graph G = (N , T , E ), budget B , cost
+ci , value rj , ∀i ∈ N , ∀j ∈ T .
+Output: Task allocation M = {(i, j )} and payment pi
+for each winning user i.
+1 Let F = N ∪ T . For an element e ∈ F , if e is a user i,
+the value ve is deﬁned as her bid bi ; if e is a task j , the
+value ve is deﬁned as the expected revenue rj .
+2 Delete all edges (i, j ) with bi > rj in G.
+3 M ← ∅, B (cid:48) ← B , T (cid:48) ← ∅, N (cid:48) ← ∅, E (cid:48) ← ∅,
+
+G(cid:48) = (N (cid:48) , T (cid:48) , E (cid:48) );
+
+4 Sort elements in F in decreasing order of ve , breaking
+ties randomly, but if the tie is between a task and a
+user, let the task go ﬁrst.
+5 for each element e in the above order do
+if e is a task j then
+Let Nj be the set of unmatched users connected
+if G(cid:48) ∪ Ej has a right-perfect matching and
+to j , Ej be the set of edges between j and Nj .
+(|T (cid:48) | + 1) · rj ≤ B (cid:48) then
+
+6
+7
+
+G(cid:48) ← G(cid:48) ∪ (Nj , j, Ej ).
+P ← rj .
+
+else
+
+8
+9
+10
+11
+12
+13
+
+14
+15
+16
+17
+
+18
+19
+
+20
+21
+
+22
+23
+24
+25
+26
+27
+
+Skip to next element.
+if e is a user i in G(cid:48) then
+if G(cid:48)\i has a right-perfect matching then
+G(cid:48) ← G(cid:48)\i.
+
+P ← bi .
+
+for Each user i ∈ G(cid:48) do
+if G(cid:48)\i doesn’t have a right-perfect matching
+for Each edge (i, j ) of i in G(cid:48) do
+if G(cid:48)\i ∪ (i, j ) has a right-perfect
+matching then
+
+then
+
+M ← M ∪ (i, j ), pi ← P .
+B (cid:48) ← B (cid:48) − pi .
+
+G(cid:48) ← G(cid:48)\{i, j }.
+Skip to next user.
+
+else
+
+Skip to next edge.
+
+G(cid:48) (i.e., (|T (cid:48) | + 1) · rj ) is below the remaining budget. If
+task j is added to G(cid:48) , we update the global price P as rj .
+If the element is a user i, then if G(cid:48) can maintain a right-
+perfect matching after discarding i (i.e., i is not critical for
+the right-perfect matching of G(cid:48) ), we then remove her from
+G(cid:48) , in this case, we also update the global price P as bi .
+Once the subgraph G(cid:48) is changed (either a task is added or a
+user is removed), we check if there are critical users for the
+right-perfect matching of G(cid:48) , if so, for a critical user i, we
+allocate task j in G(cid:48) to i if G(cid:48)\i ∪ (i, j ) has a right-perfect
+matching. The payment is set as the global price P at this
+
+Figure 2: A walk-through example for our mechanism
+TruPreTar. Let the budget be B = 14. Tasks 1 and 2 are
+ﬁrst considered, and they are added to G(cid:48) with their afﬁliated
+edges since the budget is enough for them. So G(cid:48) has three
+users a, b and c and none of them is critical for the right-
+perfect matching of G(cid:48) . In addition, the global price P ← 6,
+and the remaining budget B (cid:48) is still 14. Then, user a is re-
+moved from G(cid:48) while updating the price P ← 5. Next, users
+b and c become critical for the right-perfect matching of G(cid:48)
+now, and assume they are matched with task 1 and 2, respec-
+tively. The payment to each of b and c is P = 5, and hence
+we update B (cid:48) ← 4. After that, task 3 will be added to G(cid:48)
+with edge (d, 3), we have P ← 3, and obviously d is critical
+and she will be allocated task 3 with payment 3. The remain-
+ing budget is also updated as B (cid:48) ← 1. Finally, task 4 is con-
+sidered but not added to G(cid:48) because of the budget constraint,
+and tasks 5 and 6 are skipped because they have no edges.
+Therefore, the output matching is {(b, 1), (c, 2), (d, 3)}, and
+the revenue is 16 while the proﬁt is 3.
+
+step, and then we update the remaining budget B (cid:48) .
+A walk-through example of TruPreTar is given in Figure
+
+2.
+
+Analysis of TruPreTar
+
+Lemma 1 The mechanism TruPreTar satisﬁes incentive
+compatibility.
+Proof Since each user has only one private value (i.e., cost),
+this is a single-parameter problem and hence we can use the
+Myerson’s lemma:
+Lemma 2 ((Myerson 1981)) In single parameter auctions,
+for a normalized mechanism M = (f , p), where f is the
+allocation rule and p is the payment rule, M is incentive
+compatible iff it satisﬁes:
+i ≤ bi , then i ∈
+i , b−i ) for every c−i ;
+2. Threshold payment rule: payment to each winning bidder
+
+1. Monotone allocation rule: ∀i ∈ N , if b(cid:48)
+
+f (bi , b−i ) implies i ∈ f (b(cid:48)
+is inf {bi : i /∈ f (bi , b−i )}.
+
+First, we prove the monotone allocation rule, i.e., once user
+i is matched by bidding bi , she must be matched by bidding
+b(cid:48)
+i < bi . Let e be the element that updates the global price
+i to denote the graph G(cid:48)
+P as pi . When bidding bi , we use G1
+after e is processed (i.e., the step that P is updated as pi ),
+i has same deﬁnition while in the case of bidding b(cid:48)
+and G2
+i .
+
+G2
+
+G2
+
+i =
+
+i = G2
+
+It’s obvious that the algorithm process before P is updated
+as pi is not affected by the bid of i. Therefore, we have G1
+i , and user i is also critical for the right-perfect matching
+of G2
+i , hence the monotone allocation rule is satisﬁed.
+Next, we prove the threshold payment rule, that is, if user
+i bids any cost larger than the payment pi , she will not
+be matched, otherwise, she will be matched with a task. If
+b(cid:48)
+i < pi , it can be observed that the value of all tasks in
+i is higher than b(cid:48)
+because b(cid:48)
+i , thus the edges of i will not be deleted
+i > rj . Therefore, similar to the proof of the mono-
+tone allocation rule, we have that G1
+i , and user i is
+still critical, so she will be matched. If b(cid:48)
+i > pi , user i will be
+considered before the element e. However, we can observe
+that, in the steps before element e is processed, user i is ei-
+ther not added to G(cid:48) or is not critical for the right-perfect
+matching of G(cid:48) , otherwise she will be matched before ele-
+ment e. As a result, we have that user i will be discarded if
+b(cid:48)
+i > pi , and the threshold payment rule is satisﬁed.
+Lemma 3 The mechanism TruPreTar is budget feasible.
+Proof We can observe that once a task j with value rj is
+added to G(cid:48) , the payment to any user in G(cid:48) is no more than
+rj , since the global price P is non-increasing. Let j (cid:48) be the
+last task added to G(cid:48) , B (cid:48)
+j (cid:48) the remaining budget before j (cid:48) is
+added, and |Tj (cid:48) | the number of tasks in G(cid:48) before adding j (cid:48) .
+We have that(cid:88)
+
+pi ≤ B − B (cid:48)
+j (cid:48) + rj (cid:48) · (|Tj (cid:48) | + 1) ≤ B
+
+(i,j )∈M
+
+which concludes the proof.
+We omit the proofs of the following two lemmas due to
+space constraint, please refer to our full paper2 .
+Lemma 4 The mechanism TruPreTar is individually ratio-
+nal for both users and platform.
+Proof We need to prove that when matching a user i with
+a task j , the payment to user i should be larger than bi and
+smaller than rj . It can be observed that, at any step during
+the algorithm process, the global price P is always smaller
+than the values of all tasks in G(cid:48) , and any tasks with lower
+value should not be considered until this step. Similarly, P
+is also always larger than the costs of all users in G(cid:48) , oth-
+erwise the user with higher cost should be either discarded
+or matched before. Therefore, we have that for any matched
+pair (i, j ), bi ≤ pi ≤ rj , which concludes our proof.
+Lemma 5 The mechanism TruPreTar satisﬁes computa-
+tional efﬁciency.
+Proof The subproblem of judging whether there is a right-
+perfect matching can be solved by Hungarian algorithm
+with complexity of O((n + mn)3 ). The loop complexity in
+the checking part (line 18-27) is at most O(n2m) The out-
+ermost complexity of our mechanism is O(n + mn). So the
+overall complexity of our mechanism is polynomial.
+Theorem 1 Our proposed mechanism TruPreTar is an in-
+centive compatible, budget feasible, individually rational,
+and computational efﬁcient mechanism.
+
+2 https://arxiv.org/abs/1911.07706
+
+Theoretical Guarantee on Revenue
+
+Assumption 1 (Large Market Assumption) We
+
+To show the theoretical guarantee of TruPreTar on revenue,
+we ﬁrst introduce the large market assumption.
+assume
+ci (cid:28) B and rj (cid:28) B for each user i and each task j .
+Intuitively, it’s assumed that each individual user or task
+is negligible compared with the budget. This assumption is
+widely adopted in previous work (Vaze 2017; Anari, Goel,
+and Nikzad 2014) and it is practical in real world as the rev-
+enue of a single ride is indeed very small.
+Next, we prove the theoretical guarantee under tight bud-
+get.
+Theorem 2 Under the large market assumption, we have
+(i,j )∈M rj ≥ B if the budget is tight.
+Proof Let j1 be the ﬁrst task that is discarded because of
+budget constraint, j 0 the last task added to G(cid:48) before j 1, and
+|Tj 0 | (|Tj 1 |) the number of tasks in G(cid:48) before considering j 0
+(j 1). Assume that the set of tasks allocated between consid-
+ering j 0 and j 1 is AT , and the total payment for them is PA .
+We have rj 0 · (|Tj 0 | + 1) ≤ B (cid:48)
+Since the payments to users in AT are all between rj 0 and
+rj 1 , we can get that
+
+j 0 and rj 1 · (|Tj 1 | + 1) > B (cid:48)
+
+(cid:80)
+
+j 1 .
+
+|Tj 1 | · rj 1 ≤ |Tj 1 | · rj 0
+= (|Tj 0 | + 1) · rj 0 − |AT | · rj 0
+≤ (|Tj 0 | + 1) · rj 0 − PA
+
+≤ B (cid:48)
+
+= B (cid:48)
+
+j 0 − PA
+j 1
+
+Combining the above inequations, we have
+B (cid:48)
+and further we obtain(cid:88)
+
+j 1 − rj 1 · |Tj 1 | < rj 1 ,
+
+(i,j )∈M
+
+rj ≥ B − B (cid:48)
+j 1 + rj 1 · |Tj 1 |
+≥ B − rj 1
+
+(cid:39) B
+
+where the ﬁrst inequation is because of the individual ratio-
+nality of both platform and users and the last approximate
+equation is due to the large market assumption.
+Before we prove the theoretical guarantee under sufﬁ-
+cient budget, we ﬁrst demonstrate that a greedy algorithm
+as shown in Algorithm 2 has an approximation ratio of 2,
+i.e., it can achieve at least half of the optimal revenue under
+sufﬁcient budget.
+Lemma 6 Algorithm 2 is a 2-approximation algorithm if
+the budget is sufﬁcient.
+The proof is provided in our full paper due to space limi-
+tation.
+Next, we prove the following lemma by showing that the
+allocation of our mechanism coincides with a particular run
+of the greedy algorithm.
+
+Algorithm 2: A Greedy Mechanism
+1 for each task j in decreasing order of rj do
+for each edge (i, j ) of task j do
+if user i is not matched then
+Match i with j .
+Skip to next task.
+
+2
+3
+4
+5
+
+a
+
+2-
+
+Theorem 3 The mechanism TruPreTar
+is
+approximation mechanism if the budget is sufﬁcient.
+Proof Since the budget is sufﬁcient, we know that no task is
+discarded due to the budget limitation. We denote the match-
+ing in our mechanism as M . It’s assumed that this matching
+is produced as following: For each task j in decreasing or-
+der of rj , if j ∈ M , we allocate task j to its matched user in
+M , otherwise the task is skipped. Now we prove that, in the
+greedy algorithm, this process can also happen.
+It’s obvious that for task j ∈ M , we can assign task j to
+its matched user in M in the greedy algorithm, thus we only
+need to prove that for each task j (cid:54)∈ M , when we consider
+it in the greedy algorithm, there is no unassigned user that
+has an edge to j .
+Next, for contradiction, assume that we can ﬁnd such an
+unmatched user i that has an edge to j (cid:54)∈ M when pro-
+cessing j in the greedy algorithm. Then in our mechanism,
+when considering j , there will be a right-perfect matching
+for graph G(cid:48) ∪ {j }, i.e., M ∪ (i, j ). Thus, the task will be
+added to G(cid:48) . Note that in our mechanism, any task added
+to G(cid:48) will end up being matched. This contradicts with our
+assumption and hence the lemma is proved.
+To understand how “good” the approximation ratio of 2
+is, next we prove that the lower bound is at least
+2.
+Theorem 4 There is no mechanism that satisﬁes incentive
+compatibility and individual rationality can achieve better
+than
+2-approximation when the budget is sufﬁcient.
+Proof We prove the lemma with a concrete counter exam-
+ple. Assume there exists a mechanism F that can achieve an
+approximation ratio better than
+2. Consider case 1 where
+there are two users {a, b}, three tasks {1, 2, 3} and 4 edges
+
+{(a, 1), (a, 2), (b, 2), (b, 3)}. In addition, we have that ca =
+, cb =
+2 + 1, r1 = 1 + , r2 =
+2 + 1 + , r3 =
+2 + 1,
+
+where  is a small positive number. We can observe that the
+optimal matching should be {(a, 2), (b, 3)} which achieves
+revenue of 2
+2 + 2 + , we now prove that any mechanism
+that satisﬁes the above properties can achieve total revenue
+of at most 2 +
+First we consider case 2 where the only difference with
+case 1 is that cb =
+2 and hence the edge (b, 3)
+has to be deleted. In case 2, mechanism F can only output
+the matching {(a, 1), (b, 2)}, otherwise, the approximation
+can be at least r1+r2
+rationality, pb ≥ √
+2. Moreover, due to individual
+2 .
+Then we consider case 1, in the output matching of F , if
+user b is matched with task 3, the payment is at most 1 +
+
+>
+2 + 1 + 
+
+2 + 1 + 
+
+2 + 2.
+
+√
+
+√
+
+√
+
+√
+
+2
+
+√
+
+√
+
+√
+
+√
+
+√
+
+r2
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+2 + 1 + 
+
+2 + 1 + 
+
+and the utility of user b is at most 0. If user b misreports
+cost of
+2 , it becomes case 2, and as stated above,
+the utility of user b can be at least 
+2 . Thus, for incentive
+compatibility, mechanism F has to allocate task 2 to user
+b and pay at least
+2 . Hence the output matching
+of F can achieve revenue of at most 2 +
+2 + 2, and the
+2 when  → 0.
+approximation ratio limit is
+Practical Guideline: We provide a guideline as to how
+the above theoretical results can be applied to practice. The
+platform can initially set a sufﬁcient budget and gain a rev-
+enue Rsuf . Based on Theorem 3, we know that the optimal
+revenue is at most 2 ·Rsuf . Hence after that, the platform can
+set a tighter budget B = β ·Rsuf where 0 < β ≤ 2, and The-
+orem 2 guarantees that TruPreTar will achieve at least β /2
+of the optimal solution’s revenue. This way, the platform can
+control the budget while ensuring a minimum revenue.
+
+Evaluation
+
+We conduct simulation using a real-world dataset obtained
+from a large bike-sharing company in China called Mobike.
+The bike riding data cover 8 × 8 regions of Beijing with each
+region being 0.6km × 0.6km, and are dated from May 10th
+to 14th, 2017. With the same distribution of destinations in
+this dataset, we build a simulator which can randomly gener-
+ate users’ destinations. In the experiments, we set the num-
+ber of users n = 200, and test different location numbers m.
+The cost of each user ci is drawn from uniform distribution
+over [0, c] where c = 5. The value of a task is calculated
+as the difference between the Kullback-Leibler (KL) diver-
+gences (Kullback and Leibler 1951) before and after fulﬁll-
+ing the task, similarly to previous work (Pan et al. 2019;
+Lv et al. 2019). Because of the space limitation, we refer the
+authors to (Lv et al. 2019) for concrete calculation of the task
+value. The acceptable range h is set as 300m and 600m, re-
+spectively. We also test the budget of 50 and 500 where 500
+is sufﬁcient while 50 is not. In addition, we conduct each
+experiment 10 times and take the average.
+We compare TruPreTar with the following mechanisms:
+• APP-OPT: As the budgeted matching problem is an NP-
+hard problem (it can be reduced to the knapsack prob-
+lem), we cannot give an optimal allocation as benchmark.
+However, if the budget is tight and the large market as-
+sumption holds simultaneously, the following strategy is
+approximately an optimal mechanism: consider edges in
+decreasing order of rj /bi , match user i and task j if they
+are not ever matched before, and pay user i exactly her
+bid. The process stops until the budget is exhausted or
+there are no more edges. This mechanism achieves the
+maximum revenue under the above two assumptions but
+it’s not truthful.
+• Greedy: The greedy mechanism considers users in in-
+creasing order of their bids and allocates the task with
+the highest value as long as it is higher than the bid of
+the user. Once a user is matched, the price for all winning
+users is updated as the bid of her next user (whose bid is
+higher). The mechanism stops once a user cannot ﬁnd a
+feasible task or the overall payment is above the budget,
+
+(a) Revenue for B = 50
+
+(b) Proﬁt for B = 50
+
+(a) Revenue for B = 50
+
+(b) Proﬁt for B = 50
+
+(c) Revenue for B = 500
+
+(d) Proﬁt for B = 500
+
+(c) Revenue for B = 500
+
+(d) Proﬁt for B = 500
+
+Figure 3: Revenue and proﬁt comparison when h = 300m.
+
+Figure 4: Revenue and proﬁt comparison when h = 600m.
+
+and pays all the winning users the bid of this unmatched
+user. If all users can be matched, we don’t match the last
+one, and set her bid as the price for all other users. This
+greedy mechanism is incentive compatible but cannot pro-
+vide any theoretical guarantee.
+• Surge: Surge pricing is widely used in practice and it’s an
+effective way to promote the revenue of platform (Guda
+and Subramanian 2019). We adopt a simple version of
+surge pricing here. Consider users in increasing order of
+their bids and allocate the task with the highest value to
+them once αrj is higher than the bid of the user, where
+α ∈ (0, 1) is a surge factor and rj is the value of the task.
+The user is paid αrj . The algorithm also terminates until
+the budget is exhausted or there are no feasible users. In
+the experiments, we set α = 0.8. It can be easily shown
+that the Surge mechanism is not truthful.
+
+Results
+
+The experiment results for different acceptable extra dis-
+tance h = 300m and h = 600m are given in Figure 3 and
+Figure 4, respectively. In Figure 3, we show the revenue and
+proﬁt of platform under different parking location number
+m and different budget B . In general, as m increases, rev-
+enue and proﬁt both increase, because of more right nodes in
+the bipartite graph. When the budget is tight (B = 50), we
+make the following speciﬁc observations. The revenue and
+proﬁt of our mechanism are constantly higher than Surge
+and Greedy. When m is less than 30, as the bipartite graph
+is small, the budget is enough and our mechanism achieves
+
+nearly the same revenue as APP-OPT. When m is larger
+than 30, the budget will be exhausted and the revenue (and
+hence proﬁt) of Surge mechanism stops increasing because
+it always has a constant ratio between payment and revenue.
+However, TruPreTar can output a better matching when the
+bipartite graph is larger and it shows much better perfor-
+mance over Surge and Greedy on both revenue and proﬁt.
+When the budget is sufﬁcient, our mechanism is not as good
+as APP-OPT but outperforms the others. As APP-OPT pays
+users exactly their costs, the mechanism is budget-saving
+but not practical in application because users will bid higher
+costs.
+In Figure 4, h is larger so more edges appear in the bi-
+partite graph. In this case, the performance of APP-OPT,
+TruPreTar and Surge are similar to Figure 3, but Greedy
+shows both much better revenue and proﬁt. This is due
+to the fragility of Greedy mechanism as a single user can
+determine the termination of the mechanism. Thus, when
+B = 300m, the mechanism stops quickly because of the
+lack of edges, and when B = 600m, the termination is de-
+layed. To show this, we test another 100 rounds of m = 60
+for both Greedy and TruPreTar, and the maximum revenue
+of Greedy is 161.3, the minimum revenue is 19.7, and the
+variance is 648.1, while the data for TruPreTar is 127.2,
+98.8 and 32.2 respectively. The proﬁt shows similar results.
+Therefore, although Greedy can sometimes be slightly bet-
+ter than our mechanism, it is fragile and has much larger
+ﬂuctuation.
+In summary, our mechanism TruPreTar performs well on
+both revenue and proﬁt, on top of its several desirable theo-
+
+retical properties.
+
+Conclusion and Future Work
+
+In this paper, we have proposed an incentive mechanism to
+solve the bike rebalancing problem with predicted task value
+for bike sharing systems. This mechanism, called TruPreTar,
+satisﬁes incentive compatibility, budget feasibility, individ-
+ual rationality, and computational efﬁciency. It also provides
+theoretical guarantees on company revenue under differ-
+ent budget constraints. Its performance was evaluated using
+simulations based on real-world data, and the results demon-
+strate its superiority in terms of both revenue and proﬁt. In
+future work, we will extend our algorithm into a real-time
+decision-making mechanism, and conduct pilot studies in
+real cities.
+
+Acknowledgments
+
+This work was supported in part by Science and Technology
+Innovation 2030 “New Generation Artiﬁcial Intelligence”
+Major Project No. 2018AAA0100905, in part by China NSF
+grant No. 61972252, 61972254, 61672348, and 61672353,
+in part by Joint Scientiﬁc Research Foundation of the State
+Education Ministry No. 6141A02033702, and in part by Al-
+ibaba Group through Alibaba Innovation Research Program.
+The opinions, ﬁndings, conclusions, and recommendations
+expressed in this paper are those of the authors and do not
+necessarily reﬂect the views of the funding agencies or the
+government.
+
+References
+
+[Anari, Goel, and Nikzad 2014] Anari, N.; Goel, G.; and
+Nikzad, A. 2014. Mechanism design for crowdsourcing:
+An optimal 1-1/e competitive budget-feasible mechanism
+for large markets. In Proceedings of the 55th IEEE Annual
+Symposium on Foundations of Computer Science, 266–275.
+IEEE.
+[Angelopoulos et al. 2018] Angelopoulos, A.; Gavalas, D.;
+Konstantopoulos, C.; Kypriadis, D.; and Pantziou, G. 2018.
+Incentivized vehicle relocation in vehicle sharing systems.
+Transportation Research Part C: Emerging Technologies
+97:175–193.
+[Angeloudis, Hu, and Bell 2014] Angeloudis, P.; Hu, J.; and
+Bell, M. G. 2014. A strategic repositioning algorithm for
+bicycle-sharing schemes. Transportmetrica A: Transport
+Science 10(8):759–774.
+[Fricker and Gast 2016] Fricker, C., and Gast, N. 2016. In-
+centives and redistribution in homogeneous bike-sharing
+systems with stations of ﬁnite capacity. Euro journal on
+transportation and logistics 5(3):261–291.
+[Gagan Goel and Singla 2013] Gagan Goel, A., and Singla,
+A. 2013. Matching workers expertise with tasks: incentives
+in heterogeneous crowdsourcing markets. In Proceedings of
+the NIPS 2013 Workshop on Crowdsourcing: Theory, Algo-
+rithms and Applications, volume 12. MIT Press.
+[Ghosh and Varakantham 2017] Ghosh, S., and Varakan-
+tham, P. 2017.
+Incentivizing the use of bike trailers for
+
+dynamic repositioning in bike sharing systems. In Proceed-
+ings of the Twenty-Seventh International Conference on Au-
+tomated Planning and Scheduling. AAAI Press.
+[Guda and Subramanian 2019] Guda, H., and Subramanian,
+U.
+2019. Your uber is arriving: Managing on-demand
+workers through surge pricing, forecast communication, and
+worker incentives. Management Science 65(5):1995–2014.
+[Kek et al. 2009] Kek, A. G.; Cheu, R. L.; Meng, Q.; and
+Fung, C. H. 2009. A decision support system for vehi-
+cle relocation operations in carsharing systems. Transporta-
+tion Research Part E: Logistics and Transportation Review
+45(1):149–158.
+[Kullback and Leibler 1951] Kullback, S., and Leibler, R. A.
+1951. On information and sufﬁciency. The annals of math-
+ematical statistics 22(1):79–86.
+[Laporte, Meunier, and Calvo 2015] Laporte, G.; Meunier,
+F.; and Calvo, R. W. 2015. Shared mobility systems. 4or
+13(4):341–360.
+[Li and Zheng 2019] Li, Y., and Zheng, Y. 2019. Citywide
+bike usage prediction in a bike-sharing system. IEEE Trans-
+actions on Knowledge and Data Engineering.
+[Liu et al. 2018] Liu, Y.; Jia, R.; Xie, X.; and Liu, Z. 2018. A
+two-stage destination prediction framework of shared bicy-
+cles based on geographical position recommendation. IEEE
+Intelligent Transportation Systems Magazine 11(1):42–47.
+[Luo et al. 2016] Luo, T.; Kanhere, S. S.; Das, S. K.; and
+Hwee-Pink, T. 2016. Incentive mechanism design for het-
+erogeneous crowdsourcing using all-pay contests.
+IEEE
+Transactions on Mobile Computing 15(9):2234–46.
+[Lv et al. 2019] Lv, H.; Wu, F.; Luo, T.; Gao, X.; and Chen,
+G. 2019. Hardness of and approximate mechanism design
+for the bike rebalancing problem. Theoretical Computer Sci-
+ence.
+[Maggioni et al. 2019] Maggioni,
+F.;
+Cagnolari, M.;
+Bertazzi, L.; and Wallace, S. W.
+2019.
+Stochastic
+optimization models for a bike-sharing problem with
+transshipment. European Journal of Operational Research
+276(1):272–283.
+[Myerson 1981] Myerson, R. B. 1981. Optimal auction de-
+sign. Mathematics of operations research 6(1):58–73.
+[Pan et al. 2019] Pan, L.; Cai, Q.; Fang, Z.; Tang, P.; and
+Huang, L. 2019. A deep reinforcement learning framework
+for rebalancing dockless bike sharing systems. In Proceed-
+ings of the AAAI Conference on Artiﬁcial Intelligence, vol-
+ume 33, 1393–1400. AAAI Press.
+[Schuijbroek, Hampshire, and Van Hoeve 2017]
+Schuijbroek, J.; Hampshire, R. C.; and Van Hoeve,
+W.-J. 2017.
+Inventory rebalancing and vehicle routing in
+bike sharing systems. European Journal of Operational
+Research 257(3):992–1004.
+[Singer 2010] Singer, Y.
+2010. Budget feasible mecha-
+nisms. In Proceedings of the 51st IEEE Annual Symposium
+on Foundations of Computer Science, 765–774. IEEE.
+[Singla et al. 2015] Singla, A.; Santoni, M.; Bart ´ok, G.;
+Mukerji, P.; Meenen, M.; and Krause, A. 2015. Incentivizing
+
+users for balancing bike sharing systems. In Proceedings of
+the AAAI Conference on Artiﬁcial Intelligence. AAAI Press.
+[Vaze 2017] Vaze, R. 2017. Online knapsack problem and
+budgeted truthful bipartite matching. In Proceedings of the
+IEEE International Conference on Computer Communica-
+tions, 1–9. IEEE.
+[Waserhole, Jost, and Brauner 2013] Waserhole, A.; Jost, V.;
+and Brauner, N. 2013. Vehicle sharing system optimization:
+Scenario-based approach. 2013b. URL http://hal.archives-
+ouvertes.fr/hal-00727040.
+[Yang et al. 2016] Yang, Z.; Hu, J.; Shu, Y.; Cheng, P.; Chen,
+J.; and Moscibroda, T. 2016. Mobility modeling and pre-
+diction in bike-sharing systems. In Proceedings of the 14th
+Annual International Conference on Mobile Systems, Appli-
+cations, and Services, 165–178. ACM.
+[Zhang et al. 2016] Zhang, J.; Zheng, Y.; Qi, D.; Li, R.; and
+Yi, X.
+2016. Dnn-based prediction model for spatio-
+temporal data.
+In Proceedings of the 24th ACM SIGSPA-
+TIAL International Conference on Advances in Geographic
+Information Systems, 92. ACM.
+[Zhang, Wu, and Bei 2018] Zhang, C.; Wu, F.; and Bei, X.
+2018. An efﬁcient auction with variable reserve prices
+for ridesourcing.
+In Proceedings of the Paciﬁc Rim In-
+ternational Conference on Artiﬁcial Intelligence, 361–374.
+Springer.
+
+

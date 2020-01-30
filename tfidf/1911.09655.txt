@@ -1,0 +1,1484 @@
+Temporal Reasoning via Audio Question Answering
+
+Haytham M. Fayek and Justin Johnson
+
+1
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+5
+5
+6
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract—Multimodal question answering tasks can be used
+as proxy tasks to study systems that can perceive and reason
+about the world. Answering questions about different types of
+input modalities stresses different aspects of reasoning such as
+visual reasoning, reading comprehension, story understanding,
+or navigation. In this paper, we use the task of Audio Question
+Answering (AQA) to study the temporal reasoning abilities of
+machine learning models. To this end, we introduce the Diag-
+nostic Audio Question Answering (DAQA) dataset comprising
+audio sequences of natural sound events and programmatically
+generated questions and answers that probe various aspects
+of temporal reasoning. We adapt several recent state-of-the-
+art methods for visual question answering to the AQA task,
+and use DAQA to demonstrate that they perform poorly on
+questions that require in-depth temporal reasoning. Finally, we
+propose a new model, Multiple Auxiliary Controllers for Linear
+Modulation (MALiMo) that extends the recent Feature-wise
+Linear Modulation (FiLM) model and signiﬁcantly improves its
+temporal reasoning capabilities. We envisage DAQA to foster
+research on AQA and temporal reasoning and MALiMo a step
+towards models for AQA.
+Index Terms—Audio, Question Answering, Reasoning, Tempo-
+ral Reasoning
+
+I . IN TRODUC T ION
+
+A central goal of artiﬁcial intelligence research has been
+to build systems that can perceive and reason about the
+world. In recent years, question answering has been used as a
+proxy task for this goal, where systems must answer natural
+language questions about another input such as an image [1]–
+[3], a piece of text [4], [5], an interactive environment [6], or a
+movie [7]. Answering questions about different types of inputs
+stresses different aspects of reasoning such as visual reasoning,
+reading comprehension, story understanding, or navigation.
+The world is dynamic, with events unfolding after each other
+over time. Systems that interact with the world must therefore
+be adept at temporal reasoning. However the input modalities
+used by prior question answering benchmarks are ill-suited
+for isolating temporal aspects of reasoning. Images offer only
+a static snapshot of the world. Text may describe temporal
+sequences, but lacks intrinsic temporality. Navigating environ-
+ments requires sequences of actions, but recent benchmarks
+navigate only static worlds. Movies are fundamentally temporal,
+but processing hours-long videos introduces computational
+barriers to studying temporal reasoning.
+We believe that audio is an appealing modality for inves-
+tigating temporal reasoning, as it is fundamentally temporal
+and requires no spatial reasoning. In this paper, we therefore
+investigate the task of Audio Question Answering (AQA) where
+
+H. M. Fayek is with Facebook Reality Labs, Redmond, WA, USA.
+E-mail: haythamfayek@fb.com.
+J. Johnson is with Facebook AI Research, Menlo Park, CA, USA.
+E-mail: jcjohns@fb.com.
+Manuscript under review.
+
+systems must answer natural language questions pertaining
+to audio clips. In addition to being a testbed for temporal
+reasoning, advances in AQA have the potential
+to assist
+hearing-impaired individuals, much as advances in visual
+question answering could be used to assist visually-impaired
+individuals [8]–[10].
+Towards these goals, this paper introduces the Diagnostic
+Audio Question Answering (DAQA) dataset for studying
+temporal reasoning in a controlled manner. DAQA provides
+100, 000 audio sequences ranging in length from approximately
+10 seconds to approximately 3 minutes, constructed from
+a library of 400 natural sound events, and approximately
+600, 000 programmatically generated questions and answers
+that probe various aspects of temporal reasoning; see Figure 1
+for examples. Inspired by synthetic reasoning benchmarks
+for other domains [2], [5], [11], [12], the design of DAQA
+minimizes bias that can be exploited by machine learning
+models to correctly answer questions without examining the
+question or the audio, and allows for ﬁne-grained targeting of
+speciﬁc temporal reasoning skills.
+We use DAQA to investigate the temporal reasoning abilities
+of several baseline models as well as adaptations of several
+recent state-of-the-art methods for visual question answer-
+ing [13], [14]. We demonstrate that although these methods
+show strong performance for visual question answering, they
+perform comparatively poorly on questions requiring in-depth
+temporal reasoning.
+As a step towards making methods more adept at temporal
+reasoning, we introduce Multiple Auxiliary Controllers for
+Linear Modulation (MALiMo), which extends and enhances
+the Feature-wise Linear Modulation (FiLM) model [14]. FiLM
+uses an auxiliary controller to process a supplementary input,
+e.g. the question, and predict parameters to modulate processing
+in a convolutional network that ingests the principal input,
+e.g. the image or the audio, to predict an answer. MALiMo
+augments FiLM with an additional auxiliary controller that
+receives subsampled features of the principal input and predicts
+parameters that modulate subsequent stages of processing
+in the convolutional network. This allows processing in the
+convolutional network to be altered as a function of both
+the principal and supplementary inputs, which facilitates
+relational and temporal reasoning. Experiments on DAQA
+show that MALiMo signiﬁcantly outperforms other competing
+approaches, and that it leads to the largest improvements on
+questions that require in-depth temporal reasoning.
+Code to generate the DAQA dataset and our models for the
+AQA task are publicly available1 . We hope that this will foster
+research both on AQA and broadly on temporal reasoning.
+
+1 The code to generate the DAQA dataset and our models for the AQA task
+are available at https://github.com/facebookresearch/daqa.
+
+ 
+ 
+ 
+ 
+ 
+ 
+2
+
+Did you listen to any driver honking before the crowd babbling?
+
+yes
+
+Were the fourth and seventh sound events the same?
+
+no
+
+What was the shortest sound?
+
+door slamming
+
+What did you hear immediately after the crowd applauding?
+
+human typing on a keyboard
+
+How many times did you hear a vehicle passing by?
+
+one
+
+Was the ﬁrst sound louder than the crowd babbling?
+
+yes
+
+Fig. 1: DAQA provides audio clips composed of natural sound events (left) and programmatically generated questions and
+answer about those audio clips that test various aspects of temporal reasoning (right). Note that the annotations on the audio
+clip are for illustration purposes only.
+
+Outline. The outline of the paper is as follows. Section II
+brieﬂy reviews related work. Section III delineates the design
+and analysis of the DAQA dataset. Section IV outlines oracle
+benchmarks and baseline models devised to divulge bias and
+assess the difﬁculty of the DAQA dataset. Section V presents
+our novel MALiMo model. Section VI discusses the DAQA
+dataset and the MALiMo model as well as avenues for future
+work. Section VII concludes the paper.
+
+I I . R ELAT ED WORK
+
+Question Answering Datasets. The AQA task and the
+
+DAQA dataset draw inspiration from datasets of natural
+language questions and answers about different input modalities,
+such as SQuAD [4], [15] for text; VQA [1], [16], VizWiz [9],
+Visual Genome [17], DAQUAR [18], and Visual7W [3] for
+images; TVQA [19], MovieQA [7], Video-QA [20], and [21]
+for videos; and EQA [6] for embodied environments.
+
+Diagnostic Reasoning Datasets. DAQA is synthetic and
+
+programmatically generated, allowing us to control bias in the
+dataset and assess ﬁne-grained temporal reasoning skills of
+AQA models. We draw inspiration from synthetic datasets for
+diagnosing other reasoning skills, such as bAbI [5] for reading
+comprehension, CLEVR [2], COG [12], and GQA [22] for
+visual reasoning, and PGM [11] for abstract reasoning.
+
+Audio Question Answering. There has been some work
+
+on answering questions about images using spoken rather
+than written questions [23], and answers to some questions
+about videos might require jointly reasoning about visual and
+audio cues [7], [19]–[21]. Most related to our work is the
+concurrent CLEAR dataset [24], which similar to DAQA, is a
+synthetic dataset of audio sequences and questions. All audio
+sequences in CLEAR are of ﬁxed length and consist of 10
+musical notes, while DAQA provides variable-length audio
+sequences with a variable number of more general audio events.
+CLEAR also adapts the question templates directly from the
+synthetic visual question answering dataset, CLEVR [2], while
+DAQA uses question types custom-built to emphasize temporal
+reasoning. We believe that these differences make DAQA a
+signiﬁcantly more challenging dataset; [24] achieves 89.97%
+accuracy on CLEAR with a FiLM [14] baseline, while our
+
+best and signiﬁcantly improved FiLM model on DAQA only
+achieves 78.33% accuracy.
+
+Question Answering Models. There is a plethora of work
+
+on answering questions of various modalities, and a full survey
+is beyond the scope of this paper. Our work draws most directly
+from recent methods for visual question answering [13], [25]–
+[28] and visual reasoning [14], [29]–[31]. Our MALiMo model
+is most closely related to FiLM [14] and conditional batch
+normalization [32], though its auxiliary audio controller is
+related to transformers [33], non-local networks [34], and
+SENets [35].
+
+I I I . TH E D IAGNO S T IC AUD IO QU E S T ION AN SW ER ING
+
+(DAQA ) DATA S ET
+The DAQA dataset is a synthetically generated dataset
+of <audio, question, answer> triplets. The dataset requires
+temporal reasoning capabilities to identify, locate, compare,
+and count relevant audio events in a sequence of audio events,
+in order to correctly provide an answer to the posed question.
+The DAQA dataset is envisaged to be useful for understanding,
+assessing, and benchmarking models for temporal reasoning
+in an AQA framework.
+Each question in DAQA pertains to an audio clip composed
+of several atomic audio events arranged in sequence. We draw
+from a library of 400 audio events organized into 20 event types.
+Each question is instantiated from one of 54 question templates
+that test different aspects of temporal reasoning. Instantiating
+questions from templates involves several heuristics to reduce
+dataset bias. The answer to each question is one of 36 distinct
+values, so answering DAQA questions can be viewed as a
+classiﬁcation problem. Overall, DAQA provides 100, 000 audio
+clips and 599, 294 questions and answers divided into standard
+training, validation, and test splits with 80, 000; 10, 000; and
+10, 000 audio clips and 399, 924; 99, 702; and 99, 668 questions
+and answers each.
+Audio Events. Audio events are the atoms from which our
+audio clips are composed. We use 20 different event types2
+chosen to span a wide variety of audio sources, locations,
+and sound types. Each event type consists of a source and an
+action (e.g. crowd applauding, dog barking). DAQA provides
+
+FAYEK AND JOHNSON: TEMPORAL REASONING VIA AUDIO QUESTION ANSWERING
+
+3
+
+Fig. 2: Mean, standard deviation, and limits of the duration
+(seconds) of the 20 instances for each of the 20 audio events
+(top). Mean, standard deviation, and limits of the loudness
+(sones) of the 20 instances for each of the 20 audio events
+(bottom).
+
+20 unique instances of each event type, for a total of 400
+unique audio event instances. 91 of these events were recorded
+by the authors, while the other 309 were manually curated
+from the balanced training subset of AudioSet [36]. As shown
+in Figure 2, our 400 audio events vary signiﬁcantly in duration
+and loudness3 , both within each event type and across different
+event types.
+We divide our 20 event types into 5 discrete types (aircraft
+ﬂying over, car passing by, door slamming, human speaking,
+and human laughing) and 15 continuous types (all others).
+A sequence of discrete events of the same type (e.g. two
+consecutive door slamming events) can be easily segmented
+by a listener into disjoint events, while sequential continuous
+events of the same type (e.g. two consecutive crowd babbling
+events) would likely be heard as a single continuous event.
+Audio Clips. Audio clips are generated by concatenating
+between 5 and 12 random audio events. We only allow
+consecutive discrete events of the same type; clips with adjacent
+continuous events of the same type are rejected. We randomly
+overlap successive events by up to 500 ms, and add normally
+distributed background noise to half of our audio clips. We
+generated 100,000 audio clips, divided into training, validation,
+and test splits of 80,000; 10,000; and 10,000 clips respectively.
+We ensured that no validation or test clips have the exact same
+sequence of events instances as any training clip.
+Since each audio clip contains a variable number of audio
+events and each audio event varies in length, our generated
+
+2 Events are referred to by a unique ID as follows; a000: aircraft ﬂying over,
+b000: band playing, b001: bird singing, c000: crowd babbling, c001: crowd
+applauding, c002: crowd rioting, c003: car honking, c004: car passing by,
+d000: door slamming, d001: doorbell ringing, d002: dog barking, f000: ﬁre
+engine passing by, f001: ﬁre alarm going off, h000: human speaking, h001:
+human laughing, h002: human typing on a keyboard, h003: human whistling,
+h004: human operating a machine, p000: phone ringing, and t000: storm
+thundering.
+3We compute loudness following the time-varying loudness model [37]
+using the Genesis Loudness Toolbox.
+
+Fig. 3: Distribution of the ﬁrst ﬁve words for all questions in the
+training set of the DAQA dataset. The innermost ring represents
+the ﬁrst words and radiating rings represent subsequent words.
+Arc lengths are proportional to the number of questions with
+the word. Words accounting for less than 1% were omitted for
+clarity.
+
+audio clips vary signiﬁcantly in length: clips in the training set
+vary from 10.5 to 178.2 seconds, with a mean and standard
+deviation of 80.8 ± 26.3 seconds. We believe that this wide
+variety in clip lengths is necessary for evaluating temporal
+reasoning.
+Each audio clip is annotated with the order, identity, duration,
+and loudness of its constituent events. We use these annotations
+only for analysis and oracle baseline models; in particular our
+AQA models are trained end-to-end for question answering
+and are not supervised with this information.
+Question Templates. Questions are generated programmat-
+ically from one of 54 manually designed question templates,
+Each template contains several placeholder values of various
+types; given annotations for an audio clip, the template can
+be instantiated by choosing values for each placeholder,
+giving rise to a (question, answer) pair for the clip. For
+
+example, the template What did you hear <RO> the
+
+<S> <A>? has placeholders <RO> for a preposition (before
+or after), <S> and <A> for the source and action of an event
+type. To increase linguistic diversity, each template provides
+several logically equivalent English phrasings, such as What
+
+was the sound <RO> the <S> <A>? for the template
+
+above; we also randomly replace some words with synonyms
+(e.g. person for human). Associated with each template are
+short Python programs to generate or verify answers given
+placeholder values and audio clip annotations.
+To stress temporal reasoning, templates use a variety of
+mechanisms to refer to audio events. Audio events can be
+
+h004d002c002c001b000h000f001c003c004h002d000h001d001c000h003f000a000t000p000b001Unique Event IDs0.02.55.07.510.012.515.017.520.0Duration per Event (s)MeanStd DevMax/Minh004d002c002c001b000h000f001c003c004h002d000h001d001c000h003f000a000t000p000b001Unique Event IDs020406080Loudness per Event (Sones)MeanStd DevMax/MinyoudideventstimessoundssoundmanyofsoundsthetolistenedheardyousoundsoundsoundsoundquietestshortestlongestloudestsoundtheofnumbertheyouwasisdidtheoftimesofsoundnumbersoundaleastthananyatmorethethereofsoundsthetosoundsanythereofsoundstheistolistenhearyouHowHearingHaveWhatWasListeningWereComparingThereDid4
+
+Fig. 4: Number of examples per template in the training set of the DAQA dataset sorted by color with respect to reasoning
+skills. Templates that require temporal reasoning, e.g. contain prepositions: before / after, or ordinals, are highlighted in gray.
+
+referenced using event type (the alarm ringing), absolute
+ordinal position (the third sound), relative position (the sound
+immediately after the alarm ringing), absolute duration or
+loudness, (the loudest sound), or relative duration or loudness
+(sounds longer than the alarm ringing).
+Templates may also be grouped by reasoning skills: exist
+templates ask whether an event is present (was there an alarm
+ringing?), query templates ask about event properties (What was
+the loudest sound?), compare templates require comparisons
+between two events (was the ﬁrst sound louder than the vehicle
+honking?), count templates require counting events meeting
+some condition (how many events were louder than the alarm
+ringing?), and compare integer templates require comparing
+sizes of two event sets (were there more alarms ringing than
+sounds before than the door slamming?).
+Template Instantiation. Instantiating a template requires
+choosing a value for each of its placeholders. This process
+involves several subtle issues that require special attention.
+Some choices of placeholders give questions that are invalid
+for some audio clips – for example the question What was
+the sound before the human speaking? is valid only for
+clips with exactly one human speaking event. For some
+(template, clip) pairs, most possible template instantiations
+will be invalid, so randomly sampling placeholder values and
+rejecting invalid questions would be inefﬁcient. We overcome
+this by incorporating logic into each template to sample only
+from valid placeholder values, and we terminate early if a
+placeholder has no valid values.
+
+Sampling questions uniformly at random from all valid
+template instantiations can lead to severe answer imbalance.
+For example, consider questions of the form Was there a <S>
+<A> immediately after the door slamming? – as long as the
+clip contains a door slamming, any values for <S> and <A>
+give valid questions; however answers will be heavily biased
+towards No, introducing a signiﬁcant question-conditional
+bias and allowing models to achieve high accuracy for these
+questions without examining the audio clip. We overcome this
+problem heuristically by rejecting questions that lead to a large
+difference (> 5%) between the most and least common answers
+for each template. Figure 5 shows the frequency of each answer
+in the training set; the relatively uniform distribution within
+each answer type is a result of this heuristic.
+We attempt to instantiate 5 questions for each training clip
+and 10 questions for each validation and test clip; however
+due to the above heuristics, we are unable to sample the
+desired number of questions for all clips. Our training set
+thus contains 80, 000 clips and 399, 924 questions (172, 126
+of which are unique); the validation set has 10, 000 clips and
+99, 702 questions, and the test set has 10, 000 clips and 99, 668
+questions. Questions in the training set range in length from
+5 to 27 words, with a mean length and standard deviation of
+
+12.89 ± 3.86 words.
+
+Answers. Each questions’s answer is one of 36 possible
+values: yes, no, the 20 event types, nothing, and integers 0 to
+12 (inclusive). Figure 5 shows the frequency of these answers
+on the training set.
+
+was_therewas_there_two_andwas_there_two_orwas_there_relativewas_there_immediate_relativewas_there_similar_ordinalwas_there_similar_loudnesswas_there_at_least_two_similar_loudnesswas_there_similar_loudness_ordinalwas_there_at_least_two_similar_loudness_ordinalwas_there_similar_durationwas_there_at_least_two_similar_durationwas_there_similar_duration_ordinalwas_there_at_least_two_similar_duration_ordinalwhat_waswhat_was_relativewhat_was_loudnesswhat_was_loudness_relativewhat_was_loudness_relative_ordinalwhat_was_durationwhat_was_duration_relativewhat_was_duration_relative_ordinalhow_manyhow_many_eventhow_many_ordinalhow_many_event_twohow_many_event_two_ordinalhow_many_sounds_relativehow_many_sounds_relative_ordinalhow_many_event_relativehow_many_event_relative_ordinalhow_many_sounds_loudness_eventhow_many_sounds_loudness_ordinalhow_many_sounds_duration_eventhow_many_sounds_duration_ordinalcompare_ordinalcompare_ordinal_eventcompare_loudnesscompare_loudness_ordinalcompare_loudness_event_ordinalcompare_loudness_ordinal_eventcompare_same_loudnesscompare_same_loudness_ordinalcompare_same_loudness_event_ordinalcompare_durationcompare_duration_ordinalcompare_duration_event_ordinalcompare_duration_ordinal_eventcompare_same_durationcompare_same_duration_ordinalcompare_same_duration_event_ordinalless_thanequal_tomore_thanTemplate.0200040006000800010000Number of Instances in Set.Temporal ReasoningExistQueryCountCompareCompare IntFAYEK AND JOHNSON: TEMPORAL REASONING VIA AUDIO QUESTION ANSWERING
+
+5
+
+Fig. 5: Frequency of answers in the training set of the DAQA dataset.
+
+IV. B ENCHMARK EX PER IM EN T S
+
+We use several baselines as well as adaptations of recent state-
+of-the-art models for visual question answering to investigate
+and benchmark DAQA and the AQA task.
+Experimental setup. The AQA task, Audio + Question →
+Answer , is formulated as a multi-class classiﬁcation problem,
+and all models are trained to maximize the likelihood of
+the correct answer p(Ans|A, Q). DAQA is split into training,
+validation, and test sets; see Section III. The validation set was
+used to design experiments and tune hyperparameters, such as
+the number and size of the layers, independently per model via
+grid search. Each model was evaluated on the test set only once
+after ﬁnalizing all experimental details and hyperparameters.
+Each audio clip was split into 25 ms frames with a stride of
+10 ms, and a Hamming window was applied, then 64 log-Mel-
+Frequency Spectral Coefﬁcients (MFSCs) were extracted from
+each frame. The mean and standard deviation were normalized
+per coefﬁcient to zero and one respectively using the mean
+and standard deviation computed from the training set only.
+All models were trained from scratch, i.e. no pre-trained
+word embeddings or models were used. Neural models were
+trained via stochastic gradient descent with a mini-batch size
+of 40 using Adam [38] with learning rate α = 1 × 10−4 and
+weight decay λ = 1 × 10−5 for 100 epochs, and the validation
+set was used to select the best model during training.
+The following is a detailed description of the baselines and
+models. The results are listed in Table I.
+Random / Mode Answer. We choose either a random or
+the most frequent (mode) answer from the training set. We
+also evaluate per-template (P/T) versions which output either a
+random valid answer for each question’s template, or the most
+frequent training set answer for each template.
+Audio Only. This model ignores the question, and uses a
+Fully Convolutional Network (FCN) on the audio to predict
+the answer. The FCN model has ﬁve convolutional blocks
+similar to those in VGG [39]; each block comprises two
+convolution layers with Batch Normalization (BatchNorm)
+and Rectiﬁed Linear Unit (ReLU) nonlinearities, and a max
+pooling layer with a 2× 2 window with stride 2 after the second
+convolution layer; followed by two standard convolution layers
+with BatchNorm and ReLUs, a ﬁnal convolution layer, then
+
+global average pooling across each channel. The convolution
+layers in the ﬁrst convolutional block have 32 ﬁlters of size
+3 × 12 with stride 1 × 9, whereas the number of ﬁlters double
+every convolutional block up to 512 ﬁlters, all of which are of
+size 3 × 3 with stride 1, except the penultimate layer, which
+has 1024 ﬁlters of size 1 × 1 and the ﬁnal layer which has
+K = 36 ﬁlters of size 1 × 1, where K corresponds to the
+number of classes in DAQA.
+We train models both for the entire dataset as well as separate
+models per-template (P/T). The overall accuracy of the audio
+only model for all templates is comparable to the Mode Answer
+baseline (31.27% vs 30.52%). The overall accuracy of the
+audio only per-template models is slightly better than the
+Mode Answer P/T baseline (39.72% vs 43.59%). These results
+indicate that DAQA has minimal audio-conditional bias.
+Question Only. We use several baselines that ignore the
+audio. We train logistic regression models on a one-hot encod-
+ing of each question’s template (Question Template) and on
+Bag of Words encodings of questions (Q-only Logit). We also
+train models that encode the questions with 128-dimensional
+word embeddings followed by a two-layer unidirectional Long
+Short-Term Memory (LSTM) network with 512 units per layer
+and predict answers with a linear projection of the ﬁnal LSTM
+hidden state (Q-Only LSTM).
+We train the latter two models both for the entire dataset
+as well as separate models per-template (P/T). Per-template
+LSTMs are not substantially better than the Mode Answer
+P/T baseline (44.93% vs 39.72%), suggesting that DAQA has
+minimal question-conditional bias.
+FCN-LSTM. This model is composed of an FCN, identical
+to the FCN used for the audio only model, to encode the audio
+and a two-layered LSTM, with 512 units in each layer, to
+encode 256-dimensional word embeddings of each word in the
+question. Both representations are concatenated and fed to a
+fully connected neural network with a single hidden layer of
+1024 units and ReLUs to predict an answer.
+This model performs relatively poorly (53.65%) but outper-
+forms prior audio only and question only baselines.
+ConvLSTM-LSTM. This model is composed of ﬁve con-
+volutional blocks identical to the VGG blocks in the audio
+only model,
+that encode the audio into a variable-sized
+
+noyeszeroonetwothreefourfivesixseveneightnineteneleventwelvea000b000b001c000c001c002c003c004d000d001d002f000f001h000h001h002h003h004p000t000nothingAnswers020000400006000080000100000120000Number of Instances in Set6
+
+TABLE I: Audio question answering performance on the DAQA test set. We use baselines to divulge bias in the dataset and
+adapt recently proposed models for visual question answering [13], [14] to the AQA task. Our proposed MALiMo model
+outperforms prior methods due to improved temporal reasoning capabilities.
+
+Model
+
+# Params
+
+Random Answer
+Mode Answer
+Random Answer P/T
+Mode Answer P/T
+
+Audio Only (FCN)
+Audio Only P/T (FCN)
+
+Question Template
+Q-Only (Logit)
+Q-Only P/T (Logit)
+Q-Only (LSTM)
+Q-Only P/T (LSTM)
+
+FCN-LSTM
+ConvLSTM-LSTM
+FCN-LSTM-SA
+
+FiLM-512 (2 FiLM layers)
+FiLM-512 (4 FiLM layers)
+FiLM-512 (6 FiLM layers)
+FiLM-512 (8 FiLM layers)
+FiLM-512 (10 FiLM layers)
+FiLM-512 (12 FiLM layers)
+
+FiLM-1024 (2 FiLM layers)
+FiLM-1024 (4 FiLM layers)
+FiLM-1024 (6 FiLM layers)
+FiLM-1024 (8 FiLM layers)
+FiLM-1024 (10 FiLM layers)
+FiLM-1024 (12 FiLM layers)
+
+MALiMo (1 Block; ours)
+MALiMo (2 Blocks; ours)
+MALiMo (3 Blocks; ours)
+MALiMo (4 Blocks; ours)
+MALiMo (5 Blocks; ours)
+MALiMo (6 Blocks; ours)
+
+representation, which is fed to a single-layered LSTM, with 512
+units, that encodes the variable-sized representation into a ﬁxed-
+sized representation of the audio; another two-layered LSTM,
+with 512 units in each layer, is used to encode 256-dimensional
+word embeddings of each word in the question into a ﬁxed-
+sized representation of the question. Both representations are
+concatenated and fed to a fully connected neural network with
+a single hidden layer of 1024 units and ReLUs to predict an
+answer.
+This model outperforms all baselines and the FCN-LSTM
+
+model (59.22% vs 53.65%).
+
+FCN-LSTM-Stacked Attention. This model is similar to
+
+the FCN-LSTM model described above, albeit with two
+layers of Stacked Attention (SA) [13]. Concretely, instead of
+concatenating the audio representations from the FCN and the
+encoded question representations from the LSTM, the global
+average pooling layer in the FCN is replaced with an adaptive
+average pooling layer with a 2 × 8 output, and two SA layers
+are employed that ingest the representations from the FCN and
+LSTM to produce attention maps (see [13] for details), which
+are then added to the FCN representations, and fed to a fully
+connected neural network with a single hidden layer of 1024
+
+Exist
+
+2.55
+51.50
+49.56
+52.02
+
+55.64
+55.90
+
+52.02
+53.02
+53.75
+54.20
+53.87
+
+67.88
+71.52
+75.52
+
+77.27
+77.63
+79.6
+80.08
+81.03
+82.92
+
+78.33
+79.29
+79.76
+79.69
+79.98
+
+–
+–
+–
+–
+
+7.65M
+–
+
+–
+–
+–
+3.45M
+–
+
+9.79M
+14.78M
+10.58M
+
+5.49M
+6.35M
+7.21M
+8.07M
+8.93M
+9.79M
+
+15.73M
+16.85M
+17.97M
+19.09M
+20.21M
+
+21.33M 78.77
+
+8.91M
+9.77M
+10.63M
+11.49M
+12.34M
+13.20M
+
+78.34
+80.86
+82.62
+85.69
+89.10
+
+91.08
+
+Query
+
+Count
+
+Compare
+
+Compare Int
+
+All (%)
+
+2.96
+0.00
+4.75
+7.52
+
+0.03
+17.52
+
+7.48
+12.88
+12.38
+13.09
+13.48
+
+30.07
+45.72
+45.68
+
+56.23
+56.69
+60.54
+72.91
+76.37
+80.13
+
+56.57
+61.04
+61.22
+75.86
+61.33
+76.46
+
+46.73
+78.21
+81.09
+86.33
+88.80
+
+90.60
+
+2.73
+0.00
+15.66
+32.54
+
+0.0
+37.62
+
+32.53
+33.98
+34.56
+34.22
+34.78
+
+46.42
+52.09
+57.1
+
+57.77
+59.11
+62.61
+77.22
+75.28
+79.74
+
+59.06
+63.54
+64.77
+70.15
+64.35
+75.28
+
+64.18
+71.52
+77.22
+80.49
+85.05
+
+86.35
+
+2.80
+51.33
+50.10
+51.41
+
+50.66
+50.73
+
+51.41
+51.46
+51.95
+61.23
+61.72
+
+59.99
+62.13
+61.67
+
+62.17
+62.23
+63.56
+65.93
+66.63
+69.83
+
+62.61
+62.92
+63.76
+63.93
+63.4
+64.96
+
+62.53
+67.34
+68.95
+74.93
+79.63
+
+86.53
+
+2.88
+50.69
+49.59
+52.05
+
+51.54
+57.24
+
+52.05
+51.95
+52.37
+51.04
+52.93
+
+62.99
+65.11
+70.5
+
+75.22
+76.53
+81.42
+89.23
+94.59
+93.68
+
+76.7
+84.87
+88.17
+93.53
+85.48
+88.13
+
+83.45
+90.75
+91.16
+95.64
+95.84
+
+97.04
+
+2.76
+30.52
+34.15
+39.72
+
+31.27
+43.59
+
+39.72
+41.19
+41.59
+44.53
+44.93
+
+53.65
+59.22
+61.48
+
+64.27
+64.84
+67.49
+74.39
+75.3
+78.33
+
+65.09
+67.76
+68.66
+72.79
+68.34
+73.87
+
+65.08
+74.65
+77.39
+81.87
+85.59
+
+88.86
+
+units and ReLUs to predict an answer.
+This model, augmented with SA, slightly outperforms the
+ConvLSTM-LSTM model (61.48% vs 59.22%) using less
+parameters (14.78M vs 10.58M).
+FiLM. FiLM [14] adopts feature-wise linearly modulated
+layers conditioned on the question that manipulate the in-
+termediate representations of a neural network to adaptively
+inﬂuence the output of the neural network by applying an afﬁne
+transformation as follows. Let H(l) ∈ Rn×h×w be the output
+of a linear convolution layer l that has n ﬁlters, the modulation
+parameters are applied per feature map H(l)
+:
+
+i
+, β (l)
+i ) = γ (l)
+i H(l)
+i + β (l)
+i
+
+,
+
+i
+
+|γ (l)
+i
+
+F iLM (H(l)
+
+(1)
+where H(l)
+i ∈ Rh×w is the feature map of ﬁlter i of convolution
+layer l and γ (l) , β (l) ∈ Rn are the modulation parameters from
+fc , i.e., (γ , β) = fc (z), such that fc is a neural network and
+z is the question.
+We adapt the FiLM model to the AQA task. Our FiLM
+model is composed of three convolutional blocks, identical
+to the VGG blocks in the audio only model, that are used to
+process the audio. A two-layered LSTM, with 512 or 1024 units
+per layer, encodes the question and produces the modulation
+
+FAYEK AND JOHNSON: TEMPORAL REASONING VIA AUDIO QUESTION ANSWERING
+
+7
+
+Fig. 6: Multi Auxiliary Controllers for Linear Modulation (MALiMo) for AQA. Two auxiliary controllers: one ingests the
+question text, and another operates on subsampled audio features, are used to modulate intermediate representations of a
+convolutional network that ingests the audio and predicts an answer.
+
+parameters (γ , β) for residual convolutional blocks that ingest
+the processed representations from the preceding block. Each
+modulated block comprises a convolution layer with 128 3 × 3
+ﬁlters and ReLUs, followed by another convolution layer with
+128 3 × 3 ﬁlters, BatchNorm (with no afﬁne transformation),
+feature-wise linear modulation, and ReLUs, and a residual
+connection from the output of the ﬁrst ReLUs to output of
+the second ReLUs. Two coordinate feature maps indicating
+relative time and frequency positions respectively, scaled from
+−1 to 1, were concatenated to the input in each modulated
+block. A convolution layer with 512 1 × 1 ﬁlters followed by
+global average pooling across each channel is applied to the
+output of the ﬁnal modulated block and the output is fed to a
+fully connected neural network with a single hidden layer of
+1024 units with ReLUs to predict an answer.
+We evaluate FiLM exhaustively by varying the number of
+units in network fc and the number of modulated blocks as
+shown in Table I. FiLM outperforms all previous baselines and
+models. The best FiLM model achieves an overall accuracy of
+78.33%. Nevertheless, most of the classiﬁcation error in the best
+performing FiLM model stems from questions and templates
+that require temporal reasoning as illustrated in Figure 9 and
+discussed later in Section VI.
+
+V. MU LT I AUX I L IARY CON TROL LER S FOR L IN EAR
+MODU LAT ION (MAL IMO )
+
+MALiMo comprises a main module fx and auxiliary
+controller(s) fc . These can all be implemented as end-to-end
+differentiable neural networks. The main module fx maps the
+principal input x to the output y . Each auxiliary controller f (k)
+ingests either the principal input x or another supplementary
+input z (k) and produces a set of parameters (γ (k) , β (k) ) that
+modulate the intermediate representations in the main module
+
+c
+
+fx , where k denotes the k th controller. This allows computation
+in the main module fx to be conditioned on the outputs (γ , β)
+of the auxiliary controller(s) fc . Crucially, at least one auxiliary
+controller acts on the principal input x, or a processed version
+of the principal input, which enables the auxiliary controller
+to alter the intermediate representations in the main module
+acting on the principal input as a function of the principal input
+itself to facilitate relational and temporal reasoning, emulating
+the role of self-attention [33] and non-local operators [34]. The
+modulation parameters (γ , β) from the auxiliary controller(s)
+fc are injected into the main module fx as feature-wise linear
+transformations on the intermediate representations in a stacked
+manner in each modulated layer as follows.
+Let H(l) ∈ Rn×h×w be the output of a linear convolution
+layer l that has n ﬁlters, the modulation parameters are applied
+per feature map H(l)
+[14]:
+
+i
+|γ (l,k)
+i
+
+c
+
+c
+
+c
+
+,
+
+M ALiM o(H(l)
+
+i
+
+, β (l,k)
+i
+
+) = γ (l,k)
+i H(l)
+i + β (l,k)
+i
+
+(2)
+where H(l)
+i ∈ Rh×w is the feature map of ﬁlter i of convolution
+layer l and γ (l,k) , β (l,k) ∈ Rn are the modulation parameters
+from the auxiliary controller f (k)
+,
+(z), such that f (k)
+is a neural network and z is the
+input to the controller f (k)
+. Note that both Equation 1 and
+Equation 2 linearly modulate intermediate representations, but
+whereas FiLM uses a single controller, MALiMo uses multiple
+controllers.
+
+i.e., (γ (:,k) , β (:,k) ) =
+
+f (k)
+c
+
+MALiMo for Audio Question Answering. We instantiate
+
+MALiMo for AQA as follows. The model comprises a
+convolutional network fx and two auxiliary controllers, as
+in Figure 6. The ﬁrst auxiliary controller f (1)
+ingests the
+question to produce parameters (γ (:,1) , β (:,1) ) that modulate
+the convolutional network. The second auxiliary controller
+
+c
+
+ConvNetSubsampleLSTMLinearLinearLSTMBlock 1Block 2Block LClassifierDidyouhearan8
+
+Fig. 7: Normalized confusion matrix for the MALiMo (6
+Blocks) model on the DAQA test set. Errors are predominantly
+due to confusion between yes and no; 0, 1, and 2; and c004
+(car passing by) and f000 (ﬁre engine passing).
+
+f (2)
+c
+
+ingests a subsampled version of the processed audio
+to produce another set of parameters (γ (:,2) , β (:,2) ) that
+modulate the convolutional network as well. Both controllers
+are implemented as LSTMs. The convolutional network ingests
+the audio to predict an answer.
+Implementation Details. Audio is converted to MFSCs,
+which are processed via three convolutional blocks similar
+to those in VGG [39], such that each block comprises
+two convolution layers with BatchNorm and ReLUs, and a
+max pooling layer after the second convolution layer. The
+convolution layers in the ﬁrst convolutional block have 32
+ﬁlters and the number of ﬁlters in the convolution layers double
+in each subsequent convolutional block. The ﬁrst convolution
+layer has ﬁlters of size 3 × 12 with stride 1 × 9, whereas all
+remaining convolution layers have ﬁlters of size 3 × 3 with
+stride 1. The max pooling layers have a 2 × 2 window with
+stride 2.
+The ﬁrst auxiliary controller f (1)
+comprises a two-layered
+LSTM, with 512 units in each layer,
+that encodes 256-
+dimensional word embeddings of each word in the question
+into a ﬁxed-sized representation of the question. This repre-
+sentation is mapped to the ﬁrst set of modulation parameters
+(γ (:,1) , β (:,1) ) via a linear layer.
+The second auxiliary controller f (2)
+comprises a two-
+layered LSTM, with 512 units in each layer, that encodes
+the representation produced by the three convolutional blocks
+described above, subsampled using a mean pooling layer with
+a 8 × 8 window with stride 8, into a ﬁxed-sized representation.
+This representation is mapped to the second set of modulation
+parameters (γ (:,2) , β (:,2) ) via a linear layer.
+
+c
+
+c
+
+c
+
+c
+
+and f (2)
+
+A number of modulated convolutional MALiMo blocks
+ingest the output of the three convolutional blocks described
+above to produce a representation modulated by both auxiliary
+controllers f (1)
+. Each MALiMo block comprises a
+stack of FiLM layers, where each FiLM layer is composed
+of a convolution layer with 128 3 × 3 ﬁlters and ReLUs,
+followed by another convolution layer with 128 3 × 3 ﬁlters,
+BatchNorm (with no afﬁne transformation), feature-wise linear
+modulation, and ReLUs, and a residual connection from the
+output of the ﬁrst ReLUs to output of the second ReLUs, as
+illustrated in Figure 6. Two coordinate feature maps indicating
+relative time and frequency positions, scaled from −1 to 1,
+were concatenated to the input in each modulated block.
+A convolution layer with 512 1 × 1 ﬁlters followed by global
+average pooling across each channel is applied to the output
+of the ﬁnal modulated block and the output is fed to a fully
+connected neural network with a single hidden layer of 1024
+units with ReLUs to predict an answer.
+The experimental setup and all training details are identical
+to those described in Section IV.
+Results. MALiMo is evaluated with varying numbers of
+modulated blocks as shown in Table I. MALiMo signiﬁcantly
+outperforms all variants of FiLM and all other baselines.
+Particularly, in comparison to the best FiLM model (FiLM-
+512; 12 layers), the best MALiMo model (6 Blocks) contains
+a larger number of parameters (13.20M vs 9.79M) due to the
+additional auxiliary controller but a similar number of layers4
+and approximately equivalent training time, with a signiﬁcant
+improvement in classiﬁcation accuracy (88.86% vs 78.33%).
+Doubling the size of the auxiliary controller in FiLM (FiLM-
+1024) to account for the capacity of two auxiliary controllers
+in MALiMo does not result in an improvement in performance
+afﬁrming that the improvement in classiﬁcation accuracy is not
+simply due to the additional capacity in the model.
+The confusion matrix for the MALiMo (6 Blocks) model on
+the DAQA test set is depicted in Figure 7, where we observe
+that most errors are predominantly due to confusion between
+yes and no; integers: 0, 1, and 2; and events: c004 (car passing
+by) and f000 (ﬁre engine passing by).
+
+V I . D I SCU S S ION AND FU TUR E WORK
+
+Saliency Visualization. Saliency visualizations in Figure 8
+are used to provide insight into where MALiMo attends to
+when answering a question about the audio. Precisely, the ﬁrst
+spectrogram is the time frequency representation of an audio
+input from the validation set annotated for clarity, whereas the
+following spectrograms are the same spectrogram superimposed
+with the norms of the gradient of the predicted answer scores
+with respect to the ﬁnal convolution layer in the main module
+before the classiﬁer, upsampled to match the spectrogram size,
+for four different questions and answers on the same audio
+input. The saliency visualizations show that the model learned
+to attend to the times and events of interest when performing
+
+4A MALiMo model contains roughly the same number of layers (subtracting
+the additional auxiliary controller) as a FiLM model with double the number
+of layers (e.g. FiLM (6 layers) and MALiMo (3 Blocks)), since a MALiMo
+block is composed of a stack of two FiLM layers.
+
+noyeszeroonetwothreefourfivesixseveneightnineteneleventwelvea000b000b001c000c001c002c003c004d000d001d002f000f001h000h001h002h003h004p000t000nothingPredicted Label.noyeszeroonetwothreefourfivesixseveneightnineteneleventwelvea000b000b001c000c001c002c003c004d000d001d002f000f001h000h001h002h003h004p000t000nothingTrue Label.0.890.110.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.110.890.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.850.130.020.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.080.860.050.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.020.170.800.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.060.180.740.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.020.070.060.850.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.010.030.950.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.030.960.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.020.980.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.040.960.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.030.960.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.060.940.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.040.960.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.040.960.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.920.010.000.000.000.000.010.000.000.010.000.010.010.000.000.000.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.920.000.010.000.000.000.000.000.000.010.010.000.010.000.000.010.010.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.910.010.000.000.000.000.000.010.000.010.000.010.000.010.010.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.000.950.000.000.000.000.000.010.000.000.000.000.000.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.010.920.000.010.000.010.010.000.000.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.970.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.000.000.010.000.920.000.000.000.010.000.000.010.000.000.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.010.010.000.020.010.520.010.000.000.370.010.010.000.010.010.010.010.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.010.000.000.000.910.010.010.000.000.010.000.000.020.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.950.000.000.000.000.000.000.010.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.000.010.000.000.010.000.000.010.920.010.000.010.010.000.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.010.010.190.000.010.010.700.000.010.010.000.010.010.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.000.000.010.010.000.000.000.000.000.920.000.010.010.000.000.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.010.000.000.000.010.010.000.000.010.920.000.000.010.010.000.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.000.010.020.000.000.010.000.000.010.000.000.000.010.910.000.010.000.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.010.000.000.000.000.000.000.010.000.010.000.000.000.930.010.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.000.010.000.000.010.000.000.000.010.000.000.930.000.010.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.000.000.000.010.000.000.000.000.010.000.010.940.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.000.000.010.010.000.000.010.000.940.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.000.010.000.000.000.010.000.010.010.010.000.000.000.000.010.010.000.910.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.010.000.010.000.000.000.000.000.010.000.010.95Normalized Confusion Matrix.FAYEK AND JOHNSON: TEMPORAL REASONING VIA AUDIO QUESTION ANSWERING
+
+9
+
+Hearing the second sound event did it sound like a ﬁre engine passing by? no
+
+Was there a ﬁre truck passing by just before the alarm going off? no
+
+Was the number of times a crowd babbling less than the number of times a storm
+thundering? yes
+
+How many sounds after the ﬁrst sound were there? six
+
+Fig. 8: Saliency visualizations to highlight where MALiMo (6
+blocks) attends to when answering a question about the audio.
+The ﬁrst spectrogram is the time frequency representation of the
+audio input annotated for clarity. The following spectrograms
+are the same spectrogram superimposed with the norms of the
+gradient of the predicted answer scores with respect to the
+ﬁnal convolution layer in the main module before the classiﬁer,
+upsampled to match the spectrogram size, for four different
+questions and answers on the same audio input. The saliency
+visualizations show that the model learned to attend to the times
+and events of interest when performing temporal reasoning.
+Examples are from the validation set.
+
+temporal reasoning. For instance, in the second question in
+Figure 8 Was there a ﬁre truck passing by just before the
+alarm going off?, the model attends mostly to the segment just
+before the ﬁre alarm going off in the spectrogram to predict
+the correct answer no.
+Temporal Reasoning. The convolutional network in MAL-
+iMo ingests the audio and is modulated using two auxiliary
+controllers: one ingests the question text, and another operates
+on subsampled audio features, to predict an answer. The latter
+controller is crucial for relational and temporal reasoning skills
+as it conditions the processing in the convolutional network on
+the audio, which facilitates dealing with variable-sized audio
+and a variable number of sound events. Figure 9 plots the
+classiﬁcation accuracy per template for FiLM (FiLM-512; 12
+layers) and MALiMo (6 blocks). It can be seen that the majority
+of improvement in MALiMo over FiLM is in the templates that
+require temporal reasoning, e.g. contain prepositions: before /
+after, or ordinals, highlighted in gray in Figure 9.
+
+Low Resource Audio Question Answering. All models
+
+TABLE II: Audio question answering performance on the
+DAQA test set using the low resource training set. # Blocks
+indicates the number of MALiMo blocks. The corresponding #
+Params is listed in Table I. A signiﬁcant drop in classiﬁcation
+accuracy is evident compared with the same models trained
+using the full training set.
+
+# Blocks
+
+1
+2
+3
+4
+5
+6
+
+Exist
+
+58.12
+55.94
+52.53
+55.53
+55.09
+54.35
+
+Query
+
+Count
+
+Comp
+
+CompInt
+
+All (%)
+
+23.63
+13.26
+11.93
+13.38
+12.82
+11.97
+
+36.14
+37.40
+34.60
+36.87
+34.16
+35.06
+
+52.31
+51.17
+53.97
+50.65
+51.10
+51.74
+
+52.70
+52.88
+50.94
+52.29
+52.73
+51.25
+
+44.93
+42.67
+41.79
+42.28
+41.61
+41.63
+
+presented so far were trained using all 80, 000 audio clips
+and 399, 924 questions and answers in the DAQA training
+set, which roughly corresponds to 5 (question, answer) pairs
+per audio clip. A more challenging setting is to reason and
+generalize using a smaller training set. To this end, we propose
+a new smaller training set, called low resource training set,
+that comprises 80, 000 audio clips and 80, 000 questions and
+answers, which corresponds to a (question, answer) pair per
+audio clip. In both cases, the validation and test sets are
+identical to those described in Section III.
+We train MALiMo using the low resource training set and
+evaluate the models using the DAQA test set. The experimental
+setup and all training details are identical to those described
+in Section IV. Table II lists the classiﬁcation accuracy on
+the DAQA test set for a number of MALiMo models. A
+signiﬁcant drop in classiﬁcation accuracy is evident compared
+with the same models trained using the full training set listed in
+Table I. These results indicate that developing models that can
+reason and generalize from a relatively small dataset remains
+a challenging task for future work.
+Selective Computation. The models studied herein are ca-
+pable of dealing with variable-length audio up to approximately
+3 mins; however, the models must process the entire audio
+clip to produce an answer, which may not be efﬁcient for
+cases such as, What was the ﬁrst sound? or What was the last
+sound?. Thus, models that can adaptively navigate the audio
+clip, without necessarily processing the entire clip, would be a
+desirable avenue for future work [40], [41].
+
+V I I . CONC LU S ION
+
+We demonstrate that the AQA task can be used to study the
+temporal reasoning abilities of machine learning models. We
+introduce the DAQA dataset that comprises audio sequences of
+natural sound events and programmatically generated questions
+and answers that probe various aspects of temporal reasoning.
+We show that several recent state-of-the-art methods for VQA
+adapted to the AQA task perform poorly, particularly on
+questions that require in-depth temporal reasoning. We propose
+a new model, MALiMo, that utilizes auxiliary controllers to
+modulate the intermediate representations of a convolutional
+network processing the audio conditioned on the question and
+the audio itself. Experiments on DAQA show that MALiMo
+signiﬁcantly outperforms other competing approaches, and that
+
+0102030405060Time(s)08Frequency(kHz)HumanlaughingStormthunderingBandplayingVehiclehonkingCrowdbabblingFirealarmgoingoﬀStormthundering0102030405060Time(s)08Frequency(kHz)0102030405060Time(s)08Frequency(kHz)0102030405060Time(s)08Frequency(kHz)0102030405060Time(s)08Frequency(kHz)10
+
+Fig. 9: Audio question answering performance per template on the DAQA test set for FiLM (FiLM-512; 12 layers) and MALiMo
+(6 blocks). Templates highlighted in gray require temporal reasoning, e.g. contain prepositions: before / after, or ordinals.
+
+it leads to the largest improvements on questions that require
+in-depth temporal reasoning. Avenues for future work include
+learning to reason and generalize from small datasets and
+developing models that can process only relevant segments of
+the audio as opposed to the entire audio clip. We envisage
+DAQA to foster research on AQA and temporal reasoning and
+MALiMo a step towards models for AQA.
+
+R E FERENC E S
+
+[1] S. Antol, A. Agrawal, J. Lu, M. Mitchell, D. Batra, C. Lawrence Zitnick,
+and D. Parikh, “VQA: Visual question answering,” in ICCV, 2015.
+[2] J. Johnson, B. Hariharan, L. van der Maaten, L. Fei-Fei, C. Lawrence Zit-
+nick, and R. Girshick, “CLEVR: A diagnostic dataset for compositional
+language and elementary visual reasoning,” in CVPR, 2017.
+[3] Y. Zhu, O. Groth, M. Bernstein, and L. Fei-Fei, “Visual7W: Grounded
+question answering in images,” in CVPR, 2016.
+[4] P. Rajpurkar, J. Zhang, K. Lopyrev, and P. Liang, “Squad: 100,000+
+questions for machine comprehension of text,” in EMNLP, 2016.
+[5] J. Weston, A. Bordes, S. Chopra, A. M. Rush, B. van Merriënboer,
+A. Joulin, and T. Mikolov, “Towards ai-complete question answering: A
+set of prerequisite toy tasks,” in ICLR, 2016.
+[6] A. Das, S. Datta, G. Gkioxari, S. Lee, D. Parikh, and D. Batra, “Embodied
+question answering,” in CVPR, 2018.
+[7] M. Tapaswi, Y. Zhu, R. Stiefelhagen, A. Torralba, R. Urtasun, and
+S. Fidler, “MovieQA: Understanding stories in movies through question-
+answering,” in CVPR, 2016.
+[8] J. P. Bigham, C. Jayant, H. Ji, G. Little, A. Miller, R. C. Miller, R. Miller,
+A. Tatarowicz, B. White, S. White, and T. Yeh, “VizWiz: nearly real-time
+answers to visual questions,” in UIST, 2010.
+[9] D. Gurari, Q. Li, A. J. Stangl, A. Guo, C. Lin, K. Grauman, J. Luo,
+and J. P. Bigham, “VizWiz grand challenge: Answering visual questions
+from blind people,” in CVPR, 2018.
+[10] W. S. Lasecki, P. Thiha, Y. Zhong, E. Brady, and J. P. Bigham, “Answering
+visual questions with conversational crowd assistants,” in SIGACCESS,
+2013.
+
+[11] D. G. Barrett, F. Hill, A. Santoro, A. S. Morcos, and T. Lillicrap,
+“Measuring abstract reasoning in neural networks,” in ICML, 2018.
+[12] G. R. Yang, I. Ganichev, X.-J. Wang, J. Shlens, and D. Sussillo, “A
+dataset and architecture for visual reasoning with a working memory,”
+in ECCV, 2018.
+[13] Z. Yang, X. He, J. Gao, L. Deng, and A. Smola, “Stacked attention
+networks for image question answering,” in CVPR, 2016.
+[14] E. Perez, F. Strub, H. De Vries, V. Dumoulin, and A. Courville, “FiLM:
+Visual reasoning with a general conditioning layer,” in AAAI, 2018.
+[15] P. Rajpurkar, R. Jia, and P. Liang, “Know what you don’t know:
+Unanswerable questions for squad,” in ACL, 2018.
+[16] Y. Goyal, T. Khot, D. Summers-Stay, D. Batra, and D. Parikh, “Making
+the v in vqa matter: Elevating the role of image understanding in visual
+question answering,” in CVPR, 2017.
+[17] R. Krishna, Y. Zhu, O. Groth, J. Johnson, K. Hata, J. Kravitz, S. Chen,
+Y. Kalantidis, L.-J. Li, D. A. Shamma, M. S. Bernstein, and L. Fei-Fei,
+“Visual genome: Connecting language and vision using crowdsourced
+dense image annotations,” IJCV, 2017.
+[18] M. Malinowski and M. Fritz, “A multi-world approach to question
+answering about real-world scenes based on uncertain input,” in NeurIPS,
+2014.
+[19] J. Lei, L. Yu, M. Bansal, and T. L. Berg, “TVQA: Localized, composi-
+tional video question answering,” in EMNLP, 2018.
+[20] K.-H. Zeng, T.-H. Chen, C.-Y. Chuang, Y.-H. Liao, J. C. Niebles,
+and M. Sun, “Leveraging video descriptions to learn video question
+answering,” in AAAI, 2017.
+[21] L. Zhu, Z. Xu, Y. Yang, and A. G. Hauptmann, “Uncovering the temporal
+context for video question answering,” IJCV, 2017.
+[22] D. A. Hudson and C. D. Manning, “Gqa: A new dataset for real-world
+visual reasoning and compositional question answering,” CVPR, 2019.
+[23] T. Zhang, D. Dai, T. Tuytelaars, M.-F. Moens, and L. Van Gool, “Speech-
+based visual question answering,” arXiv preprint arXiv:1705.00464, 2017.
+[24] J. Abdelnour, G. Salvi, and J. Rouat, “CLEAR: A dataset for compo-
+sitional language and elementary acoustic reasoning,” arXiv preprint
+arXiv:1811.10561, 2018.
+[25] P. Anderson, X. He, C. Buehler, D. Teney, M. Johnson, S. Gould, and
+L. Zhang, “Bottom-up and top-down attention for image captioning and
+visual question answering,” in CVPR, 2018.
+
+how_many_sounds_relative_ordinalwas_therewas_there_two_orhow_many_eventhow_many_event_twowhat_was_loudnesswas_there_two_andwhat_was_relativehow_manywhat_was_durationequal_towas_there_immediate_relativehow_many_event_relative_ordinalless_thanwas_there_similar_loudnesswas_there_relativehow_many_sounds_loudness_eventmore_thanhow_many_sounds_relativehow_many_event_relativehow_many_event_two_ordinalwhat_was_duration_relativewhat_was_loudness_relativewas_there_at_least_two_similar_loudnesscompare_ordinal_eventcompare_loudnesscompare_same_loudness_ordinalwhat_was_loudness_relative_ordinalwhat_was_duration_relative_ordinalwas_there_at_least_two_similar_durationcompare_same_duration_ordinalwas_there_similar_durationwas_there_at_least_two_similar_duration_ordinalcompare_same_loudnesshow_many_sounds_loudness_ordinalcompare_loudness_event_ordinalcompare_ordinalcompare_durationhow_many_sounds_duration_eventcompare_loudness_ordinal_eventwas_there_at_least_two_similar_loudness_ordinalwas_there_similar_loudness_ordinalwas_there_similar_duration_ordinalcompare_loudness_ordinalcompare_duration_ordinal_eventcompare_same_loudness_event_ordinalcompare_duration_event_ordinalcompare_duration_ordinalwas_there_similar_ordinalcompare_same_duration_event_ordinalhow_many_ordinalhow_many_sounds_duration_ordinalcompare_same_durationwhat_wasTemplates.020406080100Classification Accuracy (%).FiLMMALiMoFAYEK AND JOHNSON: TEMPORAL REASONING VIA AUDIO QUESTION ANSWERING
+
+11
+
+A P P END IX A
+D IAGNO ST IC AUD IO QU E S T ION AN SW ER ING (DAQA )
+EXAM PL E S
+
+Figure 10 is a number of random examples from the training
+set of DAQA.
+
+[26] A. Fukui, D. H. Park, D. Yang, A. Rohrbach, T. Darrell, and M. Rohrbach,
+“Multimodal compact bilinear pooling for visual question answering and
+visual grounding,” in EMNLP, 2016.
+[27] M. Malinowski, M. Rohrbach, and M. Fritz, “Ask your neurons: A
+neural-based approach to answering questions about images,” in ICCV,
+2015.
+[28] A. Singh, V. Natarajan, Y. Jiang, X. Chen, M. Shah, M. Rohrbach,
+D. Batra, and D. Parikh, “Pythia-a platform for vision & language
+research,” in NeurIPS SysML Workshop, 2019.
+[29] D. A. Hudson and C. D. Manning, “Compositional attention networks
+for machine reasoning,” in ICLR, 2018.
+[30] J. Johnson, B. Hariharan, L. van der Maaten, J. Hoffman, L. Fei-Fei,
+C. Lawrence Zitnick, and R. Girshick, “Inferring and executing programs
+for visual reasoning,” in ICCV, 2017.
+[31] A. Santoro, D. Raposo, D. G. Barrett, M. Malinowski, R. Pascanu,
+P. Battaglia, and T. Lillicrap, “A simple neural network module for
+relational reasoning,” in NeurIPS, 2017.
+[32] H. De Vries, F. Strub, J. Mary, H. Larochelle, O. Pietquin, and A. C.
+Courville, “Modulating early visual processing by language,” in NeurIPS,
+2017.
+[33] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez,
+Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” in NeurIPS,
+2017.
+[34] X. Wang, R. Girshick, A. Gupta, and K. He, “Non-local neural networks,”
+in CVPR, 2018.
+[35] J. Hu, L. Shen, and G. Sun, “Squeeze-and-excitation networks,” in CVPR,
+2018.
+[36] J. F. Gemmeke, D. P. Ellis, D. Freedman, A. Jansen, W. Lawrence,
+R. C. Moore, M. Plakal, and M. Ritter, “Audio set: An ontology and
+human-labeled dataset for audio events,” in ICASSP, 2017.
+[37] B. R. Glasberg and B. C. Moore, “A model of loudness applicable to
+time-varying sounds,” Journal of the Audio Engineering Society, vol. 50,
+no. 5, pp. 331–342, 2002.
+[38] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,”
+in ICLR, 2015.
+[39] K. Simonyan and A. Zisserman, “Very deep convolutional networks for
+large-scale image recognition,” in ICLR, 2015.
+[40] V. Mnih, N. Heess, and A. Graves, “Recurrent models of visual attention,”
+in NeurIPS, 2014.
+[41] S. Yeung, O. Russakovsky, G. Mori, and L. Fei-Fei, “End-to-end learning
+of action detection from frame glimpses in videos,” in CVPR, 2016.
+
+12
+
+Fig. 10: Audio clips composed of natural sound events (left) and programmatically generated questions and answers about
+those audio clips that test various aspects of temporal reasoning (right).
+
+020406080100Time(s)−3−2−10123Amplitude×104birdsingingstormthunderinghumanwhistlingcarpassingbyhumantalkinghumantypingonakeyboardcrowdbabblingdogbarkingphoneringingWerethereatleasttwosoundsthatwereapproximatelythesameloudnessastheﬁrstsound?noDidyoulistentoabirdsingingoradoorbellringing?yesWasthenumberoftimesabirdsingingmorethanthenumberoftimesavehiclepassingby?noWerethereanysoundsthatweresimilartotheﬁrstsound?noComparingthesoundsofthedogmakingnoiseandthephoneringing,wasthelattershorter?no01020304050607080Time(s)−3−2−10123Amplitude×104doorbellringingbirdsingingdoorbellringingphoneringingbandplayingdoorbellringingstormthunderinghumantypinghumantalkingHearingtheﬁfthsoundandtheseventhsound,whatisthenumberofsoundsthatwerethesame?zeroHearingthesecondandninthsounds,weretheyroughlyasloud?noThereisahumanspeaking;howmanysoundeventsdidyouhearafter?zeroComparingthesoundofthestormthunderingandthesoundofthebandplaying,wasthelatterlouder?noWeretheninthandeighthsoundeventsthesame?no0102030405060Time(s)−3−2−10123Amplitude×104aircraftpassingbydoorclosingcarpassingbyhumanwhistlingdoorslammingcarhonkinghumanoperatingamachinebirdsinginghumanspeakingWasthereanequalnumberoftimesadoorshuttingandabirdsinging?noHearingtheﬁfthsoundandtheninthsound,wasthelatterquieter?noHearingtheﬁrstsoundeventandthesecondsoundevent,didtheyroughlyhavethesameduration?noHearingtheﬁrstsoundandtheninthsound,wasthelatterlonger?noWasthehumanspeakingquieterthanthesixthsoundevent?no020406080100120Time(s)−3−2−10123Amplitude×104doorbellringingcrowdbabblinghumanwhistlingphoneringingdoorbellringinghumanspeakinghumanoperatingamachinecrowdbabblingstormthunderinghumanlaughinghumanoperatingamachineDidyouhearasoundthatisahumanlaughingorasoundisaplanepassingby?yesWeretheﬁrstandtenthsoundeventssimilar?noHowmanysoundsbeforethephoneringingcouldyouhear?threeHowmanytimesdidyoulistentoasoundthatsoundedlikethefourthsoundeventorthesixthsoundevent?zeroHowmanysoundsthathaveroughlythesamedurationastheﬁfthsound?zero020406080100Time(s)−3−2−10123Amplitude×104humantypinghumanoperatingamachinecrowdriotingcrowdapplaudingdoorclosingaircraftpassingbyaircraftpassingbyalarmgoingoﬀbirdsingingalarmgoingoﬀHearingthesoundofthebirdsingingandthesoundofthecrowdmakingnoise,didtheyroughlyhavethesameduration?noListeningtothetenthsoundandtheeighthsound,howmanysoundswerethesame?twoHaveyouheardanydriverhonking?noWeretherefewercrowdsclappingthancrowdsrioting?noWasthesoundofthecrowdriotingroughlyasquietasthesoundofthebirdsinging?no020406080100Time(s)−3−2−10123Amplitude×104dogbarkingemergencyvehiclepassingbyaircraftpassingbyhumantypingonakeyboardphoneringingcrowdriotingdoorclosingbandplayingdogmakingnoisebirdsingingWastheeighthsoundquieterthanthesoundoftheﬁretruckpassingby?yesWastheaircraftﬂyingoverquieterthantheseventhsound?noWastheninthsoundlongerthanthesoundofthebandplaying?noImmediatelyafterthephoneringing,werethereanyalarmsgoingoﬀ?noWasthesoundofthebirdsingingshorterthanthesoundofthedoorclosing?no

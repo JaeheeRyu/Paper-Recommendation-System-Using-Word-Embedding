@@ -1,0 +1,2189 @@
+Few Shot Network Compression via Cross Distillation
+
+Haoli Bai,1 Jiaxiang Wu,2 , Irwin King,1 Michael Lyu1
+
+1The Chinese University of Hong Kong 2Tencent AI Lab
+{hlbai, king, lyu}@cse.cuhk.edu.hk, jonathanwu@tencent.com
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+0
+5
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Model compression has been widely adopted to obtain light-
+weighted deep neural networks. Most prevalent methods,
+however, require ﬁne-tuning with sufﬁcient training data to
+ensure accuracy, which could be challenged by privacy and
+security issues. As a compromise between privacy and per-
+formance, in this paper we investigate few shot network
+compression: given few samples per class, how can we ef-
+fectively compress the network with negligible performance
+drop? The core challenge of few shot network compression
+lies in high estimation errors from the original network dur-
+ing inference, since the compressed network can easily over-
+ﬁts on the few training instances. The estimation errors could
+propagate and accumulate layer-wisely and ﬁnally deterio-
+rate the network output. To address the problem, we propose
+cross distillation, a novel layer-wise knowledge distillation
+approach. By interweaving hidden layers of teacher and stu-
+dent network, layer-wisely accumulated estimation errors can
+be effectively reduced. The proposed method offers a general
+framework compatible with prevalent network compression
+techniques such as pruning. Extensive experiments on bench-
+mark datasets demonstrate that cross distillation can signiﬁ-
+cantly improve the student network’s accuracy when only a
+few training instances are available.
+
+Introduction
+
+Deep neural networks (DNNs) have achieved remarkable
+success in a wide range of applications, however, they suf-
+fer from substantial computation and energy cost. In order
+to obtain light-weighted DNNs, network compression tech-
+niques have been widely developed in recent years, includ-
+ing network pruning (He, Zhang, and Sun 2017; Luo, Wu,
+and Lin 2017; Wen et al. 2019), quantization (Han, Mao, and
+Dally 2016; Wu et al. 2016; Wu et al. 2018; Li et al. 2020)
+and knowledge distillation (Hinton, Vinyals, and Dean 2015;
+Romero et al. 2014).
+Despite the success of previous efforts, a majority of them
+rely on the whole training data to reboot the compressed
+models, which could suffer from security and privacy issues.
+For instance, to provide a general service of network com-
+
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+pression, the reliance on the training data may result in data
+leakage for customers.
+To take care of security issues in network compression,
+some recent works (Chen et al. 2019; Bhardwaj, Suda, and
+Marculescu 2019; Lopes, Fenu, and Starner 2017) moti-
+vate from knowledge distillation (Hinton, Vinyals, and Dean
+2015; Romero et al. 2014), and propose data-free ﬁne-tuning
+by constructing pseudo inputs from the pre-trained teacher
+network. However, these methods highly rely on the quality
+of the pseudo inputs and are therefore limited to small-scale
+problems.
+In order to obtain scalable network compression algo-
+rithms, a compromise between privacy and performance is
+to compress the network with few shot training instances,
+e.g., 1-shot for one training instances per class. Prevalent
+works (Li et al. 2018; Chen, Wang, and Pan 2019b) along
+this line extend knowledge distillation by minimizing layer-
+wise estimation errors (e.g., Euclidean distances) between
+the teacher and student network. The success of these ap-
+proaches largely comes from the layer-wise supervision
+from the teacher network. Nevertheless, a key challenge in
+few shot network compression is rarely investigated in pre-
+vious efforts: as there are few shot training samples avail-
+able, the student network tend to over-ﬁt on the training set
+and consequently suffer from high estimation errors from the
+teacher network during inference. Moreover, the estimation
+errors could propagate and accumulate layer-wisely (Dong,
+Chen, and Pan 2017) and ﬁnally deteriorate the student net-
+work.
+To deal with the above challenge, we proceed along with
+few shot network compression and propose cross distilla-
+tion, a novel layer-wise knowledge distillation approach.
+Cross distillation can effectively reduce the layer-wisely ac-
+cumulated errors in the few shot setting, leading to a more
+powerful and generalizable student network. Speciﬁcally, to
+correct the errors accumulated in previous layers of the stu-
+dent network, we direct the teacher’s hidden layers to the
+student network, which is called correction. Meanwhile, to
+make the teacher aware of the errors accumulated on the
+student network, we reverse the strategy by directing the
+student’s hidden layers to the teacher network. With error-
+aware supervision from the teacher, the student can better
+
+ 
+ 
+ 
+ 
+ 
+ 
+mimic the teacher’s behavior, which is called imitation. The
+correction and imitation compensate each other, and to ﬁnd
+a proper trade-off, we propose to take convex combinations
+between either loss functions of the two procedures, or hid-
+den layers of the two networks. To better understand the
+proposed method, we also give some theoretical analysis on
+how convex combination of the two loss functions manipu-
+lates the layer-wisely propagated errors, and why cross dis-
+tillation is capable of improving the student network. Our
+proposed method provides a universal framework to assist
+prevalent network compression techniques such as prun-
+ing (He, Zhang, and Sun 2017).
+Extensive experiments and ablation studies are conducted
+on popular network architectures and benchmark datasets,
+and the results demonstrate that our proposed method can ef-
+fectively reduce the estimation errors and improve the com-
+pressed model in the few shot setting, outperforming a num-
+ber of competitive baselines.
+
+Related Work
+
+While most previous efforts on network compression rely on
+abundant training data for ﬁne-tuning the compressed net-
+work, there is a recent trend on investigating security and
+privacy issues for network compression. These methods can
+be generally categorized into data-free methods and few-
+shot methods.
+To perform data-free network compression, a simple way
+is to directly apply quantization (Banner et al. 2018) or low-
+rank factorization (Zhang et al. 2015; Ye et al. 2018) on net-
+work parameters, which usually degrade the network sig-
+niﬁcantly when the compression rate is high. Recent efforts
+motivate from knowledge distillation (Hinton, Vinyals, and
+Dean 2015; Romero et al. 2014), which constructs pseudo
+inputs from the pre-trained teacher network based on its pa-
+rameters (Nayak et al. 2019), feature map statistics (Lopes,
+Fenu, and Starner 2017; Bhardwaj, Suda, and Marculescu
+2019), or an independently trained generative model (Chen
+et al. 2019) to simulate the distribution of the original train-
+ing set. However, the generation of high-quality pseudo
+inputs could be challenging and expensive, especially on
+large-scale problems.
+The other line of research considers network compression
+with few-shot training samples, which is a compromise be-
+tween privacy and performance. To fully take advantage of
+the training data, a number of existing works (He, Zhang,
+and Sun 2017; Luo, Wu, and Lin 2017; Li et al. 2018;
+Chen, Wang, and Pan 2019b) extend knowledge distillation
+by layer-wisely minimizing the Euclidean distances between
+the teacher network and the student network. The layer-
+wise training is usually data-efﬁcient as the student net-
+work receives layer-wise supervision from the teacher and
+there are fewer parameters to optimize comparing to back-
+propagation training of the entire student network (Romero
+et al. 2014). Aside from layer-wise regression, recently data
+from different but related domains are also utilized as aux-
+iliary information to assist the pruning on the target do-
+main (Chen, Wang, and Pan 2019a). Unlike data free com-
+pression techniques, few shot network compression can sig-
+niﬁcantly improve the performance of the compressed net-
+
+work with only limited training instances, which is poten-
+tially helpful for large-scale real-world problems.
+Our proposed cross distillation proceeds along the line of
+few shot network compression. As an extension of previous
+layer-wise regression methods, we pay extra attention to the
+reduction of estimation errors during inference, which are
+usually large as a result of over-ﬁtting on few shot training
+instances. We remark that similar ideas of cross connection
+between two networks are also previously explored in multi-
+task learning (Gupta, Hoffman, and Malik 2016) to obtain
+mutual representations from different tasks. Our work dif-
+fers in both the problem setting as well as the optimization
+method to obtain a compact and powerful compressed net-
+work.
+
+Methods
+
+WT
+
+l ∗ hT
+l = σ(WT
+
+Our goal is to obtain a compact student network F S from
+the over-parameterized teacher network F T . Given few shot
+training instances {xn , yn}N
+n=1 , we denote their correspond-
+ing l-th convolutional feature map of the teacher network
+F T as hT
+l−1 ) ∈ RN ×ci×k×k , where σ(·)
+is the activation function, ∗ is the convolutional operation,
+l ∈ Rco×ci×k×k is the 4-D convolutional kernel, and N ,
+ci , co and k are the number of training size, input channels,
+output channels and the kernel size respectively. Batch nor-
+malization layers are omitted as they can be readily fused
+into convolutional. Similar notations hold for F S
+l . In the fol-
+lowing, we drop the layer index l.
+Unlike standard knowledge distillation approaches, here
+we adopt layer-wise knowledge distillation which can take
+layer-wise supervision from the teacher network. As is
+shown in Figure 1(a), with previous layers being ﬁxed, layer-
+wise distillation aims to ﬁnd the optimal WS∗ that minimizes
+the Euclidean distance between hT and hS , i.e.,
+
+WS
+
+(1)
+
+1
+Lr (WS ) + λR(WS ),
+WS∗ = arg min
+N
+where Lr (WS ) = (cid:107)σ(WT ∗ hT ) − σ(WS ∗ hS )(cid:107)2
+
+F is
+the called estimation error, and R(WS ) is some regulariza-
+tion tuned by λ. Despite that one can obtain a decent com-
+pact network by Equation 1 with abundant training data (He,
+Zhang, and Sun 2017; Luo, Wu, and Lin 2017), when there
+are only few shot training instances, the student network F S
+tends to suffer from high estimation errors on the test set as a
+result of over-ﬁtting. Moreover, the errors propagate and en-
+large layer-wisely (Dong, Chen, and Pan 2017), and ﬁnally
+lead to a large performance drop on F S .
+
+Cross Distillation
+
+To address the above issue, we propose cross distillation,
+a novel layer-wise distillation method targeting at few shot
+network compression. Since the estimation errors are accu-
+mulated on the student network F S and hT are taken as the
+target during layer-wise distillation, we direct hT to F S in
+substitution of hS to reduce the historically accumulated er-
+rors, as is shown in Figure 1(b). We now replace Lr in Equa-
+tion 1 by the correction loss deﬁned as
+
+Lc (WS ) = (cid:107)σ(WT ∗ hT ) − σ(WS ∗ hT )(cid:107)2
+F .
+
+(2)
+
+(a) Layer-wise distillation
+
+(b) Correction
+
+(c) Imitation
+
+(d) Soft cross distillation
+
+Figure 1: The four categories of layerwise distillation. a) is the traditional pattern; b) guides the teacher to student in order to compensate
+estimation errors on the student; c) guides the student to the teacher to make it aware of the errors on the student; d) offers a soft connection
+to balance b) and c) .
+
+F
+
+In the forward pass of F S , however, directing hT to F S re-
+sults in inconsistency S = (cid:107)σ(WS ∗ hT ) − σ(WS ∗ hS )(cid:107)2
+because F S takes hT from F T in the training while it is
+expected to behave along during inference. Therefore, mini-
+mizing the regularized Lc could lead to a biasedly-optimized
+student net.
+In order to maintain the consistency during forward pass
+for F S and simultaneously make the teacher aware of the
+accumulated errors on the student net, we can inverse the
+strategy by guiding hS to F T , as is shown in Figure 1(c).
+We call this process as imitation, since the student network
+tries to mimic the behavior of the teacher network given its
+current estimations. Similarly we can substitute Lr in Equa-
+tion 1 with the imitation loss deﬁned as
+
+hT )(cid:107)2
+
+Li (WS ) = (cid:107)σ(WT ∗ hS ) − σ(WS ∗ hS )(cid:107)2
+F .
+
+(3)
+Despite the teacher network now can provide error-aware
+supervised signal, such connection brings inconsistency on
+the teacher network, i.e., T = (cid:107)σ(WT ∗ hS ) − σ(WT ∗
+F . As a result of T , the errors in hS is be enlarged
+by WT during layer-wise propagation, leading to deviated
+supervision for F S that deteriorates the distillation.
+Consequently, the correction loss Lc and the imitation
+loss Li compensate each other, and it is necessary to ﬁnd
+a proper balance between them. A natural choice is through
+convex combination tuned by µ, i.e.
+
+˜L = µLc + (1 − µ)Li , µ ∈ [0, 1].
+
+(4)
+Substituting Lr in Equation 1 with ˜L yields the objective
+function for cross distillation.
+Theoretical Analysis The inconsistency gaps T and S
+of cross distillation make it still unclear how the proposed
+method manipulates the propagation of estimation errors,
+and why minimizing the regularized ˜L is on the right direc-
+tion to improve the student net F S . To theoretically justify
+cross distillation, we follow (Friedlander and Tseng 2007)
+to substitute Lr with ˜L, and equivalently reformulate the un-
+constrained problem in Equation 1 to the constrained opti-
+mization problem as
+
+min
+
+˜L,
+
+C = {WS | R(WS ) ≤ (λ)},
+
+(5)
+WS ∈C
+where C is a compact set determined by the regularization
+R(WS ) and λ. With Equation 5, we can now bound the gap
+
+of cross entropy between F T and F S for classiﬁcation1 with
+the following theorem.
+Theorem 1. Suppose both F T and F S are L-layer con-
+max fully-connected layer. If the activation functions σ(·)
+volutional neural networks followed by the un-pruned soft-
+are Lipchitz-continuous such as ReLU(), the gap of softmax
+cross entropy Lce between the network logits oT = F T (x)
+and oS = F S (x) can be bounded by
+L−1(cid:88)
+
+|Lce (oT ; y)−Lce (oS ; y)| ≤ C ˜LL +
+
+k (µ) ˜Ll , (6)
+
+L(cid:89)
+
+C
+
+(cid:48)
+
+l=1
+
+k=l
+
+(cid:48)
+
+(cid:48)
+
+where C and C
+(µ) are constants and C
+(µ) is linear in µ.
+Theorem 1 shows that 1) the gap of cross entropy between
+the student network F S and teacher network F T is upper
+bounded by ˜L, and therefore layer-wise minimization of the
+constrained optimization problem in Equation 5 could de-
+crease the gap of cross entropy and ﬁnally improve F S . 2)
+The tightness of the upper bound is controlled by the trade-
+off hyper-parameter µ, which is a L-th order polynomial. A
+proper choice of µ may lead to a tighter bound that could
+better decrease the cross entropy gap. We leave the proof of
+Theorem 1 in the Appendix.
+
+Soft Cross Distillation Although minimizing ˜L is theo-
+retically supported, the computation of ˜L involves two loss
+terms with four convolutions to compute per batch of data,
+variant to balance Lc and Li by empirically soften the hard
+which doubles the training time. Here we propose another
+connection of hS and hT , as is shown in Figure 1(d). We
+deﬁne feature maps ˆhT and ˆhS after cross connection as the
+convex combination of hT and hS , i.e.,
+
+(cid:20) α
+
+(cid:21)
+
+(cid:20) ˆhT
+ˆhS
+
+(cid:21) (cid:20)hT
+
+(cid:21)
+
+1 − α
+β
+
+,
+
+=
+
+1 − β
+
+(7)
+where α, β ∈ [0, 1] are the hyper-parameters that adjust how
+many percentages are used for cross connection, and there-
+fore the magnitude of inconsistencies T and S can be well
+controlled. The convex combination ensures the norm of in-
+put to be nearly identical after cross connection (assuming
+
+hS
+
+1For regression problems, similar theorem can be established as
+well.
+
+STSTSTST!"#$!"!%!%#&#'(#)*1−*1−)STSTSTST!"#$#%#&'#()1−)1−(!"!,!,STSTSTST!"#$#%#&'#()1−)1−(!"!,!,STSTSTST!"#$#%#&'#()1−)1−(!"!,!,(cid:107)hT (cid:107) ≈ (cid:107)hS (cid:107)), and therefore parameter magnitude stays
+unchanged. We deﬁne the loss of soft cross distillation as
+
+ˆL(WS ) = (cid:107)σ(WT ∗ ˆhT ) − σ(WS ∗ ˆhS )(cid:107)2
+F ,
+
+(8)
+which can substitute the estimation error Lr in Equation 1
+as an alternative way for cross distillation.
+
+Combined with Network Pruning
+
+(cid:107)WS (cid:107)1 = (cid:80)
+i (cid:107)WS
+
+Cross distillation can be readily combined with a set of
+popular network compression techniques such as pruning
+or quantization, by taking different regularization R(WS )
+in Equation 1. Here we take pruning as an illustration
+example. For non-structured pruning, we choose R =
+ijhw |; and for structured pruning
+such as channel pruning, we choose R(WS ) = (cid:107)WS (cid:107)2,1 =
+i (cid:107)2 , where WS
+To solve Equation 8 regularized by the above penalties,
+we can adopt the proximal gradient method (Parikh, Boyd,
+and others 2014), i.e., iteratively update WS by:
+
+i ∈ Rci×k×k .
+
+i,j,h,w |W S
+
+(cid:80)
+
+t − η∇ ˜L(WS
+WS
+t+1 = ProxλR (WS
+t )),
+where ProxλR (u) = arg minx
+2 (cid:107)x − u(cid:107)2
+
+(9)
+F + R(x) is the
+proximal operator for R. When R is chosen as (cid:107) · (cid:107)1 , the
+proximal mapping can be expressed as the soft-threshold de-
+termined by λ, i.e.,
+
+1
+
+ W S
+
+W S
+
+ijhw − λ
+
+0
+
+ijhw + λ
+
+W S
+|W S
+W S
+
+ijhw > λ
+ijhw | ≤ λ
+ijhw < −λ
+
+.
+
+(10)
+
+Proxλ(cid:107)·(cid:107)1 (W S
+
+ijhw ) =
+
+For structured pruning, since R = (cid:107)WS (cid:107)2,1 is separable
+w.r.t. WS
+i , the proximal mapping for Proxλ(cid:107)·(cid:107)2,1 (WS
+i ) can
+be computed as
+
+i ) = max(1 −
+Proxλ(cid:107)·(cid:107)2 (WS
+
+λ
+(cid:107)WS
+
+i (cid:107)2
+
+, 0) · WS
+i ,
+
+(11)
+
+and the solution to Equation 9 can be obtained group-wisely
+from Equation 11.
+As suggested by past works (Zhu and Gupta 2017; He,
+Zhang, and Sun 2017), we linearly increase λ to smoothly
+prune the student network, which empirically gives better
+results. Given the maximum number of training steps T and
+the target sparsity ratio r assigned by users, we update λ by
+λt = r + (1 − r) ∗ t/T . An overall workﬂow of our proposed
+method is given in Algorithm 1.
+Finally, we remark that our method works for network
+quantization as well. By taking R(WS ) as the penalty
+to quantization points, our method can be combined with
+Straight Through Estimator (STE) (Bengio, L ´eonard, and
+Courville 2013) or ProxQuant (Bai, Wang, and Liberty
+2019). See Appendix for details.
+
+Experiments
+
+We conduct a series of experiments to verify the effective-
+ness of cross distillation. We take structured and unstruc-
+tured pruning for demonstration, both of which are popu-
+lar approaches to reduce computational FLOPs and sizes of
+
+Algorithm 1 Cross distillation
+Input:
+
+The pre-trained teacher model F T ;
+Training samples {xn , yn }N
+Target sparsity ratio r ;
+The compact student model F S
+
+n=1 ;
+
+Output:
+
+1: for l = 1, ...L do
+for t = 1, ...T do
+
+Forward pass {xn }N
+n=1 to obtain hT
+l−1 and hS
+l−1 ;
+Calculate the loss in Equation 4 or 8;
+Update WS
+t with SGD/Adam optimizer;
+Obtain WS
+t+1 with ProxλR in Equation 10 or 11;
+Increase the pruning threshold λt linearly;
+
+2:
+3:
+4:
+5:
+6:
+7:
+8:
+
+end for
+9: end for
+
+neural networks. To better understand the proposed method,
+we also provide further analysis on how cross distillation
+help reduce the estimation error against varying size of the
+training set. Due to limited space, we only present main re-
+sults, while additional experiments and detailed implemen-
+tations can be found in the Appendix. Our implementation
+in PyTorch is available at https://github.com/haolibai/Cross-
+Distillation.git.
+
+Setup
+
+Throughout the experiment, we use VGG (Simonyan and
+Zisserman 2014) and ResNet (He et al. 2016) as base net-
+works, and evaluations are performed on CIFAR-10 and
+ImageNet-ILSVRC12. As we consider the setting of few
+shot image classiﬁcation, we randomly select K -shot in-
+stances per class from the training set. All experiments are
+averaged over ﬁve runs with different random seeds, and re-
+sults of means and standard deviations are reported 2
+
+Baselines For structured pruning, we compare our pro-
+posed methods against a number of baselines: 1) L1-norm
+pruning (Li et al. 2016), a data-free approach; 2) Back-
+propagation (BP) based ﬁne-tuning on L1-norm pruned
+models; 3) FitNet (Romero et al. 2014) and 4) FSKD (Li
+et al. 2018), both of which are knowledge distillation meth-
+ods; 5) ThiNet (Luo, Wu, and Lin 2017) and 6) Channel
+Pruning (CP) (He, Zhang, and Sun 2017), both of which
+are layer-wise regression based channel pruning methods.
+For unstructured pruning, we modify 1) to element-wise
+L1-norm based pruning (Zhu and Gupta 2017). Besides, 4)
+FSKD, 5) ThiNet and 6) CP are removed since they are only
+applicable in channel pruning.
+For our proposed method, we compare to three vari-
+ants for ablation study: Ours-NC (no cross distillation) by
+solving Equation 1, Ours by solving Equation 4 and Ours-
+S (soft cross distillation) by solving Equation 8. For Ours,
+we choose µ = 0.6 for VGG networks and µ = 0.9 for
+ResNets. For Ours-S, we set (α, β ) = (0.9, 0.3) on VGG
+networks and (0.9, 0.5) on ResNets. Sensitivity analysis on
+
+2Note that for each run, we ﬁx the random seed and remove all
+the randomness such as data augmentation and data shufﬂing.
+
+Table 1: The top-1 accuracy (%) of structured pruning with VGG-16 on CIFAR-10 with different training sizes. We use VGG-50% as the
+pruning scheme, and the original accuracy of the original model is 93.51%.
+
+Methods
+L1-norm
+BP
+FSKD
+FitNet
+ThiNet
+CP
+Ours-NC
+Ours
+Ours-S
+
+1
+
+2
+
+3
+
+5
+
+10
+
+50
+
+14.36±0.00
+49.24±1.76
+47.91±1.82
+48.51±2.51
+58.06±1.71
+66.03±1.56
+65.57±1.61
+69.25±1.39
+68.53±1.59
+
+14.36±0.00
+49.32±1.88
+55.44±1.71
+71.51±2.03
+72.07±1.68
+75.23±1.49
+75.44±1.69
+80.65±1.47
+76.83±1.43
+
+14.36±0.00
+51.39±1.53
+61.76±1.39
+76.22±1.95
+75.37±1.59
+77.98±1.47
+78.40±1.53
+82.08±1.41
+80.16±1.32
+
+14.36±0.00
+55.73±1.19
+65.69±1.08
+81.10±1.13
+78.03±1.24
+81.53±1.29
+81.20±1.13
+84.91±0.98
+84.28±1.19
+
+14.36±0.00
+57.48±0.91
+72.20±0.74
+85.40±1.02
+81.15±0.85
+83.59±0.78
+84.07±0.83
+86.61±0.71
+86.30±0.79
+
+14.36±0.00
+64.69±0.43
+75.46±0.49
+88.46±0.76
+86.12±0.45
+87.27±0.27
+87.67±0.29
+87.64±0.24
+88.65±0.33
+
+Table 2: The top-5 accuracy (%) of structured pruning with ResNet-34 on ILSVRC-12 with different training sizes. The ﬁrst three columns
+use 50, 100 and 500 randomly sampled training instances, while the last three columns use K = 1, 2, 3 samples per class. We use Res-50%
+as the pruning scheme, and the top-1 and top-5 accuracies of the original model are 73.32% and 91.40%.
+
+Methods
+L1-norm
+BP
+FSKD
+FitNet
+ThiNet
+CP
+Ours-NC
+Ours
+Ours-S
+
+50
+
+100
+
+500
+
+1
+
+2
+
+3
+
+72.94±0.00
+83.18±1.86
+82.53±1.52
+86.86±1.81
+85.67±1.57
+86.34±1.24
+86.51±1.71
+86.95±1.59
+87.42±1.69
+
+72.94±0.00
+84.32±1.29
+84.58±1.13
+87.12±1.63
+85.54±1.39
+86.38±1.37
+86.61±1.20
+87.60±1.13
+87.73±1.17
+
+72.94±0.00
+85.34±0.89
+86.67±0.78
+87.73±0.96
+86.97±0.89
+87.41±0.80
+87.92±0.75
+88.34±0.69
+88.60±0.82
+
+72.94±0.00
+85.76±0.73
+87.08±0.76
+87.66±0.84
+87.42±0.76
+88.03±0.66
+87.98±0.60
+88.17±0.73
+88.40±0.61
+
+72.94±0.00
+86.05±0.51
+87.23±0.52
+88.61±0.76
+87.52±0.68
+87.98±0.49
+88.63±0.49
+88.57±0.40
+88.84±0.48
+
+72.94±0.00
+86.29±0.56
+87.20±0.43
+89.32±0.78
+87.53±0.50
+88.21±0.37
+88.82±0.38
+88.59±0.41
+88.87±0.35
+
+these hyper-parameters are presented later. Details on pa-
+rameter settings and baseline implementations are in the Ap-
+pendix.
+
+Pruning schemes The structured pruning schemes are
+similar to those used in (Li et al. 2016; Li et al. 2018). For
+the VGG-16 network, we denote the three pruning schemes
+in (Li et al. 2018) in the ascending order of sparsity as VGG-
+A, VGG-B and VGG-C respectively. We further prune 50%
+channels layer-wisely and denote the resulting scheme as
+VGG-50%. For ResNet-34, we remove r% channels in the
+middle layer of the ﬁrst three residual blocks with some sen-
+sitive layers skipped (e.g., layer 2, 8, 14, 16). The last resid-
+ual block is kept untouched. The resulting structured pruning
+schemes are denoted as Res-r%. Besides, we further remove
+50% channels for the last block to reduce more FLOPs when
+r = 70%, denoted as Res-70%+. The reduction of model
+sizes and computational FLOPs for structured pruned mod-
+els are shown in the Appendix.
+In terms of unstructured pruning, we follow a simi-
+{50%, 70%, 90%, 95%} parameters for both the VGG net-
+lar pattern in (Zhu and Gupta 2017) by removing r =
+work and ResNet, and each layer is treated equally.
+
+Results
+
+Structured Pruning We evaluate structured pruning with
+VGG-16 on CIFAR-10 and ResNet-34 on ILSVRC-12. Ta-
+ble 1 and 2 shows the results with different number of train-
+
+ing instances when the pruning schemes are ﬁxed. It can be
+observed that both Ours and Ours-S generally outperform
+the rest baselines on both networks, whereas Ours enjoys
+a larger advantage on VGG-16 while Ours-S is superior on
+ResNet-34. Meanwhile, as the training size decreases, cross
+distillation brings more advantages comparing to the rest
+baselines, indicating that the layer-wise regression can ben-
+eﬁt more from cross distillation when the student network
+over-ﬁts more seriously on fewer training samples.
+In the next, we ﬁx the training size and change the prun-
+ing schemes. We keep K = 5 on CIFAR-10 and K = 1
+on ILSVRC-12, and the results are listed in Table 3 and
+Table 4 respectively. Again on both datasets our proposed
+cross distillation performs consistently better comparing to
+the rest approaches. Besides, the gain from cross distilla-
+tion becomes larger as the sparsity of the student network
+increases (e.g., VGG-C and ResNet-70%+). We suspect that
+networks with sparser structures tend to suffer more from
+higher estimation errors, which poses more necessity for
+cross distillation to reduce the errors.
+
+Unstructured Pruning For unstructured pruning, here we
+present results of the VGG-16 network on ILSVRC-12
+dataset. Similar to structured pruning, we ﬁrst ﬁx the pruning
+scheme and vary the training size, and the results are given
+in Table 5. It can be observed that both Ours and Ours-S
+signiﬁcantly outperform the rest methods, and the improve-
+ment is even larger comparing to structured pruning One
+
+Table 3: The top-1 accuracy (%) of different structured pruning
+schemes with VGG-16 on CIFAR-10. 10 samples per class are used.
+
+Table 4: The top-5 accuracy (%) of different structured pruning
+schemes with ResNet-34 on ILSVRC-12. 1 sample per class is used.
+
+Methods VGG-50% VGG-A
+
+VGG-B
+
+VGG-C
+
+Methods Res-30%
+
+Res-50%
+
+Res-70%
+
+Res-70%+
+
+BP
+FSKD
+FitNet
+ThiNet
+CP
+
+L1-norm 14.36±0.00 88.32±0.00 32.87±0.00 10.00±0.00
+55.73±1.19 93.10±0.09 87.17±0.49 62.45±1.25
+65.69±1.08 93.52±0.23 90.69±0.12 81.79±1.01
+85.40±1.02 93.50±0.06 92.42±0.32 84.65±1.53
+81.15±0.85 93.61±0.05 92.20±0.16 79.19±0.91
+83.59±0.78 93.70±0.04 92.29±0.15 80.82±0.73
+Ours-NC 84.07±0.83 93.69±0.07 92.35±0.14 83.90±0.78
+86.61±0.71 93.65±0.08 92.60±0.11 85.81±0.80
+86.30±0.79 93.70±0.07 92.68±0.13 85.10±0.75
+
+Ours
+Ours-S
+
+BP
+FSKD
+FitNet
+ThiNet
+CP
+
+L1-norm 84.54±0.00 72.94±0.00 31.84±0.00 15.30±0.00
+88.66±0.59 85.76±0.73 80.04±0.90 63.25±1.05
+89.56±0.52 87.08±0.76 80.82±0.62 67.04±0.56
+88.56±0.58 87.66±0.84 82.72±0.88 68.31±0.81
+89.74±0.65 87.42±0.76 79.40±0.66 63.65±0.78
+89.65±0.78 88.03±0.66 81.13±0.85 68.18±0.79
+Ours-NC 90.34±0.53 87.98±0.60 82.11±0.71 69.03±0.92
+90.08±0.47 88.17±0.65 82.71±0.76 73.53±0.74
+90.32±0.58 88.40±0.61 82.65±0.68 69.47±0.79
+
+Ours
+Ours-S
+
+Table 5: The top-5 accuracy (%) of unstructured pruning with VGG-16 on ILSVRC-12 with different training sizes. The ﬁrst three columns
+use 50, 100 and 500 randomly sampled training instances, while the last three columns use K = 1, 2, 3 samples per class. We use Res-90%
+as the pruning scheme, and the top-1 and top-5 accuracies of the original model are 73.72% and 91.51%.
+
+Methods
+L1-norm
+BP
+FitNet
+Ours-NC
+Ours
+Ours-S
+
+50
+
+100
+
+500
+
+1
+
+2
+
+3
+
+0.5±0.00
+42.87±2.07
+52.66±2.93
+78.73±1.78
+83.81±1.49
+83.67±1.52
+
+0.5±0.00
+48.78±1.43
+57.09±2.14
+83.29±1.12
+86.21±1.09
+86.72±1.23
+
+0.5±0.00
+65.47±1.15
+76.59±1.45
+85.04±0.93
+87.19±0.96
+87.82±1.04
+
+0.5±0.00
+71.25±0.97
+80.14±1.23
+85.36±0.61
+87.61±0.82
+88.14±0.74
+
+0.5±0.00
+74.85±0.71
+82.27±0.70
+85.21±0.41
+87.78±0.45
+88.23±0.61
+
+0.5±0.00
+76.04±0.48
+83.14±0.51
+85.49±0.46
+87.86±0.39
+88.38±0.43
+
+Table 6: The top-5 accuracy (%) of unstructured pruning with
+VGG-16 on ILSVRC-12 with different pruning schemes. 1 sam-
+ple per class is adopted.
+
+Methods VGG-50% VGG-70% VGG-90% VGG-95%
+
+BP
+FitNet
+
+L1-norm 89.21±0.00 66.91±0.00
+0.5±0.00
+0.50±0.00
+90.61±0.20 88.08±0.19 71.25±0.97 42.37±1.59
+88.36±0.46 86.76±0.67 80.14±1.23 59.08±1.78
+Ours-NC 91.47±0.12 91.16±0.10 85.21±0.41 66.74±1.36
+91.58±0.06 91.24±0.14 87.61±0.49 76.65±1.23
+Ours-S 91.68±0.09 91.54±0.11 88.14±0.61 80.64±1.03
+
+Ours
+
+reason could be the irregular sparsity of network parameters
+cab better compensate the layer-wisely accumulated errors
+on F S .
+Similarly, we test our methods with different sparsities
+and hold the training size ﬁxed as K = 1, and Table 6
+shows the results. As the sparsity r increases, cross distil-
+lation brings more improvement, especially on VGG-95%
+with a nearly 10% and 14% increase of accuracy for Ours
+and Ours-S respectively.
+
+Further Analysis
+
+The Estimation Errors v.s. Inconsistency Cross distilla-
+
+tion brings the inconsistencies T , S that could affect the
+reduction of estimation errors Lr . To quantitatively investi-
+gate the effects, we compare T , S as well as Lr at different
+layers of the VGG-16 network on the test set of CIFAR-10.
+We take three student networks trained by the correction loss
+Lc , the imitation loss Li as well as soft distillation loss ˆL re-
+
+spectively. We choose unstructured pruning with VGG-90%
+and vary K between {1, 10}, and the results are shown in
+Figure 2(a), 2(b) and 2(c) respectively. Note that we have
+normalized the loss values by dividing the nonzero leftmost
+bar in each sub-ﬁgure.
+It can be observed that the student net trained by Lc has
+a large S with T = 0, and vice versa for that trained by
+Li . On the contrary, the student net trained by ˆL shows both
+lower T and S , and the estimation error Lr is properly re-
+duced as well. The results indicate that by properly control-
+ling the magnitude of inconsistencies T and S with soft
+connection, cross distillation can indeed reduce estimation
+errors Lr and improve the student network.
+
+Generalization Ability One potential issue troubles us is
+the generalization of cross distillation, since the training of
+Ours and Ours-S is somehow biased comparing to Ours-NC
+that directly minimizes the estimation error Lr . Since es-
+timation errors Lr among feature maps and cross entropy
+Lce of logits directly reﬂect the closeness between F T and
+F S during inference, we compare both results among stu-
+dent nets obtained by Ours-NC, Ours and Ours-S respec-
+tively. We again take unstructured pruning with VGG-90%
+on the test set of CIFAR-10, and the rest settings are kept un-
+changed. For ease of comparison, we similarly divide values
+of Ours and Ours-S by those obtained by Ours-NC. Ratios
+smaller than 1 indicate a more generalizable student net.
+From Figure 3, we can ﬁnd that while the ratios in shal-
+lower layers are above 1, they rapidly go down at deeper
+layers such as conv4.3 as well as the logits, which is consis-
+tent with Figure 3 that cross distillation tends to better ben-
+
+(a) T
+
+(b) S
+
+(c) Lr
+
+Figure 2: The comparisons among inconsistencies T , S as well as estimation errors Lr on the test set of CIFAR-10. The colors denote what
+kind of loss and values of K are adopted for training. Best viewed in color.
+
+Figure 3: The estimation errors Lr of Ours and Ours-S, both of
+which are divided by Ours-NC. Best viewed in color.
+
+eﬁt deeper layers. Moreover, although increasing K from 1
+to 10 gives lower ratios of Lr at convolutional layers, the
+ratios of Lce increases at the network logits, which lead to
+less improvement for classiﬁcation when more training sam-
+ples are available. The phenomenons are consistent with the
+results in Table 1, Table 2 and Table 5. In summary, cross
+distillation can indeed generalize well when F T and F S are
+properly mixed in the few shot setting.
+
+Sensitivity Analysis Finally, we present sensitivity anal-
+ysis for cross distillation. We perform grid search by vary-
+ing µ ∈ [0, 1] for Ours and (α, β ) ∈ [0, 1]2 for Ours-S at
+an interval of 0.1. We take VGG-16 for structured prun-
+ing and ResNet-56 for unstructured pruning on CIFAR-10
+with K = 5, while ILSVRC-12 experiments adopt the same
+setting of µ and (α, β ) found by these experiments. From
+Figure 4(a) and Figure 4(b), Ours consistently outperforms
+Ours-NC, where the best conﬁgurations appear at around
+µ = 0.6 for VGG-16 and µ = 0.9 for ResNet-56. Further-
+more, we ﬁnd that simply using the correction loss µ = 0.0
+or the imitation loss µ = 1.0 also achieve reasonable re-
+sults3 . In terms of Ours-S in Figure 4(c) and 4(d) , we ﬁnd
+that on left regions {(α, β )|α + β < 1} F T and F S permute
+the input too much and thereon lead to signiﬁcant drops of
+performance. For right regions {(α, β )|α + β > 1}, most
+
+3The accuracies are 83.44% and 83.32% respectively on VGG-
+16, and 84.93% and 86.63% respectively on ResNet-56.
+
+(a) Ours on VGG-16
+
+(b) Ours on ResNet-56
+
+(c) Ours-S on VGG-16
+(d) Ours-S on ResNet-56
+Figure 4: Sensitivity analysis of µ ∈ [0, 1] for Ours and (α, β ) on
+[0, 1]2 for Ours-S.
+
+conﬁgurations consistently outperform Ours-NC (1.0, 1.0),
+and the peaks occur somewhere in the middle of the regions.
+
+Conclusion
+
+In this paper, we present cross distillation, a novel knowl-
+edge distillation approach for learning compact student net-
+work given limited number of training instances. By re-
+ducing estimation errors between the student network and
+teacher network, cross distillation can bring a more pow-
+erful and generalizable student network. Extensive experi-
+ments on benchmark datasets demonstrate the superiority of
+our method against various competitive baselines.
+
+Acknowledgement This work is supported by the Re-
+search Grant Coucil of the Hong Kong Special Adminis-
+trative Region, China (No.CUHK 14208815 and No.CUHK
+14210717 of the General Research Fund). We sincerely
+
+thank Xin Dong, Jiajin Li, Jiaxing Wang and Shilin He for
+helpful discussions, as well as the anonymous reviewers for
+insightful suggestions.
+
+References
+
+[Bai, Wang, and Liberty 2019] Bai, Y.; Wang, Y.-X.; and
+Liberty, E. 2019. Proxquant: Quantized neural networks
+via proximal operators. ICLR.
+[Banner et al. 2018] Banner, R.; Hubara, I.; Hoffer, E.; and
+Soudry, D. 2018. Scalable methods for 8-bit training of
+neural networks. In NIPS, 5145–5153.
+[Bengio, L ´eonard, and Courville 2013] Bengio, Y.; L ´eonard,
+N.; and Courville, A. C. 2013. Estimating or propagating
+gradients through stochastic neurons for conditional compu-
+tation. CoRR abs/1308.3432.
+[Bhardwaj, Suda, and Marculescu 2019] Bhardwaj,
+K.;
+Suda, N.; and Marculescu, R. 2019. Dream distillation:
+A data-independent model compression framework. arXiv
+preprint arXiv:1905.07072.
+[Chen et al. 2019] Chen, H.; Wang, Y.; Xu, C.; Yang, Z.; Liu,
+C.; Shi, B.; Xu, C.; Xu, C.; and Tian, Q. 2019. Daﬂ: Data-
+free learning of student networks. In ICCV.
+[Chen, Wang, and Pan 2019a] Chen, S.; Wang, W.; and Pan,
+S. J. 2019a. Cooperative pruning in cross-domain deep neu-
+ral network compression. In IJCAI.
+[Chen, Wang, and Pan 2019b] Chen, S.; Wang, W.; and Pan,
+S. J. 2019b. Deep neural network quantization via layer-
+wise optimization using limited training data. In AAAI.
+[Dong, Chen, and Pan 2017] Dong, X.; Chen, S.; and Pan, S.
+2017. Learning to prune deep neural networks via layer-wise
+optimal brain surgeon. In NIPS, 4857–4867.
+[Friedlander and Tseng 2007] Friedlander, M. P., and Tseng,
+P. 2007. Exact regularization of convex programs. SIAM
+Journal on Optimization 18(4):1326–1350.
+[Gupta, Hoffman, and Malik 2016] Gupta, S.; Hoffman, J.;
+and Malik, J. 2016. Cross modal distillation for supervi-
+sion transfer. In CVPR, 2827–2836.
+[Han, Mao, and Dally 2016] Han, S.; Mao, H.; and Dally,
+W. J. 2016. Deep compression: Compressing deep neu-
+ral network with pruning, trained quantization and huffman
+coding. In ICLR.
+[He et al. 2016] He, K.; Zhang, X.; Ren, S.; and Sun, J. 2016.
+Deep residual learning for image recognition.
+In CVPR,
+770–778.
+[He, Zhang, and Sun 2017] He, Y.; Zhang, X.; and Sun, J.
+2017. Channel pruning for accelerating very deep neural
+networks. In ICCV.
+[Hinton, Vinyals, and Dean 2015] Hinton, G.; Vinyals, O.;
+and Dean, J. 2015. Distilling the knowledge in a neural
+network. arXiv preprint arXiv:1503.02531.
+[Li et al. 2016] Li, H.; Kadav, A.; Durdanovic, I.; Samet, H.;
+and Graf, H. P. 2016. Pruning ﬁlters for efﬁcient convnets.
+arXiv preprint arXiv:1608.08710.
+
+[Li et al. 2018] Li, T.; Li, J.; Liu, Z.; and Zhang, C. 2018.
+Knowledge distillation from few samples. arXiv preprint
+arXiv:1812.01839.
+[Li et al. 2020] Li, Y.; Dong, X.; Zhang, S.; Bai, H.; Yuan-
+peng, C.; and Wang, W. 2020. Rtn: Reparameterized ternary
+network. In AAAI.
+[Liu et al. 2019] Liu, Z.; Sun, M.; Zhou, T.; Huang, G.; and
+Darrell, T. 2019. Rethinking the value of network pruning.
+In ICLR.
+[Lopes, Fenu, and Starner 2017] Lopes, R. G.; Fenu, S.; and
+Starner, T. 2017. Data-free knowledge distillation for deep
+neural networks. arXiv preprint arXiv:1710.07535.
+[Luo, Wu, and Lin 2017] Luo, J.-H.; Wu, J.; and Lin, W.
+2017. Thinet: A ﬁlter level pruning method for deep neu-
+ral network compression. In ICCV, 5058–5066.
+[Nayak et al. 2019] Nayak, G. K.; Mopuri, K. R.; Shaj, V.;
+Babu, R. V.; and Chakraborty, A.
+2019.
+Zero-shot
+knowledge distillation in deep networks.
+arXiv preprint
+arXiv:1905.08114.
+[Parikh, Boyd, and others 2014] Parikh, N.; Boyd, S.; et al.
+2014. Proximal algorithms. Foundations and Trends R(cid:13) in
+Optimization 1(3):127–239.
+[Romero et al. 2014] Romero, A.; Ballas, N.; Kahou, S. E.;
+Chassang, A.; Gatta, C.; and Bengio, Y. 2014. Fitnets: Hints
+for thin deep nets. arXiv preprint arXiv:1412.6550.
+[Simonyan and Zisserman 2014] Simonyan, K., and Zisser-
+man, A. 2014. Very deep convolutional networks for large-
+scale image recognition. arXiv preprint arXiv:1409.1556.
+[Wen et al. 2019] Wen, L.; Zhang, X.; Bai, H.; and Xu, Z.
+2019.
+Structured pruning of recurrent neural networks
+through neuron selection. arXiv preprint arXiv:1906.06847.
+[Wu et al. 2016] Wu, J.; Leng, C.; Wang, Y.; Hu, Q.; and
+Cheng, J. 2016. Quantized convolutional neural networks
+for mobile devices. In CVPR.
+[Wu et al. 2018] Wu, J.; Zhang, Y.; Bai, H.; Zhong, H.; Hou,
+J.; Liu, W.; and Huang, J. 2018. Pocketﬂow: An automated
+framework for compressing and accelerating deep neural
+networks. In NIPS Workshop on CDNNRIA.
+[Ye et al. 2018] Ye, J.; Wang, L.; Li, G.; Chen, D.; Zhe, S.;
+Chu, X.; and Xu, Z. 2018. Learning compact recurrent
+neural networks with block-term tensor decomposition. In
+CVPR, 9378–9387.
+[Zhang et al. 2015] Zhang, X.; Zou, J.; He, K.; and Sun, J.
+2015. Accelerating very deep convolutional networks for
+classiﬁcation and detection.
+IEEE TPAMI 38(10):1943–
+1955.
+[Zhang et al. 2018] Zhang, H.; Cisse, M.; Dauphin, Y. N.;
+and Lopez-Paz, D. 2018. mixup: Beyond empirical risk
+minimization. In ICLR.
+[Zhu and Gupta 2017] Zhu, M., and Gupta, S. 2017. To
+prune, or not to prune: exploring the efﬁcacy of pruning for
+model compression. arXiv preprint arXiv:1710.01878.
+
+Appendix
+Proof to Theorem 1
+
+We decompose the proof to Theorem 1 into two parts. We
+ﬁrst show the Lipchitz continuity for the softmax cross
+entropy function in Lemma 1, then we show the layer-
+wise propagation of estimation errors in a recursive way in
+Lemma 2. Theorem 1 can be easily veriﬁed by combining
+Lemma 1 and Lemma 2.
+Lemma 1. For network logits o = F (x) ∈ Rd and the
+ground-truth labels y ∈ Rd , the softmax cross entropy
+is C -Lipchitz con-
+
+(cid:80)d
+
+exp(oi )
+j=1 exp(oj )
+
+tinuous for some constant C > 0.
+
+Lce (o; y) = − (cid:80)d
+i=1 yi log
+Lce (o; y) = − d(cid:88)
+
+d(cid:88)
+
+i=1
+
+exp(oj ),
+
+yi oi + log
+
+Proof. Note that
+where we have used the fact (cid:80)d
+continuity of the function φ(o) = log (cid:80)d
+i=1 yi = 1 since y is a one-
+hot vector. The ﬁrst term is linear in o and therefore satisﬁes
+the Lipchitz continuity. We now turn to verify the Lipchitz
+cording to the intermediate value theorem, for ∀oS , oT ∈
+Rd , ∃t ∈ [0, 1] such that for ¯o = toT + (1 − t)oS , we have
+
+i=1 exp(oi ). Ac-
+
+(12)
+
+j=1
+
+|φ(oT ) − φ(oS )|
+= |∇φ(¯o)(cid:62) (φ(oT ) − φ(oS ))|
+≤ (cid:107)∇φ(¯o)(cid:107)1(cid:107)oT − oS (cid:107)∞
+= (cid:107)oT − oS (cid:107)∞
+≤ C0(cid:107)oT − oS (cid:107),
+
+(13)
+
+where the third line comes from the Holder’s inequality, the
+fourth line comes from the fact that ∇φ(¯o) is a softmax
+function lying on a simplex, and the last line is due to the
+equivalence among norms. With Equation 13, one can eas-
+ily verify that
+
+i=1
+
+= | d(cid:88)
+
+|Lce (oT ; y) − Lce (oS ; y)|
+i − oS
+i ) + φ(oT ) − φ(oS )|
+yi (oT
+≤ (cid:107)y(cid:107)(cid:107)oT − oS (cid:107) + |φ(oT ) − φ(oS )|
+≤ (C0 + 1)(cid:107)oT − oS (cid:107)
+= (C0 + 1)(cid:107)WhT
+L − WhS
+≤ C (cid:107)hT
+L − hS
+
+L (cid:107)
+
+L (cid:107)
+
+(14)
+
+where we have used facts that (cid:107)y(cid:107) = 1, oT = WhT
+L with W as shared parameters of the last layer, and
+
+L , oS =
+
+WhS
+C = (C0 + 1) · (cid:107)W(cid:107).
+
+Lemma 2. Suppose both F T and F S are activated by the
+Lipchitz-continuous function σ(·) = ReLU(·), the estima-
+tion error Lr
+L at layer L can be bounded by the layerwise
+
+l=1
+
+k=l
+
+Lr
+
+L(cid:89)
+
+Ck (µ) ˜Ll + ˜LL ,
+
+objective function ˜Ll as follows:
+L ≤ L−1(cid:88)
+where Ck (µ) is some constant linear in µ in the k-th layer.
+Proof. Recall that hT
+L−1 ). To facilitate the
+following analysis, we apply the im2col operation to equiv-
+alently transform the convolution to matrix multiplication,
+i.e. ¯hT
+L−1 ), where ¯hT
+L ∈ Rco×(ci kk) are matrices. Then
+
+L ∈ Rco×(N ci kk) and
+
+L ∗ hT
+L = σ(WT
+
+L = σ( ¯WT
+
+¯WT
+
+(15)
+
+¯hT
+
+L
+
+L (cid:107)
+
+Lr
+
+L = (cid:107)hT
+L − hS
+L (cid:107) = (cid:107) ¯hT
+L − ¯hS
+= (cid:107)σ( ¯WT
+¯hT ) − σ( ¯WS
+¯hS )(cid:107)
+≤ (cid:107) ¯WT
+¯hT
+L−1 − ¯WS
+¯hS
+L−1 + (cid:107) ¯WT
+L−1 ,
+
+L (cid:107) · Lr
+
+≤ Lc
+
+L
+
+L
+
+L
+
+L−1(cid:107) ≤ Lc
+
+L
+
+L−1 + S
+
+L−1
+
+(16)
+
+(17)
+
+where the ﬁrst inequality comes from the Lipchitz continuity
+of the ReLU(·) function, and the rest can be readily obtained
+by applying the triangle inequality. Similarly, we have
+
+Lr
+L ≤ Li
+
+L−1 + (cid:107) ¯WT
+
+L (cid:107) · Lr
+
+L−1
+
+(18)
+
+By taking the convex combination of Equation 16 and Equa-
+tion 18 for some µ ∈ [0, 1], we have
+
+Lr
+
+L−1
+
+L (cid:107) · Lr
+L (cid:107) · Lr
+
+L−1 )
+L−1 )
+
+L ≤ µ(Li
+L−1 + (cid:107) ¯WS
++ (1 − µ)(Li
+L−1 + (cid:107) ¯WT
+≤ ˜LL + CL (µ)Lr
+≤ ˜LL +
+Ck (µ) ˜Ll ,
+
+L(cid:89)
+
+L−1(cid:88)
+where we deﬁne Ck (µ) = µ(cid:107) ¯WS
+the last line is obtained recursively with Lr
+at the input of F T and F S .
+Finally, by combining Equation 14 with Equation 19 to-
+(k) = C · C (k), Equation 6 in Theo-
+gether and deﬁne C
+rem 1 can be readily veriﬁed.
+
+k (cid:107) + (1 − µ)(cid:107) ¯WT
+0 = (cid:107)x − x(cid:107) = 0
+
+k (cid:107), and
+
+(19)
+
+k=l
+
+l=1
+
+(cid:48)
+
+Cross Distillation with Quantization
+
+Q = {0, ±1
+
+2B−1−1 , ±2
+
+To arm cross distillation with network quantization, one can
+simply take R(WS ) = ΠQ (g(WS )) in Equation 1, where
+2B−1−1 , ..., ±1} is the collection of 2B
+quantization points, ΠQ denotes projection onto Q, and g(·)
+is some transformation function to normalize the input. Op-
+timizing loss functions of cross distillation in Equation 4 or
+Equation 8 is similar to STE training (Bengio, L ´eonard, and
+Courville 2013), where the proximal step performs lazy pro-
+jection that corresponds to the quantization step in the for-
+ward pass in STE.
+Similarly, if one take R(WS ) = (cid:107)g(WS ) − Q(cid:107)2
+F , the
+entire procedure reduces to exactly ProxQuant (Bai, Wang,
+and Liberty 2019) which alternates between the proximal
+step and gradient descent step.
+
+Table 7: The top-1 accuracy (%) on structured pruning using ResNet-56 on CIFAR-10 with different training sizes. We choose Res-50% as
+the pruning scheme, and the accuracy of the original model is 93.32%.
+
+Methods
+L1-norm
+BP
+FSKD
+FitNet
+ThiNet
+CP
+Ours-NC
+Ours
+Ours-S
+
+1
+
+2
+
+3
+
+5
+
+10
+
+50
+
+80.43±0.00
+84.17±1.55
+84.26±1.42
+86.85±1.91
+88.40±1.26
+88.53±1.37
+88.05±1.61
+88.42±1.63
+89.00±1.59
+
+80.43±0.00
+86.61±1.69
+85.79±1.31
+87.95±2.13
+88.76±1.18
+88.69±1.09
+88.63±1.69
+89.12±1.57
+89.45±1.43
+
+80.43±0.00
+86.86±1.30
+85.99±1.29
+88.94±1.85
+88.95±1.19
+88.79±0.94
+89.01±1.53
+89.75±1.50
+89.56±1.32
+
+14.36±0.00
+87.41±0.98
+87.53±1.06
+89.43±1.60
+89.54±0.84
+89.39±0.80
+89.51±1.13
+89.93±1.03
+90.14±1.19
+
+80.43±0.00
+87.79±0.81
+88.15±0.71
+91.03±1.14
+90.36±0.76
+89.91±0.69
+90.26±0.83
+90.42±0.86
+90.82±0.79
+
+80.43±0.00
+90.12±0.70
+88.70±0.55
+91.89±0.87
+90.89±0.49
+90.45±0.43
+90.98±0.29
+90.85±0.24
+91.24±0.33
+
+Table 8: The accuracy (%) of unstructured pruning with VGG-16
+on CIFAR-10 with different pruning schemes. K = 5 samples per
+class are adopted.
+
+Table 9: The accuracy (%) of unstructured pruning with ResNet-56
+on CIFAR-10 with different pruning schemes. K = 5 samples per
+class are adopted.
+
+Methods VGG-50% VGG-70% VGG-90% VGG-95%
+
+Methods Res-50%
+
+Res-70%
+
+Res-90%
+
+Res-95%
+
+BP
+FitNet
+
+L1-norm 92.47±0.00 85.21±0.00 15.06±0.00 10.00±0.00
+93.49±0.09 92.39±0.17 71.38±1.16 42.16±1.98
+93.27±0.15 92.51±0.17 83.50±1.73 63.48±1.45
+Ours-NC 93.46±0.06 93.17±0.11 89.03±0.82 75.20±1.02
+93.51±0.04 93.30±0.09 90.62±0.93 82.81±1.26
+Ours-S 93.58±0.06 93.27±0.10 90.36±0.89 81.97±1.13
+
+Ours
+
+BP
+FitNet
+
+L1-norm 92.32±0.00 81.82±0.00 10.00±0.00 10.00±0.00
+93.45±0.07 91.87±0.23 74.74±1.01 44.26±1.84
+93.60±0.10 92.91±0.17 84.12±1.17 67.53±1.75
+Ours-NC 93.36±0.04 93.07±0.11 83.39±0.82 55.15±1.89
+93.57±0.07 93.23±0.14 86.57±0.69 68.07±1.73
+Ours-S 93.58±0.04 93.24±0.10 86.38±0.79 64.55±1.63
+
+Ours
+
+Additional Experiments
+
+Implementation Details
+
+For the CIFAR-10 experiments, we adopt the implemen-
+tation from torchvision4 and follow the standard way (Si-
+monyan and Zisserman 2014; He et al. 2016) in pretrain-
+ing the model. For VGG-16 with BN and ResNet-34 on
+ImageNet-IlSVRC12, we adopt the checkpoint from the of-
+ﬁcial release of torchvision5 . Similar to (Li et al. 2018), we
+do not adopt data augmentation so as to better simulate the
+few shot setting. The combination of our methods with var-
+ious data augmentation skills are discussed later.
+In terms of baselines, we adopt the implementation6
+from (Liu et al. 2019) for 1) L1-Norm. Based on the pruned
+models by 1), we perform ﬁne-tuning with back-propagation
+by minimizing the cross entropy or the FitNet loss, denoted
+as 2) BP and 3) FitNet respectively. For 4) ThiNet, our im-
+plementation is based on the published code7 . For 5) CP,
+we re-implement the paper based on its TensorFlow version8
+and reproduce the results in Table 1 of the paper. Note that
+we do not consider tricks such as the residual compensation
+and the 3C enhancement since they are not the main focus
+of this paper, despite that we found residual compensation
+can lead to slight improvement for both CP and our meth-
+ods. For both ThiNet and CP, we use all feature map patches
+
+4 https://github.com/pytorch/vision/blob/master/torchvision/models/
+5 https://pytorch.org/docs/stable/torchvision/models.html
+6 https://github.com/Eric-mingjie/rethinking-network-
+pruning/tree/master/imagenet/l1-norm-pruning
+7 https://github.com/Roll920/ThiNet
+8 https://github.com/Tencent/PocketFlow
+
+for regression instead of sampling a subset of them, the lat-
+ter of which lead to a signiﬁcant drop of accuracy when only
+limited training instances are available.
+We adopt the ADAM optimizer for these methods, and
+adjust the learning rate within [1e-5, 1e-3] to obtain proper
+performance. Each layer is optimized for 3,000 itera-
+tions, where the sparsity ratio linearly increases within the
+ﬁrst 1,000 iterations. After layer-wise training, we further
+ﬁne-tune the network for a few more epochs with back-
+propagation.
+
+Pruning Schemes
+
+The detailed pruning schemes of VGG-16 network for struc-
+tured pruning are as follows: For VGG-A, 50% channels are
+removed for all blocks except the 3-rd block. For VGG-B,
+10% more channels are pruned based on VGG-A, and 20%
+channels are pruned in the 3-rd block. For VGG-C, we prune
+75% channels in the ﬁrst four blocks, and 60% channels in
+the last block.
+The reduction of network parameters as well as compu-
+tational FLOPs of VGG-16, ResNet-56 and ResNet-34 for
+structured pruning are presented in Table 10, Table 11 and
+Table 12 respectively.
+For unstructured pruning, the model size can be directly
+calculated by the sparsity r in theory. However, in practice
+the irregular sparsity induced by unstructured pruning may
+not lead to speedup under prevalent computational frame-
+works. The gain of unstructured sparsity may rely on some
+specially designed hard-wares.
+
+Table 10: Structured pruning schemes of VGG-16 on CIFAR-10.
+
+Schemes
+Orig.
+VGG-50%
+VGG-A
+VGG-B
+VGG-C
+
+Params (M)
+14.99
+4.53
+6.11
+4.37
+2.92
+
+P↓ (%)
+
+-
+69.78
+59.26
+70.83
+80.55
+
+FLOPs (G)
+0.314
+0.082
+0.208
+0.137
+0.061
+
+F↓ (%)
+
+-
+73.95
+33.76
+56.37
+80.45
+
+Table 11: Structured pruning schemes of ResNet-56 on CIFAR-10.
+
+Schemes
+Orig.
+Res-50%
+Res-60%
+Res-70%
+Res-90%
+
+Params (M)
+0.85
+0.50
+0.42
+0.35
+0.21
+
+P↓ (%)
+
+-
+41.18
+50.59
+58.82
+75.29
+
+FLOPs (G)
+0.127
+0.072
+0.059
+0.048
+0.028
+
+F↓ (%)
+
+-
+43.31
+53.51
+62.20
+77.95
+
+Table 12: Structured pruning schemes of ResNet-34 on ILSVRC-
+12.
+
+Schemes
+Orig.
+Res-30%
+Res-50%
+Res-70%
+Res-70%+
+
+Params (M)
+21.80
+19.71
+18.33
+16.92
+12.79
+
+P↓ (%)
+
+-
+9.59
+15.91
+22.37
+41.32
+
+FLOPs (G)
+3.68
+2.97
+2.51
+2.05
+1.85
+
+F↓ (%)
+
+-
+19.15
+31.47
+44.26
+49.78
+
+More Results
+
+Structured Pruning We also conduct structured pruning
+with ResNet-56 on CIFAR-10. Following a similar pattern
+in previous experiments, we ﬁrst ﬁx K and evaluate cross
+distillation with various pruning schemes, and then show
+how cross distillation responds to different K shots train-
+ing samples. The results are in Table 7 and Table 13 respec-
+tively. Our methods again outperform the rest approaches,
+and fewer training instances or higher sparsities also enjoy
+to larger advantages.
+Unstructured Pruning For unstructured pruning, we also
+conduct VGG-16 and ResNet-56 on the CIFAR-10 dataset.
+With similar patterns to previous experiments, the results of
+VGG-16, ResNet-56 are shown in Table 8 and Table 15, Ta-
+ble 9 and Table 16 respectively.
+Quantization To demonstarte the effectiveness of cross
+distillation for network quantization, we take VGG-16 and
+ResNet-56 on CIFAR-10 for illustration. We choose the reg-
+ularization R(WS ) = ΠQ (g(WS )) to be the projection
+function, and g(x) =
+max(x)−min(x) as the linear normal-
+ization function. Before applying the transformation, we ﬁrst
+truncate WS by the three-sigma rule so as to avoid out-
+liers that may lead to poorly distributed quantization points.
+For activation quantization, we adopt the widely used clip-
+ping method to bound activations between [0, 1]. We vary
+the training size between 1-shot and 5-shot, and the results
+are shown in Table 17 and Table 18 respectively.
+
+x−min(x)
+
+Table 13: The top-1 accuracy (%) of different structured pruning
+schemes with Resnet-56 on CIFAR-10. 5 samples per class are
+used.
+
+Methods Res-50%
+
+Res-60%
+
+Res-70%
+
+Res-90%
+
+BP
+FSKD
+FitNet
+ThiNet
+CP
+
+L1-norm 80.43±0.00 50.55±0.00 30.50±0.00 14.70±0.00
+87.41±0.98 80.85±1.23 72.23±1.81 32.03±2.23
+87.53±1.06 82.50±0.95 70.93±1.57 30.31±1.76
+89.43±1.60 86.03±1.96 81.90±2.01 51.15±2.60
+89.54±0.84 85.73±0.97 79.75±1.34 38.64±1.78
+89.39±0.80 86.01±0.84 80.20±1.26 52.17±1.43
+Ours-NC 89.51±1.13 85.56±1.32 80.53±1.45 50.98±1.60
+89.93±1.21 86.80±1.12 79.67±1.56 50.67±1.98
+90.14±1.19 86.58±0.97 81.86±1.43 52.05±1.75
+
+Ours
+Ours-S
+
+Table 14: Accuracies with different data augmentation methods and
+different training sizes. The result is based on structured pruning of
+VGG-16 on CIFAR-10.
+
+1
+
+2
+
+5
+
+10
+
+Methods
+Ours-NC
+Ours+Rand.
+Ours+Gauss.
+Ours+Mixup
+Ours
+Ours+Rand.
+Ours+Gauss.
+
+65.57±1.61 75.44±1.69 81.20±1.19 84.07±0.83
+64.60±2.04 73.10±1.85 82.40±1.50 84.31±1.30
+62.38±1.32 75.15±1.64 81.58±1.55 83.69±1.18
+68.40±1.41 78.59±1.35 81.05±1.07 83.47±0.98
+69.25±1.39 80.65±1.47 84.91±0.98 86.61±0.71
+72.09±1.66 81.39±1.53 85.31±1.13 86.34±0.89
+73.10±1.66 81.46±1.40 85.07±1.22 86.34±1.07
+Ours+Mixup 79.97±1.71 84.37±1.32 86.01±0.99 87.01±0.81
+68.53±1.59 76.83±1.43 82.74±1.19 86.30±0.79
+Ours-S+Rand. 69.43±1.95 78.25±1.79 84.71±1.68 86.22±1.46
+Ours-S+Gauss. 69.79±1.98 77.74±1.80 83.97±1.34 86.00±1.20
+Ours-S+Mixup 79.63±1.45 83.63±1.21 86.10±1.07 87.12±0.76
+
+Ours-S
+
+Other Analysis
+
+Cross Distillation with Data Augmentation As we con-
+
+sider the setting of few shot network compression, a natural
+question is how data augmentation can help to alleviate the
+shortage of training data. Here we combine cross distillation
+with 1) randomly crop/rotate the input image (Rand.), which
+is the widely used data augmentation technique; 2) Gaussian
+noise (Gauss.)  ∼ N (0, 0.2 max(hS )) over the hidden fea-
+ture map hS ; and 3) Mixup (Zhang et al. 2018) (Mixup),
+a pair-wise interpolation method over the training samples.
+We compare to Mixup since the idea of cross distillation
+resembles Mixup in a way that both methods apply con-
+vex combinations but over different levels. Cross distillation
+applies convex combinations on the loss level (Ours) and
+feature map level (Ours-S) between the student and teacher
+network, while Mixup applies those on the pairs of training
+samples. We adopt structured pruning on CIFAR-10 and use
+VGG-50% as the pruning scheme.
+From Table 14, we ﬁnd that while 1) Random noise and
+2) Gaussian noise give a slight improvement in the few shot
+setting, Mixup can signiﬁcantly boost the performance, es-
+pecially when K is small. Moreover, Ours and Ours-S ben-
+eﬁt more from Mixup comparing to Ours-NC, which shows
+that the convex combination on the loss level and feature
+
+map level can be better combined with the interpolation of
+input pairs for few shot training.
+Layers of Cross Connection Finally, in order to further
+investigate which layers beneﬁt most from cross distillation,
+we conduct ablation studies on the positions of cross con-
+nections. We take Ours-S for illustration and adopt VGG-
+50% for structured pruning with K = 10. Note that cross
+connections are assigned at the end of VGG blocks, e.g.,
+C2.2 denotes conv2.2 of the VGG network. The results are
+shown in Table 19. It can be observed that the crossing points
+at deeper layers tend to bring more improvement, which is
+consistent with the ﬁndings in Figure 2(c) and Figure 3 that
+larger error gaps and lower validation losses occur in deeper
+layers of the network.
+
+Table 15: The accuracy (%) on unstructured pruning with VGG-16 on CIFAR-10 with different training sizes. We choose VGG-50% as the
+pruning scheme, and the accuracy of the original model is 93.51%.
+
+Methods
+L1-norm
+BP
+FitNet
+Ours-NC
+Ours
+Ours-S
+
+1
+
+2
+
+3
+
+5
+
+10
+
+50
+
+15.06±0.00
+47.20±1.43
+69.30±1.98
+78.71±1.24
+83.32±1.35
+81.23±1.29
+
+15.06±0.00
+55.76±1.29
+78.30±1.77
+86.74±1.31
+88.26±1.10
+88.43±1.14
+
+15.06±0.00
+65.71±1.30
+81.60±1.85
+88.00±1.07
+90.07±0.82
+89.54±0.98
+
+15.06±0.00
+71.38±1.16
+83.50±1.73
+89.03±0.82
+90.62±0.90
+90.36±0.89
+
+15.06±0.00
+79.95±0.89
+86.59±1.40
+90.26±0.83
+91.41±0.68
+91.09±0.79
+
+15.06±0.00
+84.95±0.63
+88.43±1.05
+91.12±0.51
+91.48±0.40
+91.91±0.37
+
+Table 16: The accuracy (%) on unstructured pruning with ResNet-56 on CIFAR-10 with different training sizes. The pruning scheme is
+Res-90% and the original accuracy is 93.32%.
+
+Methods
+L1-norm
+BP
+FitNet
+Ours-NC
+Ours
+Ours-S
+
+1
+
+2
+
+3
+
+5
+
+10
+
+50
+
+10.00±0.00
+56.69±1.70
+70.65±1.28
+72.71±1.38
+75.73±1.28
+80.59±1.15
+
+10.00±0.00
+62.53±1.63
+79.46±1.38
+80.20±0.97
+84.24±1,03
+82.67±1.25
+
+10.00±0.00
+67.46±1.32
+82.17±1.15
+82.55±0.73
+85.06±0.81
+84.43±0.97
+
+10.00±0.00
+74.74±1.01
+84.12±1.17
+83.39±0.82
+86.57±0.70
+86.38±0.79
+
+10.00±0.00
+76.85±1.12
+85.45±0.88
+86.26±0.53
+87.03±0.52
+87.85±0.60
+
+10.00±0.00
+82.03±0.71
+87.23±0.45
+87.68±0.39
+87.82±0.28
+88.03±0.31
+
+Table 17: The accuracy(%) on quantization with VGG-16 on
+CIFAR-10. ”WxAy” means x-bit weight quantization and y-bit acti-
+vation quantization.
+
+Table 18: The accuracy(%) on quantization with ResNet-56 on
+CIFAR-10. ”WxAy” means x-bit weight quantization and y-bit acti-
+vation quantization.
+
+K=1
+
+K=5
+
+W2A3
+
+W2A4
+
+W2A3
+
+W2A4
+
+Ours-NC 53.24±2.31 88.93±0.41 80.89±0.98 91.23±0.18
+60.36±2.86 89.12±0.38 81.20±1.26 91.35±0.29
+
+Ours
+
+K=1
+
+K=5
+
+W2A32
+
+W4A32
+
+W2A32
+
+W4A32
+
+Ours-NC 72.48±1.94 85.75±0.96 84.67±1.89 91.09±0.37
+80.92±2.23 90.42±0.53 86.11±1.97 91.23±0.45
+
+Ours
+
+Table 19: Soft cross distillation with structured pruning at different layers of VGG-16 on CIFAR-10. Double comb. denotes there are two
+crossing points and it holds similarly for triple comb.. As the baseline, Ours-S has accuracy of 86.30±0.79 .
+
+83.98±0.63
+
+C2.2
+
+83.30±65
+
+Single Layer C1.2
+Accuracy
+Double Comb. C1.2 + C2.2
+Accuracy
+Triple Comb. C1.2 + C2.2 + C3.3 C2.2 + C3.3 + C4.3 C3.3 + C4.3 + C5.3
+Accuracy
+
+C2.2 + C3.3
+
+C3.3 + C4.3
+
+83.91±0.68
+
+83.84±0.67
+
+C3.3
+
+83.78±59
+
+84.05±0.72
+
+86.26±0.63
+
+84.27±0.64
+
+84.12±0.59
+
+C4.3
+
+84.65±70
+
+C5.3
+
+84.97±71
+
+C4.3 + C5.3
+
+86.12±0.70
+
+

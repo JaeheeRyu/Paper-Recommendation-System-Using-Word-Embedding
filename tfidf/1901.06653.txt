@@ -1,0 +1,1885 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+S
+
+D
+
+.
+
+s
+
+c
+
+[
+
+4
+v
+3
+5
+6
+6
+0
+
+.
+
+1
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Fast algorithms at low temperatures via Markov chains∗
+
+Zongchen Chen†
+
+Andreas Galanis‡
+
+Leslie Ann Goldberg†
+
+Will Perkins§
+
+James Stewart†
+
+Eric Vigoda∗
+
+14 November 2019
+
+Abstract
+
+For spin systems, such as the hard-core model on independent sets weighted by fugacity
+λ > 0, eﬃcient algorithms for the associated approximate counting/sampling problems
+typically apply in the high-temperature region, corresponding to low fugacity. Recent
+work of Jenssen, Keevash and Perkins (2019) yields an FPTAS for approximating the
+partition function (and an eﬃcient sampling algorithm) on bounded-degree (bipartite)
+expander graphs for the hard-core model at suﬃciently high fugacity, and also the ferro-
+magnetic Potts model at suﬃciently low temperatures. Their method is based on using
+the cluster expansion to obtain a complex zero-free region for the partition function of
+a polymer model, and then approximating this partition function using the polynomial
+interpolation method of Barvinok. We present a simple discrete-time Markov chain for
+abstract polymer models, and present an elementary proof of rapid mixing of this new
+chain under suﬃcient decay of the polymer weights. Applying these general polymer
+results to the hard-core and ferromagnetic Potts models on bounded-degree (bipartite)
+expander graphs yields fast algorithms with running time O(n log n) for the Potts model
+and O(n2 log n) for the hard-core model, in contrast to typical running times of nO(log ∆)
+for algorithms based on Barvinok’s polynomial interpolation method on graphs of maxi-
+mum degree ∆. In addition, our approach via our polymer model Markov chain is concep-
+tually simpler as it circumvents the zero-free analysis and the generalization to complex
+parameters. Finally, we combine our results for the hard-core and ferromagnetic Potts
+models with standard Markov chain comparison tools to obtain polynomial mixing time
+for the usual spin system Glauber dynamics restricted to even and odd or ‘red’ dominant
+portions of the respective state spaces.
+
+∗These results were announced in preliminary form (without proofs) as a brief abstract in the proceedings
+of APPROX/RANDOM 2019
+† School of Computer Science, Georgia Institute of Technology. Research supported in part by NSF grants
+CCF-1617306 and CCF-1563838.
+‡The research leading to these results has received funding from the European Research Council under
+the European Union’s Seventh Framework Programme (FP7/2007-2013) ERC grant agreement no. 334828.
+The paper reﬂects only the authors’ views and not the views of the ERC or the European Commission. The
+European Union is not liable for any use that may be made of the information contained therein. Authors’
+address: Department of Computer Science, University of Oxford, Wolfson Building, Parks Road, Oxford,
+OX1 3QD, UK.
+§Department of Mathematics, Statistics, and Computer Science, University of Illinois at Chicago. Part of
+this work was done while WP was visiting the Simons Institute for the Theory of Computing.
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+1
+
+Introduction
+
+The hard-core model from statistical physics is deﬁned on the set of independent sets of a
+graph G, where the independent sets are weighted by a fugacity λ > 0. The associated Gibbs
+distribution µG,λ is deﬁned as follows, for an independent set I :
+
+λ|I |
+ZG,λ
+
+µG,λ(I ) =
+(1)
+where ZG,λ = PI ∈I (G) λ|I | is the hard-core partition function (also called the independence
+polynomial), I (G) is the set of independent sets of G, and λ > 0 is the fugacity.
+In applications, there are two important computational tasks associated to a spin model
+such as the hard-core model. Given an error parameter ε ∈ (0, 1), an ε-approximate counting
+algorithm outputs a number ˆZ so that e−εZG,λ ≤ ˆZ ≤ eεZG,λ , and an ε-approximate sampling
+algorithm outputs a random sample I with distribution ˆµ so that the total variation distance
+satisﬁes kµλ − ˆµkT V < ε
+While classical statistical physics is most interested in studying the hard-core model on
+the integer lattice Zd , the perspective of computer science is to consider wider families of
+graphs, such as the set of all graphs, all graphs of maximum degree ∆, or all bipartite graphs
+of maximum degree ∆.
+Almost all proven eﬃcient algorithms for approximate counting and sampling from the
+hard-core model work for low fugacities (high temperatures in the language of statistical
+physics).
+In the high temperature regime there are at least three distinct algorithmic ap-
+proaches to approximate counting and sampling: Markov chains, correlation decay, and poly-
+nomial interpolation. One striking advantage of the Markov chain approach is that the
+algorithms are much faster and simpler than the algorithms from the other approaches. In
+particular, it is common for a Markov chain sampling algorithm to run in time O(n log n),
+e.g., see [12, 13], while typical running times for algorithms based on correlation decay [30, 24]
+and polynomial interpolation [1] are nO(log ∆) where ∆ is the maximum degree of the graph.
+In general there are no known eﬃcient algorithms at low temperatures (high fugacities),
+but recently eﬃcient algorithms have been developed for some special classes of graphs in-
+cluding subsets of Zd [17], random regular bipartite graphs, and bipartite expander graphs
+in general [19, 23]. What these bipartite graphs have in common is that for large enough λ,
+typical independent sets drawn from µG,λ align closely with one side or the other of the
+bipartition (the two ground states). This phenomenon is related to the phase transition phe-
+nomenon in inﬁnite graphs, and implies the exponentially slow mixing time of local Markov
+chains [4, 15, 25]. The algorithms introduced in [17] exploit this phenomenon by expressing
+the partition function ZG,λ in terms of deviations from the two ground states, and then using
+a truncation of a convergent series expansion (the Taylor series or the cluster expansion) to
+approximate the log partition function. In statistical physics this is called a perturbative ap-
+proach, and while in general it does not work in the largest possible range of parameter space,
+when it does work it gives a very detailed probabilistic understanding of the model [27, 6, 9].
+To apply the perturbative approach at low temperatures, one rewrites the original spin
+model as a new model in which single spin interactions are replaced by the interaction of
+connected components representing deviations from a chosen ground state. Such models
+are called abstract polymer models, as detailed below, and have long been used in statistical
+physics to understand phase transitions. In this paper, we show that once a low tempera-
+ture spin model has been transformed into an abstract polymer model, Markov chains once
+
+2
+
+again become an eﬀective algorithmic tool. Using this approach we obtain nearly linear and
+quadratic time sampling algorithms for low temperature models on expander graphs in cases
+where only nO(log ∆) -time algorithms were previously known.
+
+1.1 Abstract polymer models
+
+Abstract polymer models, as deﬁned by Gruber and Kunz in 1971 [16], (or ‘animal models’
+in Dobruishin’s terminology [9]) are an important tool in studying the equilibrium phases
+of statistical physics models on lattices (e.g. [22, 6] among many others; see [3] for a brief
+history of their use in statistical physics and combinatorics). Recently they have been used
+to develop eﬃcient algorithms for sampling and approximating the partition functions of
+statistical physics models on lattices [17] and expander graphs [19, 23] at low temperatures,
+the regime in which Markov chains like the Glauber dynamics are known to mix slowly.
+We will study the following polymer models. We start with a host graph G and a set [q ] =
+{0, . . . , q − 1} of spins. For each vertex v , there is a ground-state spin gv . A polymer γ consists
+of a connected set of vertices together with an assignment σγ of spins from {0, . . . , q − 1} \ gv
+to each vertex v ∈ γ (we abuse notation and use γ to denote both the polymer and the
+associated set of vertices). The size of a polymer, |γ |, is the number of vertices in γ . The set
+of all polymers is P (G).
+A polymer model on G consists of a set C (G) ⊆ P (G
+
+color, and deﬁne polymers to be connected subgraphs of G of size at most M , with vertices
+labeled by the remaining colors [q ] \ {g}. A polymer γ has weight function wγ = e−βB (γ )
+where B (γ ) is the number of bichromatic edges in γ plus the size of the edge boundary of γ
+in G. A conﬁguration of compatible polymers maps to a Potts conﬁguration σ in which all
+connected components of non-g-colored vertices have size at most M , and the weight of σ in
+the Potts model is exactly the product of the weight functions of the polymers. The polymer
+model partition function Z (G), with an appropriate choice of M , represents the contribution
+to the Potts model partition function of colorings with dominant color g .
+
+As with the hard-core model, there are two main computational problems associated to a
+polymer model: approximate sampling from µG and approximate counting of Z (G). We will
+approach them both via Markov chain algorithms. In general we will be interested in families
+of polymer models deﬁned on classes of graphs. We denote such a family (C (·), w, G ), where
+for each graph G ∈ G , (C (G), w) is a polymer model. We will always use n to denote the
+number of vertices of a graph G.
+We consider two conditions on the weight functions wγ and give their algorithmic conse-
+quences.
+
+Deﬁnition 1. A polymer model (C (·), w, G ) satisﬁes the polymer mixing condition if there
+exists θ ∈ (0, 1) such that
+
+Xγ ′≁γ
+
+|γ ′ |wγ ′ ≤ θ |γ |
+
+(2)
+
+for all G ∈ G and all γ ∈ C (G).
+
+We postpone the formal deﬁnition of mixing time to Section 2.2 and state our ﬁrst main
+result here.
+
+Theorem 2. Suppose that a polymer model (C (·), w, G ) satisﬁes the polymer mixing condi-
+tion (2). Then for each G ∈ G there is a Markov chain making single polymer updates with
+stationary distribution µG and mixing time Tmix (ε) = O(n log(n/ε)).
+
+Theorem 2 on its own does not guarantee an eﬃcient algorithm for sampling from µG
+because the Markov chain only yields an eﬃcient sampling algorithm if we can implement
+each step eﬃciently. We will show that under a stronger condition we can do this.
+
+Deﬁnition 3. A polymer model (C (·), w, G ) is said to be computational ly feasible if, for each
+G ∈ G and each γ ∈ P (G), we can determine, in time polynomial in |γ |, whether γ ∈ C (G),
+and compute wγ if it is.
+
+Deﬁnition 4. A computationally feasible polymer model (C (·), w, G ) with q spins on a class
+G of graphs of maximum degree ∆ satisﬁes the polymer sampling condition with constant
+τ ≥ 5 + 3 log((q − 1)∆) if
+
+wγ ≤ e−τ |γ | .
+
+(3)
+
+for all G ∈ G and all γ ∈ C (G).
+
+We have the following theorem.
+
+4
+
+Theorem 5. If a computational ly feasible polymer model (C (·), w, G ) satisﬁes the polymer
+sampling condition (3) then for al l G ∈ G there is an ε-approximate sampling algorithm for
+µG with running time O(n log(n/ε)).
+
+Finally, we can use the sampling algorithm and simulated annealing to give a fast approx-
+imate counting algorithm.
+
+Theorem 6. If a computational ly feasible polymer model (C (·), w, G ) satisﬁes the polymer
+sampling condition (3) then for al l G ∈ G there is a randomized ε-approximate counting
+algorithm for Z (G) with running time O((n/ε)2 log2 (n/ε)) and success probability at least
+3/4.
+
+Fern´andez, Ferrari, and Garcia [14] introduced a condition very similar to the polymer
+mixing condition in the setting of polymer models on Zd . Their ob jective was to derive
+probabilistic properties of polymer models directly, without going through the combinatorics
+and complex analysis inherent in the cluster expansion for the log partition function. They
+introduced a continuous time stochastic process whose stationary distribution was the inﬁnite
+volume Gibbs measure of their polymer model and their version of condition (2) implied an
+exponentially fast rate of convergence of this process. They remarked that such an approach
+had the potential to be an eﬃcient computational tool.
+Here we take an algorithmic point of view, and use the polymer mixing and sampling
+conditions to show that a simple discrete time Markov chain mixes rapidly and can be used
+to design eﬃcient sampling and approximation algorithms. Our approach diﬀers from that
+of [14] in that while they are interested primarily in the probabilistic properties of spin models
+on Zd , we are interested in algorithmic problems involving spin models on general families
+of graphs. Our setting of discrete time processes on ﬁnite graphs is also more suitable to
+studying algorithmic questions. Our work conﬁrms the central point of [14]: that complex
+analysis and absolute convergence of the cluster expansion is not necessary to derive many
+important properties of a polymer model.
+
+1.2 Applications
+
+We apply our results for abstract polymer models to two speciﬁc examples: the ferromagnetic
+Potts model and the hard-core model on expander graphs. To state these results we need
+some deﬁnitions.
+
+Deﬁnition 7. Let α > 0. A graph G is an α-expander graph if for all S ⊂ V (G) with
+|S | ≤ |V (G)|/2, we have e(S, S c ) ≥ α|S |, where S c = V (G) \ S and e(S, S c ) is the number of
+edges exiting the set S .
+
+Deﬁnition 8. The q -color ferromagnetic Potts model with parameter β > 0 is a random
+assignment of q colors to the vertices of a graph deﬁned by
+
+µG,β (σ) =
+
+e−βm(G,σ)
+ZG,β
+
+where m(G, σ) is the number of bichromatic edges of G under the coloring σ and ZG,β =
+Pσ e−βm(G,σ) is the Potts model partition function. The parameter β is known as the inverse
+temperature.
+
+5
+
+Jenssen, Keevash, and Perkins [19] gave an FPTAS and polynomial-time sampling al-
+gorithm for the Potts model on expander graphs, with an algorithm based on the cluster
+expansion and Barvinok’s method of polynomial interpolation. Under essentially the same
+conditions on the parameters we give a Markov chain based sampling algorithm with near
+linear running time.
+
+5+3 log((q−1)∆)
+α
+
+Theorem 9. Suppose q ≥ 2, ∆ ≥ 3 are integers and α > 0 is a real. Then for β ≥
+and any qe−n ≤ ε < 1, there is an ε-approximate sampling algorithm for
+the q -state ferromagnetic Potts model with parameter β on al l n-vertex α-expander graphs of
+maximum degree ∆ with running time O(n log(n/ε)). There is also an ε-approximate counting
+algorithm with running time O((n/ε)2 log2 (n/ε)) and success probability at least 3/4.
+
+Deﬁnition 10. Let α ∈ (0, 1). A bipartite graph G = (V , E ) with bipartition V = V 0 ∪ V 1
+is a bipartite α-expander if, for i ∈ {0, 1} and all S ⊆ V i where |S | ≤ |V i |/2, we have
+NG (S ) ≥ (1 + α)|S | where NG (S ) denotes the set of vertices that are adjacent to some vertex
+in S .
+
+Again we give a fast Markov chain based algorithm for sampling from the hard-core model
+for essentially the same range of parameters for which an FPTAS is given in [19].
+
+Theorem 11. Suppose ∆ ≥ 3 is an integer and α ∈ (0, 1) is a real. Then for any λ ≥ (3∆)6/α
+and 4e−n ≤ ε < 1, there is an ε-approximate sampling algorithm for the hard-core model with
+parameter λ on al l n-vertex bipartite α-expander graphs of maximum degree ∆. There is also
+an ε-approximate counting algorithm for the hard-core model with success probability at least
+1 − ε. Both algorithms run in time O((n/ε)2 log3 (n/ε)).
+
+The extra factor of n in the running time of the sampling algorithm for the hard-core
+model as compared to the Potts model is due to the fact that the hard-core model on a
+bipartite graph does not in general exhibit exact symmetry between the ground states, and
+so we must approximate the partition functions of the even and odd dominant independent
+sets to sample.
+We can extend these algorithms to obtain fast sampling algorithms in most situations
+in which a counting problem can be put in the framework of abstract polymer models. For
+instance, we can use Theorems 5 and 6 to improve the running times of the algorithms given
+by [20, 23] for sampling and counting proper q -colorings in ∆-regular bipartite graphs (for
+large ∆). The two papers give slightly diﬀerent polymer models for proper q -colorings on
+∆-regular bipartite graphs — see [20, Section 5] and [23, Section 5.2]. Section 5.2 of [23]
+shows that their polymer model is computationally feasible. Section 5.1 of [20] shows that
+their polymer model satisﬁes the Koteck´y-Preiss condition — in fact, their proof establishes
+the polymer sampling condition (3). It is easy to see (by comparing the polymer weights)
+that the polymer model of [23] therefore also satisﬁes the polymer sampling condition. Thus,
+we get the following corollary of Theorem 5 and 6.
+
+Corollary 12. There is an absolute constant C > 0 so that for al l even q ≥ 3, al l ∆ ≥
+C q2 log2 q and al l ε > e−n/(8q) , there is an ε-approximate sampling algorithm to sample a
+uniformly random proper q -coloring from a random ∆-regular bipartite graph running in time
+O(n log(n/ε). Furthermore, there is a randomized ε-approximation algorithm for the number
+of proper q -colorings with running time O((n/ε)2 log2 (n/ε)) and success probability at least
+3/4. For odd q , there are ε-approximate counting and sampling algorithms that both run in
+time O((n/ε)2 log3 (n/ε)).
+
+6
+
+As with independent sets, the extra factor of n in the running time for odd q comes from
+the fact that the ground states (colorings in which one side of the bipartition is assigned ⌈q/2⌉
+colors and the other side ⌊q/2⌋ colors) are exactly symmetric only if q is even.
+Finally, we remark that the approximate counting algorithms for these applications based
+on truncating the cluster expansion can run faster than nO(log ∆) if the parameters (expan-
+sion, fugacity, inverse temperature) are high enough (see [20, Theorem 8]), but the sampling
+algorithms derived from this approach will not match the ˜O(n) or ˜O(n2 ) sampling algorithms
+we obtain here.
+
+1.3 Comparison to spin Glauber dynamics
+
+A very natural idea to sample at low temperatures (large β for the Potts model, large λ for
+the hard-core model) is to use a single-spin update Markov chain like the Glauber dynamics,
+but to start in one of the ground states of the model chosen at random. For example, pick
+one of the q -colors with equal probability then start the Potts model Glauber dynamics in the
+monochromatic conﬁguration with that color. The intuition is that the Glauber dynamics
+will mix well within the portion of the state space close to the chosen ground state, and the
+randomness in the choice of ground state will ensure that an accurate sample from the full
+measure is obtained. Analyzing this algorithm was suggested in [17] and [19].
+While we are not yet able to show that this algorithm succeeds, we make partial progress.
+We show that Glauber dynamics, restricted to remain in a portion of the state space, mixes
+rapidly (in polynomial time).
+It is easiest to state our result for the ferromagnetic Potts
+model.
+For a ground state color g ∈ [q ] and an integer M , let Ωg
+M (G) be the set of q -colorings of
+the vertices of G so that every connected component of G colored with the palette of colors
+[q ] \ g is of size at most M . The set Ωg
+M (G) consists of colorings that come from the valid
+polymer conﬁgurations from Example 2 above. In [19] it is shown that for an appropriate
+choice of M , the set {Ωg
+
+M (G)}g∈[q ]
+
+2 Polymer models and Markov chains
+
+Here we compare the conditions on the weights functions of a polymer model, then formally
+deﬁne the polymer Markov chain which we use to prove Theorems 2 and 5.
+
+2.1 A comparison of the conditions on the weights
+
+Here we show that the polymer sampling condition (3) implies the well-known Koteck´y–
+Preiss [21] condition:
+
+Xγ ′≁γ
+
+e|γ ′ |wγ ′ ≤ |γ |.
+
+To see the implication, we use a lemma of Borgs, Chayes, Kahn, and Lov´asz.
+
+Lemma 14 ([5]). Let G have maximum degree ∆ and let v ∈ V (G). The number of connected
+subgraphs of G of size k containing v is at most (e∆)k−1/2.
+
+1
+2
+
+≤
+
+e−3k ≤ |γ |,
+
+Xγ ′≁γ
+
+(e∆)k−1 (q − 1)k ek e−τ k
+
+Now consider a polymer model satisfying (3) with constant τ ≥ 5 + 3 log((q − 1)∆). Fix
+γ ∈ C (G). Using Lemma 14,
+e|γ ′ |wγ ′ ≤ |γ |(∆ + 1) Xk≥1
+2e∆ Xk≥1
+=
+|γ |(∆ + 1)
+(e∆)k (q − 1)k ek e−τ k
+|γ |(∆ + 1)
+2e∆ Xk≥1
+so the Koteck´y–Preiss condition is satisﬁed.
+The Koteck´y–Preiss condition, in turn, implies the polymer mixing condition (2) with
+θ = 1/e since e · x ≤ ex for x ≥ 1. For the same reason (since ex gets much bigger than x),
+it is easy to see that the polymer mixing condition is weaker than the Koteck´y–Preiss [21]
+condition.
+
+2.2 The polymer Markov chain
+For each v ∈ V (G), let A(v) = {γ ∈ C (G) : v ∈ γ } denote the collection of all polymers
+containing v and let a(v) = Pγ∈A(v) wγ . By applying (2) to the smallest γ ′ containing v we
+have a(v) ≤ θ < 1 for all v ∈ V (G). Deﬁne the probability distribution νv on A(v) ∪ {∅} by
+νv (γ ) = wγ for γ ∈ A(v) and νv (∅) = 1 − a(v).
+The polymer dynamics on Ω are deﬁned by the following transition rule from a conﬁgu-
+ration Γt to a conﬁguration Γt+1 :
+
+Polymer Dynamics
+
+1. Choose v ∈ V (G) uniformly at random. Let γv ∈ Γt
+
+• With probability 1
+2 , let Γt+1 = Γt \ γv .
+• With probability 1
+2 , sample γ from νv , set Γt+1 = Γt ∪ γ if this is in Ω and set
+Γt+1 = Γt otherwise.
+
+First we observe that the stationary distribution of the polymer dynamics is µG by checking
+detailed balance. Note that each transition of the dynamics changes a conﬁguration by at
+most one polymer and let Γ′ = Γ ∪ γ . Then
+
+µG (Γ′ )
+µG(Γ)
+
+= Qγ ′∈Γ′ wγ ′
+Qγ ′∈Γ wγ ′
+
+= wγ =
+
+2 · wγ
+
+|γ |
+n · 1
+|γ |
+n · 1
+2
+
+=
+
+PΓ→Γ′
+PΓ′→Γ
+
+,
+
+where P is the transition matrix of the polymer dynamics, and so µG is the stationary
+distribution.
+We now formally deﬁne the mixing time.
+If M is an ergodic Markov chain with transition matrix P and stationary distribution ν
+then the mixing time of M from a state x is given by
+
+Tx (ε) = min{t > 0 |
+
+for all t′ ≥ t, kP t′
+
+(x, ·) − ν (·)kT V ≤ ε},
+
+where kν ′ − ν kT V denotes the total variation distance between distributions ν and ν ′ . The
+mixing time of M is given by Tmix (ε) = maxx Tx (ε). We will write Tmix (M, ε) below if we
+need to emphasize which Markov chain we refer to.
+
+2.3 Proof of Theorems 2 and 5
+
+Theorem 2. Suppose that a polymer model (C (·), w, G ) satisﬁes the polymer mixing condi-
+tion (2). Then for each G ∈ G there is a Markov chain making single polymer updates with
+stationary distribution µG and mixing time Tmix (ε) = O(n log(n/ε)).
+
+Proof. We will show that under condition 2 the mixing time of the polymer dynamics is
+O(n log(n/ε)) by applying the path coupling technique. We deﬁne a metric D(·, ·) on Ω by
+setting D(Γ, Γ′ ) = 1 if Γ′ = Γ ∪ {γ } or Γ = Γ′ ∪ {γ } for a polymer γ and extending this as a
+shortest path metric; i.e., D(Γ, Γ′ ) = |Γ△Γ′ | for any Γ, Γ′ ∈ Ω where △ denotes the symmetric
+diﬀerence of two sets. The diameter W of Ω under D(·, ·) is no more than 2n.
+Now suppose we couple two chains Xt and Yt by attempting the same updates in both
+chains at each step. Suppose that Xt = Yt ∪ {γ } for some polymer γ . With probability |γ |
+we pick v ∈ γ and remove γv which yields Xt+1 = Yt+1 = Xt . On the other hand, we may
+attempt to add a polymer γ ′ ≁ γ so that Yt ∪ {γ ′} ∈ Ω. That is, Xt+1 = Xt = Yt ∪ {γ } and
+Yt+1 = Yt ∪ {γ ′ }. This occurs with probability |γ ′ |
+2 · wγ ′ and in this case D(Xt+1 , Yt+1 ) ≤ 2.
+Putting these together we can bound
+|γ ′ |wγ ′ 
+
+E[D(Xt+1 , Yt+1 )] ≤ 1 +
+
+n · 1
+
+n · 1
+2
+
+
+
+1
+2n
+
+−|γ | + Xγ ′≁γ
+
+ .
+
+Using (2) we have
+
+Xγ ′≁γ
+
+|γ ′ |wγ ′ ≤ θ |γ | ,
+
+9
+
+and so
+
+E[D(Xt+1 , Yt+1 )] ≤ 1 − |γ |
+
+1 − θ
+2n
+
+≤ 1 −
+
+1 − θ
+2n
+
+.
+
+By the path coupling lemma (see [11, Section 6]), the mixing time is at most log(W/ε)2n/(1 −
+θ) = O(n log(n/ε)).
+
+To prove Theorem 5 we will show that a single update of the polymer dynamics can be
+computed in constant expected time.
+Assume the polymer sampling condition (3) holds with constant τ ≥ 5 + 3 log((q − 1)∆).
+We will use the following algorithm. Let r = τ − 2 − log((q − 1)∆) ≥ 3 + 2 log((q − 1)∆) and
+let Ak (v) = {γ ∈ A(v) : |γ | ≤ k}.
+
+Single polymer sampler
+
+1. Choose k according to the following geometric distribution: for k a non-negative integer,
+
+Pr[k = k ] = (1 − e−r )e−rk .
+
+This gives Pr[k ≥ k ] = e−rk .
+
+2. Enumerate all polymers in Ak (v) and compute their weight functions.
+
+3. Mutually exclusively output γ ∈ Ak(v) with probability wγ er |γ | , and with all remaining
+probability output ∅. In particular if k = 0, then output ∅ with probability 1.
+
+In order to show that this algorithm has constant expected running time, we will require
+the following result on enumerating connected subgraphs of bounded degree graphs.
+
+Lemma 15 ([26] Lemma 3.7). Let G have maximum degree ∆ and let v ∈ V (G). There is
+an algorithm running in time O(k5 (e∆)2k ) that outputs a list of al l connected subgraphs of G
+of size at most k containing v .
+
+We now proceed to prove the following lemma.
+
+Lemma 16. Under the polymer sampling condition (3) the output distribution of the single
+polymer sampler is νv and its expected running time is constant.
+
+Proof. We ﬁrst show that the probabilities wγ er |γ | sum to less than 1, which shows the last
+step of the sampling algorithm is well deﬁned. Since τ − r = 2 + log((q − 1)∆),
+
+1
+
+2 Xk≥1
+
+=
+
+Xγ∈A(v)
+
+wγ er |γ | ≤
+
+(e∆)k−1 (q − 1)k e−τ k+rk
+2e∆ Xk≥1
+1
+We next show that the output of the algorithm has distribution νv . Given γ ∈ A(v), to
+output γ we must choose k ≥ |γ |. This happens with probability e−r |γ | by the distribution of
+k. Conditioned on choosing such a k, the probability we output γ is wγ er |γ | , and multiplying
+these probabilities together gives wγ as desired. Since this is true for all γ ∈ A(v), the output
+distribution is exactly νv .
+
+e−k < 1 .
+
+10
+
+Finally we analyze the expected running time. To do this, we observe that by Lemma 15,
+conditioned on the event that k = k the enumeration step of the algorithm takes time
+O(k5 (e∆)2k ), and the time to determine which polymers are allowed and computing their
+weights is O(kc (q − 1)k (e∆)k−1/2) for some c > 0, since the polymer model is computation-
+ally feasible. In expectation therefore, the running time is
+= O 
+Pr[k = k ] (cid:16)k5 (e∆)2k + kc (e(q − 1)∆)k (cid:17)
+1 + Xk≥1
+= O 
+e−rk kc (e(q − 1)∆)2k
+1 + Xk≥1
+= O 
+1 + Xk≥1
+= O(1) ,
+
+kc e−(τ ′+1)k
+
+
+
+
+
+
+
+where τ ′ = τ − 5 − 3 log((q − 1)∆) ≥ 0.
+
+Finally we prove Theorem 5.
+
+Theorem 5. If a computational ly feasible polymer model (C (·), w, G ) satisﬁes the polymer
+sampling condition (3) then for al l G ∈ G there is an ε-approximate sampling algorithm for
+µG with running time O(n log(n/ε)).
+
+Proof. By Theorem 2, there is Tε = O(n log(n/ε)) so that if we start with the empty con-
+ﬁguration Γ0 = ∅ and run the polymer dynamics, then ΓTε has distribution within ε/2 total
+variation distance of µG .
+By Lemma 16, in expectation the running time will be O(n log(n/ε)), but we want an
+upper bound on the worst case running time as well. To do this, we will simply stop the
+algorithm and output the empty conﬁguration if the total running time exceeds L for some L =
+O(n log(n/ε)) with a suﬃciently large leading constant. We next show that the probability
+that the algorithm terminates in L steps is at most ε/2, which therefore yields that the output
+distribution has total variation distance at most ε from µG .
+The randomness in the running time comes from the choice of the geometric random
+variable k at each step and the time taken to enumerate polymers in Ak(v). By the choice
+of r , the random variable that takes the value k5 (e∆)2k + kc (e(q − 1)∆)k with probability
+(1 − e−r )e−rk has exponential tails, and so a Chernoﬀ bound shows that the probability that
+the sum of Θ(n log(n/ε)) independent copies of such a random variable is at least twice its
+expectation is bounded by e−Θ(n log(n/ε)) which is at most ε/2 (for large enough choice of
+constants), ﬁnishing the proof.
+
+3 Approximate counting algorithm
+
+In this section we show how to use a sampling oracle to approximately compute the partition
+function of the polymer model. One standard way is by self-reducibility. In [17] an eﬃcient
+sampling algorithm for polymer models is derived from an eﬃcient approximate counting
+
+11
+
+algorithm by applying self-reducibility on the level of polymers. While we could apply poly-
+mer self-reducibility in the other direction to obtain counting algorithms from our sampling
+algorithm, here we use the simulated annealing method instead (see [2, 18, 29]) to obtain a
+faster implementation of counting from sampling.
+Suppose that (C (G), w) is a computationally feasible polymer model. Let ρ be a parameter
+and deﬁne a weight function
+
+wγ (ρ) = wγ e−ρ|γ |
+
+for all γ ∈ C (G). Then for each ρ ≥ 0 this deﬁnes a computationally feasible polymer model
+(C (G), w(ρ)) on G, where setting ρ = 0 recovers the original model (C (G), w). If the original
+model (C (G), w) satisﬁes the polymer sampling condition (3), then so does (C (G), w(ρ)) for
+every ρ ≥ 0 as the weight function wγ (ρ) is monotone decreasing in ρ.
+Given the graph G, we write the partition function of the polymer model (C (G), w(ρ)) as
+a function of ρ:
+Z (ρ) = Z (G; ρ) = XΓ∈Ω Yγ∈Γ
+wγ (ρ) = XΓ∈Ω Yγ∈Γ
+The associated Gibbs distribution is denoted by µρ = µG;ρ . Since limρ→∞ wγ (ρ) = 0, we have
+limρ→∞ Z (ρ) = 1 (only the empty conﬁguration Γ contributes to this limit), and so we will
+use simulated annealing to interpolate between Z (∞) = 1 and our goal Z (0), assuming access
+to a sampling oracle for (C (G), w(ρ)) for all ρ ≥ 0. To apply the simulated annealing method,
+roughly speaking, we ﬁnd a sequence of parameters 0 = ρ0 < ρ1 < · · · < ρℓ < ∞ called a
+cooling schedule where ℓ ∈ N+ , and then estimate Z (0) using the telescoping product
+
+wγ e−ρ|γ | .
+
+1
+Z (0)
+
+=
+
+1
+Z (ρ0 )
+
+=
+
+Z (ρ1 )
+Z (ρ0 )
+
+Z (ρ2 )
+Z (ρ1 )
+
+· · ·
+
+Z (ρℓ )
+Z (ρℓ−1 )
+
+1
+Z (ρℓ )
+
+.
+
+To estimate each term Z (ρi+1 )/Z (ρi ), we deﬁne independent random variables
+
+Wi = Yγ∈Γi
+
+wγ (ρi+1 )
+wγ (ρi )
+
+,
+
+where Γi ∼ µρi .
+
+It is straightforward to see that E[Wi ] = Z (ρi+1 )/Z (ρi ) (see Lemma 17). Using the sampling
+oracle for µρi , we can sample Wi for all i, and by taking the product we get an estimate for
+1/Z (0).
+The key ingredient of simulated annealing is ﬁnding a good cooling schedule. There
+are nonadaptive schedules [2] that depend only on n, and adaptive schedules [18, 29] that
+also depend on the structure of Z (·). Usually the latter leads to faster algorithms than the
+former. In this paper we will use a simple nonadaptive schedule: ρi = i/n for i = 1, . . . , ℓ
+where ℓ = O(n log(n/ε)). We will show that this cooling schedule already gives us a fast
+algorithm for the polymer model. The reason behind it is that the weight function wγ (ρ)
+decays exponentially fast, and so (see Lemma 18) the partition function Z (ρℓ ) is bounded by
+a constant when ρℓ = O(log n), leading to a short cooling schedule.
+Our algorithm is as follows.
+
+Polymer approximate counting algorithm
+
+1. Let ρi = i/n for i = 0, 1, . . . , ℓ where ℓ = ⌈n log(4e(q − 1)∆n/ε)⌉;
+2. For j = 1, . . . , m where m = (cid:6)64ε−2 (cid:7):
+
+12
+
+i
+
+e−|γ |/n ;
+
+from µρi ;
+
+i = Qγ∈Γ(j )
+i
+i=0 W (j )
+i
+m Pm
+
+(a) For 0 ≤ i ≤ ℓ − 1:
+(i) Sample Γ(j )
+(ii) Let W (j )
+(b) Let W (j ) = Qℓ−1
+;
+3. Let cW = 1
+j=1 W (j ) and output bZ = 1/cW .
+Before proving Theorem 6, we ﬁrst present a few useful lemmas. We shall use ρi = i/n
+for 0 ≤ i ≤ ℓ as our cooling schedule and we further deﬁne ρℓ+1 = (ℓ + 1)/n though it does
+not appear in the algorithm. For 0 ≤ i ≤ ℓ − 1 independently we deﬁne Γi to be a random
+sample from µρi and Wi = Qγ∈Γi
+e−|γ |/n . Finally, we let W = Qℓ−1
+Lemma 17. For 0 ≤ i ≤ ℓ − 1,
+Z (ρi+1 )
+Z (ρi+2 )
+Z (ρi )
+Z (ρi )
+
+E[W 2
+i ] =
+
+E[Wi ] =
+
+i=0 Wi .
+
+and
+
+.
+
+Therefore,
+
+Z (ρℓ)Z (ρℓ+1 )
+Z (0)Z (ρ1 )
+
+.
+
+wγ (ρi+1 )
+
+wγ (ρi ) . We deduce from the deﬁnition
+
+Z (ρℓ )
+E[W ] =
+and
+E[W 2 ] =
+Z (0)
+Proof. In the proof, we use Wi (Γi ) to denote Qγ∈Γi
+of Wi that
+1
+µρi (Γi )Wi (Γi ) =
+
+E[Wi ] = XΓi ∈Ω
+Z (ρi ) XΓi∈Ω Yγ∈Γi
+
+=
+
+1
+
+Z (ρi ) XΓi ∈Ω Yγ∈Γi
+wγ e−(i+1)|γ |/n =
+
+Z (ρi+1 )
+Z (ρi )
+
+wγ e−i|γ |/n Yγ∈Γi
+
+e−|γ |/n
+
+and that
+
+E[W 2
+
+µρi (Γi )Wi (Γi )2 =
+
+i ] = XΓi∈Ω
+Z (ρi ) XΓi ∈Ω Yγ∈Γi
+
+=
+
+1
+
+1
+
+Z (ρi ) XΓi ∈Ω Yγ∈Γi
+wγ e−(i+2)|γ |/n =
+
+Z (ρi+2 )
+Z (ρi )
+
+.
+
+wγ e−i|γ |/n Yγ∈Γi
+
+e−2|γ |/n
+
+Since W0 , . . . , Wℓ−1 are mutually independent, we obtain
+
+and
+
+E[W ] =
+
+ℓ−1Yi=0
+
+E[Wi ] =
+
+ℓ−1Yi=0
+
+Z (ρi+1 )
+Z (ρi )
+
+=
+
+Z (ρℓ )
+Z (ρ0 )
+
+E[W 2 ] =
+
+ℓ−1Yi=0
+
+E[W 2
+i ] =
+
+ℓ−1Yi=0
+
+Z (ρi+2 )
+Z (ρi )
+
+=
+
+Z (ρℓ )Z (ρℓ+1 )
+Z (ρ0 )Z (ρ1 )
+
+.
+
+Lemma 18. Suppose that wγ ≤ 1 for al l γ ∈ C (G). Then we have
+
+1 ≤ Z (ρℓ ) ≤ eε/2 .
+
+13
+
+Proof. It is trivial that Z (ρℓ ) ≥ 1 since ∅ ∈ Ω has weight 1. Meanwhile, we have the crude
+bound
+
+Z (ρℓ ) ≤ Yγ∈C (G) (cid:16)1 + wγ e−ℓ|γ |/n(cid:17) .
+
+We then deduce that
+log(Z (ρℓ )) ≤ Xγ∈C (G)
+(cid:18) e(q − 1)∆
+≤ n Xk≥1 (cid:16) ε
+4n (cid:17)k
+≤ n Xk≥1
+where (a) follows from Lemma 14 and (b) from ℓ ≥ n log(4e(q − 1)∆n/ε).
+
+wγ e−ℓ|γ |/n ≤ Xv∈V Xk≥1 Xγ∈C (G):
+eℓ/n (cid:19)k (b)
+|γ |=k , v∈γ
+
+(cid:16)e−ℓ/n(cid:17)k
+
+2ε
+4n
+
+≤ n ·
+
+(a)
+
+=
+
+ε
+2
+
+Lemma 19. We have
+
+Z (ρ1 )
+Z (0)
+
+≥
+
+1
+e
+
+and
+
+Z (ρℓ+1 )
+Z (ρℓ )
+
+≤ 1.
+
+Proof. Since the weight function wγ (ρ) is decreasing in ρ, the partition function Z (ρ) is also
+decreasing, which implies Z (ρℓ+1 ) ≤ Z (ρℓ ). On the other hand, recalling Lemma 17, we have
+= E[W0 ] = E(cid:20) Yγ∈Γ0
+where Γ0 is sampled from µρ0 . Notice that for any Γ0 ∈ Ω we have
+e−|γ |/n = exp (cid:18) −
+|γ |(cid:19) ≥
+
+e−|γ |/n(cid:21)
+
+Z (ρ1 )
+Z (0)
+
+1
+e
+
+1
+
+.
+
+Yγ∈Γ0
+
+n Xγ∈Γ0
+
+Thus, the lemma follows.
+
+We are now ready to prove Theorem 6 which we restate for convenience.
+
+Theorem 6. If a computational ly feasible polymer model (C (·), w, G ) satisﬁes the polymer
+sampling condition (3) then for al l G ∈ G there is a randomized ε-approximate counting
+algorithm for Z (G) with running time O((n/ε)2 log2 (n/ε)) and success probability at least
+3/4.
+
+Proof. We ﬁrst assume that we have access to an exact sampler Sexact that samples from µρ
+for all ρ ≥ 0. Using this sampler in the Polymer approximate counting algorithm, we ﬁnd
+that, for each j and each i, Γ(j )
+is an exact sample from the distribution µρi and hence W (j )
+is an exact sample of Wi , independently for every j and i. Thus, W (j ) is a sample of W
+independently for every j , and cW is the sample mean of W (j ) ’s. We deduce from Lemmas 17
+and 18 that
+eε/2Z (ρℓ )
+eε
+(1 + ε/2)E[W ] ≤
+≤
+Z (0)
+Z (0)
+
+i
+
+i
+
+and
+
+(1 − ε/2)E[W ] ≥
+
+e−εZ (ρℓ )
+Z (0)
+
+≥
+
+e−ε
+
+Z (0)
+
+14
+
+where we use 1 + ε/2 ≤ eε/2 and e−ε ≤ 1 − ε/2 for all 0 < ε < 1. Then
+Pr (cid:18) e−ε
+Z (0) (cid:19) ≥ Pr (cid:16)(cid:12)(cid:12)(cid:12)cW − E[W ](cid:12)(cid:12)(cid:12) ≤ (ε/2)E[W ](cid:17) .
+eε
+≤ cW ≤
+Z (0)
+By Chebyshev’s inequality we have
+Pr (cid:16)(cid:12)(cid:12)(cid:12)cW − E[W ](cid:12)(cid:12)(cid:12) ≥ (ε/2)E[W ](cid:17) ≤
+4 Var(W )
+4(e − 1)
+ε2m (E[W ])2 ≤
+≤
+ε2m
+where the second to last inequality follows from Lemmas 17 and 19:
+E[W 2 ]
+(E[W ])2 =
+Var(W )
+(E[W ])2 − 1 =
+Z (0)
+Z (ρ1 )
+
+Z (ρℓ+1 )
+Z (ρℓ )
+
+− 1 ≤ e − 1.
+
+1
+8
+
+7
+8
+
+≤ ˆW ≤
+
+Thus, we deduce that
+Pr (cid:16)e−εZ (0) ≤ bZ ≤ eεZ (0)(cid:17) = Pr (cid:18) e−ε
+Z (0) (cid:19) ≥
+eε
+Z (0)
+(so the error probability is at most 1/8). Note that the number of samples that we used is
+ℓm.
+Now we replace the exact sampling oracle Sexact by an approximate one. For every ρ ≥ 0,
+the polymer model (C (G), w(ρ)) satisﬁes the polymer sampling condition (3). Thus, for any
+ρ ≥ 0, Theorem 5 gives a randomized algorithm S that outputs a 1/(8ℓm)-approximate
+sample from µρ . We then couple S and Sexact optimally and run the algorithm with both S
+and Sexact simultaneously, so that for any ρ ≥ 0 samples from S and Sexact for µρ coincide
+with probability at least 1 − 1/(8ℓm). Let B be the event that at least one of the ℓm samples
+from S in the algorithm does not couple with that from Sexact . Then a union bound yields
+Pr(B) ≤ 1/8. Let F be the event that the algorithm using Sexact fails. From our argument
+before we see that Pr(F ) ≤ 1/8. Note that if neither of B and F happens, then the algorithm
+with S will output a desired estimate. Hence, we conclude from the union bound that the
+algorithm with S fails with probability at most
+
+Pr(B) + Pr (F ) ≤
+
+1
+8
+
++
+
+1
+8
+
+=
+
+1
+4
+
+.
+
+Finally, we consider the running time of our algorithm. By Theorem 5 the running time
+of step 2(a)(i) is O(n log(8ℓmn)) = O(n log(n/ε)), and for step 2(a)(ii) the running time is
+O(n). Thus, the running time of the algorithm is upper bounded by ℓm · O(n log(n/ε)) =
+O((n/ε)2 log2 (n/ε)).
+
+4 Applications
+
+Here we apply our results on abstract polymer models to several approximate counting and
+sampling problems at low temperatures.
+
+15
+
+4.1 Ferromagnetic Potts model
+
+In this section, we prove Theorem 9 for the Potts model. Throughout this section, we will
+work under the assumptions/conditions of Theorem 9. That is, we ﬁx a real number α > 0,
+integers q ≥ 3 and ∆ ≥ 3 and a real number β ≥ 5+3 log((q−1)∆)
+. We let G be the class of
+α-expander graphs G with maximum degree at most ∆.
+Consider the polymer model deﬁned in Example 2 on an n-vertex graph G ∈ G with
+M = n/2 and ground state color g ∈ [q ]. We will use C g = C g (G) to denote the polymers and
+wg
+γ to denote the weight of a polymer γ ∈ C g ; recall that wg
+γ = e−βB (γ ) , where B (γ ) counts
+the number of external edges of γ plus the number of bichromatic internal edges. Let Z g (G)
+be the partition function of the polymer model (C g (G), wg ).
+
+α
+
+Lemma 20. Under the conditions of Theorem 9, the polymer model (C g (·), wg , G ) satisﬁes
+the polymer sampling condition (3) with τ = αβ .
+
+Proof. Since every G ∈ G is an α-expander, for γ ∈ C g we have B (γ ) ≥ α|γ | and hence
+wg
+
+γ ≤ e−τ |γ | .
+
+The following lemma is from [20].
+
+Lemma 21 ([20, Lemma 12]). For any n-vertex α-expander graph G and β ≥ 2 log(eq)/α,
+qZ g (G) is an e−n -approximation of the Potts partition function ZG,β .
+
+We are now ready to prove Theorem 9.
+
+5+3 log((q−1)∆)
+α
+
+Theorem 9. Suppose q ≥ 2, ∆ ≥ 3 are integers and α > 0 is a real. Then for β ≥
+and any qe−n ≤ ε < 1, there is an ε-approximate sampling algorithm for
+the q -state ferromagnetic Potts model with parameter β on al l n-vertex α-expander graphs of
+maximum degree ∆ with running time O(n log(n/ε)). There is also an ε-approximate counting
+algorithm with running time O((n/ε)2 log2 (n/ε)) and success probability at least 3/4.
+
+Proof. Let G be the class of α-expander graphs of maximum degree at most ∆. Clearly, the
+polymer models (C g (·), wg , G ) are computationally feasible. By Lemma 20, the models also
+satisfy the polymer sampling condition and therefore Theorems 5 and 6 apply. Consider any
+n-vertex graph G ∈ G . Since β ≥ 5+3 log((q−1)∆)
+, Lemma 21 applies to G.
+For the sampling algorithm, we pick a color g ∈ [q ] uniformly at random and generate an
+(ε/q)-approximate sample from the Gibbs measure associated to Z g (G) using the algorithm
+of Theorem 5, in time O(n log(n/ε)). By Lemma 21, we conclude that the resulting output
+is an ε-approximate sample for the Potts model.
+For the counting algorithm, we pick an arbitrary g ∈ [q ] and produce using the algorithm
+of Theorem 6 a number ˆZ in time O((n/ε)2 log2 (n/ε)), which is an ε/(2q)-approximation to
+Z g (G) with probability ≥ 3/4. By Lemma 21, we conclude that q ˆZ is an ε-approximation for
+the partition function of the Potts model (with the same probability).
+
+> 2 log(eq)
+α
+
+α
+
+4.2 Hard-core model
+
+In this section, we prove Theorem 11 for the hard-core model.
+Suppose G = (V 0 , V 1 , E ) is an n-vertex bipartite α-expander graph of maximum degree
+∆, we will consider the hard-core model on G at suﬃciently large fugacities λ. There are
+two relevant ground states corresponding to the two parts of G, one is the independent set
+
+16
+
+given by V 0 and the other is given by V 1 . We will capture deviations from the two ground
+
+Proof. First note that λ ≥ (3∆)6/α ≥ 96/α > e11/α , so Lemma 22 applies. Let G denote the set
+of host graphs G2 corresponding to bipartite α-expanders G of maximum degree ∆. Noting
+that the polymer models (C i (·), wi , G ) are computationally feasible, we verify the polymer
+sampling condition (3) for them. Fix arbitrary i ∈ {0, 1}. As in [19, Section 4.2], we have the
+bound
+
+≤
+
+λ|γ |
+(1 + λ)(1+α)|γ |
+
+≤ λ−α|γ | ,
+
+wi
+γ =
+
+λ|γ |
+
+(1 + λ)NG (γ )
+
+so, using that λ ≥ (3∆)6/α , we have that the models satisfy the polymer sampling condition
+with τ = α log λ ≥ 6 log(3∆) ≥ 5 + 3 log ∆2 . Therefore, we may also apply Theorems 5 and 6.
+For the counting algorithm, we apply Theorem 6. Namely, by taking the median of
+O(log(1/ε)) trials, we can obtain ˆZ 0 and ˆZ 1 which are (ε/32)-approximations to Z 0 (G) and
+Z 1 (G), respectively, with probability at least 1 − ε/32. Let E be the event that ˆZ 0 and ˆZ 1
+are indeed (ε/32)-approximations to Z 0 (G) and Z 1 (G). Conditioned on E , the number
+
+ˆZ = (1 + λ)|V 1 | ˆZ 0 + (1 + λ)|V 0 | ˆZ 1
+
+bility (1+λ)|V 1 |Z 0 (G)
+A
+
+probability (1+λ)|V 1 | ˆZ 0
+ˆZ
+
+is an (ε/32)-approximation to the number A = (1 + λ)|V 1 |Z 0 (G) + (1 + λ)|V 0 |Z 1 (G). By
+Lemma 22 and since ε ≥ 4e−n , A is an (ε/4)-approximation to ZG,λ and hence ˆZ is an ε-
+approximation to ZG,λ . Since E occurs with probability at least 1 − ε/16, we obtain that ˆZ
+is the desired approximation for the counting algorithm.
+For the sampling algorithm, let i be the random variable which takes the value 0 with
+and the value 1 otherwise, where ˆZ 0 , ˆZ 1 , ˆZ are the quantities computed
+earlier. Then, use Theorem 5 to obtain an (ε/8)-approximate sample from the Gibbs distri-
+bution corresponding to the polymer model (C i (G), wi ), say ˆΓi . Obtain then an independent
+set ˆI by including into ˆI each v ∈ V 1−i\NG (Sγ∈ ˆΓi γ ) with probability λ
+1+λ and each vertex
+in Sγ∈ ˆΓi γ (with probability 1). We claim that the output distribution of ˆI is ε-close to the
+hard-core distribution µG,λ .
+To prove this, consider the random independent set I obtained by repeating the same
+steps above but using instead perfectly accurate computations, i.e., pick i = 0 with proba-
+and the value 1 otherwise, then, sample (perfectly) Γi from the Gibbs
+distribution corresponding to the polymer model (C i (G), wi ), and then obtain the independent
+set I by including into I each v ∈ V 1−i \NG (Sγ∈Γi γ ) with probability λ
+1+λ and each vertex in
+Sγ∈Γi γ (with probability 1). Then, if I is not sparse, I is generated with probability λ|I |/A
+(cf. the observation below (4)). On the other hand, if I is sparse, then I is generated with
+probability 2λ|I |/A. But by Lemma 22 and the remark following, the total variation distance
+between the distribution of I and the hard-core distribution µG,λ is bounded by the relative
+weight of the sparse independent sets, which, by Lemma 22, is at most e−n ≤ ε/4.
+We next observe that, conditioned on the event E (i.e., that ˆZ 0 and ˆZ 1 are (ε/32)-
+approximations to Z 0 (G) and Z 1 (G)), there is a coupling between ˆI and I such that ˆI = I
+with probability at least 1 − ε/4. Indeed, the total variation distance between i and i is at
+most eε/16 − 1 ≤ ε/8 and hence there is a coupling of i with i so that i = i with probability at
+least 1 − ε/8. Analogously, there is a coupling of ˆΓi with Γi so that ˆΓi = Γi with probability
+at least 1 − ε/8. Since E occurs with probability at least 1 − ε/16, it follows that the overall
+total variation distance between ˆI and I is at most ε/2.
+Hence, the output distribution of ˆI is ε-close to the hard-core distribution µG,λ , ﬁnishing
+the proof of Theorem 11.
+
+18
+
+5 Comparison to spin Glauber dynamics
+
+In this section, we derive results for spin Glauber dynamics, restricted to appropriate sets
+in the state space, based on our results above (using fairly standard Markov chain compar-
+ison techniques). We start with abstract polymer models and then apply our results to the
+ferromagnetic Potts and hard-core models.
+
+5.1 Restricted Glauber dynamics for polymer models
+
+Consider an abstract polymer model as in Section 1.1. There is a natural map f : Ω →
+{0, . . . , q − 1}V (G) between allowed polymer conﬁgurations and spin conﬁgurations, given by
+f (Γ)v = σγ (v) if γ ∈ Γ and v ∈ γ and f (Γ)v = gv if v /∈ ∪γ∈Γγ . Let Ωspin = f (Ω) be the
+spin conﬁgurations obtainable as images of the map f . The inverse map f −1 from Ωspin to Ω
+is given by taking connected components of vertices which do not receive their ground state
+spin.
+Restricted Glauber dynamics is deﬁned as follows, starting from Γt ∈ Ω.
+
+1. Choose v ∈ V (G) and s ∈ {0, . . . , q − 1} uniformly.
+
+2. Γ′ is formed from Γt by assigning v to spin s (formally, by letting σ = f (Γt ), forming
+σ ′ from σ by assigning v to spin s, and ﬁnally letting Γ′ = f −1 (σ ′ )).
+
+3. If Γ′ ∈ Ω let p = min(1, w(Γ′ )/w(Γ)).
+
+• With probability p, Γt+1 = Γ′ .
+• With probability 1 − p, Γt+1 = Γt .
+
+4. If Γ′ /∈ Ω then Γt+1 = Γt .
+
+We will use the Markov chain comparison technique to show that the restricted Glauber
+dynamics is rapidly mixing. To do this, we need a mild condition on the set of allowed
+polymers C (G).
+A polymer model is said to be single-update-compatible if, for every size-k polymer γ ∈
+C (G), there is an ordering v1 , . . . , vk of the vertices in γ such, for all i ∈ [k ], γ [v1 , . . . , vi ] is
+connected and the polymer induced by vertices v1 , . . . , vi is in C (G).
+The following theorem establishes the mixing time of the restricted Glauber dynamics.
+
+Theorem 23. Suppose that a polymer model (C (.), w, G ) satisﬁes the polymer mixing con-
+dition. Consider a graph G ∈ G such that (C (G), w) is single-update-compatible. Let M =
+max{|γ | : γ ∈ C (G)}. Suppose that, for every pair of conﬁgurations Γ, Γ′ ∈ Ω whose corre-
+sponding spin conﬁgurations f (Γ), f (Γ′ ) ∈ Ωspin diﬀer at exactly one vertex, we have
+
+1
+η
+
+≤
+
+µG (Γ)
+µG (Γ′ )
+
+≤ η
+
+(5)
+
+for some constant η > 1. Then for any 0 < ε < 1, the restricted Glauber dynamics has mixing
+time
+Tmix (ε) ≤ O (cid:0)M ηM +1n2 log n log(η/ε)(cid:1) .
+
+19
+
+We can apply this theorem to both the hard-core model (on bipartite α-expander graphs)
+and the ferromagnetic Potts model (on α-expander graphs), for which we will deﬁne single-
+update compatible polymer models. Furthermore, in both of these applications, M will be
+logarithmic in n/ε, giving polynomial mixing time for the restricted Glauber dynamics.
+We will use the comparison method of Diaconis and Saloﬀ-Coste [7, 8] as applied to
+mixing times by Randall and Tetali [28]. In order to avoid discussion of eigenvalues here,
+we use the version from Observation 13 of the survey paper [10]. We ﬁrst show that the
+restricted Glauber dynamics is a reversible ergodic Markov chain with stationary distribution
+µG , which is easy to see from its deﬁnition.
+
+Lemma 24. The restricted Glauber dynamics is ergodic and reversible with stationary dis-
+tribution µG .
+
+Proof. For any Γ ∈ Ω it has a positive probability of staying the same state in one transition.
+Also, for any Γ, Γ′ ∈ Ω we can go from Γ to Γ′ in several steps by changing vertex by vertex.
+This shows that the restricted Glauber dynamics is ergodic. To show that it is reversible and
+has stationary distribution µG , we need to check the detailed balance. Suppose Γ, Γ′ ∈ Ω with
+Γ 6= Γ′ and P (Γ, Γ′ ) > 0 where P is the transition matrix of the restricted Glauber dynamics.
+Then,
+
+P (Γ, Γ′ )
+P (Γ′ , Γ)
+
+=
+
+The lemma follows.
+
+n · 1
+1
+n · 1
+1
+
+q · min{1, w(Γ′ )/w(Γ)}
+q · min{1, w(Γ)/w(Γ′ )}
+
+=
+
+w(Γ′ )
+w(Γ)
+
+=
+
+µG (Γ′ )
+µG (Γ)
+
+.
+
+We give some standard deﬁnitions that will be used in our comparison proof. Let M
+denote the restricted Glauber dynamics and P be its transition matrix. Let M′ be the
+polymer dynamics and denote its transition matrix by P ′ . Deﬁne E ∗ (M) to be the set of
+pairs of conﬁgurations (Γ, Γ′ ) that can be achieved by one transition of the restricted Glauber
+dynamics; i.e., E ∗ (M) = {(Γ, Γ′ ) ∈ Ω2 : P (Γ, Γ′ ) > 0}. Similarly, deﬁne E ∗ (M′ ) = {(Γ, Γ′ ) ∈
+Ω2 : P ′ (Γ, Γ′ ) > 0} for the polymer dynamics.
+For every (Γ, Γ′ ) ∈ E ∗ (M′ ), we deﬁne a path PΓ,Γ′ from Γ to Γ′ to be a sequence of
+conﬁgurations such that every adjacent pair is a transition of the restricted Glauber dynamics;
+i.e, every adjacent pair of conﬁgurations is in E ∗ (M). For this, we assume that the polymer
+model is single-update-compatible (see Section 1.3). If Γ = Γ′ , then the choice is easy — we
+let PΓ,Γ′ = (Γ, Γ′ ). Suppose instead that Γ′ = Γ ∪ γ for some polymer γ ∈ Ω. Recall that there
+is a nature one-to-one mapping f : Ω → Ωspin between the set of all (polymer) conﬁgurations
+Ω and the set of spin conﬁgurations Ωspin . Let σ = f (Γ) and σ ′ = f (Γ′) be the corresponding
+spin conﬁgurations. If γ has size k , let v1 , . . . , vk be the ordering of vertices of γ from the
+deﬁnition of single-update-compatible so that, for all i ∈ [k ], the polymer induced by vertices
+v1 , . . . , vi is in C (G). Let (σ = σ0 , σ1 , . . . , σk = σ ′ ) be the sequence of spin conﬁgurations such
+that each σj is obtained from σj−1 by changing the spin of vj from σ(v) = gv to σ ′ (v). The
+path PΓ,Γ′ is then deﬁned to be (f −1 (σ0 ), . . . , f −1 (σk )). If Γ′ = Γ\γ for some γ ∈ Ω, we can
+deﬁne the path PΓ,Γ′ in a similar manner. Note that in both cases the length of the path is
+|PΓ,Γ′ | = k = |γ |.
+For every (Γ0 , Γ′
+0 ) ∈ E ∗ (M), the congestion of the edge (Γ0 , Γ′
+0 ) is deﬁned to be
+1
+µG (Γ0 )P (Γ0 , Γ′
+
+µG(Γ)P ′ (Γ, Γ′ )|PΓ,Γ′ |.
+
+A(Γ0 , Γ′
+0 ) =
+
+0 ) X(Γ,Γ′ )∈E ∗ (M′ ):
+PΓ,Γ′ ∋(Γ0 ,Γ′
+0 )
+
+20
+
+The congestion of the choice of paths is the quantity
+
+A =
+
+max
+
+(Γ0 ,Γ′
+0 )∈E ∗ (M)
+
+A(Γ0 , Γ′
+0 ).
+
+The following comparison lemma gives an upper bound on the mixing time of the restricted
+Glauber dynamics by the mixing time of the polymer dynamics.
+
+Lemma 25 ([10, Observation 13]). Let c1 = minΓ∈Ω P (Γ, Γ) and c2 = minΓ∈Ω µG (Γ). Then,
+for any 0 < ε < 1 we have
+Tmix (M, ε) ≤ max (cid:26)A (cid:18)Tmix (cid:18)M′ ,
+2e (cid:19) + 1(cid:19) ,
+1
+2c1 (cid:27) ln
+1
+We now proceed to establish the mixing-time of the restricted Glauber dynamics.
+
+1
+εc2
+
+Theorem 23. Suppose that a polymer model (C (.), w, G ) satisﬁes the polymer mixing con-
+dition. Consider a graph G ∈ G such that (C (G), w) is single-update-compatible. Let M =
+max{|γ | : γ ∈ C (G)}. Suppose that, for every pair of conﬁgurations Γ, Γ′ ∈ Ω whose corre-
+sponding spin conﬁgurations f (Γ), f (Γ′ ) ∈ Ωspin diﬀer at exactly one vertex, we have
+
+1
+η
+
+≤
+
+µG (Γ)
+µG (Γ′ )
+
+≤ η
+
+(5)
+
+for some constant η > 1. Then for any 0 < ε < 1, the restricted Glauber dynamics has mixing
+time
+Tmix (ε) ≤ O (cid:0)M ηM +1n2 log n log(η/ε)(cid:1) .
+Proof. In the spirit of Lemma 25, it suﬃces to upper bound the congestion A(Γ0 , Γ′
+0 ) for every
+(Γ0 , Γ′
+0 ) ∈ E ∗ (M) where
+
+A(Γ0 , Γ′
+
+0 ) = X(Γ,Γ′ )∈E ∗ (M′ ):
+PΓ,Γ′ ∋(Γ0 ,Γ′
+0 )
+
+µG (Γ)
+µG (Γ0 )
+
+·
+
+P ′ (Γ, Γ′ )
+P (Γ0 , Γ′
+0 )
+
+· |PΓ,Γ′ |.
+
+≤
+
+1
+1/q
+
+= q
+
+A(Γ0 , Γ0 ) =
+
+If Γ0 = Γ′
+0 , then for our choices of paths to get (Γ0 , Γ′
+0 ) ∈ PΓ,Γ′ we must have Γ = Γ′ = Γ0 =
+Γ′
+0 . It follows that
+
+P ′ (Γ0 , Γ0 )
+P (Γ0 , Γ0 )
+since P (Γ0 , Γ0 ) ≥ 1/q by the update rule of the restricted Glauber dynamics.
+Now suppose Γ0 6= Γ′
+0 . Let σ0 = f (Γ0 ) and σ ′
+0 = f (Γ′
+0 ) be the corresponding spin
+conﬁgurations. Notice that σ0 and σ ′
+0 diﬀer at exactly one vertex, which we denote by v .
+If σ0 (v) 6= gv and σ ′
+0 (v) 6= gv then no path PΓ,Γ′ would contain (Γ0 , Γ′
+0 ) by our choice of
+paths, and thus A(Γ0 , Γ0 ) = 0. Assume next that σ0 (v) = gv and σ ′
+0 (v) 6= gv . Then, if
+(Γ0 , Γ′
+0 ) ∈ PΓ,Γ′ for some (Γ, Γ′ ) ∈ E ∗ (M′ ), we must have Γ′ = Γ ∪ γ for some polymer γ ∈ Ω
+and also v ∈ γ . Moreover, the spin conﬁgurations f (Γ), f (Γ′ ), σ0 , σ ′
+0 are all the same outside
+γ . This implies that the number of such paths PΓ,Γ′ is upper bounded by the number of
+polymers containing v .
+Now ﬁx some (Γ, Γ′ ) ∈ E ∗ (M′ ) such that (Γ0 , Γ′
+0 ) ∈ PΓ,Γ′ and assume that Γ′ = Γ ∪ γ for
+some polymer γ ∈ Ω with v ∈ γ . Then,
+
+|PΓ,Γ′ | ≤ |γ | ≤ k .
+
+(6)
+
+21
+
+As the path PΓ,Γ′ is obtained by changing the spins vertex by vertex in the corresponding
+spin conﬁgurations, f (Γ) and f (Γ0 ) diﬀer at most |γ | vertices. The condition of the theorem
+implies that
+
+µG (Γ)
+µG (Γ0 )
+The update rule of the restricted Glauber dynamics gives
+· min (cid:26)1,
+w(Γ0 ) (cid:27) ≥
+w(Γ′
+0 )
+
+P (Γ0 , Γ′
+0 ) =
+
+≤ η |γ | ≤ ηk .
+
+1
+n
+
+1
+q
+
+·
+
+and for the polymer dynamics we have
+
+P ′ (Γ, Γ′ ) =
+
+|γ |
+n
+
+·
+
+1
+2
+
+· wγ =
+
+|γ |wγ
+2n
+
+.
+
+1
+ηqn
+
+(7)
+
+(8)
+
+(9)
+
+Let γv denote a polymer on {v} with a spin from {0, . . . , q − 1}\gv . Then, the polymer
+mixing condition implies that Pγ≁γv
+|γ |wγ ≤ θ |γv | ≤ 1 for some θ ∈ (0, 1). Combining this
+and inequalities (6), (7), (8) and (9), we get
+A(Γ0 , Γ′
+ηk · ηqn ·
+
+qkηk+1 .
+
+|γ |wγ ≤
+
+· k =
+
+1
+2
+
+0 ) ≤ Xγ : v∈γ
+
+|γ |wγ
+2n
+
+1
+2
+
+qkηk+1 Xγ≁γv
+
+For the case where σ0 (v) 6= gv and σ ′
+0 (v) = gv , the proof is almost the same and we can get
+the same bound. Thus,
+0 ) ≤ max (cid:26)q ,
+qkηk+1(cid:27) ≤ qkηk+1 .
+A(Γ0 , Γ′
+The theorem then follows from Theorem 2 and Lemma 25 once we notice that P (Γ, Γ) ≥ 1/q
+and that µG (Γ) ≥ 1/(ηq)n for all Γ ∈ Ω.
+
+(Γ0 ,Γ′
+0 )∈E ∗ (M)
+
+max
+
+A =
+
+1
+2
+
+5.2 Truncated polymer model
+
+The bound on the mixing time of the restricted Glauber dynamics in Theorem 23 is expo-
+nential in the size of the largest polymer which is in general undesirable. For example, in our
+applications in Section 4, M was linear in the number of vertices of the host graph. Here, we
+show that, under the polymer sampling condition, we can restrict our attention to polymers
+of size O(log n) in the sense that the partition function as well as the Gibbs distribution of
+the truncated polymer model are close to those of the original polymer model.
+Let (C (G), w) be a polymer model on a graph G. For k > 0, deﬁne the truncated polymer
+model (Ck (G), w) by
+
+Ck (G) = {γ ∈ C (G) : |γ | ≤ k}.
+
+Also we let
+
+Ωk = {Γ ∈ Ω | Γ ⊆ Ck (G)} = {Γ ⊆ Ck (G) | ∀γ , γ ′ ∈ Γ, γ ∼ γ ′}
+
+be the set of allowed conﬁgurations (note that Ωk ⊆ Ω). The partition function of the
+truncated polymer model (Ck (G), w) is given by
+
+Zk (G) = XΓ∈Ωk Yγ∈Γ
+
+wγ .
+
+22
+
+The corresponding Gibbs distribution on Ωk is deﬁned by µG,k (Γ) =
+. We remark
+that if the original polymer model satisﬁes the polymer sampling condition then so does the
+truncated polymer model, and thus Theorem 5 also applies to the truncated model.
+The following lemma asserts that the Gibbs distribution and the partition function of
+the truncated polymer model (Ck (G), w) are close to those of the original model (C (G), w),
+provided that the polymer sampling condition (3) holds.
+
+Zk (G)
+
+Qγ∈Γ wγ
+
+Lemma 26. Let G be a family of graphs of maximum degree at most ∆ and let (C (.), w, G )
+be a polymer model that satisﬁes the polymer sampling condition (3) with constant τ ≥ 5 +
+3 log((q − 1)∆). Let G be an n-vertex graph from G . Then for any ε > 0 and k = 3 log(2n/ε)
+,
+we have
+
+2τ
+
+Zk (G) ≤ Z (G) ≤ eεZk (G).
+
+Moreover, the total variation distance between µG and µG,k is at most ε.
+
+Proof. Note that Zk (G) ≤ Z (G) follows immediately from Ωk ⊆ Ω. For Γ ∈ Ωk , let Ω(Γ) =
+{Γ′ ∈ Ω : Γ′
+
+Combining (12), (13), (14), and (15) yields Z (G) ≤ eεZk (G), as needed. Finally, we bound
+the total variation distance between µG and µG,k :
+
+kµG − µG,k kT V = µG (Ω \ Ωk ) =
+
+Z (G) − Zk (G)
+Z (G)
+
+≤ 1 − e−ε ≤ ε
+
+where the ﬁrst equality is because µG (Γ) > µG,k (Γ) if and only if Γ ∈ Ω \ Ωk , for which we
+have µG,k (Γ) = 0. This ﬁnishes the proof.
+
+5.3 Applications
+
+In this section, we apply the previous results to show that (spin) Glauber dynamics for
+the ferromagnetic Potts and hard-core models mix in polynomial time on expander graphs,
+when restricted to conﬁgurations close to the ground states (which, as we have already seen,
+constitute the main portion of the probability space at low temperatures).
+
+5.3.1 Restricted Glauber for ferromagnetic Potts
+
+In this section, we prove Theorem 13 for the q -color ferromagnetic Potts model. Throughout
+this section, we will work under the assumptions/conditions of Theorem 9. That is, we ﬁx a
+real number α > 0, integers q ≥ 3 and ∆ ≥ 3 and a real number β ≥ 5+3 log((q−1)∆)
+. We let
+G be the class of α-expander graphs G with maximum degree at most ∆.
+Let G be an n-vertex graph in G and let ε be a value in (qe−n , 1). As in Section 4.1, we
+will consider the polymer model (C g , wg ) whose polymers are connected subgraphs of G with
+at most n/2 vertices, which are labeled by the remaining colors [q ] \ {g}. In fact, following
+Section 5.2, we will work with a truncation of this model. Namely, for M > 0, let (C g
+M , wg )
+be the polymer model on G restricted to polymers of size at most M .
+
+α
+
+Observation 27. For every M > 0, the set Ωg
+M (G), as deﬁned in Section 1.3, is precisely
+the set of allowable polymer conﬁgurations in the truncated polymer model (C g
+M , wg ).
+
+Theorem 13. Under the conditions of Theorem 9, and with M = O(log(n/ε)), the Glauber
+dynamics restricted to Ωg
+M (G) has mixing time Tmix (ε) polynomial in n and 1/ε.
+
+Proof. We let G be the class of α-expanders with maximum degree at most ∆. For the given
+n-vertex graph G ∈ G , let µg
+G,M be the Gibbs distribution of the polymer model (C g
+M (G), wg ).
+By Lemma 20, we have that (C g (·), wg , G ) satisﬁes the polymer sampling condition with
+τ = αβ and hence so does the truncated polymer model (C g
+M (·), wg , G ). The result therefore
+follows by applying Theorem 23, after observing that (i) the polymer model (C g
+M (G), wg ) is
+single-update-compatible (use DFS ordering), and (ii) for a pair of polymer conﬁgurations
+Γ, Γ′ ∈ Ωg
+M whose corresponding spin conﬁgurations σ, σ ′ diﬀer at a vertex, we have
+µg
+G,M (Γ)
+µg
+
+e−βm(G,σ′ ) ∈ [1/η , η ]
+
+e−βm(G,σ)
+
+=
+
+G,M (Γ′ )
+
+where η = exp(β∆) (since G has maximum degree ∆, changing the spin of a vertex can create
+at most ∆ new monochromatic/bichromatic edges). This ﬁnishes the proof.
+
+The following lemma justiﬁes that the set Ωg
+M (G) with M = O(log(n/ε)) constitutes for
+all but ε of the aggregate weight of colorings in the Potts distribution on G.
+
+24
+
+Lemma 28. Under the conditions of Theorem 9, for M = 3 log(4n/ε)
+approximation of the Potts partition function ZG,β .
+
+2αβ
+
+, qZ g
+M (G) is an ε-
+
+5+3 log((q−1)∆)
+α
+
+Proof. Let Z g (G) be the partition function of the polymer model (C g (G), wg ). Since β ≥
+and ε ≥ qe−n , by Lemma 21 we have that qZ g (G) is an (ε/2)-
+approximation to ZG,β . If G is the class of α-expanders with maximum degree at most ∆
+then by Lemma 20, we have that (C g (·), wg , G ) satisﬁes the polymer sampling condition with
+τ = αβ and hence so does the truncated polymer model (C g
+M (·), wg , G ). It follows by Lemma 26
+that, for M = 3 log(4n/ε)
+, qZ g
+M (G) is an (ε/2)-approximation to qZ g (G). Therefore, qZ g
+M (G)
+is an ε-approximation to ZG,β .
+
+> 2 log(eq)
+α
+
+2αβ
+
+5.3.2 Restricted Glauber dynamics for hard-core mixes in polynomial time
+
+In this section, we state and prove the analogue of Theorem 13 for the hard-core model.
+In particular, let G = (V 0 , V 1 , E ) be an n-vertex α-expanding bipartite graph of maximum
+degree ∆, and for i ∈ {0, 1} and M > 0, let Ωi
+M (G) denote the independent sets I whose
+deviations from the ground state V i consists of small connected components, more precisely,
+(V i\I )∪ (I
+
+Lemma 30. Fix α > 0 and ∆ ≥ 3. Let G be the class of bipartite α-expanders with maximum
+degree at most ∆. For λ ≥ (6∆)3+6/α and i ∈ {0, 1}, the polymer model (C i (·), wi , G ) satisﬁes
+the polymer sampling condition (3) with τ = α
+2+α log λ.
+Proof. We have τ ≥ 5 + 3 log ∆, so it suﬃces to show that for G ∈ G and γ ∈ (C i (G), wi ) it
+holds that wi
+γ ≤ e−τ |γ | . For v ∈ γ
+
+References
+
+[1] A. Barvinok. Combinatorics and Complexity of Partition Functions. Algorithms and
+Combinatorics. Springer International Publishing, 2017.
+
+[2] I. Bez´akov´a, D. ˇStefankoviˇc, V. V. Vazirani, and E. Vigoda. Accelerating simulated
+annealing for the permanent and combinatorial counting problems. SIAM Journal on
+Computing, 37(5):1429–1454, 2008.
+
+[3] C. Borgs. Absence of zeros for the chromatic polynomial on bounded degree graphs.
+Combinatorics, Probability and Computing, 15(1-2):63–74, 2006.
+
+[4] C. Borgs, J. T. Chayes, A. Frieze, J. H. Kim, P. Tetali, E. Vigoda, and V. H. Vu.
+Torpid mixing of some Monte Carlo Markov chain algorithms in statistical physics. In
+Proceedings of the 40th Annual IEEE Symposium on Foundations of Computer Science
+(FOCS), pages 218–229, 1999.
+
+[5] C. Borgs, J. T. Chayes, J. Kahn, and L. Lov´asz. Left and right convergence of graphs
+with bounded degree. Random Structures & Algorithms, 42(1):1–28, 2013.
+
+[6] C. Borgs and J. Z. Imbrie. A uniﬁed approach to phase diagrams in ﬁeld theory and
+statistical mechanics. Communications in mathematical physics, 123(2):305–328, 1989.
+
+[7] P. Diaconis and L. Saloﬀ-Coste. Comparison techniques for random walk on ﬁnite groups.
+Ann. Probab., 21(4):2131–2156, 1993.
+
+[8] P. Diaconis and L. Saloﬀ-Coste. Comparison theorems for reversible Markov chains. Ann.
+Appl. Probab., 3(3):696–730, 1993.
+
+[9] R. L. Dobrushin. Estimates of semi-invariants for the Ising model at low temperatures.
+Translations of the American Mathematical Society-Series 2, 177:59–82, 1996.
+
+[10] M. E. Dyer, L. A. Goldberg, M. Jerrum, and R. Martin. Markov chain comparison.
+Probab. Surveys, 3:89–111, 2006.
+
+[11] M. E. Dyer and C. S. Greenhill. Random Walks on Combinatorial Objects, pages 101–
+136. London Mathematical Society Lecture Note Series. Cambridge University Press,
+1999.
+
+[12] M. E. Dyer and C. S. Greenhill. On Markov chains for independent sets. J. Algorithms,
+35(1):17–49, 2000.
+
+[13] C. Efthymiou, T. P. Hayes, D. ˇStefankoviˇc, E. Vigoda, and Y. Yin. Convergence of
+MCMC and loopy BP in the tree uniqueness region for the hard-core model. In Proceed-
+ings of the 57th Annual IEEE Symposium on Foundations of Computer Science (FOCS),
+pages 704–713, 2016.
+
+[14] R. Fern´andez, P. A. Ferrari, and N. L. Garcia. Loss network representation of Peierls
+contours. Annals of Probability, pages 902–937, 2001.
+
+[15] D. Galvin and P. Tetali. Slow mixing of Glauber dynamics for the hard-core model on
+regular bipartite graphs. Random Structures & Algorithms, 28(4):427–443, 2006.
+
+27
+
+[16] C. Gruber and H. Kunz. General properties of polymer systems. Communications in
+Mathematical Physics, 22(2):133–161, 1971.
+
+[17] T. Helmuth, W. Perkins, and G. Regts. Algorithmic Pirogov-Sinai theory. arXiv preprint,
+1806.11548, 2018.
+
+[18] M. Huber. Approximation algorithms for the normalizing constant of Gibbs distributions.
+The Annals of Applied Probability, 25(2):974–985, 2015.
+
+[19] M. Jenssen, P. Keevash, and W. Perkins. Algorithms for #BIS-hard problems on ex-
+pander graphs. In Proceedings of the Thirtieth Annual ACM-SIAM Symposium on Dis-
+crete Algorithms (SODA), pages 2235–2247. SIAM, 2019.
+
+[20] M. Jenssen, P. Keevash, and W. Perkins. Algorithms for #BIS-hard problems on ex-
+pander graphs. arXiv preprint, 1807.04804v2, 2019.
+
+[21] R. Koteck´y and D. Preiss. Cluster expansion for abstract polymer models. Comm. Math.
+Phys., 103(3):491–498, 1986.
+
+[22] L. Laanait, A. Messager, S. Miracle-Sol´e, J. Ruiz, and S. Shlosman. Interfaces in the Potts
+model I: Pirogov-Sinai theory of the Fortuin-Kasteleyn representation. Communications
+in Mathematical Physics, 140(1):81–91, 1991.
+
+[23] C. Liao, J. Lin, P. Lu, and Z. Mao. Counting independent sets and colorings on random
+regular bipartite graphs. arXiv preprint arXiv:1903.07531, 2019.
+
+[24] J. Liu and P. Lu. FPTAS for #BIS with degree bounds on one side. In Proceedings of
+the 47th Annual ACM on Symposium on Theory of Computing (STOC), pages 549–556,
+2015.
+
+[25] E. Mossel, D. Weitz, and N. Wormald. On the hardness of sampling independent sets
+beyond the tree threshold. Probability Theory and Related Fields, 143(3-4):401–439, 2009.
+
+[26] V. Patel and G. Regts. Deterministic polynomial-time approximation algorithms for
+functions and graph polynomials. SIAM Journal on Computing, 46(6):1893–1919, 2017.
+
+[27] S. A. Pirogov and Ya. G. Sinai. Phase diagrams of classical lattice systems. Teoret. Mat.
+Fiz., 25(3):358–369, 1975.
+
+[28] D. Randall and P. Tetali. Analyzing Glauber dynamics by comparison of Markov chains.
+J. Math. Phys., 41(3):1598–1615, 2000. Probabilistic techniques in equilibrium and
+nonequilibrium statistical physics.
+
+[29] D. ˇStefankoviˇc, S. Vempala, and E. Vigoda. Adaptive simulated annealing: A near-
+optimal connection between sampling and counting. Journal of the ACM, 56(3):18,
+2009.
+
+[30] D. Weitz. Counting independent sets up to the tree threshold. In Proceedings of the 38th
+Annual ACM Symposium on Theory of Computing (STOC), pages 140–149, 2006.
+
+28
+
+

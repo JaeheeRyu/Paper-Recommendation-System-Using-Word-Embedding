@@ -1,0 +1,1383 @@
+Approximated Orthonormal Normalisation in
+Training Neural Networks
+
+Guoqiang Zhang, Kenta Niwa and W. B. Kleijn
+
+1
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+5
+4
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract—Generalisation of a deep neural network (DNN) is
+one major concern when employing the deep learning approach
+for solving practical problems. In this paper we propose a
+new technique, named approximated orthonormal normalisation
+(AON), to improve the generalisation capacity of a DNN model.
+Considering a weight matrix W from a particular neural layer
+in the model, our objective is to design a function h(W ) such
+that its row vectors are approximately orthogonal to each other
+while allowing the DNN model to ﬁt the training data sufﬁciently
+accurate. By doing so,
+it would avoid co-adaptation among
+neurons of the same layer to be able to improve network-
+generalisation capacity. Speciﬁcally, at each iteration, we ﬁrst
+approximate (W W T )−
+2 using its Taylor expansion before mul-
+tiplying the matrix W . After that, the matrix product is then
+normalised by applying the spectral normalisation (SN) technique
+to obtain h(W ). Conceptually speaking, AON is designed to
+turn orthonormal regularisation into orthonormal normalisation
+to avoid manual balancing the original and penalty functions.
+Experimental results show that AON yields promising validation
+performance compared to orthonormal regularisation.
+
+1
+
+Index Terms—DNN, approximated orthonormal normalisation
+(AON), orthonormal regularisation.
+
+I . INTRODUCT ION
+
+How to train a deep neural network (DNN) to maximize
+its generalisation capacity has been a challenging task. The
+training process may be affected by various factors such as the
+nature of nonlinear activation functions, weight initialisation,
+neural network architectures, and optimization methods like
+stochastic gradient descent (SGD). In the past few years, dif-
+ferent techniques have been proposed to improve the training
+process from different perspectives. Considering selection of
+the activation function, the rectiﬁed linear unit (ReLU) was
+found to be much more effective than the binary unit in
+feed-forward neural networks (FNNs) and convolutional neural
+networks (CNNs) [1]. Careful weight initialization based on
+the properties of the activation function and layerwise neuron-
+number has also been found to be essential for effective train-
+ing (e.g., [2], [3]). Nowadays, neural networks with shortcuts
+(e.g., ResNet [4], [5], DenseNet [6], and Unet [7]) become
+increasingly popular as introduction of the shortcuts greatly
+alleviates the issue of gradient vanishing or explosion, which
+become severe issues when training extremely deep neural
+networks. From the optimization point of view, SGD with
+
+G. Zhang is with the School of Electrical and Data Engineering, University
+of Technology, Sydney, Australia. Email: guoqiang.zhang@uts.edu.au
+K. Niwa is with Nippon Telegraph and Telephone (NTT) Corporation,
+Japan. Email: niwa.kenta@lab.ntt.co.jp
+W. B. Kleijn is with the School of Engineering and Computer Sci-
+ence, Victoria University of Wellington, New Zealand. Email: basti-
+aan.kleijn@ecs.vuw.ac.nz
+
+momentum is empirically found to produce DNNs with good
+generalisation capacity over other gradient based methods
+(e.g., Adam [8], [9], AdaGrad [10], RMSProp [11]).
+In recent years, a family of normalisation techniques have
+been proposed to accelerate the training process and produce
+high quality DNN models. The motivation behind these tech-
+niques is to make proper adjustment at each individual layer so
+that either the input or output statistics of the activation func-
+tions of the layer are uniﬁed in terms of the ﬁrst and/or second
+moments. By doing so, the problem of internal covariance
+shift can be largely alleviated, thus signiﬁcantly improving
+the efﬁciency of the back-propagation optimisation methods.
+Those techniques can be roughly classiﬁed as (a): data-driven
+normalisation, (b): activation-function normalisation, and (c):
+weight-driven normalisation.
+We now brieﬂy review the above three normalisation tech-
+niques. Data-driven normalisation operates directly on the
+layer-wise internal features of training data, which includes for
+example batch normalisation [12], [13], layer normalisation
+[14], instance normalisation [15], group normalisation [16],
+decorrelated batch normalisation (DBN) [17], and iterative
+normalisation (IterNorm) [18]. This type of normalisations was
+shown to be remarkably effective but one often has to carefully
+handle the inconsistency between training and inference, as
+the input statistics at the inference stage might be changed
+due to a reduced number of input samples. Activation-function
+normalisation intends to design proper activation functions that
+are able to keep certain statistics unchanged between its input
+and output [19]. Weight-driven normalisation indirectly regu-
+late the statistics of the layer-wise internal features by building
+and implictly imposing constraints on the weight matrices of
+the neural layers, which include weight normalisation (WN)
+[20], centered-weight normalisation (CWN) [21], and spectral
+normalisation (SN) [22]. It is reported in [21], [23] that CWN
+(or WN) combined with BN often provides better performance
+than BN alone. SN is shown to be effective when training
+generative adversarial networks (GANs) [22].
+Besides weight-driven normalisation, different weight regu-
+larisation techniques have also been proposed in the literature.
+The basic idea is to add speciﬁc penalty functions of the weight
+matrices to the original objective function when training the
+DNN model to inﬂuence the behaviours of the weight matrices.
+The weight decay is one popular technique, which poses
+a quadratic weight penalty function. In [24], orthonormal
+regularisation is proposed for pushing the vectors in each
+weight matrix to be mutually orthogonal with their norms
+being pushed close to one. We will brieﬂy review orthonormal
+regularisation in Subsection III-A later on to motivate our new
+
+ 
+ 
+ 
+ 
+ 
+ 
+normalisation technique. Variations of orthonormal regularisa-
+tion can be found in recent works [25], [26].
+In this work, we develop a new weight normalisation
+method, termed as approximated orthonormal normalisation
+(AON),
+to improve the generalisation capacity of DNNs.
+Suppose W is a weight matrix extracted from a neural layer.
+AON attempts to construct a function h(W ) such that its
+row vectors are approximately orthogonal. By doing so, it
+prevents the constructed weight matrix h(W ) from having
+low rank and from overlearning the training data, which leads
+to better generalisation of the resulting DNN model. To start
+with, an approximation of (W W T )− 1
+2 is obtained using its
+Taylor expansion before multiplying W . The matrix product
+is then normalised by SN to obtain h(W ). The SN technique
+is employed to ensure that h(W ) would never grow out
+of control. Differently from orthonormal regularisation, AON
+smoothly embeds the matrix-orthonormal property to the con-
+sidered DNN model, which makes the training procedure both
+cleaner and simpler than using the regularisation technique.
+Experimental results on training VGG16 [27] for CIFAR10
+and CIFAR100 show that AON consistently outperform or-
+thonormal regularisation with noticeable gains.
+
+I I . RE LAT ED WORK
+
+Our work is partially motivated by the development of
+SN in the literature. The authors of SN ﬁrstly proposed a
+spectral-norm regularisation in their earlier work [28], which,
+as the name suggests, adds a penalty term to the objective
+function to implictly regularise the spectral norm of a weight
+matrix from a DNN model. In general, it is rather difﬁcult
+for the regularisation approach to set the spectral norm to a
+designated value without manual parameter-tuning. Later on,
+they proposed SN in [22], which allows to explicitly set the
+spectral norm of a weight matrix to a designated value without
+introducing any additional penalty term. Their basic idea is
+to ﬁrst compute an approximation of the spectral norm per
+iteration and then normalise the weight matrix by dividing it
+with the obtained approximated spectral norm.
+We note that orthonormal regularisation (see [24]) also
+attempts to add a penalty term to the objective function to
+make the row vectors of a weight matrix roughly orthonormal.
+We follow a similar design principle as SN to turn orthonormal
+regularisation into orthonormal normalisation. By doing so,
+no penalty term needs to be introduced, making the training
+procedure considerably simpler.
+Our work is also related to the development of DBN [17]
+and IterNorm [18] as extensions of BN. It
+is noted that
+BN centers and scales the input to each neuron within a
+mini-batch but does not consider the correlations among the
+inputs of the neurons in the same layer. DBN extends BN by
+whitening the covariance matrix of the internal features of a
+neural layer by performing eigen-decomposition or singular
+value decomposition (SVD). In general, DBN improves over
+BN w.r.t. both training efﬁciency and generalisation capacity,
+but it relies heavily on a large batch size and requires high
+computation complexity. Later on, the authors of DBN found
+in [18] that full-whitening does not always improve generali-
+sation capacity, especially for small batch size. Based on their
+
+2
+
+observations, they proposed IterNorm to perform approximate-
+whitening instead, which was empirically found to outperform
+DBN.
+While IterNorm conducts approximate-whitening of the
+covariance matrices over internal features of input data, AON
+intends to make the constructed matrix h(W ) have approxi-
+mately orthonormal row vectors. That is, IterNorm and AON
+operate on data and weight matrices, respectively. As will be
+shown later on, another difference is that IterNorm makes use
+of Newton’s iteration to approximate the whitening matrix,
+while AON utilises Taylor expansion to obtain approximate
+orthonormality of the row vectors of h(W ).
+
+I I I . A P PROX IMAT ED ORTHONORMAL NORMAL I SAT ION
+
+A. Preliminary
+
+Suppose we have a sequence of L pairs of training samples
+{(xi , yi )|i = 1, . . . , L}, where xi and yi represent the input
+and output, respectively. To start with, we consider training
+a fully connected neural network with the weights {Wi |i =
+1, . . . , N } of N layers.1 With the considered DNN model,
+each sample xi undergoes a sequence of matrix multiplications
+and nonlinear functional operations to yield prediction of yi .
+The objective is to ﬁnd the proper weights {Wi } so that the
+network maps the input {xi} to the output {yi} accurately.
+Mathematically,
+the training procedure intends to solve a
+highly nonlinear and nonconvex optimization problem of the
+form
+
+min
+
+{Wi }
+
+L
+Xi=1
+
+dis(fN (. . . f2 (W2 f1 (W1xi ))), yi ) + β
+
+N
+
+Xi
+
+p(Wi ),
+
+(1)
+
+where dis(·, ·) denotes the distance measure between the
+network prediction for the sample xi and its ground truth
+yi , fi denotes nonlinear activation function at layer i, and
+β is a scalar coefﬁcient. The 2nd term in (1) represents a
+regularization penalty function of the weight matrices. For the
+well-known weight decay technique [29], p(Wi ) becomes a
+quadratic penalty function of Wi , which prevents the weight
+matrices from growing out of control.
+Next we brieﬂy review the orthonormal regularisation pro-
+posed in [24], of which the penalty function for a weight
+matrix W of a neural layer takes the form of
+
+porth(W ) =
+
+1
+m2 kW W T − I k2
+2 ,
+
+(2)
+
+where m denotes the number of row vectors of W and I
+represents the identity matrix. Basically, the penalty function
+porth intends to make all the row vectors of W matrix to
+be orthogonal to each other while having unit norm when a
+large scalar coefﬁcient β is selected. For the ideal case that
+W W T = I , it is immediate that all the row vectors of W are
+fully orthonormal. Furthermore, all the eigenvalues of W W T
+are 1, leading to ﬂat eigenvalue distributions.
+As mentioned in the introduction, employment of orthonor-
+mal regularisation needs manual-tuning of the the scalar
+coefﬁcient β in (1) to properly balance the importance of
+
+1One can extend the work to include the bias parameters.
+
+Algorithm 1: AON with Talyor expansion
+1 Input: (cid:26) W ∈ Rm×n : weight matrix.
+u ∈ Rm : an eigenvector estimator.
+2 Hyperparameters: order q of Talyor expansion.
+3 Output: h(W ) and updated eigenvector estimator u.
+4 calculate Talyor expansion Pq (W ) of (W W T )− 1
+2 up to
+order q .
+5 update u and calculate the approximated spectral norm
+σPq of Pq (W )W by using SN from [22].
+
+.
+
+6 compute h(W ) = Pq (W )W/σPq .
+
+the objective function and the penalty term. Large β value
+would slow down the learning process while small value would
+have little effect on the behaviours of the weight matrices.
+Thus, it is highly beneﬁcial to turn orthonormal regularisation
+into orthonormal normalisation to avoid or alleviate manual
+parameter-tuning.
+
+B. General Framework of AON
+
+Without loss of generality, we consider the input-output
+relationship under a weight matrix W ∈ Rm×n at a particular
+neural layer. We drop the layer index for simplicity. We would
+like to construct a function h(W ) ∈ Rm×n such that its row
+vectors are approximately orthonormal up to a positive scalar,
+which can be mathematically represented as
+
+h(W )h(W )T ≈ I /s,
+
+(3)
+
+where s > 0 represents the scalar, which remains to be
+speciﬁed. The output z under h(W ) can be expressed as
+
+z = h(W )v ,
+
+(4)
+
+where v ∈ Rn represents the output from one layer below
+right after a nonlinear activation function.
+Similarly to BN(or IterNorm) and WN(or CWN), to increase
+the representational power of the resulting DNN model, we
+introduce an additional scaling parameter for each element zi
+of the z vector in (4), expressed as
+
+˜zi = γi zi
+
+i = 1, . . . , m.
+
+(5)
+
+The resulting vector ˜z is then passed through a nonlinear
+function to obtain the output vector v for the layer above.
+Intuitively speaking, suppose there exists a DNN model that
+ﬁts the training data sufﬁciently accurate under the mapping
+(4)-(5) and also approximately satisﬁes (3) for all weight
+matrices. (3)-(4) together imply that at each neural layer,
+information of the input feature vector v is encoded by all
+the orthonormal row vectors of h(W ) in a manner of equal
+importance. By doing so, it would avoid co-adaptation among
+the neurons that correspond to the elements of the output
+vector z . In this aspect, our new technique AON has a similar
+effect as the dropout [30] technique which is also designed
+to avoid co-adaptation for improving DNN generalisation
+capacity. While dropout randomly drops neurons of the DNN
+model in the training process to avoid co-adaptation, AON
+imposes approximate orthonormality to the weight matrices.
+
+3
+
+In brief, the two techniques follow different methodologies to
+reach the same goal.
+The scaling operation (5) is able to suppress or enhance the
+information of v associated with different row vectors of h(W )
+via z accordingly. That is, in addition to the nonlinear function,
+the scaling operation provides more freedom to control the
+information ﬂow when training the DNN model. By doing
+so, the representational power of the DNN model is naturally
+increased.
+Next we present the procedure for computing h(W ) in
+two steps. Firstly, we attempt to obtain an approximation of
+2 assuming the matrix product W W T is nonsingu-
+lar, denoted as
+
+(W W T )− 1
+
+P (W ) ≈ (W W T )− 1
+2 .
+
+(6)
+
+We will consider the singular case later on. If a good approx-
+imation P (W ) exists, it is immediate that
+
+P (W )W W T P (W )T
+≈ (W W T )− 1
+2 W W T (W W T )− 1
+≈ I ,
+
+2
+
+(7)
+
+which implies that the row vectors of the matrix product
+P (W )W are orthogonal to each other. As will be discussed
+in next subsection, we will make use of Taylor expansion to
+compute P (W ).
+Suppose P (W ) is obtained by Taylor approximation, our
+2nd step is to scale the matrix product P (W )W by using the
+SN technique developed in [22]. We denote the spectral norm
+of P (W )W as σP after applying SN in [22]. h(W ) can then
+be expressed as
+
+h(W ) = P (W )W/σP .
+
+(8)
+
+Our motivation for scaling P (W )W is that P (W ) may not
+always be a good approximation of (W W T )− 1
+2 , especially
+when W W T is singular. The SN technique ensures that the
+spectral norm of h(W ) in (8) roughly equals to 1, which
+implicitly prevents h(W ) from growing of out control in the
+DNN training procedure.
+We note that the parameter σP is a function of P (W )W ,
+which is updated per training iteration to adapt to the changes
+of W . As demonstrated in [22], σP is estimated by using the
+power iteration method [31] instead of using SVD or other
+expensive operations. To do so, an estimator u ∈ Rm of
+the eigenvector corresponding to the maximum eigenvalue of
+P (W )W is maintained during the whole training procedure.
+When W is updated by SGD based optimisation method,
+the vector u is then updated accordingly using the power
+iteration method. The approximated spectral norm σP is ﬁnally
+computed with the updated vector u (see Algorithm 1 for a
+brief summary).
+When conducting back-propagation per iteration, gradient
+of σP w.r.t. W is computed to preserve training stability. See
+[22] for detailed gradient derivation for σP . Similarly, gradient
+of P (W ) w.r.t. W is also computed when updating W for the
+same purpose.
+Finally we reconsider (3). Plugging (8) into (3), it is clear
+that the scalar s approximately equals to 1/σ2
+P when (7)
+
+holds with high accuracy. That is, the scalar s is determined
+by the approximation P (W ) and the scaling operation for
+P (W )W . If Frobenius norm is used instead of SN when
+scaling P (W )W , the scalar s is changed accordingly.
+
+C. Approximating (W W T )− 1
+2 by Taylor Expansion
+Given the square matrix W W T , we compute its Taylor
+expansion around the identity matrix. To do so, it is noted
+that the Taylor expansion of the corresponding scalar function
+2 around 1 can be expressed as
+
+y (x) = x− 1
+
+x− 1
+
+2 ≈ y (1) +
+
+y ′ (1)(x − 1)
+1!
+
++
+
+y ′′ (1)(x − 1)2
+2!
+(x − 1)2 + . . . ,
+
++ . . .
+
+(9)
+
+= 1 −
+
+1
+2
+
+(x − 1) +
+
+3
+8
+
+where the expansion holds when 2 > x > 0. As x approaches
+to 1, the approximation becomes increasingly accurate for a
+particular gradient order. With (9), the Taylor expansion of
+2 can be easily obtained by substituting x in (9)
+with W W T , which is given by [32]
+
+(W W T )− 1
+
+P (W )
+
+≈ I −
+
+1
+2
+
+(W W T − I ) +
+
+3
+8
+
+(W W T − I )2 + . . . .
+
+(10)
+
+1
+
+(W W T )− 1
+
+We use Pq (W ) to denote the Taylor approximation of
+2 up to order q . For example, P1 (W ) = 3
+2 W W T , when T = 1. See Algorithm 1 for exploiting the
+notation Pq (W ) in computing h(W ).
+In principle, the expansion (10) holds under the condition
+
+2 I −
+
+0 < |λi (W W T )| < 2,
+
+(11)
+
+for all eigenvalues {λi } of W W T . That is, the matrix W W T
+has to be symmetric positive deﬁnite with its eigenvalues
+bounded within (0, 2). In practice, it may happen that W W T
+is singular when the number of rows in W is greater than the
+number of its columns. In this situation, our objective becomes
+to make the row vectors of h(W ) to be less correlated to
+each other as a relaxation of strict orthogonality. It is found
+empirically that the approximation (10) together with the SN
+(8) leads to high quality DNN models without the need to pay
+much attention to the boundness of the eigenvalues of W W T .
+The SN (8) is crucial to ensure that the norm of h(W ) does
+not change dramatically.
+Next we brieﬂy explain why we do not exploit Newton’s it-
+eration to approximate (W W T )− 1
+2 . As is demonstrated in [18]
+for the development of IterNorm, the degree of the polynomial
+of x for the function y = x− 1
+2 increases suplinearly when
+the iteration increases linearly. On the contrary, with regard
+to Taylor expansion (9), the degree of the polynomial of x
+increases linearly, which is more suitable for our application.
+
+Remark 1. To satisfy (11), we have also tried to ﬁrst perform
+SN for W , and then compute P (W/σ(W ))W/σ(W ) where
+σ(W ) denotes the spectral norm of W . It is found that by
+doing so,
+it accelerates the training speed at the cost of
+degraded validation performance. Thus, it is preferable to ﬁrst
+obtain the matrix product P (W )W and then apply the SN
+technique.
+
+4
+
+D. Training and Inference
+
+Similarly to existing normalisation methods, our AON can
+be easily incorporated into a DNN as an additional module.
+When employing AON for training and testing a DNN model
+in practice,
+two things are worthy being noticed. Firstly,
+the eigenvector estimator u for each weight matrix W (see
+Algorithm 1) in the considered DNN model needs to be
+maintained during the whole training procedure. The set of
+u vectors in the model are updated at each training iteration
+while being ﬁxed at the test stage. Secondly, calculation of
+h(W ) introduces computational overhead only at the training
+procedure. When the model is well-trained, h(W ) can then be
+computed once and stored as the model parameters without
+recomputing h(W ). the set of u vectors can also be dropped
+to save storage space.
+We notice that the computational complexity of h(W ) and
+its back-propagation depends on the order q for Pq (W ) in
+Algorithm 1. High order q would naturally incur expensive
+computation. As will be discussed in the experimental part
+later on, increasing order q does not consistently improve
+validation performance. There exists an proper q value that
+keeps the correlation among the row vectors of h(W ) to
+a certain degree, which leads to high quality DNN models
+after the training procedure. In other words, it might not be
+necessary to totally remove the correlation among the row
+vectors of h(W ) even if it is doable. This is consistent with
+the observations made for IterNorm in [18]. The authors of
+IterNorm found empirically that it is preferable to perform
+approximate-whitening of the covariance matrix of the internal
+features in a neural layer over full-whitening.
+
+Convolutional Layer: Formulation (1) is for a densely con-
+nected DNN. Consider a weight tensor Wc ∈ Rdo×di×h×w
+from a CNN layer, where di and do indicate the numbers of
+input and output channels, and h and w represent the height
+and width of the CNN kernel. Following the procedure of
+CWN and SN [21], [22], we reshape Wc into a matrix ˆWc of
+size do × (dihw). The operation of AON is then performed
+over the reshaped matrix ˆWc to obtain h( ˆWc ), which is then
+reshaped back to be of size do × di × h × w.
+
+IV. EX P ER IMENT S
+
+A. Experimental setup
+
+In the experiments, we consider training the VGG16 net-
+work over the CIFAR10 and CIFAR100 datasets using differ-
+ent normalisation or regularisation techniques. As the name
+suggests, CIFAR10 and CIFAR100 correspond to two clas-
+siﬁcation problems of 10 and 100 classes, respectively. The
+implementation of the training and validation procedures were
+conducted based on the 2open source for IterNorm (see [18]),
+which was implemented over the pytorch platform. In brief,
+SGD with momentum was employed for training each network
+conﬁguration, where the momentum was set to be 0.9. The
+maximum number of epochs was 160. The initial learning rate
+was 0.1, and scheduled to be divided by 2 at 60 and 120 epochs
+sequentially. To alleviate the effect of the randomness in the
+
+2 https://github.com/huangleiBuaa/IterNorm.
+
+training process, ﬁve experimental repetitions were conducted
+for each network conﬁguration.
+The experiments were conducted in two steps. Firstly, we
+perform ablation studies on AON to ﬁnd out the effect of order
+q in Pq (W ) on its performance. We then conduct performance
+comparison of ﬁve network conﬁguration based on different
+combinations of normalisation or regularisation techniques
+from literature. Our primary interest is the validation per-
+formance gain due to the introduction of AON compared to
+orthonormal regularisation in (2).
+
+100
+
+99
+
+98
+
+97
+
+96
+
+95
+
+94
+
+93
+
+92
+
+91
+
+90
+
+)
+
+%
+
+(
+
+.
+
+c
+c
+a
+
+q=0
+
+q=2
+
+q=4
+
+20
+
+40
+
+60
+
+80
+epochs
+
+100
+
+120
+
+140
+
+160
+
+(a) train/val accuracy over epochs
+
+1.2
+
+1
+
+0.8
+
+s
+s
+
+o
+
+l
+
+0.6
+
+0.4
+
+0.2
+
+0
+
+0
+
+5
+
+q=0
+
+q=2
+
+q=4
+
+50
+
+100
+
+150
+
+epochs
+
+(b) train/val loss over epochs
+
+B. Ablation studies on performance of AON
+
+In the ﬁrst experiment, we study how the order q of Pq (W )
+(see Algorithm 1) affects the performance of AON by training
+VGG16 over CIFAR10. The BN technique is utilised together
+with AON by default to accelerate the training speed. Three
+q values were considered, which are q = 0, 2, and 4. For the
+special case that q = 0, Pq (W ) = I . In this situation, the
+function h(W ) in (8) is degenerated to h(W ) = W/σ(W ),
+where σ(W ) represents the spectral norm of W obtained by
+applying SN in [22]. That is, when q = 0, AON reduces to
+SN. In other words, SN is a special case of AON when the
+Taylor approximation is removed in AON.
+Table I displays the validation performance and the average
+training time for the three different q values of AON. It is
+observed that as q increases, the training time (per epoch)
+also increases as expected. When it comes to validation
+performance, it is clear that the setup q = 2 outperforms q = 0
+and q = 4 by a noticeable gain. Furthermore, the performance
+of q = 4 is also better than that of q = 0,
+indicating
+that approximate orthonormalisation indeed improves network
+generalisation.
+
+TABLE I
+
+E FF E C T O F ORD E R q ON T H E P E R FORMANC E O F AON FOR
+T RA IN ING VGG 16 OV E R C IFAR 10 . E ACH VA L IDAT ION
+AC CURACY I S OB TA IN E D FROM FIV E E X P E R IM E N TA L
+R E P E T I T ION S P E R q VA L U E . T H E T RA IN ING T IM E I S OB TA IN E D BY
+AV E RAG ING T H E RUNN ING T IM E FROM T H E FI R S T 30 E POCH S .
+
+validation
+accuracy (%)
+training time
+per epoch (s)
+
+BN+AON(q=0)
+
+BN+AON(q=2)
+
+BN+AON(q=4)
+
+92.28±0.12
+
+93.51±0.05
+
+93.21±0.10
+
+20.0
+
+27.1
+
+32.5
+
+Fig. 1 visualises the trajectories of training/validation per-
+formance of AON over the 160 epochs. It is seen that the
+performance of q = 2 and q = 4 is comparable from an overall
+perspective. Given the fact (see Table I) that the computational
+complexity for q = 2 is considerably lower than that for q = 4,
+q = 2 is a preferable setup. Based on the above observations,
+we will use q = 2 for AON in the following experiments.
+For completeness, we provide the explicit expression for
+P2 (W ) when q = 2, given by
+
+P2 (W ) = 1.875I − 1.25W W T + 0.375(W W T )2 .
+
+(12)
+
+We note that P2 (W ) is a 2nd order polynomial of W W T ,
+which is similar to the expression Porth (W ) in (2) for
+orthonormal regularisation. One main difference is that the
+
+Fig. 1. Effect of order q on the performance of AON for training VGG16 over
+CIFAR10. The solid curves are for training performance while the dashed ones
+are for validation performance. The subplots (a) and (b) display the effects of
+different order q on the training and validation performance, respective. The
+curve for each conﬁguration is selected from ﬁve experimental repetitions,
+which gives the highest validation accuracy.
+
+polynomial coefﬁcients in P2 (W ) are derived based on the
+Taylor expansion of (W W T )− 1
+2 around the identity matrix.
+Interested readers can also work out the expressions for high
+order of Pq (W ) based on (9)-(10) for advanced study.
+
+C. Performance comparison
+
+In this experiment, we tested ﬁve conﬁgurations for VGG16,
+which are BN, BN+CWN, IterNorm, BN+orthonormal, and
+BN+AON(q=2), where orthonormal refers to orthonormal
+regularisation deﬁned by (2). The scalar coefﬁcient β in (1)
+for orthonormal regularisation was set to be 10.0, which leads
+to better performance than β = 1 and β = 20. In addition,
+the hyper-parameters for IterNorm were set according to the
+suggestions provided in [18].
+
+For CIFAR10: Table II shows the validation accuracy and
+(averaging) training time of the ﬁve conﬁgurations for training
+VGG16 over CIFAR10. It
+is clear that
+the conﬁguration
+BN+AON(q=2) yields the best validation performance while
+BN alone gives the worst performance. BN+CWN and Iter-
+Norm perform better than BN alone but their performance
+is inferior to that of BN+orthonormal and BN+AON (q=2).
+Furthermore, BN+AON(q=2) has a noticeable gain compared
+to BN+orthonormal.
+
+TABLE II
+
+P E R FORMANC E COM PAR I SON O F FIV E CON FIGURAT ION S FOR
+T RA IN ING T H E VGG 16 ON C IFAR 10 . E ACH VA L IDAT ION
+AC CURACY I S OB TA IN E D FROM FIV E E X P E R IM E N TA L R E P E T I T ION S
+P E R CON FIGURAT ION . T H E T RA IN ING T IM E I S OB TA IN E D BY
+AV E RAG ING T H E RUNN ING T IM E FROM T H E FI R S T 30 E POCH S .
+
+validation
+accuracy (%)
+training time
+per epoch (s)
+
+validation
+accuracy (%)
+training time
+per epoch (s)
+
+BN
+
+BN+CWN
+
+IterNorm
+
+92.22±0.09
+
+92.68±0.08
+
+92.66±0.21
+
+17.2
+
+20.7
+
+37.1
+
+BN+orthornormal
+
+BN+AON(q=2)
+
+93.09±0.09
+
+93.51 ± 0.05
+
+21.1
+
+27.1
+
+ 
+6
+
+0
+
+50
+
+100
+
+150
+
+epochs
+
+0
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+r
+t
+
+a
+
+i
+
+n
+
+l
+
+o
+
+s
+s
+
+BN
+BN+orthonormal
+BN+AON (q=2)
+
+0
+
+50
+
+100
+
+150
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+1.2
+
+a
+v
+
+l
+
+l
+
+o
+
+s
+s
+
+0
+
+50
+
+100
+
+150
+
+90
+
+91
+
+92
+
+93
+
+94
+
+a
+v
+
+l
+
+c
+c
+a
+
+(
+
+%
+
+)
+
+0
+
+50
+
+100
+
+150
+
+0
+
+0.5
+
+1
+
+1.5
+
+2
+
+r
+t
+
+a
+
+i
+
+n
+
+l
+
+o
+
+s
+s
+
+0
+
+50
+
+100
+
+150
+
+1
+
+1.5
+
+2
+
+2.5
+
+3
+
+3.5
+
+4
+
+4.5
+
+a
+v
+
+l
+
+l
+
+o
+
+s
+s
+
+0
+
+50
+
+100
+
+150
+
+62
+
+64
+
+66
+
+68
+
+70
+
+72
+
+74
+
+a
+v
+
+l
+
+c
+c
+a
+
+(
+
+%
+
+)
+
+(a) CIFAR10
+
+(b) CIFAR10
+
+(c) CIFAR10
+
+(d) CIFAR100
+
+(e) CIFAR100
+
+(f ) CIFAR100
+
+epochs
+
+epochs
+
+epochs
+
+epochs
+
+epochs
+
+Fig. 2. Performance visualisation of BN, BN+orthonormal, and BN+AON(q=2) for training VGG16 over both CIFAR10 and CIFAR100, where orthonormal
+refers to orthonormal regularisation. The curve for each conﬁguration is selected from ﬁve experimental repetitions, which gives the highest validation accuracy.
+
+Considering the training time in Table II, IterNorm is most
+expensive in running time due to the internal Newton’s Itera-
+tion while BN alone costs least running time. BN+AON(q=2)
+is slightly slower than BN+orthonormal because of the com-
+putation of h(W ) and its back-propagation. From a high-
+level perspective, introduction of the above normalization or
+regularisation techniques into the DNN model increases the
+training time while at the same time, improves the generali-
+sation capacity of the neural network.
+
+For CIFAR100: Based on the experimental observations from
+CIFAR10 above, we tested three conﬁgurations when training
+VGG16 over CIFAR100, which are BN, BN+orthonormal, and
+BN+AON(q=2).
+
+TABLE III
+
+P E R FORMANC E COM PAR I SON O F T HR E E CON FIGURAT ION S FOR
+T RA IN ING T H E VGG 16 ON C IFAR 100 . E ACH VA L IDAT ION
+AC CURACY I S OB TA IN E D FROM FIV E E X P E R IM E N TA L R E P E T I T ION S
+P E R CON FIGURAT ION . T H E T RA IN ING T IM E I S OB TA IN E D BY
+AV E RAG ING T H E RUNN ING T IM E FROM T H E FI R S T 30 E POCH S .
+
+BN
+
+BN+orthornormal
+
+BN+AON(q=2)
+
+validation
+accuracy (%)
+training time
+per epoch (s)
+
+67.20±0.33
+
+70.92±0.34
+
+72.10±0.44
+
+17.3
+
+21.1
+
+27.2
+
+The performance of the three conﬁgurations is summarised
+in Table III. One observes that the validation performance of
+BN+orthonormal and BN+AON (q=2) is signiﬁcantly better
+
+than that of BN alone. Similarly to that of CIFAR10, BN+AON
+(q=2) performs better than BN+orthonormal. In addition, the
+(averaging) training times of the three conﬁgurations are
+consistent across the two datasets as shown in Table II and
+III.
+
+Performance visualisation for CIFAR10 and CIFAR100:
+Fig. 2 displays the convergence results of thee three conﬁgu-
+rations BN, BN+orthonormal, and BN+AON(q=2). The results
+for BN+CWN and IterNorm are omitted to avoid distraction.
+Each curve in the plot is selected from ﬁve experimental
+repetitions which gives the highest validation accuracy.
+
+It
+is clearly seen from the subplots (a) and (d) that
+BN+AON(q=2) converges slower than BN but faster than
+BN+orthonormal w.r.t. number of epochs. Considering the
+validation loss and accuracy, both BN+AON(q=2) and
+BN+orthonormal outperform BN considerably. Furthermore,
+the validation accuracy of BN+AON(q=2) is noticeably better
+than that of BN+orthonormal for the two datasets.
+
+To brieﬂy summarise, BN+AON performs consistently bet-
+ter than other tested normalisation or regularisation techniques
+for both CIFAR10 and CIFAR100. This suggests that AON
+manages to avoid co-adaption in the neural layers of a DNN
+model, thus successfully improving its generalisation capacity.
+While BN+orthonormal needs manual parameter-tuning to
+balance the objective function and the penalty term, AON
+incorporates approximate orthonormality into the DNN model
+in a seamless manner.
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+7
+
+[13] S. Ioffe, “Batch Renormalization: Towards Reducing Minibatch Depen-
+dence in Batch-Normalized Models,” in Advances in Neural Information
+Processing, 2017.
+[14] G. E. H. J. L. Ba, J. R. Kiros, “Layer Normalization,” arXiv:1607.06450
+[stat.ML], 2016.
+[15] D. Ulyanov, A. Vedaldi, and V. Lempitsky, “Instance Normalization:
+The Missing Ingredient for Fast Stylization,” arXiv:1607.08022 [cs.CV],
+2017.
+[16] Y. Wu and K. He, “Group normalization,” in European Conference on
+Computer Vision (ECCV), 2018.
+[17] L. Huang, D. Yang, B. Lang, and J. Deng, “Decorrelated Batch Nor-
+malization,” in Conference on Computer Vision and Pattern Recogni-
+tion(CVPR), 2018, pp. 791–800.
+[18] L. Huang, Y. Zhou, F. Zhu, L. Liu, and L. Shao, “Iterative Normalization:
+Beyond Standardization towards Efﬁcient Whitening,” in Conference on
+Computer Vision and Pattern Recognition(CVPR), 2019, pp. 4874–4883.
+[19] G. Klambauer, T. Unterthiner, A. Mayr, and S. Hochreiter, “Self-
+Normalizing Neural Networks,” in 31st Conference on Nueral Infor-
+mation Processing Systems (NIPS), 2017.
+[20] D. P. K. T. Salimans, “Weight Normalization: A Simple Repa-
+rameterization to Accelerate Training of Deep Neural Networks,”
+arXiv:1602.07868 [cs.LG], 2016.
+[21] L. Huang, X. Liu, Y. Liu, B. Lang, and D. Tao, “Centered Weight
+Normalization in Accelerating Training of Deep Neural Networks,” in
+International Conference on Computer Vision, 2017, pp. 2803–2811.
+[22] T. Miyato, T. Kataoka, M. Koyama, and Y. Yoshida, “Spectral Normal-
+ization for Generative Adversarial Networks,” in ICLR, 2018.
+[23] E. Hoffer, R. Banner,
+I. Golan, and D. Soudry, “Norm Matters:
+Efﬁcient and Accurate Normalization Schemes in Deep Networks,”
+arXiv:1803.01814 [stat.ML], 2018.
+[24] A. Brock, T. Lim,
+J. M. Ritchie,
+and N. Westona,
+“Neural
+photo editing with introspective adversarial networks,” arXiv preprint
+arXiv:1609.07093 , 2016.
+[25] K. Jia, S. Li, Y. Wen, T. Liu, and D. Tao, “Orthogonal Deep Neural
+Networks,” arXiv:1905.05929 v2 [cs.LG], 2019.
+[26] N. Bansal, X. Chen, and Z. Wang, “Can We Gain More from Orthogo-
+nality Regularizations in Training Deep CNNs?” in Advances in Neural
+Information Processing, 2018.
+[27] K. Simonyan and A. Zisserman, “Very Deep Convolutional Networks
+for Large-Scale Image Recognition,” in International conference on
+Learning Representations (ICLR), 2016.
+[28] Y. Yoshida and T. Miyato, “Spectral Norm Regularization for Improving
+the Generalizability of deep learning,” arXiv preprint arXiv:1705.10941 ,
+2017.
+[29] A. Krogh and J. A. Hertz, “A Simple Weight Decay Can Improve
+Generalization,” in Advances in Neural Information Processing, 1992,
+pp. 950–957.
+[30] N. Srivastava, G. Hinton, A. Krizhevsky, I. Sutskever, and R. Salakhut-
+dinov, “Dropout: A Simple Way to Prevent Neural Networks from
+Overﬁtting,” Journal of Machine Learning Research, pp. 1929–1958,
+2014.
+[31] G. H. Golub and H. A. V. der Vorst, “Eigenvalue computation in the
+20th century,” Journal of Computational and Applied Mathematics, vol.
+123, no. 1, pp. 35–65, 2000.
+[32] R. Bhatia, Matrix Analysis. Springer, 1997.
+
+V. CONCLU S ION S AND FUTURE WORK S
+
+(W W T )− 1
+
+In this paper, we have proposed a new weight normalisation
+technique, named as approxiamted orthonormal normalisation
+(AON). AON is designed to turn orthonormal regularisation
+into orthonormal normalisation to make the training procedure
+simpler and cleaner. Given a weight matrix W of a neural
+layer, the basic idea of AON is to construct a function h(W )
+such that its row vectors are approximately orthogonal to each
+other. To do so, the key step is to obtain an approximation of
+2 using Taylor expansion, which is then multiplied
+by W . The spectral normalisation (SN) technique is used to
+normalise the obtained matrix product to obtain h(W ). Com-
+pared to the orthonormal normalisation technique, AON avoids
+introducing additional penalty term to the objective function,
+making the training process neat. Experimental results indicate
+that AON outperform not only orthonormal normalisation
+but also other normalisation techniques such as CWN and
+IterNorm.
+One future research direction for AON is to study the
+possibility of constructing a more effective function h(W ) by
+exploiting, for instance, different forms of Taylor expansion
+and/or different scaling operations in addition to SN.
+As AON and IterNorm operate on weight matrices and
+internal features of input data, respectively, one can consider
+combining AON and IterNorm in a proper way to improve the
+system performance to a higher level. This could be realized by
+conducting decorrelation in both weight matrices and internal
+features of a neural layer simultaneously.
+
+RE F ERENCE S
+
+“Wide Residual Networks,”
+
+[1] V. Nair and G. E. Hinton, “Rectiﬁed Linear Units Improve Restricted
+Boltzmann Machines,” in Proceedings of the 27th International Confer-
+ence on Machine Learning,, 2010.
+[2] K. He, X. Zhang, S. Ren, and J. Sun, “Delving Deep into Rectiﬁers:
+Surpassing Human-Level Performance on Imagenet Classiﬁcation,” in
+Proceedings of the IEEE international conference on computer vision,
+2015, pp. 1026–1034.
+[3] H. Sutskever, J. Martens, G. Dahl, and G. Hinton, “On the importance
+of initialization and momentum in deep learning,” in International
+conference on Machine Learning (ICML), 2013.
+[4] K. He, X. Zhang, S. Ren, and J. Sun, “Deep Residual Learning for Image
+Recognition,” in IEEE conference on Computer Vision and Pattern
+Recognition (CVPR), 2015.
+[5] S. Zagoruyko and N. Komodakis,
+arXiv:1605.07146 v4, 2016.
+[6] G. Huang, Z. Liu, L. ver der Maaten, and K. Q. Weinberger, “Densely
+Connected Convolutional Networks,” in IEEE conference on Computer
+Vision and Pattern Recognition (CVPR), 2017.
+[7] O. Ronneberger, P. Fischer, and T. Brox, “U-Net: Convolutional Net-
+works for Biomedical Image Segmentation,” arXiv:1505.04597 [cs.CV],
+2015.
+[8] D. P. Kingma and J. L. Ba, “Adam: A Method for Stochastic Optimiza-
+tion,” arXiv preprint arXiv:1412.6980v9, 2017.
+[9] S. K. S. J. Reddi and S. Kumar, “On the Convergence of Adam
+and Beyond,” in International conference on Learning Representations
+(ICLR), 2018.
+[10] J. Duchi, E. Hazan, and Y. Singer, “Adaptive Subgradient Methods
+for Online Learning and Stochastic Optimization,” Journal of Machine
+Learning Research, vol. 12, pp. 2121–2159, 2011.
+[11] T. Tieleman and G. Hinton, “Lecture 6.5-RMSProp: Divide The Gradient
+by a Running Average of Its Recent Magnitude,” COURSERA: Neural
+networks for machine learning, pp. 26–31, 2012.
+[12] S. Ioffe and C. Szegedy, “Batch normalization: Accelerating Deep
+Network Training by Reducing Internal Covariate Shift,” volume 37 of
+JMLR Proceedings, pp. 448–456, 2015.
+
+

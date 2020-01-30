@@ -1,0 +1,849 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+S
+
+D
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+7
+4
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+S-RASTER: Contraction Clustering for
+Evolving Data Streams
+
+Gregor Ulm1,2[0000−0001−7848−4883] , Simon Smith1,2 [0000−0001−8525−2474] ,
+Adrian Nilsson1,2 [0000−0002−8927−845X ] , Emil Gustavsson1,2 [0000−0002−1290−9989] ,
+and Mats Jirstrand1,2 [0000−0002−6612−8037]
+
+1 Fraunhofer-Chalmers Research Centre for Industrial Mathematics,
+Chalmers Science Park, 412 88 Gothenburg, Sweden
+2 Fraunhofer Center for Machine Learning,
+Chalmers Science Park, 412 88 Gothenburg, Sweden
+
+{gregor.ulm, simon.smith, adrian.nilsson,
+emil.gustavsson, mats.jirstrand}@fcc.chalmers.se
+
+http://www.fcc.chalmers.se/
+
+Abstract. Contraction Clustering (RASTER) is a very fast algorithm
+for density-based clustering, which requires only a single pass. It can pro-
+cess arbitrary amounts of data in linear time and in constant memory,
+quickly identifying approximate clusters. It also exhibits good scalability
+in the presence of multiple CPU cores. Yet, RASTER is limited to batch
+processing. In contrast, S-RASTER is an adaptation of RASTER to the
+stream processing paradigm that is able to identify clusters in evolving
+data streams. This algorithm retains the main beneﬁts of its parent algo-
+rithm, i.e. single-pass linear time cost and constant memory requirements
+for each discrete time step in the sliding window. The sliding window is
+eﬃciently pruned, and clustering is still performed in linear time. Like
+RASTER, S-RASTER trades oﬀ an often negligible amount of precision
+for speed. It is therefore very well suited to real-world scenarios where
+clustering does not happen continually but only periodically. We describe
+the algorithm in detail, including a discussion of implementation details.
+Keywords: Big data · Stream Processing · Clustering.
+
+1
+
+Introduction
+
+Clustering is a standard method for data analysis. Many clustering methods
+have been proposed [11]. Some of the most well-known clustering algorithms are
+DBSCAN [7], k-means clustering [10], and CLIQUE [1] [2]. Yet, they have in
+common that they do not perform well when clustering big data, i.e. data that
+far exceeds available main memory. Based on a real-world challenge we faced in
+industry, i.e. clustering of large amounts of geospatial data, we developed Con-
+traction Clustering (RASTER), a very fast linear-time clustering algorithm for
+identifying approximate density-based clusters. The original presentation was
+
+ 
+ 
+ 
+ 
+ 
+ 
+2
+
+G. Ulm et al.
+
+focused on sequential processing of batch data [13] and was followed by a de-
+scription of a parallel version of this algorithm [14]. A key aspect of RASTER is
+that it does not exhaustively cluster its input but instead identiﬁes their approx-
+imate location in linear time. As it only requires constant space, it is eminently
+suitable for clustering big data. The variant RASTER(cid:48) retains its input and still
+runs in linear time while requiring only a single pass. Of course, it cannot operate
+in constant memory.
+A common motivation for stream processing is that data does not ﬁt into
+working memory and therefore cannot be retained. This is not a concern for
+RASTER as it can process an arbitrary amount of data in limited working
+memory. One could therefore divide a stream of data into discrete batches and
+consecutively cluster them. Yet, this approach does not address the problem
+that, in a given stream of data, any density-based cluster may only be tempo-
+rary. In order to solve this problem, this paper presents Contraction Clustering
+for evolving data streams (S-RASTER). This algorithm has been designed for
+identifying density-based clusters in inﬁnite data streams within a sliding win-
+dow. S-RASTER is not a replacement of RASTER, but a complement, enabling
+this pair of algorithms to eﬃciently cluster data, regardless of whether it is
+available as a batch or a stream.
+In the remainder of this paper, we provide relevant background in Sec. 2,
+which contains a brief recapitulation of RASTER and the motivating use case for
+S-RASTER, i.e. identifying evolving hubs in streams of GPS data. In Sect. 3 we
+provide a detailed description of S-RASTER, including a complete speciﬁcation
+in pseudocode.3 After a brief theoretical evaluation in Sec. 4, we highlight related
+work in Sec. 5 and future work in Sec. 6.
+
+(a) Input data
+
+(b) Signiﬁcant tiles
+
+(c) Clustered tiles
+
+(d) Clustered points
+
+Fig. 1: High-level visualization of RASTER (best viewed in color). The original
+input is shown in a), followed by pro jection to tiles in b) where only signiﬁcant
+tiles that contain more than τ = 4 values are retained. Tile-based clusters,
+assuming a minimum cluster size of µ = 2, are visualized in c), corresponding to
+RASTER. Clusters as collections of points are shown in d), which corresponds
+to the variant RASTER(cid:48) .
+
+3 Source code is available at the following repository: https://gitlab.com/fraunhofer
+chalmers centre/s- raster.
+
+xxxxxxxS-RASTER: Contraction Clustering for Evolving Data Streams
+
+3
+
+2 Background
+
+In this section, we give a brief presentation of the sequential RASTER algorithm
+in Subsect. 2.1. This is followed by a description of the motivating problem be-
+hind S-RASTER, i.e. the identiﬁcation of so-called hubs within a sliding window,
+in Subsect. 2.2.
+
+2.1 RASTER
+
+Algorithm 1 RASTER
+
+input: data points, precision prec, threshold τ , dis-
+tance δ , minimum cluster size µ
+output: set of clusters clusters
+1: acc := ∅
+(cid:46) {(xπ , yπ ) : count }
+2: clusters := ∅
+(cid:46) set of sets
+3: for (x, y) in points do
+(cid:46) O(1)
+4:
+(xπ , yπ ) := project (x, y , prec )
+if (xπ , yπ ) (cid:54)∈ keys of acc then
+5:
+6:
+acc [(xπ , yπ )] := 1
+7:
+else
+8:
+acc [(xπ , yπ )] += 1
+9: for (xπ , yπ ) in acc do
+10:
+if acc [(xπ , yπ )] < τ then
+11:
+remove acc [(xπ , yπ )]
+12: σ := keys of acc
+13: while σ (cid:54)= ∅ do
+14:
+t := σ .pop ()
+cluster := ∅
+15:
+visit := {t}
+17: while visit (cid:54)= ∅ do
+16:
+18:
+u := visit .pop ()
+19:
+cluster := cluster ∪ {u}
+ns := neighbors (u, δ)
+20:
+σ := σ \ ns
+21:
+visit := visit ∪ ns
+22:
+if size of cluster ≥ µ then
+23:
+24:
+add cluster to clusters
+
+In this subsection, we pro-
+vide a brief description of
+RASTER [13]
+[14]. This al-
+gorithm approximately iden-
+tiﬁes density-based clusters
+very quickly (cf. Alg. 1). The
+main idea is to pro ject data
+points to tiles and keep track
+of the number of points that
+are pro jected to each tile.
+Only tiles to which more than
+a predeﬁned threshold num-
+ber τ of data points have
+been pro jected are retained.
+These are referred to as sig-
+niﬁcant tiles σ , which are
+subsequently clustered by ex-
+haustive lookup of neighbor-
+ing tiles in a depth-ﬁrst man-
+ner. Clustering continues for
+as long as there are signiﬁcant
+tiles left. To do so, the algo-
+rithm selects an arbitrary tile
+as the seed of a new cluster.
+This cluster is grown itera-
+tively by looking up all neigh-
+boring tiles within a given
+Manhattan or Chebyshev distance δ . This takes only O(1) as the location of
+all potential neighbors is known due to their location in the grid. Only clusters
+that contain more than a predeﬁned number µ of signiﬁcant tiles are kept.
+The pro jection operation consists of reducing the precision of the input by
+scaling a ﬂoating-point number to an integer. For instance, take an arbitrary
+GPS coordinate (34.59204302, 106.36527351), which is already truncated com-
+pared to the full representation with double-precision ﬂoating-point numbers.
+GPS data is inherently imprecise, yet stored in ﬂoating-point format with the
+maximum precision, which is potentially misleading, considering that consumer-
+grade GPS is only accurate to within about ten meters under ideal conditions [6].
+
+(cid:46) signiﬁcant tiles
+(cid:46) O(n) for llns. 12–24
+
+(cid:46) set
+
+(cid:46) O(1)
+
+(cid:46) cf. ln. 13
+
+4
+
+G. Ulm et al.
+
+Consequently, these data suggest a level of precision they do not possess. Thus,
+by dropping a few digit values, we do not lose much, if any, information. Further-
+more, vehicle GPS data is sent by vehicles that may, in the case of trucks with
+an attached trailer, be more than 25 meters long. To cluster such coordinates,
+we can truncate even more digit points. In our example, if we concluded that
+a precision of around 11.1 meters is suﬃcient, we would transform the input
+to (34.5920, 106.3652). To avoid issues pertaining to working with ﬂoating-point
+numbers, the input is instead scaled to (345920, 1063652). Before generating
+the ﬁnal output, all signiﬁcant tiles of the resulting clusters are scaled back to
+ﬂoating-point numbers.
+RASTER is a single-pass linear time algorithm. However, in a big data con-
+text, its biggest beneﬁt is that it only requires constant memory, assuming a
+ﬁnite range of inputs. This is the case with GPS data. It is therefore possible to
+process an arbitrary amount of data on a resource-constrained workstation with
+this algorithm. We have also shown that it can be eﬀectively parallelized [14]. A
+variation of this algorithm that retains its inputs is referred to as RASTER(cid:48) . It is
+less suited for big data applications. However, it is eﬀective for general-purpose
+density-based clustering and very competitive against standard clustering meth-
+ods; cf. Appendix A in [14].
+
+2.2 Identifying Evolving Hubs
+
+RASTER was designed for ﬁnite batches of GPS traces of commercial vehicles.
+The goal was to identify hubs, i.e. locations where many vehicles come to a halt,
+for instance vans at delivery points or buses at bus stops. After identifying all
+hubs in a data set, it is possible to construct vehicular networks. However, what
+if the data does not represent a static reality? It is a common observation that
+the location of hubs changes over time. A bus stop may get moved or abolished,
+for instance. This motivates adapting RASTER so that it is able to detect hubs
+over time and maintaining hubs within a sliding window W . The length of W
+depends on the actual use case. With GPS traces of infrequent but important
+deliveries, many months may be necessary. Yet, with daily deliveries, a few days
+would suﬃce to detect new hubs as well as discard old ones.
+
+3 S-RASTER
+
+This section starts with a concise general description of S-RASTER in Sect. 3.1,
+followed by a detailed speciﬁcation in Sect. 3.2. Afterwards, we highlight some
+implementation details in Sect. 3.3 and outline, in Sect. 3.4, how S-RASTER
+has to be modiﬁed to retain its inputs, which makes this algorithm applicable
+to diﬀerent use cases.
+
+3.1 Idea
+
+S-RASTER (cf. Fig. 2) performs, for an indeﬁnite amount of time, pro jection
+and accumulation continually, and clustering periodically. Pro jection nodes π
+
+S-RASTER: Contraction Clustering for Evolving Data Streams
+
+5
+
+Fig. 2: The ﬂow graph of RASTER with evolving data streams. The input source
+node s distributes values arbitrarily to pro jection nodes π . In turn, they send
+pro jected values to accumulation nodes α. These determine signiﬁcant tiles for
+the chosen sliding window. Should a tile become signiﬁcant or a once signiﬁcant
+tile no longer be signiﬁcant, a corresponding update is sent to the clustering
+node κ. Node κ periodically performs clustering of signiﬁcant tiles, which is a
+very fast operation.
+
+= (cid:83)i+c
+
+receive their input from the source node s. Each incoming (x, y), where x, y ∈ R,
+is surjected to (xπ , yπ ), where xπ , yπ ∈ Z. Together with a period indicator ∆z ,
+these values are sent to accumulation nodes α. The identiﬁer ∆z ∈ N0 designates
+a period with a ﬁxed size, e.g. one day, and is non-strictly increasing. Each α-node
+maintains a sliding window W of length c, which is constructed from c multisets
+W∆z . Each such multiset W∆z keeps running totals of how many times the
+input was surjected to any given tuple (xπ , yπ ) in the chosen period. The sliding
+window starting at period ∆i is deﬁned as W ∆i+c
+z=i W∆z . It contains the
+set of signiﬁcant tiles σ = {(xπ , yπ )d ∈ W ∆i+c
+| d ≥ τ }, where d indicates the
+number of appearances in the multiset and τ the threshold for a signiﬁcant tile.
+If a tile becomes signiﬁcant, its corresponding value (xπ , yπ ) is forwarded to the
+clustering node κ. Whenever W advances to the next period ∆i+1 , the oldest
+entry W∆i
+is removed from W . Furthermore, all aﬀected running totals are
+adjusted, which may lead to some signiﬁcant tiles no longer being signiﬁcant.
+If so, node κ receives corresponding updates to likewise remove those entries.
+Node κ keeps track of all signiﬁcant tiles, which it clusters whenever W advances
+are deﬁned as {k ∈ ks | k > µ}, where µ is the minimum cluster size. Each
+(cf. Alg. 1, lls. 12–24). Call the resulting set of clusters ks . The resulting clusters
+(xπ , yπ ) in each k is ﬁnally pro jected to (x(cid:48)
+π , y (cid:48)
+π ), where x(cid:48)
+π , y (cid:48)
+π ∈ R. Together
+with cluster and period IDs, these values are sent to the sink node t.
+
+∆i
+
+∆i
+
+π1α1π2α2αm...πnκ...st6
+
+G. Ulm et al.
+
+3.2 Detailed Description
+
+S-RASTER processes the data stream coming from source s in Fig. 2 and outputs
+clusters to sink t. There are three diﬀerent kinds of nodes: pro jection nodes π
+pro ject points to tiles, accumulation nodes α determine signiﬁcant tiles within
+each sliding window W ∆i+c
+, and one clustering node κ outputs, for each W ∆i+c
+,
+all identiﬁed clusters. Below, we describe the three nodes in detail.
+
+∆i
+
+∆i
+
+Algorithm 2 Pro jection node π
+
+input: stream of tuples (x, y , ∆z ) where x, y
+are coordinates and ∆z is the current pe-
+riod; precision prec
+output: stream of tuples (xπ , yπ , ∆z )
+1: xπ := pro jection of x with prec
+2: yπ := pro jection of y with prec
+3: send (xπ , yπ , ∆z ) to node α
+
+Projection. Nodes labeled with
+π pro ject
+incoming values
+to
+tiles with the speciﬁed precision
+(cf. Alg. 2). In general, the in-
+put (x, y , ∆z ) is transformed into
+(xπ , yπ , ∆z ). The period ∆z is a
+non-strictly increasing integer, for
+instance uniquely identifying each
+day. Pro jection is a stateless oper-
+ation that can be executed in parallel. It is irrelevant which node π performs
+pro jection on which input value as they are interchangeable. However, the in-
+put of the subsequent accumulator nodes α needs to be grouped by values, for
+instance by assigning values within a certain segment of the longitude range of
+the input values. Yet, this is not strictly necessary as long as it is ensured that
+every unique surjected value (xπ , yπ ) is sent to the same α-node.
+
+∆i
+
+Accumulation. The accumulator nodes α keep track of the number of counts
+per pro jected tile for the sliding window W ∆i+c
+(cf. Alg. 3). The input consists
+of a stream of tuples (xπ , yπ , ∆z ) as well as the size of the sliding window c and
+the threshold value τ . A global variable ∆j keeps track of the current period.
+Each α-node maintains two persistent data structures. For reasons of eﬃciency,
+the hashmap totals records, for each tile, how many points were pro jected to
+it in W ∆i+c
+. Tiles become signiﬁcant once their associated count reaches τ . In
+addition, the hashmap window records the counts per tile for each period W∆z
+. Given that input ∆z is non-strictly increasing, there are two cases to
+
+∆i
+
+in W ∆i+c
+∆i
+
+consider:
+
+(i) ∆z = ∆j , i.e. the period is unchanged. In this case, the counts of tile (xπ , yπ )
+in totals and its corresponding value ∆z in window are incremented by 1.
+If the total count for (xπ , yπ ) has just reached τ , an update is sent to the
+κ-node, containing (xπ , yπ ) and the ﬂag 1.
+(ii) ∆z > ∆j , i.e. the current input belongs to a later period. Now the slid-
+ing window needs to be advanced, which means that the oldest entry gets
+pruned. But ﬁrst, an update is sent to the κ-node with ∆j and the ﬂag 0.
+Afterwards, the entries in the hashmap window have to be adjusted. En-
+try ∆z−c is removed and for each coordinate pair and its associated counts,
+the corresponding entry in the hashmap totals gets adjusted downward as
+the totals now should no longer include these values. In case the associated
+
+S-RASTER: Contraction Clustering for Evolving Data Streams
+
+7
+
+value of a coordinate pair in totals drops below τ , an update is sent to κ,
+consisting of (xπ , yπ ) and the ﬂag -1. Should a value in totals reach 0, the
+corresponding key-value pair is removed. Afterwards, the steps outlined in
+the previous case are performed.
+
+Regarding signiﬁcant tiles, only status changes are communicated from α
+nodes to κ, which is much more eﬃcient than sending a stream with constant
+status updates for each tile.
+
+Algorithm 3 Accumulation node α
+
+Clustering. The clustering
+node κ (cf. Alg. 4) takes
+as input a precision value
+prec , which is identical to
+the one that was used in the
+α-node, the minimum clus-
+ter size µ, and a stream con-
+sisting of tuples of a ﬂag
+∈ {−1, 0, 1} as well as a
+value val ∈ {(xπ , yπ ), ∆j }.
+This node keeps track of
+the signiﬁcant
+tiles σ of
+the current sliding window,
+based on updates received
+from all α nodes. If val =
+1, the associated coordinate
+pair is added to σ . On the
+if val = −1,
+other hand,
+tile (xπ , yπ ) is removed from
+σ . Thus, σ is synchronized
+with the information stored
+in all α nodes. Lastly,
+if
+val = 0 the associated value
+of the input tuple represents
+a period identiﬁer ∆j . This
+is interpreted as the begin-
+ning of this period and, con-
+versely, the end of period
+∆j−1 . Now κ clusters, tak-
+ing µ into account, the set
+of signiﬁcant tiles (cf. Alg. 1,
+lls. 12 – 24) and produces
+an output stream that rep-
+resents the clusters found
+within the current sliding window. In this stream, each pro jected coordinate
+(xπ , yπ ) is assigned period and cluster identiﬁers, which leads, after re-scaling
+
+input: stream s of tuples (xπ , yπ , ∆z ), sliding window
+size c, threshold τ
+output: stream of tuples (ﬂag , val ) where ﬂag ∈
+{−1, 0, 1} and val ∈ {(xπ , yπ ), ∆j }
+1: totals := ∅
+(cid:46) {(xπ , yπ ) : count }
+(cid:46) {∆j : {(xπ , yπ ) : count }}
+2: window := ∅
+3: ∆j := −1
+(cid:46) Period count
+4: for (xπ , yπ , ∆z ) in s do
+5:
+if ∆z > ∆j then
+6:
+send (0, ∆j ) to node κ
+7:
+∆j := ∆z
+key := ∆j − c
+8:
+if key ∈ keys of window then
+9:
+10:
+vals := window [key ]
+11:
+for (a, b) in keys of vals do
+12:
+old := totals [(a, b)]
+totals [(a, b)] −= vals [(a, b)]
+13:
+14:
+new := totals [(a, b)]
+if old ≥ τ and new < τ then
+15:
+send (−1, (a, b)) to node κ
+16:
+17:
+if new = 0 then
+18:
+remove entry (a, b) from totals
+19:
+remove entry key from window
+if (xπ , yπ ) /∈ keys of totals then
+20:
+21:
+totals [(xπ , yπ )] := 1
+22:
+window [∆j ][(xπ , yπ )] := 1
+23:
+else
+24:
+if (xπ , yπ ) /∈ keys of window [∆j ] then
+totals [(xπ , yπ )] += 1
+25:
+26:
+window [∆j ][(xπ , yπ )] := 1
+27:
+else
+28:
+window [∆j ][(xπ , yπ )] += 1
+29:
+if totals [(xπ , yπ )] = τ then
+30:
+send (1, (xπ , yπ )) to node κ
+
+(cid:46) Add
+
+(cid:46) New period
+(cid:46) Re-cluster
+
+(cid:46) Oldest Entry
+(cid:46) Prune
+
+(cid:46) Remove
+
+8
+
+G. Ulm et al.
+
+the coordinate pairs (xπ , yπ ) to ﬂoating point numbers (x(cid:48)
+π , y (cid:48)
+π ), to an output
+stream of tuples of the format (∆j , cluster id , x(cid:48)
+π , y (cid:48)
+π ).
+
+3.3 Implementation Details
+
+Algorithm 4 Clustering node κ
+
+The previous descrip-
+tion is idealized. Yet,
+our software solution
+has to take the va-
+garies of
+real-world
+data into account. Be-
+low, we therefore high-
+light two relevant prac-
+tical aspects that the
+formal deﬁnition of
+our algorithm does
+not capture.
+
+input: stream s of tuples (ﬂag , val ) where ﬂag ∈ {−1, 0, 1}
+and val ∈ {(xπ , yπ ), ∆j }, precision prec , size µ
+output: stream of tuples (∆j , cluster id , xπ , yπ )
+1: σ := ∅
+(cid:46) Signiﬁcant tiles
+2: for (ﬂag , val ) in s do
+3:
+if ﬂag = 1 then
+4:
+(xπ , yπ ) := val
+σ := σ ∪ {(xπ , yπ )}
+5:
+if ﬂag = −1 then
+6:
+7:
+(xπ , yπ ) := val
+σ := σ \ {(xπ , yπ )}
+8:
+9:
+if ﬂag = 0 then
+10:
+∆j := val
+11:
+clusters := cluster(σ, µ)
+12:
+id := 0
+13:
+for cluster in clusters do
+14:
+for (xπ , yπ ) in cluster do
+(x(cid:48)
+π , y (cid:48)
+15:
+π ) := rescale (xπ , yπ , prec )
+send (∆j , id , x(cid:48)
+π , y (cid:48)
+16:
+π )
+17:
+id += 1
+
+Out-of-Order Process-
+ing. Tuples are as-
+signed a timestamp
+at the source, which
+is pro jected to a pe-
+riod identiﬁer ∆z . As-
+suming that the input
+stream is
+in-order,
+parallelizing the α op-
+erator could nonetheless lead to out-of-order input of some tuples at the κ node,
+i.e. the latter could receive a notiﬁcation about the start of period ∆j , cluster all
+signiﬁcant tiles as they were recorded up to the seeming end of ∆j−1 , but receive
+further tuples pertaining to it from other α-nodes afterwards. One solution is
+to simply ignore these values as their number should be minuscule. Commonly
+used periods, e.g. one day, are quite large and the expected inconsistencies are
+conﬁned to their beginning and end. Thus, it may make sense to set the start
+of a period to a time where very little data is generated, e.g. 3:00 a.m. for a
+24-hour period when processing data of commercial vehicles. Alternatively, clus-
+tering could be triggered with a delay of one full period, where the chosen length
+of the period exceeds the expected delay.
+
+(cid:46) Next period
+
+(cid:46) cf. Alg. 1, lls. 12 – 24
+(cid:46) Cluster ID
+
+(cid:46) Int to Float
+
+Interpolation. The sliding window also has to advance when there are missing
+period identiﬁers in the data. It is not suﬃcient to simply remove the oldest
+key-value pair. Instead, missing periods need to be interpolated. If a gap greater
+than one period between the current and the last encountered period is detected,
+the algorithm advances the sliding window as many times as needed, one period
+at a time. This is omitted from Alg. 3 for the sake of brevity but part of our
+published implementation.
+
+S-RASTER: Contraction Clustering for Evolving Data Streams
+
+9
+
+3.4 Retaining data points with S-RASTER(cid:48)
+
+There are use cases where it is desirable to not only identify clusters based on
+their signiﬁcant tiles but also on the data points that were pro jected to those tiles
+(cf. Figs. 1c and 1d). In the following, we refer to the variant of S-RASTER that
+retains relevant input data as S-RASTER(cid:48) . The required changes are minor.
+With the goal of keeping the overall design of the algorithm unchanged, ﬁrst
+the π nodes have to be modiﬁed to produce a stream of tuples (xπ , yπ , x, y , ∆z ),
+i.e. it retains the original input coordinates. In the α nodes the hashmaps totals
+and window have to be changed to retain sets of unscaled coordinates (x, y) per
+pro jected pair (xπ , yπ ). Counts are given by the size of those sets. This assumes
+that determining the size of a set is an O(1) operation in the implementation
+language, for instance due to the underlying ob ject maintaining this value as a
+variable. In case a tile becomes signiﬁcant, each α-node sends not just the tile
+(xπ , yπ ) but also a bounded stream to κ that includes all coordinate pairs (x, y)
+that were pro jected to it. After a tile has become signiﬁcant, every additional
+point (xπ , yπ ) that maps to it also has to be forwarded to κ. Lastly, in the κ node,
+the set tiles has to be turned into a hashmap that maps pro jected tiles (xπ , yπ )
+to their corresponding points (x, y) and the output stream modiﬁed to return, for
+each point (x, y) that is part of a cluster, the tuple (∆j , cluster id , xπ , yπ , x, y).
+
+4 Evaluation
+
+As we have shown previously, RASTER is very fast and generates results more
+quickly than competing algorithms. Of course, the caveat is that the resulting
+clusters may not include elements at the periphery that other methods include.
+Yet, the big beneﬁt of our algorithm is its very fast throughput, being able
+to process an arbitrary amount of data in linear time and constant memory.
+This makes it possible to use a standard workstation, while comparable work-
+loads with other algorithms would necessitate a much more expensive and time-
+consuming cloud computing setup. The same holds true for S-RASTER as it
+is an adaptation of RASTER that does not change its fundamental properties.
+Consequentially, S-RASTER, just like RASTER, requires only constant mem-
+ory, needs only a single pass, i.e. every element of the input is only processed
+once, and performs clustering in linear time. We have made a prototypal imple-
+mentation of S-RASTER publicly available. However, a thorough comparative
+evaluation is currently missing. That being said, based on the speciﬁcation we
+provided, there is no reason to assume that the performance beneﬁts of RASTER
+for data batches are not also evident in S-RASTER for evolving data streams.
+Our reasoning is outlined below.
+
+Runtime. RASTER is a single-pass linear time algorithm. The same is true for
+S-RASTER. Data is continually processed as a stream, in which every input is
+only processed one single time, implying linear time. Clustering does not happen
+continually, but periodically. Furthermore, clustering signiﬁcant tiles is a very
+fast procedure. As the cost of this operation is quite small, it can be viewed as a
+
+10
+
+G. Ulm et al.
+
+constant. On a related note, the performance impact of periodic clustering in the
+κ node can be mitigated by running this node on a separate CPU core, which is
+straightforward in the context of stream processing.
+
+Memory. RASTER needs constant memory M to keep track of all counts per
+tile of the entire (ﬁnite) grid. In contrast, S-RASTER uses a sliding window of a
+ﬁxed length c. In the worst case, the data that was stored in M with RASTER
+requires cM memory in S-RASTER, which is the case if there is, for each discrete
+period ∆z , at least one pro jected point per tile for each tile. Thus, S-RASTER
+maintains the key property of RASTER of using constant memory.
+
+5 Related Work
+
+There are several prominent streaming algorithms for density-based clustering.
+DUC-STREAM performs clustering based on dense unit detection [8]. Its biggest
+drawback, compared to S-RASTER, is that it has not been designed for handling
+evolving data streams. D-Stream I is a combined online/oﬄine algorithm [5].
+While it also uses a grid, the computations performed are more computationally
+intensive than the ones S-RASTER performs. Its runtime and memory require-
+ments are sub-optimal. DD-Stream likewise performs density-based clustering
+in grids and likewise uses computationally expensive methods for clustering [9].
+Both D-Stream I and DD-Stream are not suited for handling big data. D-Stream
+II can handle evolving data and clusters more eﬃciently than D-Stream [12], but
+it is not clear if it is suitable for big data. What furthermore distinguishes S-
+RASTER is that it can be eﬀectively parallelized. This is not the case with some
+other standard algorithms in this domain.
+None of the aforementioned clustering algorithms are quite comparable to
+S-RASTER, however, as they retain their input. Also, their clustering methods
+are generally more computationally costly. Thus, S-RASTER requires less time
+and memory. S-RASTER(cid:48) is closer to those algorithms as it retains relevant
+input data. As it does not retain all input, S-RASTER is only ineﬃcient with
+regards to memory use in highly artiﬁcial scenarios. This is the case where there
+is at most one point pro jected to any square in the grid, which implies that the
+algorithm parameters were poorly chosen as the basic assumption is that many
+points are surjected to each signiﬁcant tile. Ignoring pathological cases, it can
+thus be stated that S-RASTER is very memory eﬃcient. On top, it beneﬁts from
+a more eﬃcient approach to clustering. S-RASTER and S-RASTER(cid:48) arguably
+are, for the purpose of identifying density-based clusters in evolving data streams,
+more memory eﬃcient than competing algorithms, and also less computationally
+intensive. Yet, these advantages come at the cost of reduced precision.
+
+6 Future Work
+
+We may release an implementation of S-RASTER for use in Massive Online
+Analysis (MOA) [3]. In addition, we may release a complete stand-alone imple-
+mentation of this algorithm that can be fully integrated into a standard stream
+
+S-RASTER: Contraction Clustering for Evolving Data Streams
+
+11
+
+processing engine such as Apache Flink [4] or Apache Spark [15] [16]. We are keen
+on performing a comparative evaluation of S-RASTER versus some other algo-
+rithms for clustering evolving data streams, preferably in a standard framework
+such as the aforementioned MOA. This work should also include an evaluation
+of the parallel speed-up on many-core CPUs.
+
+Acknowledgments This work was carried out in the Fraunhofer Cluster of
+Excellence Cognitive Internet Technologies.
+
+References
+
+1. Agrawal, R., Gehrke, J., Gunopulos, D., Raghavan, P.: Automatic subspace clus-
+tering of high dimensional data for data mining applications. In: Proceedings of
+the 1998 ACM SIGMOD International Conference on Management of Data. pp.
+94–105. SIGMOD ’98, ACM, New York, NY, USA (1998)
+2. Agrawal, R., Gehrke, J., Gunopulos, D., Raghavan, P.: Automatic subspace clus-
+tering of high dimensional data. Data Mining and Knowledge Discovery 11(1),
+5–33 (Jul 2005)
+3. Bifet, A., Holmes, G., Kirkby, R., Pfahringer, B.: Moa: Massive online analysis.
+Journal of Machine Learning Research 11(May), 1601–1604 (2010)
+4. Carbone, P., Katsifodimos, A., Ewen, S., Markl, V., Haridi, S., Tzoumas, K.:
+Apache ﬂink: Stream and batch processing in a single engine. Bulletin of the IEEE
+Computer Society Technical Committee on Data Engineering 36(4) (2015)
+5. Chen, Y., Tu, L.: Density-based clustering for real-time stream data. In: Proceed-
+ings of the 13th ACM SIGKDD international conference on Knowledge discovery
+and data mining. pp. 133–142. ACM (2007)
+6. van Diggelen, F., Enge, P.: The world’s ﬁrst gps mooc and worldwide laboratory
+using smartphones. In: Proceedings of the 28th International Technical Meeting
+of The Satellite Division of the Institute of Navigation (ION GNSS+ 2015). pp.
+361–369. ION (2015)
+7. Ester, M., Kriegel, H.P., Sander, J., Xu, X., et al.: A density-based algorithm for
+discovering clusters in large spatial databases with noise. In: SIGKDD Conference
+on Knowledge Discovery and Data Mining. vol. 96, pp. 226–231 (1996)
+8. Gao, J., Li, J., Zhang, Z., Tan, P.N.: An incremental data stream clustering algo-
+rithm based on dense units detection. In: Paciﬁc-Asia Conference on Knowledge
+Discovery and Data Mining. pp. 420–425. Springer (2005)
+9. Jia, C., Tan, C., Yong, A.: A grid and density-based clustering algorithm for pro-
+cessing data stream. In: 2008 Second International Conference on Genetic and
+Evolutionary Computing. pp. 517–521. IEEE (2008)
+10. MacQueen, J., et al.: Some methods for classiﬁcation and analysis of multivariate
+observations. In: Proceedings of the Fifth Berkeley Symposium on Mathematical
+Statistics and Probability. vol. 1, pp. 281–297. Oakland, CA, USA. (1967)
+11. Rui Xu, Wunsch, D.: Survey of clustering algorithms. IEEE Transactions on Neural
+Networks 16(3), 645–678 (May 2005). https://doi.org/10.1109/TNN.2005.845141
+12. Tu, L., Chen, Y.: Stream data clustering based on grid density and attraction.
+ACM Transactions on Knowledge Discovery from Data (TKDD) 3(3), 12 (2009)
+
+12
+
+G. Ulm et al.
+
+13. Ulm, G., Gustavsson, E., Jirstrand, M.: Contraction Clustering (RASTER). In:
+Nicosia, G., Pardalos, P., Giuﬀrida, G., Umeton, R. (eds.) Machine Learning, Op-
+timization, and Big Data. pp. 63–75. Springer International Publishing, Cham,
+Switzerland (2018)
+14. Ulm, G., Smith, S., Nilsson, A., Gustavsson, E., Jirstrand, M.: Contraction cluster-
+ing (raster): A very fast big data algorithm for sequential and parallel density-based
+clustering in linear time, constant memory, and a single pass (2019)
+15. Zaharia, M., Chowdhury, M., Franklin, M.J., Shenker, S., Stoica, I.: Spark: Cluster
+computing with working sets. HotCloud 10(10-10), 95 (2010)
+16. Zaharia, M., Xin, R.S., Wendell, P., Das, T., Armbrust, M., Dave, A., Meng, X.,
+Rosen, J., Venkataraman, S., Franklin, M.J., et al.: Apache spark: a uniﬁed engine
+for big data processing. Communications of the ACM 59(11), 56–65 (2016)
+
+

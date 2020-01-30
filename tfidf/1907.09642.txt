@@ -1,0 +1,1792 @@
+A Generalized Framework for Edge-preserving and Structure-preserving Image
+Smoothing
+
+Wei Liu1,2 , Pingping Zhang3 , Yinjie Lei4∗ , Xiaolin Huang1,5 , Jie Yang1,5 ∗ , Ian Reid2
+
+1Department of Automation, Shanghai Jiao Tong University, 2The University of Adelaide
+3Dalian University of Technology, 4Sichuan University, 5 Institute of Medical Robotics, Shanghai Jiao Tong University
+
+{wei.liu02, ian.reid}@adelaide.edu.au, jssxzhpp@mail.dlut.edu.cn, yinjie@scu.edu.cn, {xiaolinhuang, jieyang}@sjtu.edu.cn
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+R
+
+G
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+2
+4
+6
+9
+0
+
+.
+
+7
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Image smoothing is a fundamental procedure in applications
+of both computer vision and graphics. The required smooth-
+ing properties can be different or even contradictive among
+different tasks. Nevertheless, the inherent smoothing nature
+of one smoothing operator is usually ﬁxed and thus cannot
+meet the various requirements of different applications. In
+this paper, a non-convex non-smooth optimization framework
+is proposed to achieve diverse smoothing natures where even
+contradictive smoothing behaviors can be achieved. To this
+end, we ﬁrst introduce the truncated Huber penalty function
+which has seldom been used in image smoothing. A robust
+framework is then proposed. When combined with the strong
+ﬂexibility of the truncated Huber penalty function, our frame-
+work is capable of a range of applications and can outperform
+the state-of-the-art approaches in several tasks. In addition, an
+efﬁcient numerical solution is provided and its convergence is
+theoretically guaranteed even the optimization framework is
+non-convex and non-smooth. The effectiveness and superior
+performance of our approach are validated through compre-
+hensive experimental results in a range of applications.
+
+Introduction
+
+The key challenge of many tasks in both computer vision
+and graphics can be attributed to image smoothing. At the
+same time, the required smoothing properties can vary dra-
+matically for different tasks. In this paper, depending on the
+required smoothing properties, we roughly classify a large
+number of applications into four groups.
+Applications in the ﬁrst group require the smoothing op-
+erator to smooth out small details while preserving strong
+edges, and the amplitudes of these strong edges can be re-
+duced but the edges should be neither blurred nor sharp-
+ened. Representatives in this group are image detail en-
+hancement and HDR tone mapping (Farbman et al. 2008;
+Fattal, Agrawala, and Rusinkiewicz 2007; He, Sun, and Tang
+2013). Blurring edges can result in halos while sharpening
+edges will lead to gradient reversals (Farbman et al. 2008).
+
+∗ Jie Yang and Yinjie Lei are the corresponding authors of this
+paper.
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+Figure 1: Our method is capable of (a) image detail enhance-
+ment, (b) clip-art compression artifacts removal, (c) guided
+depth map upsampling and (d) image texture removal.
+These applications are representatives of edge-preserving
+and structure-preserving image smoothing and require con-
+tradictive smoothing properties.
+
+The second group includes tasks like clip-art compres-
+sion artifacts removal (Nguyen and Brown 2015; Xu et al.
+2011), image abstraction and pencil sketch production (Xu
+et al. 2011). In contrast to the ones in the ﬁrst group, these
+tasks require to smooth out small details while sharpening
+strong edges. This is because edges can be blurred in the
+compressed clip-art image and they need to be sharpened
+when the image is recovered (see Fig. 1(b) for example).
+Sharper edges can produce better visual quality in image ab-
+straction and pencil sketch. At the same time, the amplitudes
+of strong edges are not allowed to be reduced in these tasks.
+Guided image ﬁltering, such as guided depth map upsam-
+pling (Park et al. 2011; Ferstl et al. 2013; Liu et al. 2017b)
+and ﬂash/no ﬂash ﬁltering (Kopf et al. 2007; Petschnigg et
+al. 2004), is categorized into the third group. The structure
+inconsistency between the guidance image and target image,
+which can cause blurring edges and texture copy artifacts
+in the smoothed image (Ham, Cho, and Ponce 2015; Liu et
+al. 2017b), should be properly handled by the specially de-
+signed smoothing operator. They also need to sharpen edges
+in the smoothed image due to the reason that low-quality
+capture of depth and noise in the no ﬂash images can lead to
+blurred edge (see Fig. 1(c) for example).
+Tasks in the fourth group require to smooth the image in
+a scale-aware manner, e.g., image texture removal (Xu et al.
+2012; Zhang et al. 2014; Cho et al. 2014). This kind of tasks
+require to smooth out small structures even when they con-
+tain strong edges, while large structure should be properly
+preserved even the edges are weak (see Fig. 1(d) for exam-
+
+ 
+ 
+ 
+ 
+ 
+ 
+ple). This is totally different from that in the above three
+groups where they all aim at preserving strong edges.
+To be more explicit, we categorize the smoothing proce-
+dures in the ﬁrst to the third groups as edge-preserving im-
+age smoothing since they try to preserve salient edges, while
+the smoothing processes in the fourth group are classiﬁed as
+structure-preserving image smoothing because they aim at
+preserving salient structures.
+A diversity of edge-preserving and structure-preserving
+smoothing operators have been proposed for various tasks.
+Generally, each of them is designed to meet the requirements
+of certain applications, and thus its inherent smoothing na-
+ture is usually ﬁxed. Therefore, there is seldom a smooth-
+ing operator that can meet all the smoothing requirements
+of the above four groups, which are quite different or even
+contradictive. For example, the L0 norm smoothing (Xu et
+al. 2011) can sharpen strong edges and is suitable for clip-
+art compression artifacts removal, however, this will lead to
+gradient reversals in image detail enhancement and HDR
+tone mapping. The weighted least squares (WLS) smooth-
+ing (Farbman et al. 2008) performs well in image detail en-
+hancement and HDR tone mapping, but it is not capable of
+sharpening edges and structure-preserving smoothing, etc.
+In contrast to most of the smoothing operators in the lit-
+erature, a new smoothing operator, which is based on a non-
+convex non-smooth optimization framework, is proposed in
+this paper. It can achieve different and even contradictive
+smoothing behaviors and is able to handle the applications
+in the four groups mentioned above. The main contributions
+of this paper are as follows:
+1. We introduce the truncated Huber penalty function which
+has seldom been used in image smoothing. By varying the
+parameters, it shows strong ﬂexibility.
+2. A robust non-convex non-smooth optimization frame-
+work is proposed. When combined with the strong ﬂex-
+ibility of the truncated Huber penalty function, our model
+can achieve various and even contradictive smoothing be-
+haviors. We show that it is able to handle the tasks in
+the four groups mentioned above. This has seldom been
+achieved by previous smoothing operators.
+3. An efﬁcient numerical solution to the proposed optimiza-
+tion framework is provided. Its convergence is theoreti-
+cally guaranteed.
+4. Our method is able to outperform the specially designed
+approaches in many tasks and state-of-the-art perfor-
+mance is achieved.
+
+Related Work
+
+Tremendous smoothing operators have been proposed in re-
+cent decades. In terms of edge-preserving smoothing, bilat-
+eral ﬁlter (BLF) (Tomasi and Manduchi 1998) is the early
+work that has been used in various tasks such as image detail
+enhancement (Fattal, Agrawala, and Rusinkiewicz 2007),
+HDR tone mapping (Durand and Dorsey 2002), etc. How-
+ever, it is prone to produce results with gradient reversals
+and halos (Farbman et al. 2008). Its alternatives (Gastal and
+Oliveira 2012; 2011) also share a similar problem. Guided
+
+ﬁlter (GF) (He, Sun, and Tang 2013) can produce results free
+of gradient reversals but halos still exist. The WLS smooth-
+ing (Farbman et al. 2008) solves a global optimization prob-
+lem and performs well in handling these artifacts. The L0
+norm smoothing is able to eliminate low-amplitude struc-
+tures while sharpening strong edges, which can be applied
+to the tasks in the second group. To handle the structure in-
+consistency problem, Shen et al. (Shen et al. 2015b) pro-
+posed to perform mutual-structure joint ﬁltering. They also
+explored the relation between the guidance image and target
+image via optimizing a scale map (Shen et al. 2015a), how-
+ever, additional processing was adopted for structure incon-
+sistency handling. Ham et al. (Ham, Cho, and Ponce 2015)
+proposed to handle the structure inconsistency by combin-
+ing a static guidance weight with a Welsch’s penalty (Hol-
+land and Welsch 1977) regularized smoothness term, which
+leaded to a static/dynamic (SD) ﬁlter. Gu et al. (Gu et al.
+2017b) presented a weighted analysis representation model
+for guided depth map enhancement.
+In terms of structure-preserving smoothing, Zhang et al.
+(Zhang et al. 2014) proposed to smooth structures of differ-
+ent scales with a rolling guidance ﬁlter (RGF). Cho et al.
+(Cho et al. 2014) modiﬁed the original BLF with local
+patch-based analysis of texture features and obtained a bi-
+lateral texture ﬁlter (BTF) for image texture removal. Kara-
+can et al. (Karacan, Erdem, and Erdem 2013) proposed to
+smooth image textures by making use of region covariances
+that captured local structure and textural information. Xu
+et al. (Xu et al. 2012) adopted the relative total variation
+(RTV) as a prior to regularize the texture smoothing proce-
+dure. Fan et al. (Fan et al. 2018; 2019) proposed to perform
+various kinds of image smoothing through convolutional
+neural networks. Chen et al. (Chan and Esedoglu 2005)
+proved that the TV-L1 model (Chan and Esedoglu 2005;
+Nikolova 2004) could smooth images in a scale-aware man-
+ner, and it is thus ideal for structure-preserving smoothing
+such as image texture removal (Buades et al. 2010).
+Most of the approaches mentioned above are limited to
+a few applications because their inherent smoothing na-
+tures are usually ﬁxed. In contrast, our method proposed in
+this paper can have strong ﬂexibility in achieving various
+smoothing behaviors, which enables wider applications of
+our method than most of them. Moreover, our method can
+show better performance than these methods in several ap-
+plications that they are specially designed for.
+
+Our Approach
+
+Truncated Huber Penalty Function
+
+We ﬁrst introduce the truncated Huber penalty function
+which is deﬁned as:
+
+hT (x) =
+
+|x| ≤ b
+
+|x| > b
+
+s.t. a ≤ b,
+
+(1)
+
+(cid:26) h(x),
+b − a
+2 ,
+
+(cid:26) 1
+
+where a, b are constants. h(·) is the Huber penalty function
+(Huber and others 1964) deﬁned as:
+
+h(x) =
+
+2a x2 ,
+
+|x| − a
+
+|x| < a
+
+|x| ≥ a
+
+,
+
+(2)
+
+2 ,
+
+(a)
+
+(b)
+
+Figure 2: Plots of (a) different penalty functions and (b) the
+truncated Huber penalty function with different parameter
+settings.
+
+hT (·) and h(·) are plotted in Fig. 2(a) with a =  which is
+a sufﬁcient small value (e.g.,  = 10−7 ). h(·) is an edge-
+preserving penalty function, but it cannot sharpen edges
+when adopted to regularize the smoothing procedure. In con-
+trast, hT (·) can sharpen edges because it is able to not penal-
+ize image edges due to the truncation. The Welsch’s penalty
+function (Holland and Welsch 1977), which was adopted in
+the recent proposed SD ﬁlter (Ham, Cho, and Ponce 2015),
+is also plotted in the ﬁgure. This penalty function is known
+to be capable of sharpening edges, which is also because it
+seldom penalizes strong image edges. The Welsch’s penalty
+while the hT (·) can be close to the L1 norm when a is set
+function is close to the L2 norm when the input is small,
+sufﬁcient small, which demonstrates hT (·) can better pre-
+serve weak edges than the Welsch’s penalty function.
+With different parameter settings, hT (·) can show strong
+ﬂexibility to yield different penalty behaviors. Assume the
+input intensity values are within [0, Im ], then the amplitude
+set b > Im , hT (·) will be actually the same as h(·) because
+of any edge will fall in [0, Im ]. We ﬁrst set a = . Then if we
+is sufﬁcient small, hT (·) will be close to the L1 norm in this
+the second condition in Eq. (1) can never be met. Because a
+case, and thus it will be an edge-preserving penalty func-
+tion that does not sharpen edges. Conversely, when we set
+b < Im , the truncation in hT (·) will be activated. This can
+lead to having penalization on weak edges without penaliz-
+ing strong edges, and thus the strong edges are sharpened.
+To be short, b can act as a switch to decide whether hT (·)
+can sharpen edges or not. Similarly, by setting a = b > Im
+and a = b < Im , hT (·) can be easily switched between
+the L2 norm and truncated L2 norm. Note that the truncated
+L2 norm is also able to sharpen edges (Xu, Zheng, and Jia
+2013). In contrast, the Welsch’s penalty function does not
+enjoy this kind of ﬂexibility. Different cases of hT (·) are il-
+lustrated in Fig. 2(b).
+
+Model
+
+Given an input
+image f and a guidance image g ,
+the
+smoothed output image u is the solution to the following
+objective function:
+
+Eu (u) =
+
+hT (ui − fj ) + λ
+
+ωi,j hT (ui − uj )
+
+where hT is deﬁned in Eq.(1); Nd (i) is the (2rd + 1) ×
+(2rd + 1) square patch centered at i; Ns (i) is the (2rs +
+
+ (cid:88)
+
+j∈Nd (i)
+
+(cid:88)
+
+i
+
+(cid:88)
+
+j∈Ns (i)
+
+ ,
+
+(3)
+
+1) × (2rs + 1) square patch centered at i; λ is a parame-
+ter that controls the overall smoothing strength. To be clear,
+we adopt {ad , bd} and {as , bs} to denote the parameters of
+hT (·) in the data term and smoothness term, respectively.
+The guidance weight ωi,j is deﬁned as:
+
+ωi,j =
+
+1
+(|gi − gj | + δ)α ,
+
+(4)
+
+where α determines the sensitivity to the edges in g which
+can be the input image, i.e., g = f . |·| represents the absolute
+value. δ is a small constant being set as δ = 10−7 .
+The adoption of hT (·) makes our model in Eq. (3) to enjoy
+a strong ﬂexibility. As will be shown in the following prop-
+erty analysis section, with different parameter settings, our
+model is able to achieve different smoothing behaviors, and
+thus it is capable of various tasks that require either edge-
+preserving smoothing or structure-preserving smoothing.
+
+Numerical Solution
+
+Our model in Eq. (3) is not only non-convex but also
+non-smooth, which arises from the adopted hT (·). Com-
+monly used approaches (Lanckriet and Sriperumbudur
+2009; Nikolova and Ng 2005; Wang et al. 2008; Zhang,
+Kwok, and Yeung 2004) for solving non-convex optimiza-
+tion problems are not applicable. To tackle this problem,
+we ﬁrst rewrite hT (·) in a new equivalent form. By deﬁn-
+ing ∇d
+i,j = ui − uj , we have:
+
+i,j = ui − fj and ∇s
+h(∇∗
+
+(cid:110)
+
+i,j − l
+
+∗
+
+i,j ) + (b∗ − a∗
+2
+
+)|l
+
+∗
+
+i,j |0
+
+,
+
+(5)
+
+(cid:111)
+
+where ∗ ∈ {d, s}, |l∗
+i,j |0 is the L0 norm of l∗
+i,j . The mini-
+mum of the right side of Eq. (5) is obtained on the condition:
+
+i,j
+
+hT (∇∗
+i,j ) = min
+l∗
+(cid:26) 0,
+
+∗
+
+l
+
+i,j =
+
+|∇∗
+|∇∗
+
+i,j | ≤ b∗
+i,j | > b∗
+
+, ∗ ∈ {d, s}.
+
+(6)
+
+∇∗
+
+i,j ,
+
+The detailed proof of Eq. (5) and Eq. (6) is provided in our
+supplementary ﬁle. These two equations also theoretically
+validate our analysis in Fig. 2(b): we have |∇∗
+on Eq. (5) and Eq. (6), we will always have hT (∇∗
+if the intensity values are in [0, Im ]. Then if b > Im , based
+h(∇∗
+i,j ) which means hT (·) degrades to h(·).
+A new energy function is deﬁned as:
+
+i,j | ∈ [0, Im ]
+
+i,j ) =
+
+Eul (u, ld , ls ) = (cid:80)
++λ (cid:80)
+
+i,j
+ωi,j
+
+(cid:0)h(∇d
+(cid:0)h(∇s
+
+i,j
+
+i,j − ld
+i,j ) + (bd − ad
+i,j − ls
+i,j ) + (bs − as
+
+2 )|ld
+2 )|ls
+
+i,j |0
+i,j |0
+
+Based on Eq. (5) and Eq. (6), we then have:
+
+l∗ Eul (u, ld , ls ), ∗ ∈ {d, s}.
+Eu (u) = min
+
+(cid:1)
+(cid:1) .
+
+(7)
+
+(8)
+
+Given Eq. (6) as the optimum condition of Eq. (8) with
+respect to l∗ , optimizing Eul (u, ld , ls ) with respect to u only
+involves Huber penalty function h(·). The problem can thus
+be optimized through the half-quadratic (HQ) optimization
+technique (Geman and Yang 1995; Nikolova and Ng 2005).
+More speciﬁcally, a variable µ∗ (∗ ∈ {d, s}) and a function
+i,j ) with respect to µ∗ exist such that:
+
+i,j − l
+
+∗
+
+i,j ) = min
+µ∗
+
+i,j
+
+∗
+
+i,j (∇∗
+
+i,j − l
+
+∗
+
+i,j )2 + ψ(µ
+
+(9)
+
+ψ(µ∗
+h(∇∗
+
+i,j )(cid:9) ,
+
+∗
+
+(cid:8)µ
+
+(cid:40) 1
+
+where the optimum is yielded on the condition:
+
+∗
+
+i,j =
+
+µ
+
+2a∗ ,
+
+2|∇∗
+
+i,j −l∗
+1
+
+i,j | ,
+
+|∇∗
+|∇∗
+
+i,j − l∗
+i,j | < a∗
+i,j − l∗
+i,j | ≥ a∗
+
+, ∗ ∈ {d, s}. (10)
+
+The detailed proof of Eq. (9) and Eq. (10) is provided in our
+supplementary ﬁle. Then we can further deﬁne a new energy
+function:
+
+(cid:0)µd
+Eulµ (u, ld , ls , µd , µs ) =
+(cid:0)µs
+i,j )2 + ψ(µd
+
+i,j (∇d
+i,j − ld
+i,j (∇s
+i,j − ls
+
+(cid:80)
+λ (cid:80)
+
+i,j
+ωi,j
+
+i,j )2 + ψ(µs
+
+i,j
+
+i,j ) + (bd − ad
+i,j ) + (bs − as
+
+2 )|ld
+2 )|ls
+
+i,j |0
+i,j |0
+
+Based on Eq. (9) and Eq. (10), we then have:
+
+∗
+
+Eul (u, l
+
+) = min
+µ∗ Eulµ (u, l
+
+∗
+
+∗
+
+), ∗ ∈ {d, s}.
+
+, µ
+
+Given Eq. (10) as the optimum condition of µ∗ for
+Eq. (12), optimizing Eulµ (u, ld , ls , µd , µs ) with respect to
+u only involves the L2 norm penalty function, which has
+a closed-form solution. However, since the optimum condi-
+tions in Eq. (6) and Eq. (10) both involve u, therefore, the
+ﬁnal solution u can only be obtained in an iterative man-
+ner. Assuming we have got uk , then (l∗ )k and (µ∗ )k , (∗ ∈
+{s, d}) can be updated through Eq. (6) and Eq. (10) with uk .
+Finally, uk+1 is obtained with:
+
+Eq.(13) has a close-form solution as:
+
+uk+1 = min
+
+Eulµ
+
+∗
+
+u, (l
+
+u
+
+(cid:16)Ak − 2λW k (cid:17)−1 (cid:16)
+
+uk+1 =
+
+(cid:16)
+
+∗
+
+)k (cid:17)
+)k , (µ
+,
+Dk + 2λS k (cid:17)
+
+(13)
+
+,
+
+(14)
+
+ii = (cid:80)
+
+(cid:80)
+
+where W k is an afﬁnity matrix with W k
+Ak is a diagonal matrix with Ak
+i,j )k , Dk is a vector with Dk
+i,j )k ) and S k is also a vector with
+
+i,j = ωi,j (µs
+i,j )k ,
+j∈Nd (i) (µd
+i,j )k +
+
+j∈Ns (i) ωi,j (µs
+j∈Nd (i) (µd
+j∈Ns (i) ωi,j (µs
+i,j )k (ls
+i,j )k .
+
+2λ (cid:80)
+i = (cid:80)
+S k
+
+i,j )k (fj + (ld
+
+The above optimization procedure monotonically de-
+creases the value of Eu (u) in each step, its convergence is
+theoretically guaranteed. Given uk in the k th iteration and
+∗ ∈ {s, d}, then for any u, we have:
+
+i =
+
+∗
+
+Eu (u) ≤ Eul (u, (l
+(cid:26) Eul (u, (l∗ )k ) ≤ Eulµ (u, (l∗ )k , (µ∗ )k )
+)k ), Eu (uk ) = Eul (uk , (l
+Eul (uk , (l∗ )k ) = Eulµ (uk , (l∗ )k , (µ∗ )k )
+
+∗
+
+)k ),
+
+.
+
+(15)
+
+(16)
+
+Given (l∗ )k has been updated through Eq. (6), Eq. (15) is
+based on Eq. (8) and Eq. (5). After (µ∗ )k has been updated
+through Eq. (10), Eq. (16) is based on Eq. (12) and Eq. (9).
+We now have:
+
+Eul (uk+1 , (l∗ )k ) ≤ Eulµ (uk+1 , (l∗ )k , (µ∗ )k )
+≤ Eulµ (uk , (l∗ )k , (µ∗ )k ) = Eul (uk , (l∗ )k ),
+
+(17)
+
+the ﬁrst and second inequalities follow from Eq. (16) and
+Eq. (13), respectively. We ﬁnally have:
+
+Eu (uk+1 ) ≤ Eul (uk+1 , (l
+
+∗
+
+)k ) ≤ Eul (uk , (l
+
+∗
+
+)k ) = Eu (uk ),
+
+(18)
+
+(cid:1) +
+(cid:1) .
+
+(11)
+
+(12)
+
+1: for k = 0 : N do
+
+Algorithm 1 Image Smoothing via Non-convex Non-
+smooth Optimization
+Require: Input image f , guide image g , iteration number
+N , parameter λ, α, a∗ , b∗ , r∗ , u0 ← f , with ∗ ∈ {d, s}
+2: With uk , compute (∇∗
+i,j )k , update (l∗
+i,j )k according
+to Eq. (6)
+3: With (l∗
+i,j )k , update (µ∗
+i,j )k according to Eq. (10)
+4: With (l∗
+i,j )k , solve for uk+1 according to
+Eq. (13) (or Eq. (14))
+
+i,j )k and (µ∗
+
+5: end for
+
+Ensure: Smoothed image uN +1
+
+the ﬁrst and second inequalities follow from Eq. (15) and
+Eq. (17), respectively. Since the value of Eu (u) is bounded
+from below, Eq. (18) indicates that the convergence of our
+iterative scheme is theoretically guaranteed.
+The above optimization procedure is iteratively per-
+formed N times to get the output uN . In all our experiments,
+we set u0 = f , which is able to produce promising results in
+each application. Our optimization procedure is summarized
+in Algorithm 1.
+
+Property Analysis
+
+With different parameter settings, the strong ﬂexibility of
+hT (·) makes our model able to achieve various smoothing
+behaviors. First, we show that some classical approaches can
+be viewed as special cases of our model. For example, by
+
+setting ad = bd > Im , as = , bs > Im , α = 0, rd =
+
+0, rs = 1, our model is an approximation of the TV model
+(Rudin, Osher, and Fatemi 1992) which is a representative
+edge-preserving smoothing operator. If we set α = 0.2, g =
+f with other parameters the same as above, then the ﬁrst iter-
+ation of Algorithm 1 will be the WLS smoothing (Farbman
+et al. 2008) which performs well in handling gradient rever-
+sals and halos in image detail enhancement and HDR tone
+mapping. With parameters ad = , bd > Im , as = , bs >
+Im , α = 0, rd = 0, rs = 1, our model can yield very close
+smoothing natures as the TV-L1 model (Buades et al. 2010)
+which is classical for structure-preserving smoothing.
+For different kinds of applications, our model can pro-
+duce better results than the special cases mentioned above.
+To be convenient, we ﬁrst start with the tasks in the fourth
+group which require structure-preserving smoothing. For
+these tasks, the parameters are set as ad = , bd > Im , as =
+
+, bs > Im , rd = rs , α = 0.5, g = f . This parame-
+
+ter setting has the following two advantages: ﬁrst, the set-
+
+ting ad = , bd > Im , as = , bs > Im enables our
+
+model to have the structure-preserving property similar to
+that of the TV-L1 model; second, the guidance weight with
+α = 0.5, g = f can make our model to obtain sharper edges
+in the results than the TV-L1 model does. We illustrate this
+with 1D smoothing results in Fig. 3(a) and (b). Fig. 6(b) and
+(c) further show a comparison of image texture removal re-
+sults. As shown in the ﬁgure, both the TV-L1 model and
+our model can properly remove the small textures, however,
+edges in our result are much sharper than that in the result of
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+(f)
+
+Figure 3: 1D signal with structures of different scales and amplitudes. Smoothing result of (a) TV-L1 smoothing (Buades et al.
+2010), (c) WLS (Farbman et al. 2008), (e) SD ﬁlter (Ham, Cho, and Ponce 2015), our results in (b), (d) and (f).
+
+(a)
+
+(b)
+
+(c)
+
+Figure 4: Image detail enhancement results of different approaches. (a) Input image. Result of (b) WLS (Farbman et al. 2008)
+and (c) our method. The upper parts of each close-up in (b) and (c) correspond to the patches in the smoothed image.
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+(f)
+
+Figure 5: Clip-art compression artifacts removal results of different approaches. (a) Input image. (b) Our result. Close-ups of (c)
+input image and results of (d) SD ﬁlter (Ham, Cho, and Ponce 2015), (e) our method with the structure-preserving parameter
+setting, (f) our method with the edge-preserving and structure-preserving parameter setting.
+
+(a)
+
+(b)
+
+(c)
+
+Figure 6: Texture smoothing results of different approaches.
+(a) Input image. Result of (b) TV-L1 smoothing (Buades et
+al. 2010), and (e) our method.
+
+the TV-L1 model. The typical values for rd = rs are 1 ∼ 3
+depending on the texture size. λ is usually smaller than 1.
+Larger rd , rs , λ can lead larger structures to be removed. The
+iteration number is set as N = 10.
+When dealing with image detail enhancement and HDR
+tone mapping in the ﬁrst group, one way is to set the pa-
+rameters so that our model can perform WLS smoothing. In
+contrast, we can further make use of the structure-preserving
+property of our model to produce better results. The param-
+eters are set as follows: ad = , bd > Im , as = , bs >
+Im , rd = rs , α = 0.2, g = f . This kind of parameter set-
+ting is based on the following observation in our experi-
+ments: when we adopt N = 1 and set λ to a large value,
+the amplitudes of different structures will decrease at differ-
+
+ent rates, i.e., the amplitudes of small structures can have a
+larger decrease than the large ones, as illustrated in Fig. 3(d).
+At the same time, edges are neither blurred nor sharpened.
+This kind of smoothing behavior is desirable for image de-
+tail enhancement and HDR tone mapping. As a comparison,
+Fig. 3(c) shows the smoothing result of the WLS smoothing.
+As can be observed from the ﬁgures, our method can bet-
+ter preserve the edges (see the bottom of the 1D signals in
+Fig. 3(c) and (d)). Fig. 4(b) and (c) further show a compari-
+son of image detail enhancement results. We ﬁx rd = rs = 2
+and vary λ to control the smoothing strength. λ for the tasks
+in the ﬁrst group is usually much larger than that for the
+ones in the fourth group, for example, the result in Fig. 4(c)
+is generated with λ = 20.
+To sharpen edges that is required by the tasks in the sec-
+ond and the third groups, we can set bs < Im in the smooth-
+ness term. In addition, we further set other parameters as
+
+ad = , bd < Im , as = . The truncation bd < Im in the
+
+data term can help our model to be robust against the out-
+liers in the input image, for example, the noise in the no ﬂash
+image and low-quality depth map. The truncation bs < Im
+in the smoothness term can enable our model to be an edge-
+preserving one. By setting ad = as = , our model can fur-
+ther enjoy the structure-preserving property. With both edge-
+preserving and structure-preserving smoothing natures, our
+model has the ability to preserve large structures with weak
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+(f)
+
+Figure 7: HDR tone mapping results of different approaches. Result of (a) BF (Tomasi and Manduchi 1998), (b) GF (He, Sun,
+and Tang 2013), (c) L0 norm smoothing (Xu et al. 2011), (d) WLS (Farbman et al. 2008), (e) SG-WLS (Liu et al. 2017a) and
+(f) our method.
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+(f)
+
+Figure 8: Clip-art compression artifacts removal results of different methods. (a) Input compressed image. Result of (b) the
+approach proposed by Wang et al. (Wang, Wong, and Heng 2006), (c) L0 norm smoothing (Xu et al. 2011), (d) region fusion
+approach (Nguyen and Brown 2015), (e) BTF (Cho et al. 2014) and (f) our method.
+
+edges and small structures with strong edges at the same
+time, which is challenging but is of practical importance.
+Fig. 5(a) illustrates this kind of case with an example of
+clip-art compression artifacts removal: both the thin black
+circle around the “wheel” and the gray part in the center of
+the “wheel” should be preserved. The challenge lies on two
+facts. On one hand, if we perform edge-preserving smooth-
+ing, the gray part will be removed because the correspond-
+ing edge is weak. Fig. 5(d) shows the result of the SD ﬁlter
+(Ham, Cho, and Ponce 2015). The SD ﬁlter can properly
+preserve the thin black circle and sharpen the edges thanks
+to the adopted Welsch’s penalty function, however, it fails to
+preserve the weak edge between the black part and the gray
+part. On the other hand, if we adopt structure-preserving
+smoothing, then the thin black circle will be smoothed due
+to its small structure size. Fig. 5(e) shows the corresponding
+result of our method with the structure-preserving parame-
+ter setting described above. In contrast, our method with the
+edge-preserving and structure-preserving parameter setting
+can preserve both these two parts and sharpen the edges,
+as shown in Fig. 5(f). Fig. 3(e) and (f) also show a com-
+parison of the SD ﬁlter and our method with 1D smoothing
+results. We ﬁx α = 0.5, rd = rs , N = 10 for the tasks
+in both the second and the third groups. We empirically set
+
+bd = bs = 0.05Im ∼ 0.2Im and rd = rs = 1 ∼ 5 depend-
+
+ing on the applied task and the input noise level.
+
+The structure inconsistency issue in the third group can
+also be easily handled by our model. Note that µs
+Eq. (11) is computed with the smoothed image in each it-
+
+i,j in
+
+eration, as formulated in Eq. (10), it thus can reﬂect the in-
+herent natures of the smoothed image. The guidance weight
+ωi,j can provide additional structural information from the
+guidance image g . This means that µs
+i,j and ωi,j can com-
+plement each other. In fact, the equivalent guidance weight
+of Eq. (11) in each iteration is µs
+i,j ωi,j , which can reﬂect the
+property of both the smoothed image and the guidance im-
+age. In this way, it can properly handle the structure incon-
+sistency problem and avoid blurring edges and texture copy
+artifacts. Similar ideas were also adopted in (Ham, Cho, and
+Ponce 2015; Liu et al. 2017b).
+
+Applications and Experimental Results
+
+Our method is applied to various tasks in the ﬁrst to the
+fourth groups to validate the effectiveness. Comparisons
+with the state-of-the-art approaches in each application are
+also presented. Due to the limited space, we only show ex-
+perimental results of four applications.
+Our experiments are performed on a PC with an Intel Core
+i5 3.4GHz CPU (one thread used) and 8GB memory. For an
+RGB image of size 800 × 600 and N = 10 in Algorithm
+
+1, the running time is 10.04/25.09/43.11/69.82/96.73 sec-
+
+onds in MATLAB for rd = rs = 1/2/3/4/5. Note that
+as described in the property analysis section, the value of
+rd = rs is smaller than 3 in most cases except for guided
+depth map upsampling. For the tasks in the ﬁrst group which
+require N = 1, the computational cost could be further re-
+duced to 1
+10 of that mentioned above.
+HDR tone mapping is a representative task in the ﬁrst
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+(f)
+
+(g)
+
+Figure 9: Guided depth map upsampling results of simulated ToF data. (a) Guidance color image. (b) Ground-truth depth map.
+Result of (c) the approach proposed by Gu et al. (Gu et al. 2017b), (d) SGF (Zhang et al. 2015), (e) SD ﬁlter (Ham, Cho, and
+Ponce 2015), (f) Park et al. (Park et al. 2011) and (g) our method.
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+(f)
+
+(g)
+
+Figure 10: Guided depth upsampling results of real ToF data. (a) Guidance intensity image. (b) Ground-truth depth map. Result
+of (c) the approach proposed by Gu et al. (Gu et al. 2017b), (d) TGV (Ferstl et al. 2013), (e) SD ﬁlter (Ham, Cho, and Ponce
+2015), (f) SGF (Zhang et al. 2015) and (g) our method.
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+(f)
+
+(g)
+
+Figure 11: Image texture removal results. (a) Input image. Result of (b) JCAS (Gu et al. 2017a), (c) RTV (Xu et al. 2012), (d)
+FCN based approach (Chen, Xu, and Koltun 2017), (e) muGIF (Guo et al. 2018) (f) BTF (Cho et al. 2014) and (g) our method.
+
+group. It requires to decompose the input image into a base
+layer and a detail layer through edge-preserving smoothing.
+The challenge of this task is that if the edges are sharp-
+ened by the smoothing procedure, it will result in gradi-
+ent reversals, and halos will occur if the edges are blurred.
+Fig. 7 shows the tone mapping results using different edge-
+preserving smoothing operators. The results of BF (Tomasi
+and Manduchi 1998) and GF (He, Sun, and Tang 2013) con-
+tain clear halos around the picture frames and the light ﬁx-
+ture, as shown in Fig. 7(a) and (b). This is due to their lo-
+cal smoothing natures where strong smoothing can also blur
+salient edges (Farbman et al. 2008; He, Sun, and Tang 2013).
+The L0 norm smoothing (Xu et al. 2011) can properly elim-
+inate halos, but there are gradient reversals in its result as
+illustrated in Fig. 7(c). This is because the L0 smoothing is
+prone to sharpen salient edges. The WLS (Farbman et al.
+2008) and SG-WLS (Liu et al. 2017a) smoothing perform
+
+well in handling gradient reversals and halos in most cases.
+However, there are slight halos in their results as illustrated
+in the left close-up in Fig. 7(d) and (e). These artifacts are
+properly eliminated in our results.
+
+Clip-art compression artifacts removal. Clip-art im-
+
+ages are piecewise constant with sharp edges. When they
+are compressed in JPEG format with low quality, there will
+be edge-related artifacts, and the edges are usually blurred
+as shown in Fig. 8(a). Therefore, when removing the com-
+pression artifacts, the edges should also be sharpened in
+the restored image. We thus classify this task into the sec-
+ond group. The approach proposed by Wang et al. (Wang,
+Wong, and Heng 2006) can seldom handle heavy compres-
+sion artifacts as shown in Fig. 8(b). The L0 norm smoothing
+fails to preserve weak edges as shown in Fig. 8(c). The re-
+gion fusion approach (Nguyen and Brown 2015) is able to
+produce results with sharpened edges, however, it also en-
+
+Table 1: Quantitative comparison on the noisy simulated ToF data. Results are evaluated in MAE. The best results are in bold.
+The second best results are underlined.
+
+Art
+
+8× 16× 2×
+
+Book
+
+8× 16× 2×
+
+Dolls
+
+8× 16× 2×
+
+Laundry
+
+8× 16× 2×
+
+Moebius
+
+8× 16× 2×
+
+Reindeer
+
+8× 16×
+
+TGV(Ferstl et al. 2013)
+AR(Yang et al. 2014)
+SG-WLS(Liu et al. 2017a)
+FGI(Li et al. 2016b)
+SGF(Zhang et al. 2015)
+SD Filter(Ham, Cho, and Ponce 2015)
+FBS(Barron and Poole 2016)
+muGIF(Guo et al. 2018)
+Park et al.(Park et al. 2011)
+Shen et al.(Shen et al. 2015b)
+Gu et al.(Gu et al. 2017b)
+Li et al.(Li et al. 2016a)
+Ours
+
+2×
+
+0.8
+1.17
+1.26
+0.9
+1.42
+1.16
+1.93
+1.00
+1.66
+1.79
+
+0.61
+
+-
+0.69
+
+4×
+
+1.21
+1.7
+1.9
+1.37
+1.85
+1.64
+2.39
+1.26
+2.47
+2.21
+1.46
+3.77
+
+1.07
+
+2.01
+2.93
+3.07
+2.46
+3.06
+2.88
+3.29
+2.00
+3.44
+3.2
+2.98
+4.49
+
+1.65
+
+4.59
+5.32
+-
+4.89
+5.55
+5.52
+5.05
+3.46
+5.55
+5.04
+5.09
+6.29
+
+2.96
+
+0.61
+0.98
+0.82
+0.66
+0.84
+0.86
+1.42
+0.73
+1.19
+1.34
+
+0.52
+
+-
+0.55
+
+4×
+
+0.88
+1.22
+1.12
+0.85
+1.11
+1.1
+1.55
+0.89
+1.47
+1.69
+0.95
+3.21
+
+0.81
+
+1.21
+1.74
+1.73
+1.23
+1.76
+1.57
+1.76
+1.35
+2.06
+2.25
+1.87
+3.28
+
+1.22
+
+2.19
+2.89
+-
+1.96
+3.03
+2.68
+2.48
+2.15
+3.1
+3.13
+2.98
+3.79
+
+1.78
+
+0.66
+0.97
+0.87
+0.74
+0.87
+1.04
+1.33
+0.85
+1.19
+1.37
+0.63
+-
+
+0.62
+
+4×
+
+0.95
+1.21
+1.11
+0.95
+1.2
+1.27
+1.45
+1.04
+1.56
+1.58
+1.02
+3.19
+
+0.9
+
+1.38
+1.71
+1.81
+1.41
+1.88
+1.73
+1.69
+1.50
+2.15
+2.05
+1.89
+3.28
+
+1.27
+
+2.88
+2.74
+-
+2.13
+3.26
+2.76
+2.26
+2.45
+3.04
+2.85
+2.92
+3.79
+
+1.84
+
+0.61
+1
+0.86
+0.71
+0.74
+0.96
+1.32
+0.64
+1.34
+1.49
+
+0.58
+
+-
+0.61
+
+4×
+
+0.87
+
+1.31
+1.17
+0.99
+1.1
+1.25
+1.49
+
+0.87
+
+1.73
+1.74
+1.14
+3.34
+0.89
+
+1.36
+1.97
+2
+1.59
+1.96
+1.94
+1.77
+1.36
+2.41
+2.34
+2.21
+3.61
+
+1.28
+
+3.06
+3.43
+-
+2.67
+3.63
+3.54
+2.67
+2.57
+3.85
+3.5
+3.58
+4.45
+
+2.12
+
+0.57
+0.95
+0.82
+0.67
+0.81
+0.93
+1.16
+0.67
+1.2
+1.34
+0.53
+-
+
+0.51
+
+4×
+
+0.77
+1.2
+1.08
+0.82
+1.13
+1.14
+1.29
+0.85
+1.5
+1.56
+0.96
+3.23
+
+0.75
+
+1.23
+1.79
+1.79
+1.2
+1.84
+1.68
+1.61
+1.35
+2.13
+2.09
+1.89
+3.35
+
+1.12
+
+2.74
+2.82
+-
+1.87
+3.16
+2.75
+2.44
+2.25
+2.95
+2.99
+2.99
+3.92
+
+1.71
+
+0.61
+1.07
+0.9
+0.75
+0.93
+1.05
+1.63
+0.78
+1.26
+1.29
+
+0.52
+
+-
+0.56
+
+4×
+
+0.85
+
+1.3
+1.32
+0.94
+1.25
+1.31
+1.76
+0.94
+1.65
+1.55
+1.07
+3.39
+0.87
+
+1.3
+2.03
+2.01
+1.55
+2.03
+1.99
+2.01
+1.39
+2.46
+2.19
+2.17
+3.65
+
+1.27
+
+3.41
+3.34
+-
+2.73
+3.67
+3.43
+2.69
+2.52
+3.66
+3.33
+3.59
+4.54
+
+2.08
+
+Table 2: Quantitative comparison on real ToF dataset. The
+errors are calculated as MAE to the measured ground-truth
+in mm. The best results are in bold. The second best results
+are underlined.
+
+Bicubic
+GF(He, Sun, and Tang 2013)
+SD Filter(Ham, Cho, and Ponce 2015)
+SG-WLS(Liu et al. 2017a)
+Shen et al.(Shen et al. 2015b)
+Park et al.(Park et al. 2011)
+TGV(Ferstl et al. 2013)
+AR(Yang et al. 2014)
+Gu et al.(Gu et al. 2017b)
+SGF(Zhang et al. 2015)
+FGI(Li et al. 2016b)
+FBS(Barron and Poole 2016)
+Li et al.(Li et al. 2016a)
+Ours
+
+Books
+Devil
+Shark
+16.23mm 17.78mm 16.66mm
+15.55mm
+16.1mm
+17.1mm
+13.47mm 15.99mm 16.18mm
+14.71mm 16.24mm 16.51mm
+15.47mm 16.18mm 17.33mm
+14.31mm 15.36mm 15.88mm
+12.8mm
+14.97mm 15.53mm
+14.37mm 15.41mm 16.27mm
+13.87mm 15.36mm 15.88mm
+13.57mm 15.74mm 16.21mm
+14.21mm 16.43mm 16.37mm
+15.93mm 17.21mm 16.33mm
+14.33mm 15.09mm 15.82mm
+
+12.49mm 14.51mm 15.02mm
+
+hances the blocky artifacts along strong edges as highlighted
+in Fig. 8(d). The edges in the result of BTF (Cho et al. 2014)
+are blurred in Fig. 8(e). Our result is illustrated in Fig. 8(f)
+with edges sharpened and compression artifacts removed.
+
+Guided depth map upsampling belongs to the guided
+
+image ﬁltering in the third group. The RGB guided im-
+age can provide additional structural information to restore
+and sharpen the depth edges. The challenge of this task
+is the structure inconsistency between the depth map and
+the RGB guidance image, which can cause blurring depth
+edges and texture copy artifacts in the upsampled depth
+map. We test our method on the simulated dateset provided
+in (Yang et al. 2014). Fig. 9 shows the visual comparison
+between our result and the results of the recent state-of-
+the-art approaches. Our method shows better performance
+in preserving sharp depth edges and avoiding texture copy
+artifacts. Tab. 1 also shows the quantitative evaluation on
+the results of different methods. Following the measurement
+used in (Guo et al. 2018; Li et al. 2016b; Liu et al. 2017a;
+Yang et al. 2014), the evaluation is measured in terms of
+mean absolute errors (MAE). As Tab. 1 shows, our method
+can achieve the best or the second best performance among
+all the compared approaches.
+We further validate our method on the real data introduced
+by Ferstl et al. (Ferstl et al. 2013). The real dataset contains
+three low-resolution depth maps captured by a ToF depth
+camera and the corresponding highly accurate ground-truth
+depth maps captured with structured light. The upsampling
+
+factor for the real dataset is ∼ 6.25×. The visual comparison
+in Fig. 10 and the quantitative comparison in Tab. 2 shows
+that our method can outperform the compared methods and
+achieve state-of-the-art performance.
+Image texture removal belongs to the tasks in the fourth
+group. It aims at extracting salient meaningful structures
+while removing small complex texture patterns. The chal-
+lenge of this task is that it requires structure-preserving
+smoothing rather than the edge-preserving in the above
+tasks. Fig. 11(a) shows a classical example of image tex-
+ture removal: the small textures with strong edges should
+be smoothed out while the salient structures with weak
+edges should be preserved. Fig. 11(b)∼(f) show the results
+of the recent state-of-the-art approaches. The joint convo-
+lutional analysis and synthesis sparse (JCAS) model (Gu et
+al. 2017a) can well remove the textures, but the resulting
+edges are also blurred. The RTV method (Xu et al. 2012),
+muGIF (Guo et al. 2018), BTF (Cho et al. 2014) and FCN
+based approach (Chen, Xu, and Koltun 2017) cannot com-
+pletely remove the textures, in addition, the weak edges of
+the salient structures have also been smoothed out in their
+results. Our method can both preserve the weak edges of the
+salient structures and remove the small textures.
+
+Conclusion
+
+We propose a non-convex non-smooth optimization frame-
+work for edge-preserving and structure-preserving image
+smoothing. We ﬁrst introduce the truncated Huber penalty
+function which shows strong ﬂexibility. Then a robust
+framework is presented. When combined with the ﬂexibil-
+ity of the truncated Huber penalty function, our framework
+is able to achieve different and even contradictive smoothing
+behaviors using different parameter settings. This is differ-
+ent from most previous approaches of which the inherent
+smoothing natures are usually ﬁxed. We further propose an
+efﬁcient numerical solution to our model and prove its con-
+vergence theoretically. Comprehensive experimental results
+in a number of applications demonstrate the effectiveness of
+our method.
+
+Acknowledgement
+
+This paper is partly supported by NSFC, China (No.
+U1803261, 61977046), Key Research and Development
+Program of Sichuan Province (No. 2019YFG0409) and
+National Key Research and Development Project (No.
+2018AAA0100702)
+
+References
+
+In
+
+Barron, J. T., and Poole, B. 2016. The fast bilateral solver.
+ECCV, 617–632. Springer.
+Buades, A.; Le, T. M.; Morel, J.-M.; Vese, L. A.; et al. 2010. Fast
+cartoon+ texture image ﬁlters. TIP 19(8):1978–1986.
+Chan, T. F., and Esedoglu, S. 2005. Aspects of total variation
+regularized l 1 function approximation. SIAM Journal on Applied
+Mathematics 65(5):1817–1837.
+Chen, Q.; Xu, J.; and Koltun, V. 2017. Fast image processing with
+fully-convolutional networks. In ICCV, volume 9, 2516–2525.
+Cho, H.; Lee, H.; Kang, H.; and Lee, S. 2014. Bilateral texture
+ﬁltering. ToG 33(4):128.
+Durand, F., and Dorsey, J. 2002. Fast bilateral ﬁltering for the
+display of high-dynamic-range images. In ToG, volume 21, 257–
+266. ACM.
+Fan, Q.; Yang, J.; Wipf, D.; Chen, B.; and Tong, X. 2018. Image
+smoothing via unsupervised learning.
+In SIGGRAPH Asia 2018
+Technical Papers, 259. ACM.
+Fan, Q.; Chen, D.; Yuan, L.; Hua, G.; Yu, N.; and Chen, B. 2019.
+A general decoupled learning framework for parameterized image
+operators. IEEE transactions on pattern analysis and machine in-
+telligence.
+Farbman, Z.; Fattal, R.; Lischinski, D.; and Szeliski, R. 2008.
+Edge-preserving decompositions for multi-scale tone and detail
+manipulation. In ToG, volume 27, 67. ACM.
+Fattal, R.; Agrawala, M.; and Rusinkiewicz, S. 2007. Multiscale
+shape and detail enhancement from multi-light image collections.
+In ToG, volume 26, 51. ACM.
+Ferstl, D.; Reinbacher, C.; Ranftl, R.; R ¨uther, M.; and Bischof, H.
+2013. Image guided depth upsampling using anisotropic total gen-
+eralized variation. In ICCV, 993–1000.
+Gastal, E. S., and Oliveira, M. M. 2011. Domain transform for
+edge-aware image and video processing. In ToG, volume 30, 69.
+ACM.
+Gastal, E. S., and Oliveira, M. M. 2012. Adaptive manifolds for
+real-time high-dimensional ﬁltering. ToG 31(4):33.
+Geman, D., and Yang, C. 1995. Nonlinear image recovery with
+half-quadratic regularization. TIP 4(7):932–946.
+Gu, S.; Meng, D.; Zuo, W.; and Zhang, L. 2017a. Joint convolu-
+tional analysis and synthesis sparse representation for single image
+layer separation. In ICCV, 1717–1725. IEEE.
+Gu, S.; Zuo, W.; Guo, S.; Chen, Y.; Chen, C.; and Zhang, L. 2017b.
+Learning dynamic guidance for depth image enhancement.
+In
+CVPR.
+Guo, X.; Li, Y.; Ma, J.; and Ling, H. 2018. Mutually guided image
+ﬁltering. TPAMI.
+Ham, B.; Cho, M.; and Ponce, J. 2015. Robust image ﬁltering
+using joint static and dynamic guidance. In CVPR, 4823–4831.
+He, K.; Sun, J.; and Tang, X. 2013. Guided image ﬁltering. TPAMI
+35(6):1397–1409.
+Holland, P. W., and Welsch, R. E. 1977. Robust regression using
+iteratively reweighted least-squares. Communications in Statistics-
+theory and Methods 6(9):813–827.
+Huber, P. J., et al. 1964. Robust estimation of a location parameter.
+The annals of mathematical statistics 35(1):73–101.
+Karacan, L.; Erdem, E.; and Erdem, A. 2013. Structure-preserving
+image smoothing via region covariances. ToG 32(6):176.
+Kopf, J.; Cohen, M. F.; Lischinski, D.; and Uyttendaele, M. 2007.
+Joint bilateral upsampling. In ToG, volume 26, 96. ACM.
+
+Lanckriet, G. R., and Sriperumbudur, B. K. 2009. On the conver-
+gence of the concave-convex procedure. In NeurIPS, 1759–1767.
+Li, Y.; Huang, J.-B.; Ahuja, N.; and Yang, M.-H. 2016a. Deep joint
+image ﬁltering. In ECCV, 154–169. Springer.
+Li, Y.; Min, D.; Do, M. N.; and Lu, J. 2016b. Fast guided global
+interpolation for depth and motion. In ECCV, 717–733. Springer.
+Liu, W.; Chen, X.; Shen, C.; Liu, Z.; and Yang, J. 2017a. Semi-
+global weighted least squares in image ﬁltering. In ICCV, 5861–
+5869.
+Liu, W.; Chen, X.; Yang, J.; and Wu, Q. 2017b. Robust color
+guided depth map restoration. TIP 26(1):315–327.
+Nguyen, R. M., and Brown, M. S. 2015. Fast and effective l0
+gradient minimization by region fusion. In ICCV, 208–216.
+Nikolova, M., and Ng, M. K. 2005. Analysis of half-quadratic min-
+imization methods for signal and image recovery. SIAM Journal on
+Scientiﬁc Computing 27(3):937–966.
+Nikolova, M. 2004. A variational approach to remove outliers
+and impulse noise. Journal of Mathematical Imaging and Vision
+20(1-2):99–120.
+Park, J.; Kim, H.; Tai, Y.-W.; Brown, M. S.; and Kweon, I. 2011.
+High quality depth map upsampling for 3d-tof cameras. In ICCV,
+1623–1630. IEEE.
+Petschnigg, G.; Szeliski, R.; Agrawala, M.; Cohen, M.; Hoppe, H.;
+and Toyama, K. 2004. Digital photography with ﬂash and no-ﬂash
+image pairs. ToG 23(3):664–672.
+Rudin, L. I.; Osher, S.; and Fatemi, E. 1992. Nonlinear total vari-
+ation based noise removal algorithms. Physica D: nonlinear phe-
+nomena 60(1-4):259–268.
+Shen, X.; Yan, Q.; Xu, L.; Jia, J.; et al. 2015a. Multispectral joint
+image restoration via optimizing a scale map. TPAMI (1):1–1.
+Shen, X.; Zhou, C.; Xu, L.; and Jia, J. 2015b. Mutual-structure for
+joint ﬁltering. In ICCV, 3406–3414.
+Tomasi, C., and Manduchi, R. 1998. Bilateral ﬁltering for gray and
+color images. In ICCV, 839–846. IEEE.
+Wang, Y.; Yang, J.; Yin, W.; and Zhang, Y. 2008. A new alternat-
+ing minimization algorithm for total variation image reconstruc-
+tion. SIAM Journal on Imaging Sciences 1(3):248–272.
+Wang, G.; Wong, T.-T.; and Heng, P.-A. 2006. Deringing cartoons
+by image analogies. ToG 25(4):1360–1379.
+Xu, L.; Lu, C.; Xu, Y.; and Jia, J. 2011. Image smoothing via l 0
+gradient minimization. In ToG, volume 30, 174. ACM.
+Xu, L.; Yan, Q.; Xia, Y.; and Jia, J. 2012. Structure extraction from
+texture via relative total variation. ToG 31(6):139.
+Xu, L.; Zheng, S.; and Jia, J. 2013. Unnatural l0 sparse represen-
+tation for natural image deblurring. In CVPR, 1107–1114.
+Yang, J.; Ye, X.; Li, K.; Hou, C.; and Wang, Y. 2014. Color-guided
+depth recovery from rgb-d data using an adaptive autoregressive
+model. TIP 23(8):3443–3458.
+Zhang, Q.; Shen, X.; Xu, L.; and Jia, J. 2014. Rolling guidance
+ﬁlter. In ECCV, 815–830. Springer.
+Zhang, F.; Dai, L.; Xiang, S.; and Zhang, X. 2015. Segment
+graph based image ﬁltering: fast structure-preserving smoothing.
+In ICCV, 361–369.
+Zhang, Z.; Kwok, J. T.; and Yeung, D.-Y. 2004. Surrogate maxi-
+mization/minimization algorithms for adaboost and the logistic re-
+gression model. In ICML, 117. ACM.
+
+

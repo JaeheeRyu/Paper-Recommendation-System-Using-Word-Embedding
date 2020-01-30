@@ -1,0 +1,1256 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+A
+
+M
+
+.
+
+s
+
+c
+
+[
+
+5
+v
+8
+2
+6
+1
+1
+
+.
+
+9
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+α α -Rank: Practically Scaling α -Rank through
+Stochastic Optimisation
+
+Yaodong Yang* 1 , Rasul Tutunov∗ 1 , Phu Sakulwongtana1 , and Haitham Bou Ammar1,*
+
+1Huawei Technologies Research & Development U.K., London, U.K.
+*haitham.ammar@huawei.com
+
+ABSTRACT
+
+Recently, α -Rank1 , a graph-based algorithm, has been proposed as a solution to ranking joint policy proﬁles in large scale
+multi-agent systems. α -Rank claimed tractability through a polynomial time implementation with respect to the total number
+of pure strategy proﬁles. Here, we note that inputs to the algorithm were not clearly speciﬁed in the original presentation. As
+such, we deem complexity claims as not grounded without a formal speciﬁcation of the inputs. Using standard deﬁnitions from
+complexity theory, we demonstrate exponential complexity in terms of the number of agents and conjecture solving α -Rank is,
+in fact, NP-hard.
+After thorough discussions with the authors, we were suggested that the input to α -Rank can be an exponentially-sized payoff
+matrix; a claim promised to be clariﬁed in subsequent manuscripts. Even though α -Rank exhibits a polynomial-time solution with
+respect to such an input, we, fur ther, reﬂect additional critical problems. We demonstrate that due to the need of constructing
+an exponentially large Markov chain, α -Rank is infeasible beyond a small ﬁnite number of agents. We ground these claims by
+adopting amount of dollars spent as a non-refutable evaluation metric. Precisely, we demonstrate that with a one trillion dollars
+budget, α -Rank can only handle tens of agents. Realising such scalability issues, we present a stochastic implementation of
+α -Rank with a double oracle mechanism allowing for reductions in joint strategy spaces. Our method, named by α α -Rank, does
+not need to save exponentially-large transition matrices, and can terminate early by specifying a precision parameter. Although
+theoretically our method exhibits similar worst-case complexity guarantees compared to the default implementation of α -Rank,
+it allows us, for the ﬁrst time, to practically conduct large-scale multi-agent evaluation experiments. Our results demonstrate
+that on 104 × 104 randomly generated matrices, we achieve 1000x speed reduction compared to α -Rank. Fur thermore, we also
+show successful results on large joint strategy proﬁles with a maximum size in the order of O (225 ) (≈ 33 million joint strategies)
+– a setting not evaluable using α -Rank with reasonable computational budget.
+
+1 Introduction
+
+Scalable policy evaluation and learning have been long-standing challenges in multi-agent reinforcement learning (MARL)
+with two difﬁculties obstructing progress. First, joint-strategy spaces exponentially explode when a large number of strategic
+decision-makers is considered, and second, the underlying game dynamics may exhibit cyclic behaviour (e.g. the game of
+Rock-Paper-Scissor) rendering an appropriate evaluation criteria non-trivial. Focusing on the second challenge, much work
+in multi-agent systems followed a game-theoretic treatment proposing ﬁxed-points, e.g., Nash2 equilibrium, as potentially
+valid evaluation metrics. Though appealing, such measures are normative only when prescribing behaviours of perfectly
+rational agents – an assumption rarely met in reality3–6 . In fact, many game dynamics have been proven not converge to any
+ﬁxed-point equilibria7, 8 , but rather to limit cycles9, 10 . Apart from these challenges, solving for a Nash equilibrium even for
+“simple” settings, e.g. two-player games is known to be PPAD-complete11 – a demanding complexity class when it comes to
+computational requirements.
+To address some of the above limitations,1 recently proposed α -Rank as a graph-based game-theoretic solution to multi-
+agent evaluation. α -Rank adopts Markov Conley Chains to highlight the presence of cycles in game dynamics, and attempts
+to compute stationary distributions as a mean for strategy proﬁle ranking. In a novel attempt, the authors reduce multi-agent
+evaluation to computing a stationary distribution of a Markov chain. Namely, consider a set of N agents each having a strategy
+pool of size k, a Markov chain is, ﬁrst, deﬁned over the graph of joint strategy proﬁles with a transition matrix TTT ∈ RkN ×kN , and
+then a stationary distribution ννν ∈ RkN is computed solving: TTT ννν = ννν . The probability mass in ννν then represents the ranking of
+joint-strategy proﬁle.
+Extensions of α -Rank have been developed on various instances.12 adapted α -Rank to model games with incomplete
+information.13 combined α -Rank with the policy search space oracle (PSRO)14 and claimed their method to be a generalised
+training approach for multi-agent learning. Unsurprisingly, these work inherit the same claim of tractability from α -Rank.
+
+* First two authors contributed equally.
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+Figure 1. Example of population based evaluation on N = 3 players (star, triangle, circle) each with |s| = 3 strategies (denoted
+by the colours) and m = 5 copies. a) Each population obtains a ﬁtness value Pi depending on the strategies chosen, b) one
+mutation strategy (red star) occurs, and c) the population either selects the original strategy, or being ﬁxated by the mutation
+strategy.
+
+For example, the abstract in13 reads “α -Rank, which is unique (thus faces no equilibrium selection issues, unlike Nash) and
+tractable to compute in general-sum, many-player settings.”
+In this work, we contribute to reﬁne the claims made in α -Rank dependent on its input type. We thoroughly argue that
+α -Rank exhibits a prohibitive computational and memory bottleneck that is hard to remedy even if pay-off matrices were
+provided as inputs. We measure such a restriction using money spent as a non-refutable metric to assess α -Rank’s validity scale.
+With this in mind, we then present a stochastic solver that we title α α -Rank as a scalable and memory efﬁcient alternative. Our
+method reduces memory constraints, and makes use of the oracle mechanism for reductions in joint strategy spaces. This, in
+turn, allows us to run large-scale multi-player experiments, including evaluation on self-driving cars and Ising models where
+the maximum size involves tens of millions of joint strategies.
+
+2 A Review of α -Rank
+
+In α -Rank, strategy proﬁles of N agents are evaluated through an evolutionary process of mutation and selection. Initially,
+agent populations are constructed by creating multiple copies of each learner i ∈ {1, . . . , N } assuming that all agents (in one
+population) execute the same uniﬁed policy. With this, α -Rank then simulates a multi-agent game played by randomly sampled
+learners from each population. Upon game termination, each participating agent receives a payoff to be used in policy mutation
+and selection after its return to the population. Here, the agent is faced with a probabilistic choice between switching to the
+mutation policy, continuing to follow its current policy, or randomly selecting a novel policy (other than the previous two) from
+the pool. This process repeats with the goal of determining an evolutionary dominant proﬁle that spreads across the population
+strategies of size ki . We refer to the strategy set for agent i by Si = (cid:8)πi,1 , . . . , πi,ki
+of agents. Fig. 1 demonstrates a simple example of a three-player game, each playing three strategies.
+(cid:9), ki = |Si |, with πi, j : X × Ai → [0, 1]
+Mathematical Formulation: To formalise α -Rank, we consider N agents each, denoted by i, having access to a set of
+(cid:9), with πi, ji ∈ Si and ji ∈ {1, . . . , ki }. We assume k = k1 = . . . = kN hereafter.
+representing the jt h allowed policy of the learner. X represents the set of states and Ai is the set of actions for agent i. A
+joint strategy proﬁle is a set of policies for all participating agents in the joint strategy set, i.e., Sjoint = S1 × S2 × · · · × SN :
+To evaluate performance, we assume each agent is additionally equipped with a payoff (reward) function Pi : Sjoint → R+ .
+Crucially, the domain of Pi is the pool of joint strategies so as to accommodate the effect of other learners on the it h player’s
+payoff functions, i.e., Pjoint = (cid:8)P1
+(cid:1)(cid:9). After attaining payoffs from the environment, each agent returns
+performance. Finally, given a joint proﬁle πjoint , we deﬁne the corresponding joint payoff to be the collection of all individual
+to its population and faces a choice between switching the whole population to a mutation policy, exploring a novel policy, or
+
+πjoint = (cid:8)π1, j1 , ..., πN , jN
+
+(cid:0)πjoint
+
+(cid:0)πjoint
+
+(cid:1), . . . , PN
+
+2/15
+
+: {        ,        ,        }: {        ,        ,        }: {        ,        ,        }TriplewiseInteraction  (     ;     ,    )TriplewiseInteractionTriplewiseInteractionP(                     ) =;,+(b)(a)(c)  (     ;     ,    )  (     ;     ,    )  (     ;     ,    )  (     ;     ,    )  (     ;     ,    )  (     ;     ,    )  (     ;     ,    )Algorithm 1 α -Rank (see Section 3.1.1 in1 )
+1: (Unspeciﬁed) Inputs: Sjoint , Multi-agent Simulator
+2: Listing all possible joint-strategy proﬁles, for each proﬁle, run the multi-agent simulator to get the payoff values for all
+
+players Pjoint = (cid:8)P1
+
+(cid:0)πjoint
+
+(cid:1), . . . , PN
+
+(cid:0)πjoint
+
+(cid:1)(cid:9), ∀πjoint ∈ Sjoint .
+
+3: Construct Markov chain’s transition matrix TTT by Eqn. 2.
+4: Compute the stationary distribution vvv by Eqn. 3.
+5: Rank all πjoint in vvv based on their probability masses.
+6: Outputs: The ranked list of vvv (each element refers to the time that players spend in playing that πjoint during evolution).
+
+for (cid:0)πi,a , πi,b
+
+(cid:1)
+
+∈ Si × Si ,
+
+sticking to the current one. Such a choice is probabilistic and deﬁned proportional to rewards by
+
+P(πi,a → πi,b , πππ −i ) =
+P(πi,a → πi,c , πππ −i ) =
+
+µ
+
+eαPi (πi,b ,πππ −i )
+eαPi (πi,a ,πππ −i ) + eαPi (πi,b ,πππ −i ) −
+
+µ
+
+2
+
+,
+
+, ∀πi,c ∈ Si \ {πi,a , πi,b},
+
+Ki − 2
+with µ ∈ R+ being an exploration parameter1 , πππ −i = πππ \ πi representing policies followed by other agents, and α ∈ R+ an
+ranking-intensity parameter. Large α ensures that the probability that a sub-optimal strategy overtakes a better strategy is close
+to zero.
+As noted in1 , one can relate the above switching process to a random walk on a Markov chain with states deﬁned as
+elements in Sjoint . Essentially, the Markov chain models the sink strongly connected components (SSCC) of the response graph
+associated with the game. The response graph of a game is a directed graph where each node corresponds to each joint strategy
+(cid:12)(cid:12) of Markov chain refers to the probability of one agent
+proﬁle, and directed edges if the deviating player’s new strategy is a better response to that player, and the SSCC of a directed
+graph are the (group of) nodes with no out-going edges.
+differ in only one individual strategy for the it h agent, i.e., there exists an unique agent such that πππ joint = (cid:8)πi,a , πππ −i
+(cid:9) and
+Each entry in the transition probability matrix TTT ∈ R
+switching from one policy in a relation to attained payoffs. Consider any two joint strategy proﬁles πjoint and ˆπjoint that
+ˆπjoint = (cid:8) ˆπππ i,b , πππ −i
+(cid:1) deﬁning the probability
+(cid:1), such a probability is formalised as
+that one copy of agent i with strategy πi,a invades the population with all other agents (in that population) playing ˆπi,b .
+Following16 , for Pi
+
+(cid:9) with πi,a (cid:54)= ˆπi,b , we set [TTT ]πππ joint , ˆπππ joint =
+
+(cid:1), with ρπi,a , ˆπi,b
+
+(cid:0)πππ −i
+
+(cid:0)πππ −i
+
+(cid:12)(cid:12)Sjoint
+
+(cid:12)(cid:12)Sjoint
+
+∑N
+
+l=1 (kl −1)
+
+ρπi,a , ˆπi,b
+
+(cid:12)(cid:12)×
+
+(cid:1)
+
+1
+
+(cid:0)πi,a , πππ −i
+
+(cid:0) ˆπi,b , πππ −i
+
+(cid:54)= Pi
+
+ρπi,a , ˆπi,b (πππ −i ) =
+
+1 − e−α (Pi (πi,a ,πππ −i )−Pi ( ˆπi,b ,πππ −i ))
+1 − e−mα (Pi (πi,a ,πππ −i )−Pi ( ˆπi,b ,πππ −i ))
+
+,
+
+(1)
+
+and 1
+m otherwise, with m being the size of the population. So far, we presented relevant derivations for the (πππ joint , ˆπππ joint )
+variations in joint policies involving more than two individual strategies, i.e., (cid:12)(cid:12)πππ joint \ ˆπππ joint ≥ 2(cid:12)(cid:12). Here, we set2 [TTT ]πππ joint , ˆπππ joint = 0.
+entry of the state transition matrix when exactly the it h agent differs in exactly one strategy. Having one policy change,
+however, only represents a subset of allowed variations; two more cases need to be considered. Now we restrict our attention to
+Consequently, the remaining event of self-transitions can be thus written as [TTT ]πππ joint , ˆπππ joint = 1 − ∑ ˆπππ [TTT ]πππ joint , ˆπππ . Summarising the
+above three cases, we can write the (πππ joint , ˆπππ joint )’s entry of the Markov chain’s transition matrix as:
+
+(cid:1),
+
+(cid:0)πππ −i
+
+1
+
+ρπi,a , ˆπi,b
+
+∑N
+
+l=1 (kl − 1)
+[TTT ]πππ joint , ˆπππ ,
+ˆπππ (cid:54)=πππ joint
+
+1 − ∑
+
+
+
+if |πππ joint \ ˆπππ joint | = 1,
+
+[TTT ]πππ joint , ˆπππ joint =
+
+if πππ joint = ˆπππ joint ,
+
+(2)
+
+if |πππ joint \ ˆπππ joint | ≥ 2,
+The goal in α -Rank is to establish an ordering in policy proﬁles dependent on evolutionary stability of each joint strategy. In
+other words, higher ranked strategies are these that are prevalent in populations with higher average time of survival. Formally,
+
+0,
+
+1 Please note that in the original paper µ is heuristically set to a small positive constant to ensure at maximum two varying policies per-each population.
+Theoretical justiﬁcation can be found in 15 .
+2 This assumption signiﬁcantly reduces the analysis complexity as detailed in15 .
+
+3/15
+
+such a notion can be easily derived as the limiting vector vvv = limt→∞
+[TTT ]
+vvv0 of our Markov chain when evolving from an
+initial distribution vvv0 . Knowing that the limiting vector is a stationary distribution, one can calculate in fact the solution to the
+following eigenvector problem:
+
+(cid:104)
+
+T (cid:105)t
+
+[TTT ]
+T vvv = vvv.
+
+(3)
+
+We summarised the pseudo-code of α -Rank in Algorithm 1. As the input to α -Rank is unclear and turns out to be controversial
+later, we point the readers to the original description in Section 3.1.1 of1 , and the practical implementation of α -Rank from17
+for self-judgement. In what comes next, we demonstrate that the tractability claim of α -Rank needs to be relaxed as the
+algorithm exhibits exponential time and memory complexities in number of players dependent on the input type considered.
+This, consequently, renders α -Rank inapplicable to large-scale multi-agent systems contrary to the original presentation.
+
+3 Claims & Reﬁnements
+
+Original presentation of α -Rank claims to be tractable in the sense that it runs in polynomial time with respect to the total
+number of joint-strategy proﬁles. Unfortunately, such a claim is not clear without a formal speciﬁcation of the inputs to
+Algorithm 3.1.1 in1 . In fact, we, next, demonstrate that α -Rank’s can easily exhibit exponential complexity under the input
+of N × k table, rendering it inapplicable beyond ﬁnite small number of players. We also present a conjecture stating that
+determining the top-rank joint strategy proﬁle in α -Rank is in fact NP-hard.
+
+3.1 On α -Rank’s Computational Complexity
+
+O (cid:16)
+
+Before diving into the details of our arguments, it is ﬁrst instructive to note that tractable algorithms are these that exhibit a
+worst-case polynomial running time in the size of their input18 . Mathematically, for a size I input, a polynomial time algorithm
+adheres to an O (I d ) complexity for some constant d independent of I .
+Following the presentation in Section 3.1.1 in1 , α -Rank assumes availability of a game simulator to construct a payoff
+matrix quantifying performance of joint strategy proﬁles. As such, we deem that necessary inputs for such a construction is of
+the size I = N × k, where N is the total number of agents and k is the total number of strategies per agent, where we assumed
+k = ki = k j for simplicity.
+Following the deﬁnition above, if α -Rank possesses polynomial complexity then it should attain a time proportional to
+to O (cid:0)kN (cid:1). Clearly, this result demonstrates exponential, thus intractable, complexity in the number of agent N . In fact, we
+(N × k)
+with d being a constant independent of N and k. As the algorithm requires to compute a stationary distribution
+of a Markov chain described by a transition matrix TTT with kN rows and columns, the time complexity of α -Rank amounts
+conjecture that determining top rank joint strategy proﬁle using α -Rank with an N × k input is NP-hard.
+Conjecture: [α -Rank is NP-hard] Consider N agents each with k strategies. Computing top-rank joint strategy proﬁle with
+respect to the stationary distribution of the Markov chain’s transition matrix, TTT , is NP-hard.
+
+d (cid:17)
+
+Reasoning: To illustrate the point of the conjecture above, imagine N agents each with k strategies. Following the certiﬁcate
+argument for determining complexity classes, we ask the question:
+
+“Assume we are given a joint strategy proﬁle πjoint , is πjoint top rank w.r.t the stationary distribution of the Markov chain?”
+
+To determine an answer to the above question, one requires an evaluation mechanism of some sort. If the time complexity of
+this mechanism is polynomial with respect to the input size, i.e., N × k, then one can claim that the problem belongs to the
+NP complexity class. However, if the aforementioned mechanism exhibits an exponential time complexity, then the problem
+belongs to NP-hard complexity class. When it comes to α -Rank, we believe a mechanism answering the above question
+would require computing a holistic solution of the problem, which, unfortunately, is exponential (i.e., O (kN )). Crucially, if our
+conjecture proves correct, we do not see how α -Rank can handle more than a ﬁnite small number of agents.
+
+3.2 On Optimisation-Based Techniques
+
+Given exponential complexity as derived above, we can resort to approximations of stationary distributions that aim at
+determining ε -close solution for some precision parameter ε > 0. Here, we note that a problem of this type is a long-standing
+classical problem from linear algebra. Various techniques including Power method, PageRank, eigenvalue decomposition, and
+mirror descent can be utilised. Brieﬂy surveying this literature, we demonstrate that any such implementation (unfortunately)
+scales exponentially in the number of players. For a quick summary, please consult Table 1.
+
+4/15
+
+Table 1. Time and space complexity comparison given N (number of agents) × k(number of strategies) table as inputs.
+
+O (cid:0)kN+1N (cid:1)
+O (cid:0)kN+1N (cid:1)
+Method
+O (cid:0)kN+1N (cid:1)
+Time
+O (cid:0)kN+1N (cid:1)
+Memory
+Power Method
+O (cid:0)kNω (cid:1)
+O (cid:0)kN+1N (cid:1)
+Mirror Descent O (cid:0)kN+1 log k(cid:1) O (cid:0)kN+1N (cid:1)
+PageRank
+Eig. Decomp.
+
+Power Method.
+
+(cid:9)
+
+vector vvv by constructing a sequence (cid:8)vvv j
+One of the most common approaches to computing a stationary distribution is the power method that computes the stationary
+j≥0 from a non-zero initialisation vvv0 by applying vvv j+1 = 1/(cid:12)(cid:12)(cid:12)(cid:12)TTT ,T vvv j
+(cid:12)(cid:12)(cid:12)(cid:12)TTT T vvv j . Though
+viable, we ﬁrst note that the power method exhibits an exponential memory complexity in terms of the number of agents. To
+of transitions between the states of the Markov chain. By construction, one can easily see that m = n(cid:0)kN − N + 1(cid:1) as each row
+formally derive the bound, deﬁne n to represent the total number of joint strategy proﬁles, i.e., n = kN , and m the total number
+O (m) = O (cid:0)n(cid:2)kN − N + 1(cid:3)(cid:1)
+≈ O (cid:0)kN kN (cid:1).
+and column in TTT contains kN − N + 1 non-zero elements. Hence, memory complexity of such implementation is in the order of
+The time complexity of a power method, furthermore, is given by O (m × T ), where T is the total number of iterations.
+Since m is of the order n log n, the total complexity of such an implementation is also exponential.
+Inspired by ranking web-pages on the internet, one can consider PageRank19 for computing the solution to the eigenvalue
+O (m) = O (cid:0)K N+1N (cid:1), and the time complexity are in the order of O (m + n) ≈ O (cid:0)K N+1N (cid:1).
+problem presented above. Applied to our setting, we ﬁrst realize that the memory is analogous to the power method that is3
+techniques for eigenvalue decomposition also require exponential memory (O (cid:0)K N+1N (cid:1)) and exhibit a time complexity of the
+Apart from the above, we can also consider the problem as a standard eigenvalue decomposition task (also what is used to
+implement α -Rank in17 ) and adopt the method in20 to compute the stationary distribution. Unfortunately, state-of-the-art
+form O (nω ) = O (kNω ) with ω ∈ [2, 2.376]20 . Clearly, these bounds restrict α -Rank to small agent number N .
+
+Eigenvalue Decomposition.
+
+PageRank.
+
+Mirror Descent.
+
+Another optimisation-based alternative is the ordered subsets mirror descent algorithm21 . This is an iterative procedure requiring
+projection step on the standard n-dimensional simplex on every iteration: ∆∆∆n = {xxx ∈ Rn : xxxT111 = 1 & xxx (cid:23) 000}. As mentioned
+in21 , computing this projection requires O (n log n) time. Hence, the projection step is exponential in the number of agents N .
+This makes mirror descent inapplicable to α -Rank when N is large.
+Apart from the methods listed above, we are aware of other approaches that could solve the leading eigenvector for big
+matrices, for example the online learning approach22 , the sketching methods23 , and the subspace iteration with Rayleigh-Ritz
+acceleration24 . The trade-off of these methods is that they usually assume special structure of the matrix, such as being
+Hermitian or at least positive semi-deﬁnite, which α -Rank however does not ﬁt. Importantly, they can not offer any advantages
+on the time complexity either.
+
+4 Reconsidering α -Rank’s Inputs
+
+Having discussed our results with the authors, we were suggested that “inputs” to α -Rank are exponentially-sized payoff
+matrices, i.e., assuming line 2 in Algorithm 1 as an input4 . Though polynomial in an exponentially-sized input, this consideration
+does not resolve problems mentioned above. In this section, we further demonstrate additional theoretical and practical problems
+when considering the advised “input” by the authors.
+
+3 In some works, people typically equate the power method with PageRank algorithm.
+4We were also promised such claims to be clariﬁed in subsequent submissions.
+
+5/15
+
+Figure 2. Money cost of constructing the transition matrix TTT in computing α -Rank (line 3 in Algorithm 1). Note that one
+trillion dollar is the world’s total hardware budget. The projected contours shows that due to the exponentially-growing size of
+α -Rank’s “input”, under reasonable budget, it is infeasible to handle multi-agent evaluations with more than ten agents.
+
+4.1 On the Deﬁnition of Agents
+
+α -Rank redeﬁnes a strategy to correspond to the agents under evaluation differentiating them from players in the game (see
+line 4 in Section 3.1.1 and also Fig. 2a in1 ). Complexity results are then given in terms of these “agents”, where tractability is
+claimed. We would like to clarify that such deﬁnitions do not necessarily reﬂect the true underlying time complexity, whereby
+without formal input deﬁnitions, it is difﬁcult to claim tractability.
+To illustrate, consider solving a travelling salesman problem in which a traveller needs to visit a set of cities while returning
+to the origin following the shortest route. Although it is well-known that the travelling salesman problem is NP-hard, following
+the line of thought presented in α -Rank, one can show that such a problem reduces to a polynomial time (linear, i.e., tractable)
+problem in the size of “meta-cities”, which is not a valid claim.
+
+So what are the “meta-cities”, and what is wrong with the above argument?
+
+A strategy in the travelling salesman problem corresponds to a permutation in the order of cities. Rather than operating with
+number of cities, following α -Rank, we can construct the space of all permutation calling each a “meta-city” (or agent)5 .
+Having enumerated all permutations, somehow, searching for the shortest route can be performed in polynomial time. Even
+though, one can state that solving the travelling salesman problem is polynomial in the size of permutations, it is incorrect to
+claim that any such algorithm is tractable. The same exact argument can be made for α -Rank, whereby having a polynomial
+time algorithm in an exponentially-sized space does not at all imply tractability6 . It is for this reason, that reporting complexity
+results needs to be done with respect to the size of the input without any redeﬁnition (we believe these are agents in multi-agent
+systems according to Section 3.1.1 in1 , and cities in the travelling salesman problem).
+As is clear so-far, inputs to α -Rank lack clarity. Confused on the form of the input, we realise that the we are left with
+two choices: 1) list of all joint strategy proﬁles, or 2) a table of the size N × k – collection of all of the players’ strategy pools.
+If we are to follow the ﬁrst direction, the claims made in the paper are of course correct; however, this by no means resolves
+the problem as it is not clear how one would construct such an input in a tractable manner. Precisely, given an N × k table
+(collection of all of the players’ strategy pools) as input, constructing the aforementioned list requires exponential time (kN ).
+In other words, providing α -Rank with such a list only hides the exponential complexity burden in a pre-processing step.
+Analogously, applying this idea to the travelling salesman problem described above would hide the exponential complexity
+under a pre-processing step used to construct all possible permutations. Provided as inputs, the travelling salesman problem can
+now be solved in linear time, i.e., transforming an intractable problem to a tractable one by a mere redeﬁnition.
+
+5How to enumerate all these permutations is an interesting question. Analogously, if N × k was not the input to α -Rank, enumerating an exponentially sized
+matrix is also an interesting question.
+6Note that this claim does not apply on the complexity of solving Nash equilibrium. For example, in solving zero-sum games, polynomial tractability is
+never claimed on the number of players, whereas α -Rank claims tractable in the number of players.
+
+6/15
+
+Number of Agents010203040Number of Strategies24681012141618Money in Dollars (Log Scale)105051015202530$1 Trillion budget$10K budgetTable 2. Cost of getting the payoff table Pjoint (line 2 in Algorithm 1) for the experiments conducted in1 . We list the numbers
+by the cost of running one joint-strategy proﬁle × the number of joint-strategy proﬁles considered. Detailed computation can
+be found here.
+
+Game Env.
+
+AlphaZero Go25
+AlphaGo Zero26
+AlphaZero Chess25
+MuJoCo Soccer27
+Leduc Poker14
+Kuhn Poker28
+AlphaStar29
+
+PetaFlop/s-days Cost ($) Time (days)
+
+1, 413 × 7
+1, 181 × 7
+17 × 1
+0.053 × 10
+0.006 × 9
+< 10−4 × 256
+52, 425
+
+207M
+172M
+352K
+4.1K
+420
+< 1
+244M
+
+1.9M
+1.6M
+3.2K
+72
+7
+
+−
+
+1.3M
+
+(cid:0)πjoint
+
+(cid:0)πjoint
+
+4.2 Dollars Spent: A Non-Refutable Metric
+
+(cid:1), . . . , PN
+
+Admittedly, our arguments have been mostly theoretical and can become controversial dependent on the setting one considers.
+To abolish any doubts, we followed the advice given by the authors and considered the input of α -Rank to be exponentially-sized
+Assuming Pjoint = (cid:8)P1
+(cid:1)(cid:9), ∀πjoint ∈ Sjoint is given at no cost, the total amount of ﬂoating point
+payoff matrices. We then conducted an experiment measuring dollars spent to evaluate scalability of running just line 3 in
+Algorithm 1, while considering the tasks reported in1 .
+operations (FLOPS) needed for constructing TTT given in Eqn. 2 is 9kN N (k − 1) + kN N (k − 1) + 0 = 10kN N (k − 1). In terms of
+money cost needed for just building TTT , we plot the dollar amount in Fig. 2 considering the Nvidia Tesla K80 GPU7 which can
+process under single precision at maximum 5.6 TFlop/s at a price of 0.9 $/hour8 . Clearly, Fig. 2 shows that due to the fact that
+α -Rank needs to construct a Markov chain with an exponential size in the number of agents, it is only “money” feasible on
+tasks with at most tens of agents. It is also worth noting that our analysis is optimistic in the sense that we have not considered
+costs of storing TTT nor computing stationary distributions.
+
+Conclusion I: Given exponentially-sized payoff matrices, constructing transition matrices in α -Rank for about 20 agents each
+with 8 strategies requires about one trillion dollars in budget.
+
+Though assumed given, in reality, the payoff values Pjoint come at a non-trivial cost themselves, which is particularly
+true in reinforcement learning tasks26 . Here, we take a closer look at the amount of money it takes to attain payoff matrices
+for the experiments listed in1 that we present in Table 2. Following the methodology in here, we ﬁrst count the total FLOPS
+each model uses under the unit of PetaFlop/s-day that consists of performing 1020 operations per second in one day. For each
+experiment, if the answer to “how many GPUs were trained and for how long” was not available, we then traced back to the
+neural architecture used and counted the operations needed for both forward and backward propagation. The cost in time was
+then transformed from PetaFlop/s-day using Tesla K80 as discussed above. In addition, we also list the cost of attaining payoff
+values from the most recent AlphaStar model29 . It is obvious that although α -Rank could take the payoff values as “input” at a
+hefty price, the cost of acquiring such values is not negligible, e.g., payoff values from GO cost about 207M $, and require a
+single GPU to run for more than ﬁve thousand years9 !
+
+Conclusion II: Acquiring necessary inputs to α -Rank easily becomes intractable giving credence to our arguments in
+Section 4.1.
+
+5 A Practical Solution to α -Rank
+
+One can consider approximate solutions to the problem in Eqn. 3. As brieﬂy surveyed in Section 3, most current methods,
+unfortunately, require exponential time and memory complexities. We believe achieving a solution that aims at reducing time
+complexity is an interesting and open question in linear algebra in general, and leave such a study to future work. Here, we rather
+contribute by a stochastic optimisation method that can attain a solution through random sampling of payoff matrices without
+
+7 https://en.wikipedia.org/wiki/Nvidia_Tesla
+8 https://aws.amazon.com/ec2/instance- types/p2/
+
+9 It is worth mentioning that here we only count running experiment once for getting each payoff value. In practice, the exact payoff values are hard to know
+since the game outcomes are noisy; therefore, multiple samples are often needed (check Theorem 3.2 in12 ), which will turn the numbers in Table 2 to an even
+larger scale.
+
+7/15
+
+Algorithm 2 α α -Oracle: Practical Multi-Agent Evaluation
+1: Inputs: Number of trails N , total number of iterations T , decaying learning rate {ηt }T
+t=1 , penalty parameter λ , λ decay
+rate γ > 1, and a constraint relaxation term δ , initialise p = 0.
+
+2: while p ≤ N do:
+
+3:
+4:
+
+5:
+
+6:
+7:
+8:
+9:
+10:
+
+Set the counter of running oracles, k = 0
+Initialise the strategy set {S [0]
+i } by sub-sampling from {Si}
+Compute total number of joint proﬁles n = ∏N
+Initial a vector xxx0 = 1/n111
+
+} AND k ≥ 1 do:
+
+i } (cid:54)= {S [k−1]
+
+while {S [k]
+
+i=1 |S [k]
+i
+
+|
+
+i
+
+for t = 0 → T − 1 do:
+
+// ααα ααα -Rank update
+
+13:
+
+12:
+
+11:
+
+i[k]
+t
+
+(xxx[k]
+
+Get πππ [ p],top
+
+t ∼ {1, . . . , n}
+
+t
+t+1 = xxx[k]
+t − ηt ∇xxx f
+
+Uniformly sample one strategy proﬁle i[k]
+Construct b[k]
+it as the i[k]
+row of TTT [k],T − III
+Update xxx[k]
+t ) by Eqn. 7
+Set λt+1 = λt /γ
+joint by ranking the prob. mass of vvv[k] =
+Set k = k + 1
+for each agent i do:
+Compute the best response π ∗i to πππ [ p],top
+joint by Eqn. 8
+Update the strategy set by S [k]
+Set p = p + 1
+19: Return: The best performing joint-strategy proﬁle πππ joint,(cid:63) among {πππ [1:N ],top
+
+T ||1
+// The oracles (Section 5.1)
+
+i = S [k−1]
+i
+
+xxx[k]
+||xxx[k]
+
+14:
+15:
+16:
+
+∪ π (cid:63)
+
+17:
+18:
+
+joint
+
+T
+
+i
+
+}.
+
+xxx
+
+min
+
+the need to store exponential-size input. Contrary to memory requirements reported in Table 1, our method requires a linear
+(in number of agents) per-iteration complexity of the form O (N k). It is worth noting that most other techniques need to store
+exponentially-sized matrices before commencing with any numerical instructions. Though we do not theoretically contribute to
+reductions in time complexities, we do, however, augment our algorithm with a double-oracle heuristic for joint strategy space
+reduction. In fact, our experiments reveal that α α -Rank can converge to the correct top-rank strategies in hundreds of iterations
+in large strategy spaces, i.e., spaces with ≈ 33 million proﬁles.
+(cid:12)(cid:12)(cid:12)(cid:12)TTT T xxx − xxx(cid:12)(cid:12)(cid:12)(cid:12)2
+Optimisation Problem Formulation: Computing the stationary distribution can be rewritten as an optimisation problem:
+1
+2 s.t. xxxT 111 = 1, and xxx (cid:23) 000,
+n
+where the constrained objective in Eqn. 4 simply seeks a vector xxx minimising the distance between xxx, itself, and TTT T xxx while
+ensuring that xxx lies on an n-dimensional. To handle exponential complexities needed for acquiring exact solutions, we pose a
+relaxation the problem in Eqn. 4 and focus on computing an approximate solution vector ˜xxx instead, where ˜xxx solves:
+(cid:12)(cid:12)(cid:12)(cid:12)TTT T xxx − xxx(cid:12)(cid:12)(cid:12)(cid:12)2
+2 s.t. (cid:12)(cid:12)xxxT 111 − 1(cid:12)(cid:12) ≤ δ for 0 < δ < 1, and xxx (cid:23) 000.
+Before proceeding, however, it is worth investigating the relation between the solutions of the original (Eqn. 4) and relaxed (Eqn.
+5) problems. We summarise such a relation in the following proposition that shows that determining ˜xxx sufﬁces for computing a
+stationary distribution of α -Rank’s Markov chain:
+Proposition: [Connections to Markov Chain] Let ˜xxx be a solution to the relaxed optimisation problem in Eqn. 5. Then, ˜xxx/|| ˜xxx||1 = vvv
+is the stationary distribution of Eqn. 3 in Section 2.
+Importantly, the above proposition, additionally, allows us to focus on solving the problem in Eqn. 5 that only exhibits
+(cid:12)(cid:12)(cid:12)(cid:12)TTT T xxx − xxx(cid:12)(cid:12)(cid:12)(cid:12)2
+(cid:0)xxxT bbbi
+inequality constraints. Problems of this nature can be solved by considering a barrier function leading to an unconstrained ﬁnite
+sum minimisation problem. By denoting bbbi to be the it h row of TTT T − III , we can, thus, write: 1
+
+2 = 1
+n ∑n
+i=1
+
+(cid:1)2
+
+min
+
+(5)
+
+(4)
+
+1
+n
+
+xxx
+
+n
+
+.
+
+8/15
+
+Figure 3. Ranking intensity sweep on (a) Battle of Sexes (b) Biased RPS (c) Prisoner’s Dilemma.
+
+(cid:16)
+
+2λt
+
+(cid:1)2
+
+λ
+
+n
+
+−
+
+1
+n
+
+n
+
+∑
+
+i=1
+
+n
+
+∑
+
+i=1
+
+log(xi ).
+
+min
+
+xxx∈Rn
+
+δ 2 −
+
+Figure 4. Comparisons of time and memory complexities on varying sizes of random matrices.
+(cid:2)xxxT 111 − 1(cid:3)2(cid:17)
+Introducing logarithmic barrier-functions, with λ > 0 being a penalty parameter, we have:
+(cid:0)xxxT bbbi
+− λ log
+Eqn. 6 represents a standard ﬁnite minimisation problem, which can be solved using any off-the-shelf stochastic optimisation
+methods, e.g., stochastic gradients, ADAM30 . A stochastic gradient execution involves sampling a strategy proﬁle it ∼ [1, . . . , n]
+at iteration t , and then executing a descent step: xxxt+1 = xxxt − ηt ∇xxx f it (xxxt ), with ∇xxx f it (xxxt ) being a sub-sampled gradient of Eqn. 6,
+(cid:0)xxxT
+t 111 − 1(cid:1)
+and λ being a scheduled penalty parameter with λt+1 = λt/γ for some γ > 1:
+(cid:0)xxxT
+t 111 − 1(cid:1)2 − λt/n
+To avoid any confusion, we name the above stochastic approach of solving α -Rank via Eqn. 6 & 7 as ααα ααα -Rank and present
+computing updates using Eqn. 7 requires no storage of the full transition or payoff matrices as updates are performed only
+its pseudo-code in Algorithm 2. When comparing our algorithm to these reported in Table 1, it is worth highlighting that
+using sub-sampled columns as shown in line 11 in Algorithm 2.
+
+∇xxx f it (xxxt ) = 2
+
+(cid:20) 1
+
+δ 2 −
+
+(cid:21)T
+
+bbbTTT
+it 111
+
+bbbit +
+
+1
+
+[xxxt ]n
+
+, . . . ,
+
+[xxxt ]1
+
+.
+
+(cid:16)
+
+(cid:17)
+
+(6)
+
+(7)
+
+5.1 α α -Rank with Efﬁcient Exploration & Oracles
+
+Stochastic sampling enables to solve α -Rank with no need to store the transition matrix TTT ; however, the size of the column
+bbbi (i.e., ∏N
+i=1 ki ) can still be prohibitively large. Here we further boost scalability of our method by introducing an oracle
+mechanism. The heuristic of oracles was ﬁrst proposed in solving large-scale zero-sum matrix games31 . The idea is to ﬁrst
+create a sub-game in which all players are only allowed to play a restricted number of strategies, which are then expanded by
+adding each of the players’ best-responses to their opponents; the sub-game will be replayed with agents’ augmented strategy
+sets before a new round of best responses is computed.
+
+9/15
+
+104103102101100101102Ranking Intensity 0.00.10.20.30.40.5Strategy Mass in Stationary Distribution(a)(O, O)(O, M)(M, O)(M, M)104103102101100101102Ranking Intensity 0.10.20.30.40.50.60.7Strategy Mass in Stationary Distribution(b)RockPaperScissor104103102101100101102Ranking Intensity 0.00.20.40.60.81.0Strategy Mass in Stationary Distribution(c)(C, C)(C, D)(D, C)(D, D)102103104Size of Matrix103102101100101102103Time in SecondsEig. Decomp.Pytorch-RankOur Method102103104Size of Matrix0.81.01.21.41.61.82.02.2Memory Compare to Our MethodEig. Decomp.Pytorch-RankOur MethodFigure 5. Large-scale multi-agent evaluations. (a) Convergence of the optimal joint-strategy proﬁle in self-driving simulation.
+(b) Status of the Ising-model equilibrium measured by ξ = |N↑−N↓ |
+. (c) Change of the top-rank proﬁle from α α -Oracle under
+τ = 1, α = 1.
+
+|N |
+
+The best response is assumed to be given by an oracle that can be simply implemented by a grid search, where given the
+top-rank proﬁle π top
+−i at iteration k, the goal for agent i is to select the optimal π ∗i from a pre-deﬁned strategy set Si to maximise
+its reward:
+
+(cid:20)
+
+π (cid:63)
+
+i = arg max
+
+πi ∈Si
+
+E
+
+πi ,π top
+
+−i
+
+∑
+
+h≥0
+
+(cid:21)
+
+,
+
+γ h
+
+i Pi (xxxh , uuui,h , uuu
+
+−i,h )
+−i,h ∼ π top
+
+(8)
+
+with xxxh denoting the state, uuui,h ∼ πi (·|xxxi,h ), uuu
+−i (·|xxx
+−i,h ) denoting the actions from agent i and the opponents, respectively.
+Though worse-case scenario of introducing oracles would require solving the original evaluation problem, our experimental
+results on large-scale systems demonstrate efﬁciency by converging early.
+For a complete exposition, we summarise the pseudo-code of our proposed method, named as ααα ααα -Oracle, in Algorithm 1.
+α α -Oracle degenerates to α α -Rank (lines 6 − 13) if one initialises strategy sets of agents by the full size at the beginning, i.e.,
+Providing valid convergence guarantee for α α -Oracle is an interesting direction for future work. In fact, recently13 proposed
+a close idea of adopting an oracle mechanism into α -Rank without any stochastic solver however. Interestingly, it is reported
+that bad initialisation can lead to failures in recovering top-rank strategies. Contrary to the results reported in13 , we rather
+demonstrate the effectiveness of our approach through running multiple trails of initialisation for {S [0]
+i }. In addition, we also
+believe the stochastic nature of α α -Oracle potentially prevents from being trapped by the local minimal from sub-games.
+
+i } (cid:44) {Si}.
+
+{S [0]
+
+6 Experiments
+
+In this section, we demonstrate the scalability of α α -Rank in successfully recovering optimal policies in self-driving car
+simulations and in the Ising model–a setting with tens-of-millions of possible strategies. We note that these sizes are far beyond
+the capability of state-of-the-art methods; α -Rank1 considers at maximum 4 agents with 4 strategies. All of our experiments
+were run only on a single machine with 64 GB memory and 10-core Intel i9 CPU.
+Sparsity Data Structure: During the implementation phase, we realised that the transition probability, TTT [k] , of the Markov
+chain induces a sparsity pattern (each row and column in TTT [k] contains ∑N
+i − N + 1 non-zero elements, check Section 5)
+that if exploited can lead to signiﬁcant speed-up. To fully leverage such sparsity, we tailored a novel data structure for sparse
+storage and computations needed by Algorithm 2. More details are in Appendix 1.1.
+
+i=1 k[k]
+
+10/15
+
+Ego CarsSocial Cars Iterations(a)0%30%70%100%(a)Inverse Temperature(b)10-310-210-1100101102Order Parameter ξξ=1ξ≠1Phase ChangeOur MethodMCMC(a)(b)(c)High-Way EvaluationIsing Model EvaluationO(107)<latexit sha1_base64="orNWukXmgObWKckVLhrYAOga9eI=">AAAB+nicbVDLSsNAFL3xWesr1aWbwSLUTUlEaJcFN+6sYB/QxjKZTtqhk0mYmSgl9lPcuFDErV/izr9x0mahrQcGDufcyz1z/JgzpR3n21pb39jc2i7sFHf39g8O7dJRW0WJJLRFIh7Jro8V5UzQlmaa024sKQ59Tjv+5CrzOw9UKhaJOz2NqRfikWABI1gbaWCX+iHWY4J5ejOruM597Xxgl52qMwdaJW5OypCjObC/+sOIJCEVmnCsVM91Yu2lWGpGOJ0V+4miMSYTPKI9QwUOqfLSefQZOjPKEAWRNE9oNFd/b6Q4VGoa+mYyC6qWvUz8z+slOqh7KRNxoqkgi0NBwpGOUNYDGjJJieZTQzCRzGRFZIwlJtq0VTQluMtfXiXti6rrVN3by3KjntdRgBM4hQq4UIMGXEMTWkDgEZ7hFd6sJ+vFerc+FqNrVr5zDH9gff4A5jmTDw==</latexit><latexit sha1_base64="orNWukXmgObWKckVLhrYAOga9eI=">AAAB+nicbVDLSsNAFL3xWesr1aWbwSLUTUlEaJcFN+6sYB/QxjKZTtqhk0mYmSgl9lPcuFDErV/izr9x0mahrQcGDufcyz1z/JgzpR3n21pb39jc2i7sFHf39g8O7dJRW0WJJLRFIh7Jro8V5UzQlmaa024sKQ59Tjv+5CrzOw9UKhaJOz2NqRfikWABI1gbaWCX+iHWY4J5ejOruM597Xxgl52qMwdaJW5OypCjObC/+sOIJCEVmnCsVM91Yu2lWGpGOJ0V+4miMSYTPKI9QwUOqfLSefQZOjPKEAWRNE9oNFd/b6Q4VGoa+mYyC6qWvUz8z+slOqh7KRNxoqkgi0NBwpGOUNYDGjJJieZTQzCRzGRFZIwlJtq0VTQluMtfXiXti6rrVN3by3KjntdRgBM4hQq4UIMGXEMTWkDgEZ7hFd6sJ+vFerc+FqNrVr5zDH9gff4A5jmTDw==</latexit><latexit sha1_base64="orNWukXmgObWKckVLhrYAOga9eI=">AAAB+nicbVDLSsNAFL3xWesr1aWbwSLUTUlEaJcFN+6sYB/QxjKZTtqhk0mYmSgl9lPcuFDErV/izr9x0mahrQcGDufcyz1z/JgzpR3n21pb39jc2i7sFHf39g8O7dJRW0WJJLRFIh7Jro8V5UzQlmaa024sKQ59Tjv+5CrzOw9UKhaJOz2NqRfikWABI1gbaWCX+iHWY4J5ejOruM597Xxgl52qMwdaJW5OypCjObC/+sOIJCEVmnCsVM91Yu2lWGpGOJ0V+4miMSYTPKI9QwUOqfLSefQZOjPKEAWRNE9oNFd/b6Q4VGoa+mYyC6qWvUz8z+slOqh7KRNxoqkgi0NBwpGOUNYDGjJJieZTQzCRzGRFZIwlJtq0VTQluMtfXiXti6rrVN3by3KjntdRgBM4hQq4UIMGXEMTWkDgEZ7hFd6sJ+vFerc+FqNrVr5zDH9gff4A5jmTDw==</latexit><latexit sha1_base64="orNWukXmgObWKckVLhrYAOga9eI=">AAAB+nicbVDLSsNAFL3xWesr1aWbwSLUTUlEaJcFN+6sYB/QxjKZTtqhk0mYmSgl9lPcuFDErV/izr9x0mahrQcGDufcyz1z/JgzpR3n21pb39jc2i7sFHf39g8O7dJRW0WJJLRFIh7Jro8V5UzQlmaa024sKQ59Tjv+5CrzOw9UKhaJOz2NqRfikWABI1gbaWCX+iHWY4J5ejOruM597Xxgl52qMwdaJW5OypCjObC/+sOIJCEVmnCsVM91Yu2lWGpGOJ0V+4miMSYTPKI9QwUOqfLSefQZOjPKEAWRNE9oNFd/b6Q4VGoa+mYyC6qWvUz8z+slOqh7KRNxoqkgi0NBwpGOUNYDGjJJieZTQzCRzGRFZIwlJtq0VTQluMtfXiXti6rrVN3by3KjntdRgBM4hQq4UIMGXEMTWkDgEZ7hFd6sJ+vFerc+FqNrVr5zDH9gff4A5jmTDw==</latexit>O(107)<latexit sha1_base64="orNWukXmgObWKckVLhrYAOga9eI=">AAAB+nicbVDLSsNAFL3xWesr1aWbwSLUTUlEaJcFN+6sYB/QxjKZTtqhk0mYmSgl9lPcuFDErV/izr9x0mahrQcGDufcyz1z/JgzpR3n21pb39jc2i7sFHf39g8O7dJRW0WJJLRFIh7Jro8V5UzQlmaa024sKQ59Tjv+5CrzOw9UKhaJOz2NqRfikWABI1gbaWCX+iHWY4J5ejOruM597Xxgl52qMwdaJW5OypCjObC/+sOIJCEVmnCsVM91Yu2lWGpGOJ0V+4miMSYTPKI9QwUOqfLSefQZOjPKEAWRNE9oNFd/b6Q4VGoa+mYyC6qWvUz8z+slOqh7KRNxoqkgi0NBwpGOUNYDGjJJieZTQzCRzGRFZIwlJtq0VTQluMtfXiXti6rrVN3by3KjntdRgBM4hQq4UIMGXEMTWkDgEZ7hFd6sJ+vFerc+FqNrVr5zDH9gff4A5jmTDw==</latexit><latexit sha1_base64="orNWukXmgObWKckVLhrYAOga9eI=">AAAB+nicbVDLSsNAFL3xWesr1aWbwSLUTUlEaJcFN+6sYB/QxjKZTtqhk0mYmSgl9lPcuFDErV/izr9x0mahrQcGDufcyz1z/JgzpR3n21pb39jc2i7sFHf39g8O7dJRW0WJJLRFIh7Jro8V5UzQlmaa024sKQ59Tjv+5CrzOw9UKhaJOz2NqRfikWABI1gbaWCX+iHWY4J5ejOruM597Xxgl52qMwdaJW5OypCjObC/+sOIJCEVmnCsVM91Yu2lWGpGOJ0V+4miMSYTPKI9QwUOqfLSefQZOjPKEAWRNE9oNFd/b6Q4VGoa+mYyC6qWvUz8z+slOqh7KRNxoqkgi0NBwpGOUNYDGjJJieZTQzCRzGRFZIwlJtq0VTQluMtfXiXti6rrVN3by3KjntdRgBM4hQq4UIMGXEMTWkDgEZ7hFd6sJ+vFerc+FqNrVr5zDH9gff4A5jmTDw==</latexit><latexit sha1_base64="orNWukXmgObWKckVLhrYAOga9eI=">AAAB+nicbVDLSsNAFL3xWesr1aWbwSLUTUlEaJcFN+6sYB/QxjKZTtqhk0mYmSgl9lPcuFDErV/izr9x0mahrQcGDufcyz1z/JgzpR3n21pb39jc2i7sFHf39g8O7dJRW0WJJLRFIh7Jro8V5UzQlmaa024sKQ59Tjv+5CrzOw9UKhaJOz2NqRfikWABI1gbaWCX+iHWY4J5ejOruM597Xxgl52qMwdaJW5OypCjObC/+sOIJCEVmnCsVM91Yu2lWGpGOJ0V+4miMSYTPKI9QwUOqfLSefQZOjPKEAWRNE9oNFd/b6Q4VGoa+mYyC6qWvUz8z+slOqh7KRNxoqkgi0NBwpGOUNYDGjJJieZTQzCRzGRFZIwlJtq0VTQluMtfXiXti6rrVN3by3KjntdRgBM4hQq4UIMGXEMTWkDgEZ7hFd6sJ+vFerc+FqNrVr5zDH9gff4A5jmTDw==</latexit><latexit sha1_base64="orNWukXmgObWKckVLhrYAOga9eI=">AAAB+nicbVDLSsNAFL3xWesr1aWbwSLUTUlEaJcFN+6sYB/QxjKZTtqhk0mYmSgl9lPcuFDErV/izr9x0mahrQcGDufcyz1z/JgzpR3n21pb39jc2i7sFHf39g8O7dJRW0WJJLRFIh7Jro8V5UzQlmaa024sKQ59Tjv+5CrzOw9UKhaJOz2NqRfikWABI1gbaWCX+iHWY4J5ejOruM597Xxgl52qMwdaJW5OypCjObC/+sOIJCEVmnCsVM91Yu2lWGpGOJ0V+4miMSYTPKI9QwUOqfLSefQZOjPKEAWRNE9oNFd/b6Q4VGoa+mYyC6qWvUz8z+slOqh7KRNxoqkgi0NBwpGOUNYDGjJJieZTQzCRzGRFZIwlJtq0VTQluMtfXiXti6rrVN3by3KjntdRgBM4hQq4UIMGXEMTWkDgEZ7hFd6sJ+vFerc+FqNrVr5zDH9gff4A5jmTDw==</latexit>Correctness of Ranking Results: As Algorithm 2 is a generalisation (in terms of scalability) of α -Rank, it is instructive to
+validate the correctness of our results on three simple matrix games. Due to space constraints, we refrain the full description
+of these tasks to Appendix 1.2. Fig. 3, however, shows that, in fact, results generated by α α -Rank are consistent with these
+reported in1 .
+
+Complexity Comparisons on Random Matrices: To further assess scalability, we measured the time and memory needed by
+our method for computing stationary distributions of varying sizes of simulated random matrices. Baselines included eigenvalue
+decomposition from Numpy, optimisation tools from PyTorch, and α -Rank from OpenSpiel17 . We terminated execution of
+α α -Rank when gradient norms fell-short a predeﬁned threshold of 0.01. According to Fig. 4, α α -Rank can achieve three orders
+of magnitude reduction in time (i.e. 1000x faster) compared to default α -Rank implementation from17 . Memory-wise, our
+method uses only half of the space when considering, for instance, matrices of the size 104 × 104 .
+Autonomous Driving on Highway: Having assessed correctness and scalability, we now present novel application domains
+on large-scale multi-agent/multi-player systems. For that we made used of high-way32 ; an environment for simulating self-
+driving scenarios with social vehicles designed to mimic real-world trafﬁc ﬂow. We conducted a ranking experiment involving 5
+agents each with 5 strategies, i.e., a strategy space in the order of O (55 ) (3125 possible strategy proﬁles). Agent strategies varied
+between “rational” and “dangerous” drivers, which we encoded using different reward functions during training (complete
+details of reward functions are in Appendix 2.2). Under this setting, we knew, upfront, that optimal proﬁle corresponds to all
+agents being ﬁve rational drivers. Cars trained using value iteration and the rewards averaged from 200 test trails were reported.
+We considered both α α -Rank and α α -Oracle, and reported the results by running 1000 random seeds. We set α α -Oracle to
+run 200 iterations of gradient updates in solving the top-rank strategy proﬁle (lines 8 − 12 in Algorithm 2). Results depicted in
+Fig. 5(a) clearly demonstrate that both our proposed methods are capable of recovering the correct highest ranking strategy
+proﬁle. α α -Oracle converges faster than α α -Rank, which we believe is due to the oracle mechanism saving time in inefﬁciently
+exploring “dangerous” drivers upon one observation. We also note that although such size of problem are feasible using α -Rank
+and the Power Method, our results achieve 4 orders of reduction in number of iterations.
+Ising Model Experiment: We repeated the above experiment on the Ising model33 that is typically used for describing
+ferromagnetism in statistical mechanics. It assumes a system of magnetic spins, where each spin a j is either an up-spin, ↑, or
+down-spin, ↓. The system energy is deﬁned by E (a, h) = − ∑ j (h j a j + λ
+2 ∑k (cid:54)= j a j ak ) with h j and λ being constant coefﬁcients.
+The probability of one spin conﬁguration is P(a) =
+∑a exp(−E (a,h)/τ ) where τ is the environmental temperature. Finding the
+equilibrium of the system is notoriously hard because it is needed to enumerate all possible conﬁgurations in computing P(a).
+Traditional approaches include Markov Chain Monte Carlo (MCMC). An interesting phenomenon is the phase change, i.e., the
+spins will reach an equilibrium in the low temperatures, with the increasing τ , such equilibrium will suddenly break and the
+system becomes chaotic.
+Here we try to observe the phase change through multi-agent evaluation methods. We assume each spins as an agent, and
+the reward to be r j = h j a j + λ
+2 ∑k (cid:54)= j a j ak . We consider the top-rank strategy proﬁle from α α -Oracle as the system equilibrium
+and compare it against the ground truth from MCMC. We consider a 5 × 5 2D model which induces a prohibitively-large
+strategy space of the size 22225 (≈ 33 million strategies) to which existing methods are inapplicable. Fig. 5(b) illustrates that our
+method identiﬁes the same phase change as that of MCMC. We also show an example of how α α -Oracle’s top-ranked proﬁle
+ﬁnds the system’s equilibrium when τ = 1 in Fig. 5(c). Note that the problem of 25 agent with 2 strategies goes far beyond the
+capability of α -Rank on one single machine (billions of elements in TTT ); we therefore don’t list its performance here.
+
+exp(−E (a,h)/τ )
+
+7 Conclusions & Future Work
+
+In this paper, we presented major bottlenecks prohibiting α -Rank from scaling beyond tens of agents. Dependent on the type
+of input, α -Rank’s time and memory complexities can easily become exponential. We further argued that notions introduced
+in α -Rank can lead to confusing tractability results on notoriously difﬁcult NP-hard problems. To eradicate any doubts, we
+empirically validated our claims by presenting dollars spent as a non-refutable metric.
+Realising these problems, we proposed a scalable alternative for multi-agent evaluation based on stochastic optimisation
+and double oracles, along with rigorous scalability results on a variety of benchmarks. For future work, we plan to understand
+the relation between α -Rank’s solution and that of a Nash equilibrium. Second, we will attempt to conduct a theoretical study
+on the convergence of our proposed α α -Oracle algorithm.
+
+11/15
+
+References
+
+1. Omidshaﬁei, S. et al. α -rank: Multi-agent evaluation by evolution. Sci. Reports, Nat. (2019).
+2. Nash, J. F. et al. Equilibrium points in n-person games. Proc. national academy sciences 36, 48–49 (1950).
+3. Grau-Moya, J., Leibfried, F. & Bou-Ammar, H. Balancing two-player stochastic games with soft q-learning. arXiv preprint
+arXiv:1802.03216 (2018).
+4. Wen, Y., Yang, Y., Luo, R., Wang, J. & Pan, W. Probabilistic recursive reasoning for multi-agent reinforcement learning.
+arXiv preprint arXiv:1901.09207 (2019).
+5. Leibfried, F., Grau-Moya, J. & Bou-Ammar, H. An information-theoretic optimality principle for deep reinforcement
+learning. CoRR abs/1708.01867 (2017). 1708.01867.
+6. Wen, Y., Yang, Y., Lu, R. & Wang, J. Multi-agent generalized recursive reasoning. arXiv preprint arXiv:1901.09216
+(2019).
+7. Hart, S. & Mas-Colell, A. Uncoupled dynamics do not lead to nash equilibrium. Am. Econ. Rev. 93, 1830–1836 (2003).
+8. Viossat, Y. The replicator dynamics does not lead to correlated equilibria. Games Econ. Behav. 59, 397–407 (2007).
+9. Palaiopanos, G., Panageas, I. & Piliouras, G. Multiplicative weights update with constant step-size in congestion games:
+Convergence, limit cycles and chaos. In Advances in Neural Information Processing Systems, 5872–5882 (2017).
+10. Bowling, M. & Veloso, M. Convergence of gradient dynamics with a variable learning rate. In ICML, 27–34 (2001).
+11. Chen, X. & Deng, X. Settling the complexity of 2-player nash equilibrium. eccc. Tech. Rep., Report (2005).
+12. Rowland, M. et al. Multiagent evaluation under incomplete information (2019). 1909.09849.
+13. Muller, P. et al. A generalized training approach for multiagent learning (2019). 1909.12823.
+14. Lanctot, M. et al. A uniﬁed game-theoretic approach to multiagent reinforcement learning. In Advances in Neural
+Information Processing Systems, 4190–4203 (2017).
+15. Fudenberg, D. & Imhof, L. A. Imitation processes with small mutations. J. Econ. Theory 131, 251–262 (2006).
+16. Pinsky, M. & Karlin, S. An introduction to stochastic modeling (Academic press, 2010).
+17. Lanctot, M. et al. Openspiel: A framework for reinforcement learning in games. arXiv preprint arXiv:1908.09453 (2019).
+18. Papadimitriou, C. H. Computational complexity (John Wiley and Sons Ltd., 2003).
+19. Page, L., Brin, S., Motwani, R. & Winograd, T. The pagerank citation ranking: Bringing order to the web. Tech. Rep.,
+Stanford InfoLab (1999).
+20. Coppersmith, D. & Winograd, S. Matrix multiplication via arithmetic progressions. J. symbolic computation 9, 251–280
+(1990).
+21. Ben-Tal, A., Margalit, T. & Nemirovski, A. The ordered subsets mirror descent optimization method with applications to
+tomography. SIAM J. on Optim. 12, 79–108 (2001).
+22. Garber, D., Hazan, E. & Ma, T. Online learning of eigenvectors. In ICML, 560–568 (2015).
+23. Tropp, J. A., Yurtsever, A., Udell, M. & Cevher, V. Practical sketching algorithms for low-rank matrix approximation.
+SIAM J. on Matrix Analysis Appl. 38, 1454–1485 (2017).
+24. Golub, G. H. & Van der Vorst, H. A. Eigenvalue computation in the 20th century. J. Comput. Appl. Math. 123, 35–65
+(2000).
+25. Silver, D. et al. Mastering chess and shogi by self-play with a general reinforcement learning algorithm. arXiv preprint
+arXiv:1712.01815 (2017).
+26. Silver, D. et al. Mastering the game of go with deep neural networks and tree search. nature 529, 484 (2016).
+27. Liu, S. et al. Emergent coordination through competition. arXiv preprint arXiv:1902.07151 (2019).
+28. Heinrich, J., Lanctot, M. & Silver, D. Fictitious self-play in extensive-form games. In International Conference on Machine
+Learning, 805–813 (2015).
+29. Vinyals, O. et al. Grandmaster level in starcraft ii using multi-agent reinforcement learning. Nature 1–5 (2019).
+30. Kingma, D. P. & Ba, J. Adam: A method for stochastic optimization. arXiv preprint arXiv:1412.6980 (2014).
+31. McMahan, H. B., Gordon, G. J. & Blum, A. Planning in the presence of cost functions controlled by an adversary. In
+Proceedings of the 20th International Conference on Machine Learning (ICML-03), 536–543 (2003).
+
+12/15
+
+32. Leurent, E. An environment for autonomous driving decision-making. https://github.com/eleurent/highway- env (2018).
+33. Ising, E. Beitrag zur theorie des ferromagnetismus. Zeitschrift f ¨ur Physik A Hadron. Nucl. 31, 253–258 (1925).
+
+Appendix
+1 Implementation of α α -RANK
+
+Table 3. Hyper-parameter settings for the experiments
+
+Experiments
+
+NFG (without self-play)
+NFG (self-play)
+Random Matrix
+Car Experiment (SGD)
+Car Experiment (Oracle)
+Ising Model
+
+mmm
+50
+50
+n/a
+40
+40
+40
+
+ααα
+
+10−4 ∼ 102
+10−4 ∼ 102
+n/a
+1.0
+1.0
+90.0
+
+ηηη
+
+1.0
+0.03
+0.01
+15.0
+1.0
+0.01
+
+Max. Iteration
+1000
+1000
+1000
+2000
+200
+4000
+
+βββ 111
+
+0.9
+0.9
+n/a
+0.999
+0.999
+0.999
+
+λλλ
+
+0.5
+0.5
+0.1
+0.5
+0.5
+0.5
+
+δδδ
+
+0.1
+0.1
+0.01
+0.1
+0.1
+0.1
+
+1.1 The Data Structure for Sparsity
+
+The transitional probability matrix TTT in α α -Rank is sparse; each row and column in TTT contains ∑N
+i=1 ki − N + 1 non-zero
+elements (see Section 5). To fully leverage such sparsity, we design a new data structure (see Fig. 6) for the storage and
+computation. Compared to standard techniques (e.g., COO, CSR, and CRS10 ) that store (row, column, value) of a sparse
+vector, our data structure adopts a more efﬁcient protocol that stores (defaults, positions, biases) leading to improvements in
+computational efﬁciency, which gives us additional advantages in computational efﬁciency. We reload the operations for such
+data structure including addition, scalar multiplication, dot product, element-wise square root, L1 norm. We show the example
+of addition in Fig. 6.
+
+1.2 Validity Check on Normal-form Games
+
+0, 0
+
+0, 0
+
+Our algorithm provides the expected ranking in all three normal-form games shown in Fig. 3, which is consistent with the
+results in α -Rank1 .
+Battle of sexes. Battle of sexes is an asymmetric game ROM = [ 3, 2
+2, 3 ]. α α -Rank suggests that populations would spend
+an equal amount of time on the proﬁle (O,O) and (M,M) during the evolution. The distribution mass of (M,O) drops to 0 faster
+than that of (O,M), this is because deviating from (M,O) for either player has a larger gain (from 0 to 3) than deviating from
+(O,M) (from 0 to 2).
+Biased Rock-Paper-Scissor. We consider the biased RPS game RRPS =
+. As it is a single-population
+game, we adopt the transitional probability matrix of Eqn. 11 in1 . Such game has the inherent structure that Rock/Paper/Scissor
+is equally likely to be invaded by a mutant, e.g., the scissor population will always be ﬁxated by the rock population, therefore,
+our method suggests the long-term survival rate for all three strategies are the same ( 1
+3 ). Note this is different from the
+Nash equilibrium solution that is ( 1
+Prison’s Dilemma. In prison’s dilemma RCD = [ −1, −1
+−2, −2 ], cooperation is an evolutionary transient strategy since the
+cooperation player can always be exploited by the defection player. Our method thus yields (D, D) as the only strategy proﬁle
+that could survive in the long-term evolution.
+
+(cid:20) 0
+
+3 , 1
+3 , 1
+
+16 , 5
+8 , 5
+
+16 ).
+
+(cid:21)
+
+−0.5
+0
+0.1
+
+1
+−0.1
+0
+
+0.5
+
+−1
+
+−3, 0
+
+0, −3
+
+2 Additional Details for Experiments
+
+2.1 Hyper-parameters Settings
+
+For all of our experiments, the gradient updates include two phases: warm-up phase and Adam30 phase. In the warm-up phase,
+we used standard stochastic gradient descent; after that, we replace SGD with Adam till the convergence. In practice, we
+ﬁnd this yields faster convergence than normal stochastic gradient descent. As our algorithm does column sampling for the
+stochastic matrix (i.e. batch size equals to one), adding momentum term intuitively help stabilise the learning. The warm-up
+step is 100 for all experiments
+We also implement inﬁnite α 17 , when calculating transition matrix (or its column), where our noise term is set to be 0.01.
+
+10 https://docs.scipy.org/doc/scipy/reference/sparse.html
+
+13/15
+
+Figure 6. Sparse vector representation in α α -Rank.
+
+For most of our experiments that involve α α -rank, we set the terminating condition to be, when the gradient norm is less
+than 10−9 . However, for Random Matrix experiment, we set the terminating gradient norm to be 10−2
+
+• Learning rate to be in between 15 - 17
+
+• Alpha (ranking intensity) to be in between 1 - 2.5
+
+• Number of Population to be between 25 - 55 (in integer)
+
+For all of the Adam experiments, after the warmup-step we chooses to decay δ and λ by 0.999 for each time steps, where we
+have δ to always be 0.1. Similarly, λ starts at the value 0.5. However, in speed and memory experiment, we chooses the decay
+to be 0.9
+List of symbols and names
+
+• Population size: m
+
+• Ranking Intensity: α
+
+• Learning rate: η
+
+2.2 Self-driving Car Experiment
+
+Table 4. Reward settings in Self-driving Car Simulation.
+
+Collision Reward
+
+Speed Reward
+
+Rational driver
+Dangerous driver 1
+Dangerous driver 2
+Dangerous driver 3
+Dangerous driver 4
+
+-2.0
+10.0
+20.0
+30.0
+40.0
+
+0.4
+10.0
+10.0
+10.0
+10.0
+
+14/15
+
+Sparse Vector RepresentationExample of Addition  0.40.7Index:Default Value:    0.1Entries:0.8Default Value:    0.3Entries:Index:1Default Value:    0.2Entries: 0.4++==0.10.10.10.10.20.20.20.20.21.10.30.30.30.60.30.210.340.60.341Index:Index:0.10.70.60.10.10.10.40.3Default Value:    0.1Size:    6Entries:41The environmental reward given to each agent is calculated by
+
+Collision Reward +
+
+Current Velocity
+Default Velocity × Proportional Speed Reward
+Collision Reward is calculated when agent collided with either social car or other agents. All of our value iteration agents
+are based on32 environment discretisation, which represents the environment in terms of time to collision MDP, taking into
+account that the other agents are moving in constant speed. For all experiments, we run value-iteration for 200 steps with
+the discounting factor of 0.99. For each controllable cars, the default speed is randomised to be between 10 to 25, while the
+social cars, the speed are randomised to be between 23 to 25. We deﬁne ﬁve types of driving behaviours (one rational + four
+dangerous) by letting each controlled car have a different ego reward function during training (though the reward we report
+is the environmental reward which cannot be changed). By setting this, we can make sure, at upfront, the best joint-strategy
+strategy should be all cars to drive rationally.
+
+15/15
+
+

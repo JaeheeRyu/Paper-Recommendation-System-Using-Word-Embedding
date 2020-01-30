@@ -1,0 +1,1142 @@
+Improving Unsupervised Domain Adaptation with
+Variational Information Bottleneck
+
+Yuxuan Song1 , Lantao Yu2 , Zhangjie Cao2 , Zhiming Zhou1
+Jian Shen1 , Shuo Shao1 , Weinan Zhang1 , Yong Yu1
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+0
+1
+3
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract. Domain adaptation aims to leverage the supervision sig-
+nal of source domain to obtain an accurate model for target domain,
+where the labels are not available. To leverage and adapt the label
+information from source domain, most existing methods employ a
+feature extracting function and match the marginal distributions of
+source and target domains in a shared feature space. In this paper,
+from the perspective of information theory, we show that represen-
+tation matching is actually an insufﬁcient constraint on the feature
+space for obtaining a model with good generalization performance in
+target domain. We then propose variational bottleneck domain adap-
+tation (VBDA), a new domain adaptation method which improves
+feature transferability by explicitly enforcing the feature extractor to
+ignore the task-irrelevant factors and focus on the information that is
+essential to the task of interest for both source and target domains.
+Extensive experimental results demonstrate that VBDA signiﬁcantly
+outperforms state-of-the-art methods across three domain adaptation
+benchmark datasets.
+
+1
+
+Introduction
+
+Deep learning has shown impressive abilities on solving numerous
+machine learning tasks. Most of recent advances heavily rely on
+the access to huge amount of labeled data and the assumption that
+both training and test data are sampled from the same underlying
+distribution. However, there are many application scenarios where
+the labeled data for the task of interest (target domain) is hard to
+obtain, while another correlated domain (source domain) with non-
+negligible dissimilarity consists of sufﬁcient annotated data. Hence,
+there is strong motivation to leverage the supervision signal from
+source domain to help build an effective model in target domain.
+Learning an accurate predictive model for target domain with the
+presence of covariate shift [34] (i.e., the input data distributions of
+source and target domains are different) is known as domain adap-
+tation. In this paper, we focus on a general and challenging setting
+where no label information is available in target domain, which is
+termed as unsupervised domain adaption.
+Recent advances in deep learning stimulate a fruitful line of do-
+main adaptation works, which leverage deep neural networks to infer
+the latent variables and match the marginal distributions of source
+and target domains in the latent space [7, 16, 18]. Inspired by Gen-
+erative Adversarial Networks [9], an adversarial domain adaptation
+mechanism is utilized in [7, 37, 20, 39]. This mechanism involves
+a two-player game between a discriminator and a feature extractor:
+the domain discriminator is trained to tell whether the samples come
+
+1 Shanghai Jiao Tong University, email: songyuxuan@apex.sjtu.edu.cn
+2 Stanford University, email: lantaoyu@cs.stanford.edu
+
+from source or target domain, while the feature extractor is trained
+to maximize the discriminator’s classiﬁcation error. Essentially, ad-
+versarial domain adaptation methods seek to minimize the Jensen-
+Shannon divergence between source and target distribution of latent
+features.
+However, it has been shown that matching the marginal distribu-
+tion in latent feature space is not strong enough for ensuring the
+essential information to be transferred [40]. It is possible that the
+learned mapping is misled by the domain invariant yet task-irrelevant
+factors and fails to capture the semantic information. Consider the
+following example, the adaptation task is to recognize animals in the
+pictures, and in source domain, most of the sheep are appearing with
+the grassland as the background and most of the horses are appear-
+ing with the animal house as the background; while in target do-
+main the background conﬁguration of the two species are random and
+marginal distributions of the background are the same. In cases like
+this, directly matching the marginal feature distributions could result
+in that the domain-invariant yet task-irrelevant information, (i.e. the
+background in the above example), outweigh the task-relevant infor-
+mation, which then lead to worse performance on target domain (also
+known as negative transfer [23]).
+To tackle the lack of semantic alignment, many recent works pro-
+posed to enhance the label information of target domain based on
+some strong assumptions [20, 32, 39, 28]. One of the most widely
+used hypotheses is the cluster assumption [10] (also known as low
+density separation assumption), which states that the data instances
+are distributed into several separate clusters and samples in the same
+cluster share the same label. However, the cluster assumption is ac-
+tually too strong and inappropriate for many practical scenarios, and
+directly using the cluster assumption could bring non-negligible un-
+desired effects [32].
+In this paper, inspired by the information bottleneck principle, we
+propose a simple yet effective regularization technique for domain
+adaptation methods by combining conditional entropy minimization
+and variational information bottleneck, which enforces the feature
+extractor to ignore the irrelevant factors and focus on the essential
+information for the task of interest (i.e., the sufﬁcient statistics for
+determining the parameters of the predictive models). Our method
+tends to learn a balanced and clean representation space (i.e., no
+information preference on source or target domain and less irrele-
+vant factors), which improves the generalization ability of the pre-
+dictive model and renders strong yet widely used assumptions such
+as the cluster assumption more realistic. We further provide a theo-
+retical analysis on the generalization error bound in Section 4.3. Ex-
+tensive experimental results demonstrate that our model outperforms
+state-of-the-art methods across three domain adaptation benchmark
+
+ 
+ 
+ 
+ 
+ 
+ 
+datasets [38, 27, 22].
+
+2 Related Works
+
+In this section, we discuss several most relevant works in the ﬁeld
+of domain adaptation. [7] and [16] proposed to project the source
+and target domain into a common representation space, and encour-
+aged the corresponding marginal feature distribution to be matched
+under the guidance of some distance or divergence. Adversarial tech-
+niques based on the framework of GAN [9] are widely explored in
+the literatures of domain adaptation [29, 12, 37], which corresponds
+to minimizing the symmetric Jensen-Shannon divergence. However,
+[19] pointed out that adversarial domain adaptation methods which
+only match the marginal distribution are problematic and insufﬁcient
+for successful adaptation. To address this limitation, various methods
+have been proposed. For example, [19, 17] proposed to match the
+joint distribution instead of purely matching the marginal; [8] intro-
+duced a decoder architecture for capturing the semantic information;
+and [12] utilized cycle consistency constraints to preserve semantic
+information. However, the main limitation of these methods is that,
+although the semantic information is enhanced, the learned represen-
+tation is still likely to preserve domain-invariant factors that are irrel-
+evant to the predictive task, which may mislead the semantic align-
+ment especially when training samples are not sufﬁcient enough. In
+the animal recognition example mentioned in Introduction section,
+the background is the domain-invariant yet irrelevant factors. The
+learned representation tended to preserve the background informa-
+tion due to the fact that the background has statistically dependency
+with the class label in source domain and the marginal distribution
+of background is invariant between the source and target domain.
+And irrelevant information will disturb the predictive task on tar-
+get domain. Hence there is strong motivation to enforce the feature
+extractor to only focus on the essential information for the task of
+interest and ignore as much irrelevant factors as possible, no mat-
+ter they are domain-invariant or not. Inspired by this intuition, we
+propose to regularize domain adaptation models with information
+bottleneck principle [35], which seeks to ﬁnd the optimal tradeoff
+between representation accuracy and compression. Since informa-
+tion bottleneck method has been successfully applied to supervised
+learning [1], generative modeling [13, 25] and reinforcement learn-
+ing [25], in the context of domain adaptation, we propose to exploit
+it to preserve sufﬁcient statistics and remove irrelevant factors in the
+learned representations. While [21] also augment domain adaptation
+with information bottleneck, they focus on a speciﬁc scenario, where
+an auxiliary data view (e.g., skeleton data for gestures and bound-
+ing box for objects) is available and the information bottleneck is
+incoporated to leverage these additional data view. In contrast, our
+method seeks to provide a new regularization technique for general
+unsupervised domain adaptation with deep neural networks.
+On the other hand, to counter the lack of attention on target se-
+mantic information, conditional entropy minimization [10] is widely
+used in unsupervised domain adaptation [18, 20]. These methods are
+based on the cluster assumption that, the decision boundary should
+not cross high density regions, but instead lie in low density regions
+[3]. In other words, it assumes that the data instances are distributed
+into several separate clusters, and samples in the same cluster share
+the same class label. However, it should be noted that the cluster
+assumption can be too strong to be satisﬁed in many practical sce-
+narios, which will bring undesired effects to the stability of training
+and performance of the models. Essentially, the cluster assumption
+in the representation space is satisﬁed only when the learned repre-
+
+sentations merely preserve semantic information that is relevant to
+the predictive task, while our variational bottleneck domain adapta-
+tion framework intrinsically seeks to ﬁnd such a clean representa-
+tion space which renders the cluster assumption more realistic and
+achieves better feature transferability.
+
+3 Background & Notations
+3.1 Domain Adaptation
+
+To describe a domain, we introduce a joint data distribution p(x, y)
+with which we deﬁne both the marginals and conditionals. Let
+ps (xs , ys ) denote the underlying joint data distribution of the data
+instance xs and the corresponding label ys for source domain, and
+let ps (xs ) denote the marginal distribution of xs . pt (xt , yt ) and
+pt (xt ) are deﬁned analogously for target domain. In feature-based
+unsupervised domain adaptation, our objective is to train a classi-
+ﬁer fφ,θ = hφ ◦ gθ which can perform well on target domain.
+Speciﬁcally, gθ : X → Z is the feature extractor, which is a pro-
+jection function from data space X to latent feature space Z , and
+hφ : Z → P (Y ) is a classiﬁcation function on the representation
+space, where P (Y ) denotes the set of probability distributions over
+the label set Y . To address the covariate shift problem, many domain
+adaption methods are proposed to minimize the following objective
+motivated by the theory in [2, 7]:
+
+E(xs ,ys )∼ps Lc (fφ,θ (xs ), ys ) + λd(qs (zs ; θ), qt (zt ; θ))
+
+(1)
+
+Here zs and zt are latent representations for source and target do-
+main; qs and qt are the marginal distributions of zs and zt , which
+is implicitly deﬁned by the marginals ps (xs ), pt (xt ) and the deter-
+ministic mapping gθ ; Lc is the cross entropy loss for training a clas-
+siﬁer; d(·, ·) is some divergence or distance measure between two
+distributions and λ is the weighting factor. For instance, in [16], the
+divergence is realized as maximum mean discrepancy (MMD) and in
+many adversarial domain adaptation methods [12, 7, 20], the Jensen-
+Shannon divergence between qs and qt is minimized within an ad-
+versarial learning framework [9]:
+
+min
+
+θ
+
+max
+
+ω
+
+Exs∼ps log Dω (gθ (xs )) + Ext∼pt log(1 − Dω (gθ (xt )))
+
+where Dω is a domain classiﬁer on the representation space. Intu-
+itively, the domain classiﬁer is trained to distinguish the latent rep-
+resentations of source domain from that of target domain, while the
+feature extractor is jointly trained to confuse the discriminator by
+maximizing its classiﬁcation error. At optimality, the marginal dis-
+tributions of latent representations will be matched and the learned
+representations will be domain-invariant.
+
+3.2
+
+Information Bottleneck Principle
+
+Let random variable X denote the original signal and random vari-
+able Y denote an output variable (e.g. desired label), whose infor-
+mation we want to preserve. Given their joint distribution p(X, Y ),
+assuming the statistical dependence between Y and X , the mutual in-
+formation I (X ; Y ) measures the mutual dependence between these
+two random variables. In this case, Y implicitly determines both the
+relevant and irrelevant features in X . The information bottleneck(IB)
+method seeks to ﬁnd an optimal representation of X which captures
+the relevant part and ﬁlters out the irrelevant part.
+Formally, in the context of information bottleneck, we are inter-
+ested in ﬁnding the relevant part of X with respect to Y , denoted
+by Z , the minimal sufﬁcient statistics of X with respect to Y . Thus
+we assume the following Markov chain: Y → X → Z and we can
+
+obtain the optimal representation by minimizing I (X ; Z ) under a
+constraint on I (Y ; Z ) (to ensure the predictive ability of Z ).
+The objective of ﬁnding the optimal representation can be further
+formulated as the maximization of the following Lagrangian [36]:
+
+L(p(z |x)) = I (Y ; Z ) − β I (X ; Z )
+
+(2)
+
+subject to the Markov chain constraint. Here the positive Lagrangian
+multiplier β represents a tradeoff between the complexity of the rep-
+resentation (I (X ; Z )) and the amount of preserved relevant informa-
+tion (I (Y ; Z )). In essence, information bottleneck principle explic-
+itly enforces the learned representation Z to only preserve the infor-
+mation in X that is useful to the prediction of Y , i.e., the minimal
+sufﬁcient statistics of X with respect to Y .
+In this paper, under the framework of information bottleneck prin-
+ciple, we propose a novel domain adaptation method which enforces
+the feature extractor to focus on the relevant factors implicitly deﬁned
+by the task, and provide a thorough analysis of the beneﬁts brought
+by our method both emipirically and theoretically.
+
+4 Method
+4.1 Motivations
+
+[7] claimed that a successful adaptation can be achieved when the
+source domain classiﬁcation error and the domain confusion loss are
+both small, which can be realized through optimizing the objective
+in Equation (1).
+From the perspective of information preference, we can refor-
+mulate the objective in Equation (1) and understand the weak-
+ness of the constraint in a more straightforward way. To begin
+with, we split the loss function in Equation (1) into two terms,
+
+E(xs ,ys )∼ps Lc (fφ,θ (xs ), ys ) and λd(qs (zs ; θ), qt (zt ; θ)). In the fol-
+
+lowing, we will show that minimizing the ﬁrst term is equivalent to
+maximizing a variational lower bound of the mutual information be-
+tween learned representations and the labels in source domain (i.e.,
+I (Ys ; Zs )), and minimizing the second term corresponds to ﬁnding
+the domain-invariant features. To see these, let us ﬁrst rewrite the
+negative of cross entropy loss as:
+
+− E(xs ,ys )∼ps Lc (fφ,θ (xs ), ys )
+=E(xs ,ys )∼ps
+
+pθ (zs |xs ) log hφ (ys |zs )dzs
+
+(cid:20)(cid:90)
+
+(cid:21)
+
+(cid:90)
+
+Here, the inequality holds for the fact that DKL (pθ (y |z )(cid:107)hφ (y |z )) ≥
+0. Since H (Y ) is a constant in our optimization procedure of θ and φ,
+we know that minimizing the ﬁrst term in Equation (1) corresponds
+to maximizing a lower bound of I (Ys ; Zs ).
+The second term λd(qs (zs ; θ), qt (zt ; θ)) accounts for matching
+the marginal distribution of latent variables under the guidance of
+some distance or divergence. One notable example is the optimiza-
+tion of Jensen-Shannon divergence with adversarial training. Essen-
+tially, this constraint seeks to ﬁnd the domain-invariant features of
+X . However, it should be noted that matching the marginals of la-
+tent features is agnostic to the task of interest, which implies that
+the preserved domain-invariant features is likely to contain factors
+that are irrelevant to the prediction of desired labels. From learning
+theory [33] , we know that when the sample size is ﬁnite, the irrele-
+vant factors (for the predictive task) in the noisy inputs can decrease
+the generalization ability of the models. We provide a formal dis-
+cussion about the generalization error bound in Theoretical Analysis
+section. From this perspective, we know that one direction to im-
+prove domain adaptation models is to add more constraints on the
+representation space so that the preserved features will not only be
+domain-invariant, but also relevant to the task of interest.
+On the other hand, due to the supervised learning objective in
+source domain, the learned representation with Equation (1) will in-
+trinsically tend to capture the relationship between data instances
+and labels from source domain, while taking less attention on tar-
+get domain. To take the label information for target domain where
+the exact label is not available into account during the feature learn-
+ing, the cluster assumption can be adapted [18, 3], where the input
+distribution is assumed to contain separated data clusters and that
+data samples in the same cluster share the same class label. Cluster
+assumption introduces an inductive bias where we are seeking deci-
+sion boundaries that do not go through high-density regions, which
+can be implemented through the following conditional entropy min-
+imization:
+
+Lce = Ext∼pt (xt ),zt∼pθ (zt |xt )
+
+hφ (yt |zt ) log hφ (yt |zt )dyt
+
+(4)
+
+Note that the cluster assumption is satisﬁed when the learned rep-
+resentations only preserve semantic information that is relevant to
+the predictive task, it is strongly motivated to ﬁnd a clean represen-
+tation space with information bottleneck to justify the use of strong
+assumptions in domain adaptation methods.
+
+(cid:20)(cid:90)
+
+(cid:21)
+
+=
+
+ps (xs , ys )pθ (zs |xs ) log hφ (ys |zs )dxs dys dzs
+
+(3)
+
+4.2 Variational Bottleneck Domain Adaption
+
+where pθ (zs |xs ) denotes the conditional distribution implied by
+the projection function gθ (when gθ is a deterministic projection,
+pθ (zs |xs ) corresponds to a delta distribution with non-zero density
+at z = gθ (xs )). With the Markov chain assumption introduced in
+the Information Bottleneck Principle section , Equation (3) can be
+rewritten as:
+
+ps (xs , ys )pθ (zs |xs , ys ) log hφ (ys |zs )dxs dys dzs
+pθ (xs , ys , zs ) log hφ (ys |zs )dxs dys dzs
+pθ (ys , zs ) log hφ (ys |zs )dys dzs
+pθ (ys , zs ) log pθ (ys |zs )dys dzs = I (Ys ; Zs ) − H (Ys )
+
+(cid:90)
+(cid:90)
+(cid:90)
+(cid:90)
+
+=
+
+=
+
+≤
+
+Inspired by conditional entropy minimization in semi-supervised
+learning [3, 10] and deep variational information bottleneck [35, 1],
+to achieve better generalization ability, we propose a new regulariza-
+tion mechanism for domain adaptation, which explicitly enforces the
+feature extractor to only preserve the minimal sufﬁcient statistics of
+the input data with respect to the labels for both source and target
+domain.
+As discussed in the Motivations section, from the perspective of
+information bottleneck principle, we know that the objective in Equa-
+tion (1) lacks a constraint for minimizing the mutual information be-
+tween X and Z :
+
+Iθ (X ; Z ) =
+
+pθ (x, z ) log
+
+pθ (z |x)
+pθ (z )
+
+dx dz
+
+(5)
+
+(cid:90)
+
+However, it should be noted that in general, directly comput-
+ing and optimizing I (X ; Z ) is computationally intractable[1], as it
+
+(cid:90)
+
+requires solving an integral over latent feature space. To achieve
+tractability, we follow the methods proposed in [1] and instead opti-
+mize a tractable variational upper bound:
+
+pθ (z |x)
+p(x)pθ (z |x) log
+Iθ (X ; Z ) =
+dx dz
+pθ (z )
+= Ex∼p(x)DKL (pθ (z |x)(cid:107)r(z )) − DKL (pθ (z )(cid:107)r(z ))
+≤ Ex∼p(x)DKL (pθ (z |x)(cid:107)r(z ))
+(cid:44) IU (X ; Z ).
+
+(6)
+
+Here, r(z ) is the prior distribution of latent features and pθ (z )
+denotes the marginal distribution implied by p(x) and conditional
+distribution p(z |x), and the inequality holds for the fact
+that
+
+DKL (pθ (z )(cid:107)r(z )) ≥ 0.
+
+To incorporate the above variational information bottleneck, with
+abuse of notation, we introduce a stochastic feature extracting func-
+tion gθ : X → P (Z ), which maps a sample x to a stochastic repre-
+sentation z ∼ gθ (z |x). Now we can add the following terms to the
+objective in order to enforce the feature extractor to only preserve
+task-relevant factors:
+
+Exs∼ps DKL (gθ (z |xs )(cid:107)r(z )) + Ex∼pt DKL (gθ (z |xt )(cid:107)r(z ))
+
+θ (x), gΣ
+θ (x)),
+
+In our experiments, the stochastic feature extracting function is
+realized as a Gaussian distribution gθ (z |x) = N (z |gµ
+where gθ (x) outputs the mean µ and diagonal covariance matrix Σ
+of z . When r(z ) allows for the computation of Kullback-Leibler di-
+vergence analytically, the upper bound in Equation (6) can be easily
+optimized. Thus we choose r(z ) to be a standard normal distribu-
+tion, r(z ) = N (0, I ). Note that although the objective here shares
+similar mathematical form with the KL regularization term in Vari-
+ational Autoencoder (VAE) [14], the motivation and interpretation
+of the objectives are related but different. As a generative model,
+VAE consists of a pre-determined prior p(z ) for the latent variables
+and a stochastic decoder p(x|z ) for reconstruction. The amortized
+encoder q(z |x) is introduced as a variational approximation to the
+true posterior p(z |x) = p(x|z )p(z )/p(x) and the resulting evidence
+lower bound (ELBO) works as a tractable lower bound for the log-
+likelihood objective. While in the variational information bottleneck,
+the r(z ) is introduced to derive a tractable upper bound for mini-
+mizing the mutual information term. Note that the equality in Equa-
+tion (6) holds only when pθ (z ) = r(z ). Therefore, by choosing a
+simple realization of r(z ) such as standard normal distribution, we
+are also introducing an inductive bias of regularizing the marginal
+distribution of the learned representations (i.e., pθ (z )) to be as sim-
+ple as possible.
+Putting things together, the ﬁnal objective function in our frame-
+work can be written as:
+
+L(θ , φ) = E(xs ,ys )∼ps ,zs∼gθ (z |xs )Lc (hφ (zs ), ys )+
+
+λd · d(qs (zs ; θ), qt (zt ; θ)) + λce · Lce+
+λs · Exs∼ps DKL (gθ (z |xs )(cid:107)r(z ))+
+λt · Ext∼pt DKL (gθ (z |xt )(cid:107)r(z ))
+
+(7)
+Here, Lc is the classiﬁcation loss; qs (zs ) and qt (zt ) are im-
+plicit marginal distributions induced by the marginal distributions
+ps (xs ), pt (xt ) and the conditional distribution gθ (z |x); Lce is the
+conditional entropy term deﬁned in Equation (4); λd , λce , λs and
+λt are hyperparameters controlling the optimization tradeoff among
+each term. Note that there is a stochastic structure in the model,
+we utilize the reparameterization trick introduced in [14] to back-
+propagate unbiased estimated gradients through single example.
+
+4.3 Theoretical Analysis
+
+In this section, we analyze the theoretical properties of our proposed
+method.
+Theorem 1 ([2]) Let H be the hypothesis space, Given (Xs , s ) and
+(Xt , t ) as the two domains and their corresponding test error func-
+tions. Then for any h ∈ H, we have:
+
+t (h) ≤ 1
+2
+
+dH∆H (Xs , Xt ) + s (h) + min
+h(cid:48)∈H t (h
+
+(cid:48)
+
+) + s (h
+
+(cid:48)
+
+)
+
+Here dH∆H represents a discrepancy measure between source and
+target domain with respect to a hypothesis space H, which is deﬁned
+as:
+
+(cid:2)h(x) (cid:54)= h
+dH∆H (Xs , Xt ) =
+2 sup
+h,h(cid:48) ∈H
+
+(cid:107)Ex∼Xs
+
+(cid:48)
+
+(x)(cid:3) − Ex∼Xt
+
+(cid:2)h(x) (cid:54)= h
+
+(cid:48)
+
+(x)(cid:3) (cid:107).
+
+(8)
+
+For a ﬁxed hypothesis space H, dH∆H (Xs , Xt ) is the intrinsic dif-
+ference between source and target domain, which is ﬁxed and de-
+termined by the characteristics of the data distributions. Now we
+will show that how the I (X ; Z ) term from information bottle-
+neck principle can help minimize the test error term, i.e. s (h) and
+
+minh(cid:48)∈H t (h(cid:48) ) + s (h(cid:48) ) in Theorem 1.
+
+Theorem 2 ([31]) For any probability distribution p(x, y), with a
+probability of at least 1 − δ over the draw of the sample of size m
+from p(x, y), ˆI (X ; Z ) and ˆI (Y ; Z ) are the empirical estimate of the
+mutual information I (X ; Z ) and I (Y ; Z ). Then for any Z ,
+
+(cid:114)
+
+|I (Y ; Z ) − ˆI (Y ; Z )| ≤
+(C1 log(m)(cid:112)|Z I (X ; Z )|
+C log(|Y |/δ)
++ C2 |Z |3/4 (I (X ; Z ))1/4 + C3 ˆI (X ; Z ))
+m
+
+(9)
+where C, C1 , C2 and C3 are constants. |Z | and |Y | correspond to
+the cardinality of variables Z and Y .
+Theorem. 2 shows that the |I (Y ; Z ) − ˆI (Y ; Z )| which is a mea-
+sure of difference between training and test error is bounded by a
+monotonic function of I (X ; Z ). Essentially, it is true that minimiz-
+ing I (X ; Z ) will minimize the generalization error, but this is not
+enough. A degenerate case is I (X ; Z ) = 0, in which case the pre-
+diction is random, although the difference between training and test
+error is zero. So we also need to make sure both the training error
+and the generalization error is small. We can decrease s (h) with
+information bottleneck (IB) principle, since we are explicitly min-
+imizing the training error in source domain and the generalization
+error in both domains. For minh(cid:48) ∈H t (h(cid:48) ) + s (h(cid:48) ), ideally IB will
+not harm predictive ability by just removing irrelevant factors, so the
+combined training error minh(cid:48) ∈H ˆt (h(cid:48) )+ ˆs (h(cid:48) ) should be the same
+with or without IB. While the combined test error is the sum of com-
+bined training error and combined generalization error, we are also
+able to reduce the combined test error.
+
+5 Experiments
+
+We conduct experiments on various visual domain adaptation bench-
+marks including Ofﬁce-31, Ofﬁce-home and Digits, to compare our
+approach against state-of-the-art deep domain adaptation methods.
+
+Table 1. Classiﬁcation accuracy (%) on Ofﬁce-31 (ResNet50)
+
+Method
+ResNet-50 [11]
+RTN [18]
+DANN [7]
+ADDA [37]
+MADA[24]
+SimNet[26]
+GTA [30]
+
+VBDA
+
+A → W
+68.4±0.2
+84.5±0.2
+82.0±0.4
+86.2±0.5
+90.0± 0.1
+88.6±0.5
+89.5±0.5
+
+W → D
+99.3±0.1
+99.4±0.1
+99.1±0.1
+98.4±0.3
+99.6 ± 0.1
+99.7±0.2
+99.8±0.4
+
+A → D
+68.9±0.2
+77.5±0.3
+79.7±0.4
+77.8±0.3
+87.8 ± 0.2
+85.3 ± 0.3
+87.7±0.5
+
+D → W
+96.7±0.1
+96.8±0.1
+96.9±0.2
+96.2±0.3
+97.4 ± 0.1
+98.2 ± 0.2
+97.9±0.3
+
+D → A
+W → A
+62.5±0.3
+60.7±0.3
+66.2±0.2
+64.8±0.3
+68.2±0.4
+67.4±0.5
+69.5±0.4
+68.9±0.5
+70.3 ± 0.3
+66.4 ± 0.3
+72.8±0.3
+71.4 ±0.4
+69.4±0.1
+69.1±0.3
+Ar(cid:1)Cl Ar(cid:1)Pr Ar(cid:1)Rw Cl(cid:1)Ar Cl(cid:1)Pr Cl(cid:1)Rw Pr(cid:1)Ar Pr(cid:1)Cl Pr(cid:1)Rw Rw(cid:1)Ar Rw(cid:1)Cl Rw(cid:1)Pr Avg
+34.9
+50.0
+58.0
+37.4
+41.9
+46.2
+38.5
+31.2
+60.4
+53.9
+41.2
+59.9
+46.1
+43.6
+57.0
+67.9
+45.8
+56.5
+60.4
+44.0
+43.6
+67.7
+63.1
+51.5
+74.3
+56.3
+45.6
+59.3
+70.1
+47.0
+58.5
+60.9
+46.1
+43.7
+68.5
+63.2
+51.8
+76.8
+57.6
+45.9
+61.2
+68.9
+50.4
+59.7
+61.0
+45.8
+43.4
+70.3
+63.9
+52.4
+76.8
+58.3
+69.3
+74.5
+54.4
+66.0
+68.4
+55.6
+75.9
+68.4
+80.5
+63.8
+
+Table 2. Accuracy (%) on Ofﬁce-Home for unsupervised domain adaptation (ResNet50)
+
+73.4 ± 0.8
+
+Avg
+76.1
+81.6
+82.2
+82.9
+85.2
+86.2
+86.5
+
+87.0
+
+71.6 ± 0.6
+
+92.1±0.1
+
+93.2±0.2
+
+100.0±.0
+
+98.6±0.1
+
+70.7
+
+75.0
+
+58.1
+
+70.0
+
+68.8
+
+56.1
+
+76.2
+
+69.1
+
+Method
+ResNet-50 [11]
+DAN [16]
+DANN [7]
+JAN [19]
+CDAN [17]
+
+VBDA
+
+49.0
+
+45.6
+
+48.3
+
+45.8
+
+55.4
+
+53.8
+
+81.3
+
+64.21
+
+Table 3. Classiﬁcation accuracies (%) on digits datasets.
+Source Domain
+M
+U
+S
+Target Domain
+U
+M
+M
+UNIT[15]
+93.6
+90.5
+CyCADA [12]
+96.5
+90.4
+RAAN [4]
+92.1
+89.2
+CDAN [17]
+89.2
+VBDA(ours)
+
+95.6
+89.0
+95.6
+
+98.0
+98.0
+
+96.0
+
+96.0
+
+93.8
+
+5.1 Setup
+
+Ofﬁce-31 [27] is a widely-used dataset for visual domain adaptation,
+with 4,652 images and 31 categories from three distinct domains:
+Amazon (A), which contains images downloaded from amazon.com,
+Webcam (W) and DSLR (D), which contain images taken by web
+camera and digital SLR camera respectively. We denote the three
+domains as A, W and D. By permuting the 3 domains, we get 6
+domain adaptation tasks.
+Ofﬁce-home [38] is a better organized and more difﬁcult dataset
+than Ofﬁce-31, which consists of 15,500 images in 65 object classes
+in ofﬁce and home settings. It consists of four extremely dissimilar
+domains: Artistic images (Ar), Clip Art (Cl), Product images (Pr),
+and Real-World images (Rw). There are 12 domain adaptation tasks
+by permuting the 4 domains.
+Digits We also explore three digits datasets of varying difﬁculty,
+MNIST, SVHN and USPS. Following the evaluation protocol of
+CyCADA [12], we investigate the following three tasks: USPS to
+MNIST (U → M), MNIST to USPS (M → U) and SVHN to MNIST
+
+(S → M).
+
+We follow the standard protocols for evaluating unsupervised do-
+main adaptation [16, 7]. In the experiments, we observed that the
+hyperparameters (λd , λs , λt , λce ) are easy to choose and work well
+across multiple tasks. Speciﬁcally, we keep a ﬁxed weight λd for do-
+main adversarial loss and we choose the value of λs , λt , λce from
+a small candidate set, i.e., {0.1, 0.01}. The hyperparameters λs ,λt
+for variational information bottleneck are selected according to the
+entropy of domain. For example, the higher-entropy domain tends
+to hold more irrelevant information and needs a larger mutual in-
+formation regularization weight. The experiments on Ofﬁce-31 and
+
+Ofﬁce-home is implemented based on ResNet-50 [11] pretrained on
+the ImageNet dataset [5]. As for the digits dataset, we train our mod-
+els with a small CNN [6].
+
+5.2 Results
+
+The results on the Ofﬁce-31 dataset are reported in Table 1. For fair
+comparison, the baselines are directly reported from their original
+papers if the protocol is the same. Our VBDA model remarkably
+outperforms all comparison methods on most of the tasks. Notably,
+the model performance are remarkably improved on the hard task,
+e.g., A → W , A → D , where the two domain are signiﬁcantly dif-
+ferent. The interpretation follows that the variations of the source and
+target domain in these tasks are substantially different, and the task-
+irrelevant information are the main obstacles for adapting model.
+Thus this demonstrate that VBDA is good at eliminating these factors
+and focusing on the essential information for the task of interest. The
+performance is also further promoted on the relatively easy tasks,
+such as D → W and W → D . However, the model performance
+on the tasks, W → A and D → A are slightly lower than some
+approaches. This is due to the fact that, the average number of im-
+ages for 31 classes in Webcam and DSLR are only 26 and 16, which
+are much lower than the number of bins for representing the image
+distribution and make the empirically estimated mutual information
+bounds not reliable enough for applying effective information bottle-
+neck.
+The results on the Ofﬁce-home can be found in Table 2. The
+VBDA method signiﬁcantly promotes the accuracy on most domain
+adaptation tasks and outperforms CDAN, a state-of-the-art method
+on this dataset by 0.41% on average. The Ofﬁce-home is a more
+challenging dataset, which has four domains with larger domain gap
+and more categories. The information difference between the four
+domains are more obvious, i.e. Rw and Ar contains much more re-
+dundant information than Cl and Pr for classiﬁcation task, and the
+information bottleneck can help control the information ﬂow ﬂexibly
+to learn clean representation for adaptation and classiﬁcation. The
+desirable performance on such challenging domain adaption tasks
+highlights the effectiveness of matching essential information by uti-
+lizing information bottleneck principle.
+
+(a) Test accuracy for different λs .(λt = 0)
+
+(b) Test accuracy for different λt .(λs = 1e − 4)
+
+(c) DANN+CE vs VBDA
+Figure 1. The sensitivity of the accuracy w.r.t the value of th (left) and tl (right).
+
+(d) IU (X ; Z ) and IL (Y ; Z )
+
+The results on digits datasets are shown in Table (3). In task
+MNIST→USPS and USPS→MNIST, VBDA performs better or at
+least comparably with previous methods. And on the more challeng-
+ing setting, SVHN→MNIST, our model promotes the existing meth-
+ods by 3.3%. In particular, VBDA outperforms CyCADA, a state-of-
+the-art pixel-level adaptation method, which further proves the efﬁ-
+cacy of VBDA.
+
+And the mutual information changes during the optimization is
+showed in the Fig (1(d)). As we can observe, the mutual information
+between the representation and label, i.e., I (Ys ; Z ) and I (Yt ; Z ), are
+both improved during the training and the mutual information upper
+bound, i.e., IU (Xs ; Z ) and IU (Xt ; Z ), between input and represen-
+tation gradually declined, which indicates that more semantic infor-
+mation has been embedded and more nuisances have been removed
+in the representation space.
+
+5.3 Analysis and Ablation Study
+
+To make a distinction between the utility of two main components
+of VBDA: the conditional entropy term and the information bot-
+tleneck term, we conduct a case study on task SVHN→MNIST.
+We can observe that in Fig (1(c)), with conditional entropy term
+only(DANN+CE), the training is quite unstable; with bottleneck term
+only, the training is stable while the performance declines; with both
+terms, the model converges stably to a best test accuracy on target
+domain.
+We also conduct ablation studies on hyper-parameter learning for
+λs and λt in task SVHN→MNIST. λt is preferred to be smaller than
+λs , since SVHN has more irrelevant information to be penalized than
+MNIST. From Fig (1(a)), we can observe, the accuracy suffers with
+a too large λs . As λs becomes larger, we forget more about the in-
+put and the learned representation start to become more and more
+indistinguishable. And the best performance is achieved with an in-
+termediate value of λs , in this case, the best setting is λs = 1e − 4.
+Similar phenomenon can be observed on the λt in Fig (1(b)).
+
+5.4 Feature Visualization
+
+The t-SNE visualization of representation in task A→W (31 classes)
+is illustrated in Fig (2). Note that the source and target representation
+is not aligned well by Resnet. DANN can match the marginal feature
+distribution, but there are still target points near or across the class
+boundary. MADA aligns the source and target domain and discrimi-
+nates categories better, but each class are more scattered than that in
+VBDA and some target points deviate from the corresponding clus-
+ter center. VBDA has clearer cluster boundary and more compact and
+centered clusters, demonstrating that information irrelevant to classi-
+ﬁcation is ﬁltered by the proposed variational information bottleneck
+and only information relevant to classiﬁcation is preserved.
+
+6 Conclusions
+
+In this paper, we proposed Variation Bottleneck Domain Adaptation
+(VBDA), a simple yet effective regularization mechanism for unsu-
+pervised domain adaptation. VBDA enhances semantic information
+
+01000020000300004000050000600007000080000Iteration0.750.800.850.900.951.00Test Accuracyλs=1e−2λs=1e−3λs=5e−3λs=1e−4λs=1e−501000020000300004000050000600007000080000Iteration0.800.850.900.951.00Test Accuracyλt=1e−4λt=1e−5λt=5e−5λt=5e−6λt=1e−6λt=001000020000300004000050000600007000080000Iteration0.10.20.30.40.50.60.70.80.91.0Test AccuracyDANN,λce=0.01λs=1e−4,λce=0.01λs=1e−4,λce=0.001000020000300004000050000600007000080000Iteration0500100015002000IUIU(Xs;Z)IU(Xt;Z)IL(Ys;Z)IL(Yt;Z)1.01.52.02.53.03.5IL(a) Resnet
+
+(b) DANN
+
+(c) MADA
+(d) VBDA
+Figure 2. The t-SNE visualization of Resnet, DANN, MADA and VBDA on task A → W (red:A,blue:W)
+
+and removes irrelevant factors in the learned representation space,
+which improves generalization ability and renders strong hypothe-
+sis such as cluster assumption more realistic. Comprehensive experi-
+ments demonstrate that the proposed approach achieves state-of-the-
+art performance on various domain adaptation benchmarks.
+
+REFERENCES
+
+[1] Alexander A Alemi,
+Ian Fischer, Joshua V Dillon, and Kevin
+Murphy, ‘Deep variational information bottleneck’, arXiv preprint
+arXiv:1612.00410, (2016).
+[2] Shai Ben-David, John Blitzer, Koby Crammer, Alex Kulesza, Fernando
+Pereira, and Jennifer Wortman Vaughan, ‘A theory of learning from
+different domains’, Machine learning, (2010).
+[3] Olivier Chapelle and Alexander Zien, ‘Semi-supervised classiﬁcation
+by low density separation.’, in AISTATS. Citeseer, (2005).
+[4] Qingchao Chen, Yang Liu, Zhaowen Wang, Ian Wassell, and Kevin
+Chetty, ‘Re-weighted adversarial adaptation network for unsupervised
+domain adaptation’, in CVPR, (2018).
+Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei,
+‘Imagenet: A large-scale hierarchical image database’, (2009).
+[6] Geoffrey French, Michal Mackiewicz, and Mark Fisher,
+‘Self-
+ensembling for domain adaptation’, arXiv preprint arXiv:1706.05208,
+(2017).
+
+[5]
+
+[9]
+
+[13]
+
+[7] Yaroslav Ganin, Evgeniya Ustinova, Hana Ajakan, Pascal Germain,
+Hugo Larochelle, Franc¸ ois Laviolette, Mario Marchand, and Victor
+Lempitsky, ‘Domain-adversarial training of neural networks’, JMLR,
+(2016).
+[8] Muhammad Ghifary, W Bastiaan Kleijn, Mengjie Zhang, David Bal-
+duzzi, and Wen Li, ‘Deep reconstruction-classiﬁcation networks for un-
+supervised domain adaptation’, in ECCV. Springer, (2016).
+Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David
+Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio,
+‘Generative adversarial nets’.
+[10] Yves Grandvalet and Yoshua Bengio, ‘Semi-supervised learning by en-
+tropy minimization’, in NIPS, pp. 529–536, (2005).
+[11] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, ‘Deep resid-
+ual learning for image recognition’, in CVPR, (2016).
+Judy Hoffman, Eric Tzeng, Taesung Park, Jun-Yan Zhu, Phillip
+Isola, Kate Saenko, Alexei A Efros, and Trevor Darrell,
+‘Cy-
+cada: Cycle-consistent adversarial domain adaptation’, arXiv preprint
+arXiv:1711.03213, (2017).
+Insu Jeon, Wonkwang Lee, and Gunhee Kim, ‘Ib-gan: Disentangled
+representation learning with information bottleneck gan’, (2018).
+[14] Diederik P Kingma and Max Welling, ‘Auto-encoding variational
+bayes’, arXiv preprint, (2013).
+[15] Ming-Yu Liu, Thomas Breuel, and Jan Kautz, ‘Unsupervised image-to-
+image translation networks’, in NIPS, (2017).
+[16] Mingsheng Long, Yue Cao, Jianmin Wang, and Michael I Jordan,
+‘Learning transferable features with deep adaptation networks’, arXiv
+preprint arXiv:1502.02791, (2015).
+
+[12]
+
+[17] Mingsheng Long, Zhangjie Cao, Jianmin Wang, and Michael I Jordan,
+‘Conditional adversarial domain adaptation’, in NeurIPS, (2018).
+[18] Mingsheng Long, Han Zhu, Jianmin Wang, and Michael I Jordan,
+‘Unsupervised domain adaptation with residual transfer networks’, in
+NIPS, (2016).
+[19] Mingsheng Long, Han Zhu, Jianmin Wang, and Michael I Jordan,
+‘Deep transfer learning with joint adaptation networks’, in ICML.
+JMLR. org, (2017).
+[20] Zelun Luo, Yuliang Zou, Judy Hoffman, and Li F Fei-Fei, ‘Label ef-
+ﬁcient learning of transferable representations acrosss domains and
+tasks’, in NIPS, (2017).
+[21] Saeid Motiian and Gianfranco Doretto, ‘Information bottleneck domain
+adaptation with privileged information for visual recognition’, in Euro-
+pean Conference on Computer Vision, pp. 630–647. Springer, (2016).
+[22] Yuval Netzer, Tao Wang, Adam Coates, Alessandro Bissacco, Bo Wu,
+and Andrew Y Ng, ‘Reading digits in natural images with unsupervised
+feature learning’, (2011).
+[23] Sinno Jialin Pan and Qiang Yang, ‘A survey on transfer learning’,
+TKDE, (2010).
+[24] Zhongyi Pei, Zhangjie Cao, Mingsheng Long, and Jianmin Wang,
+‘Multi-adversarial domain adaptation’, in AAAI, (2018).
+[25] Xue Bin Peng, Angjoo Kanazawa, Sam Toyer, Pieter Abbeel, and
+Sergey Levine, ‘Variational discriminator bottleneck: Improving imi-
+tation learning, inverse rl, and gans by constraining information ﬂow’,
+arXiv preprint, (2018).
+[26] Pedro O Pinheiro, ‘Unsupervised domain adaptation with similarity
+learning’, in CVPR, (2018).
+[27] Kate Saenko, Brian Kulis, Mario Fritz, and Trevor Darrell, ‘Adapting
+visual category models to new domains’, in ECCV. Springer, (2010).
+[28] Kuniaki Saito, Yoshitaka Ushiku, and Tatsuya Harada, ‘Asymmet-
+ric tri-training for unsupervised domain adaptation’, arXiv preprint
+arXiv:1702.08400, (2017).
+[29] Kuniaki Saito, Yoshitaka Ushiku, and Tatsuya Harada, ‘Asymmetric
+tri-training for unsupervised domain adaptation’, in ICML. JMLR. org,
+(2017).
+[30] Swami Sankaranarayanan, Yogesh Balaji, Carlos D Castillo, and Rama
+Chellappa, ‘Generate to adapt: Aligning domains using generative ad-
+versarial networks’, in CVPR, (2018).
+[31] Ohad Shamir, Sivan Sabato, and Naftali Tishby, ‘Learning and gener-
+alization with the information bottleneck’, Theoretical Computer Sci-
+ence, (2010).
+[32] Rui Shu, Hung H Bui, Hirokazu Narui, and Stefano Ermon, ‘A
+dirt-t approach to unsupervised domain adaptation’, arXiv preprint
+arXiv:1802.08735, (2018).
+[33] Eduardo D Sontag, ‘Vc dimension of neural networks’, NATO ASI Se-
+ries F Computer and Systems Sciences, 168, 69–96, (1998).
+[34] Masashi Sugiyama and Motoaki Kawanabe, Machine learning in non-
+stationary environments: Introduction to covariate shift adaptation,
+MIT press, 2012.
+[35] Naftali Tishby, Fernando C Pereira, and William Bialek, ‘The informa-
+tion bottleneck method’, arXiv preprint physics/0004057, (2000).
+[36] Naftali Tishby and Noga Zaslavsky, ‘Deep learning and the information
+bottleneck principle’, in ITW. IEEE, (2015).
+[37] Eric Tzeng, Judy Hoffman, Kate Saenko, and Trevor Darrell, ‘Adver-
+sarial discriminative domain adaptation’, in CVPR, (2017).
+[38] Hemanth Venkateswara, Jose Eusebio, Shayok Chakraborty, and Sethu-
+raman Panchanathan, ‘Deep hashing network for unsupervised domain
+adaptation’, in CVPR, (2017).
+[39] Shaoan Xie, Zibin Zheng, Liang Chen, and Chuan Chen, ‘Learning se-
+mantic representations for unsupervised domain adaptation’, in ICML,
+(2018).
+[40] Han Zhao, Remi Tachet des Combes, Kun Zhang, and Geoffrey J
+Gordon, ‘On learning invariant representation for domain adaptation’,
+arXiv preprint arXiv:1901.09453, (2019).
+
+

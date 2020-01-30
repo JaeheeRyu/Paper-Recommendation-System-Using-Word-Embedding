@@ -1,0 +1,1446 @@
+Adversarial Examples Improve Image Recognition
+
+Cihang Xie1,2 ∗ Mingxing Tan1 Boqing Gong1
+Jiang Wang1 Alan Yuille2 Quoc V. Le1
+1Google
+2 Johns Hopkins University
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+V
+
+C
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+5
+6
+6
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Adversarial examples are commonly viewed as a threat
+to ConvNets. Here we present an opposite perspective: ad-
+versarial examples can be used to improve image recogni-
+tion models if harnessed in the right manner. We propose
+AdvProp, an enhanced adversarial training scheme which
+treats adversarial examples as additional examples, to pre-
+vent overﬁtting. Key to our method is the usage of a sepa-
+rate auxiliary batch norm for adversarial examples, as they
+have different underlying distributions to normal examples.
+We show that AdvProp improves a wide range of models
+on various image recognition tasks and performs better
+when the models are bigger. For instance, by applying
+AdvProp to the latest EfﬁcientNet-B7 [28] on ImageNet, we
+achieve signiﬁcant improvements on ImageNet (+0.7%),
+ImageNet-C (+6.5%),
+ImageNet-A (+7.0%), Stylized-
+ImageNet (+4.8%). With an enhanced EfﬁcientNet-B8,
+our method achieves the state-of-the-art 85.5% ImageNet
+top-1 accuracy without extra data.
+This result even
+surpasses the best model in [20] which is trained with
+3.5B Instagram images (∼3000× more than ImageNet)
+and ∼9.4× more parameters. Models are available at
+
+https://github.com/tensorflow/tpu/tree/
+master/models/official/efficientnet.
+
+1. Introduction
+
+Adversarial examples crafted by adding imperceptible
+perturbations to images, can lead Convolutional Neural Net-
+works (ConvNets) to make wrong predictions. The exis-
+tence of adversarial examples not only reveals the limited
+generalization ability of ConvNets, but also poses security
+threats on the real-world deployment of these models. Since
+the ﬁrst discovery of the vulnerability of ConvNets to adver-
+sarial attacks [27], many efforts [5, 15, 29, 19, 13, 31] have
+been made to improve network robustness.
+In this paper, rather than focusing on defending against
+adversarial examples, we shift our attention to leverag-
+ing adversarial examples to improve accuracy. Previous
+works show that training with adversarial examples can
+
+∗Work done during an internship at Google.
+
+Figure 1. AdvProp improves image recognition. By training
+
+models on ImageNet, AdvProp helps EfﬁcientNet-B7 to achieve
+85.2% accuracy on ImageNet [23], 52.9% mCE (mean corrup-
+tion error, lower is better) on ImageNet-C [7], 44.7% accuracy on
+ImageNet-A [8] and 26.6% accuracy on Stylized-ImageNet [4],
+beating its vanilla counterpart by 0.7%, 6.5%, 7.0% and 4.8%, re-
+spectively. Theses sample images are randomly selected from the
+category “goldﬁnch”.
+
+enhance model generalization but are restricted to certain
+situations—the improvement is only observed either on
+small datasets (e.g., MNIST) in the fully-supervised setting
+[5], or on larger datasets but in the semi-supervised setting
+[21, 22]. Meanwhile, recent works [15, 13, 31] also suggest
+that training with adversarial examples on large datasets,
+e.g., ImageNet [23], with supervised learning results in per-
+formance degradation on clean images. To summarize, it
+remains an open question of how adversarial examples can
+be used effectively to help vision models.
+
+1
+
+ImageNet-AAcc.↑EfficientNet-B7               37.7%+AdvProp(ours)      44.7%(+7.0%)ImageNet-CmCE ↓EfficientNet-B7               59.4%+AdvProp(ours)      52.9% (-6.5%)ImageNetAcc.↑EfficientNet-B7                  84.5%+AdvProp(ours)      85.2% (+0.7%)Stylized-ImageNetAcc.↑EfficientNet-B7                   21.8%+AdvProp(ours)          26.6% (+4.8%) 
+ 
+ 
+ 
+ 
+ 
+We observe all previous methods jointly train over clean
+images and adversarial examples without distinction even
+though they should be drawn from different underlying dis-
+tributions. We hypothesize this distribution mismatch be-
+tween clean examples and adversarial examples is a key
+factor that causes the performance degradation in previous
+works [15, 13, 31].
+In this paper, we propose AdvProp, short for Adversar-
+ial Propagation, a new training scheme that bridges the dis-
+tribution mismatch with a simple yet highly effective two-
+batchnorm approach. Speciﬁcally, we propose to use two
+batch norm statistics, one for clean images and one auxil-
+iary for adversarial examples. The two batchnorms prop-
+erly disentangle the two distributions at normalization lay-
+ers for accurate statistics estimation. We show this distri-
+bution disentangling is crucial, enabling us to successfully
+improve, rather than degrade, model performance with ad-
+versarial examples.
+To our best knowledge, our work is the ﬁrst to show
+adversarial examples can improve model performance in
+the fully-supervised setting on large scale datasets. For
+example, an EfﬁcientNet-B7 [28] trained with AdvProp
+achieves 85.2% top-1 accuracy on ImageNet, beating its
+vanilla counterpart by 0.8%. The improvement by AdvProp
+is more notable when testing models on distorted images.
+As summarized in Fig. 1, AdvProp helps EfﬁcientNet-B7
+to gain an absolute improvement of 9.0%, 7.0% and 5.0%
+on ImageNet-C [7], ImageNet-A [8] and Stylized-ImageNet
+[4], respectively.
+As AdvProp effectively prevents overﬁtting and per-
+forms better with larger networks, we develop a larger net-
+work, named EfﬁcientNet-B8, by following similar com-
+pound scaling rules in [28]. With our proposed AdvProp,
+EfﬁcientNet-B8 achieves the state-of-the-art 85.5% top-1
+accuracy on ImageNet without any extra data. This result
+even surpasses the best model reported in [20], which is
+pretrained on 3.5B extra Instagram images (∼3000× more
+than ImageNet) and requires ∼9.4× more parameters than
+our EfﬁcientNet-B8.
+
+2. Related Work
+
+Adversarial Training. Adversarial training, which trains
+networks with adversarial examples, constitutes the current
+foundation of state-of-the-arts for defending against adver-
+sarial attacks [5, 15, 19, 31]. Although adversarial train-
+ing signiﬁcantly improves model robustness, how to im-
+prove clean image accuracy with adversarial training is still
+under-explored. VAT [21] and deep co-training [22] attempt
+to utilize adversarial examples in semi-supervised settings,
+but they require enormous extra unlabeled images. Under
+supervised training settings, adversarial examples are typ-
+ically considered hurting accuracy on clean images, e.g.,
+∼10% drop on CIFAR-10 [19] and ∼15% drop on ImageNet
+
+[31]. Tsipras et al. [30] argue that the performance trade-
+off between adversarial robustness and standard accuracy is
+provably inevitable, and attribute this phenomenon as a con-
+sequence of robust classiﬁers learning fundamentally differ-
+ent feature representations than standard classiﬁers. Zhang
+et al. [34] further propose a regularized surrogate loss to
+trade accuracy for robustness.
+This paper focuses on standard supervised learning with-
+out extra data. Although using similar adversarial training
+techniques, we stand on an opposite perspective to previous
+works—we aim at using adversarial examples to improve
+clean image recognition accuracy.
+
+Beneﬁts of Learning Adversarial Features. Many works
+
+corroborate that training with adversarial examples brings
+additional features to ConvNets. For example, compared
+with clean images, adversarial examples make network rep-
+resentations align better with salient data characteristics and
+human perception [30]. Moreover, such trained models are
+much more robust to high frequency noise [32]. Zhang et
+al. [35] further suggest these adversarially learned feature
+representations are less sensitive to texture distortions and
+focus more on shape information.
+Our proposed AdvProp can be characterized as a train-
+ing paradigm which fully exploits the complementarity be-
+tween clean images and their corresponding adversarial ex-
+amples. The results further suggest that adversarial fea-
+tures are indeed beneﬁcial for recognition models, which
+agree with the conclusions drawn from these aforemen-
+tioned studies.
+Data augmentation. Data augmentation, which applies a
+set of label-preserving transformations to images, serves as
+an important and effective role to prevent networks from
+overﬁtting [14, 24, 6]. Besides traditional methods like hor-
+izontal ﬂipping and random cropping, different augmenta-
+tion techniques have been proposed, e.g., applying mask-
+ing out [3] or adding Gaussian noise [18] to regions in im-
+ages, or mixing up pairs of images and their labels in a
+convex manner [33]. Recent works also demonstrate that
+it is possible to learn data augmentation policies automati-
+cally for achieving better performance on image classiﬁca-
+tion [16, 1, 2, 17] and object detection [36, 2].
+Our work can be regarded as one type of data augmenta-
+tion: creating additional training samples by injecting noise.
+However, all previous attempts, by augmenting either with
+random noise (e.g., Tab. 5 in [15] shows the result of train-
+ing with random normal perturbations) or adversarial noise
+[15, 29, 13], fail to improve accuracy on clean images.
+
+3. A Preliminary Way to Boost Performance
+
+Madry et al. [19] formulate adversarial training as a
+min-max game and train models exclusively on adversar-
+ial examples to effectively boost model robustness. How-
+
+though such trained EfﬁcientNet-B3 signiﬁcantly outper-
+forms the Madry’s adversarial training baseline, it is still
+slightly below (-0.2%) the vanilla training setting. There-
+fore, a natural question arises: is it possible to distill valu-
+able features from adversarial examples in a more effective
+manner and boost model performance further generally?
+
+4. Methodology
+
+The results in Sec. 3 suggest that properly integrating
+information from both adversarial examples and clean im-
+ages even in a simple manner improves model performance.
+However, such ﬁne-tuning strategy may partially override
+features learned from adversarial examples, leading to a
+sub-optimal solution. To address this issue, we propose a
+more elegant approach, named AdvProp, to jointly learn
+from clean images and adversarial examples. Our method
+handles the issue of distribution mismatch via explicitly de-
+coupling batch statistics on normalization layers, and thus
+enabling a better absorption from both adversarial and clean
+features. In this section, we ﬁrst revisit the adversarial train-
+ing regime in Sec. 4.1, and then introduce how to enable
+disentangled learning for a mixture of distributions via aux-
+iliary BNs in Sec. 4.2. Finally, we summarize the training
+and testing pipeline in Sec. 4.3.
+
+4.1. Adversarial Training
+
+(cid:104)
+
+(cid:105)
+
+,
+
+We ﬁrst recall the vanilla training setting, and the objec-
+tive function is
+
+E(x,y)∼D
+
+θ
+
+arg min
+
+L(θ , x, y)
+
+(1)
+where D is the underlying data distribution, L(·, ·, ·) is the
+loss function, θ is the network parameter, and x is training
+sample with ground-truth label y .
+Consider Madry’s adversarial training framework [19],
+instead of training with original samples, it trains networks
+with maliciously perturbed samples,
+
+(cid:104)
+
+(cid:105)
+
+E(x,y)∼D
+
+arg min
+
+θ
+
+max
+∈S L(θ , x + , y)
+
+,
+
+(2)
+
+where  is a adversarial perturbation, S is the allowed per-
+turbation range. Though such trained models have several
+nice properties as described in [35, 32, 30], they cannot gen-
+eralize well to clean images [19, 31].
+Unlike Madry’s adversarial training, our main goal is to
+improve network performance on clean images by lever-
+aging the regularization power of adversarial examples.
+Therefore we treat adversarial images as additional training
+samples and train networks with a mixture of adversarial
+examples and clean images, as suggested in [5, 15],
+
+(cid:20)
+
+(cid:16)
+
+arg min
+
+θ
+
+E(x,y)∼D
+
+L(θ , x, y) + max
+∈S L(θ , x + , y)
+
+(cid:17)(cid:21)
+
+.
+
+(3)
+
+Figure 2. Two take-home messages from the experiments on Ima-
+geNet: (1) training exclusively on adversarial examples results in
+performance degradation; and (2) simply training with adversarial
+examples and clean images in turn can improve network perfor-
+mance on clean images. Fine-tuning details: we train networks
+with adversarial examples in the ﬁrst 175 epochs, and then ﬁne-
+tune with clean images in the rest epochs.
+
+ever, such trained models usually cannot generalize well
+to clean images as shown in [19, 31]. We validate this
+result by training a medium-scale model (EfﬁcientNet-B3)
+and a large-scale model (EfﬁcientNet-B7) on ImageNet us-
+ing PGD attacker1 [19]—both adversarially trained models
+obtain much lower accuracy on clean images compared to
+their vanilla counterparts. For instance, such adversarially
+trained EfﬁcientNet-B3 only obtains an accuracy of 78.2%
+on the clean images, whereas vanilla trained EfﬁcientNet-
+B3 achieves 81.7% (see Fig. 2).
+We hypothesize such performance degradation is mainly
+caused by distribution mismatch—adversarial examples
+and clean images are drawn from two different domains
+therefore training exclusively on one domain cannot well
+transfer to the other. If this distribution mismatch can be
+properly bridged, then performance degradation on clean
+images should be mitigated even if adversarial examples are
+used for training. To validate our hypothesis, we hereby ex-
+amine a simple strategy—pre-train networks with adversar-
+ial examples ﬁrst, and then ﬁne-tune with clean images.
+The results are summarized in Fig. 2. As expected, this
+simple ﬁne-tuning strategy (marked in light orange) always
+yields much higher accuracy than Madry’s adversarial train-
+ing baseline (marked in grey), e.g., it increases accuracy by
+3.3% for EfﬁcientNet-B3. Interestingly, while compared to
+the standard vanilla training setting where only clean im-
+ages are used (marked in blue), this ﬁne-tuning strategy
+sometimes even help networks to achieve superior perfor-
+mance, e.g., it increases EfﬁcientNet-B7 accuracy by 0.3%,
+achieving 84.8% top-1 accuracy on ImageNet.
+The observation above delivers a promising signal—
+adversarial examples can be beneﬁcial for model perfor-
+mance if harnessed properly. Nonetheless, we note that
+this approach fails to improve performance in general, e.g.,
+
+1 For PGD attacker, we set the maximum perturbation per pixel =4, the
+step size α=1 and the number of attack iteration n = 5.
+
+81.784.578.283.581.584.877787980818283848586B3B7ImageNetTop-1Accuracy(%)Vanilla TrainingMadry's Adversarial TrainingMadry's Adversarial Training + Fine-tuningIdeally, such trained models should enjoy the beneﬁts from
+both adversarial and clean domains. However, as observed
+in former studies [5, 15], directly optimizing Eq. (3) gener-
+ally yields lower performance than the vanilla training set-
+ting on clean images. We hypothesize that the distribution
+mismatch between adversarial examples and clean images
+prevents networks from accurately and effectively distilling
+valuable features from both domains. Next, we will intro-
+duce how to properly disentangle different distributions via
+our auxiliary batch norm design.
+
+4.2. Disentangled Learning via An Auxiliary BN
+
+Batch normalization (BN) [12] serves as an essential
+component for many state-of-the-art computer vision mod-
+els [6, 10, 26]. Speciﬁcally, BN normalizes input features
+by the mean and variance computed within each mini-batch.
+One intrinsic assumption of utilizing BN is that the input
+features should come from a single or similar distributions.
+This normalization behavior could be problematic if the
+mini-batch contains data from different distributions, there-
+fore resulting in inaccurate statistics estimation.
+
+Figure 3. Comparison between (a) traditional BN usage and (b)
+the utilization of auxiliary BN. The left and right panels illustrate
+the information ﬂow in the corresponding network architectures
+and the estimated normalization statistics when facing a mixture
+of adversarial and clean images, respectively.
+
+We argue that adversarial examples and clean images
+have different underlying distributions, and the adversarial
+training framework in Eq. (3) essentially involves a two-
+component mixture distribution. To disentangle this mix-
+ture distribution into two simpler ones respectively for the
+clean and adversarial images, we hereby propose an aux-
+iliary BN to guarantee its normalization statistics are ex-
+clusively preformed on the adversarial examples. Speciﬁ-
+cally, as illustrated in Fig. 3(b), our proposed auxiliary BN
+helps to disentangle the mixed distributions by keeping sep-
+
+arate BNs to features that belong to different domains. Oth-
+erwise, as illustrated in Fig. 3(a), simply maintaining one
+set of BN statistics results in incorrect statistics estimation,
+which could possibly lead to performance degradation.
+Note that we can generalize this concept to multiple aux-
+iliary BNs, where the number of auxiliary BNs is deter-
+mined by the number of training sample sources. For exam-
+ple, if training data contains clean images, distorted images
+and adversarial images, then two auxiliary BNs should be
+maintained. Ablation studies in Sec. 5.4 demonstrates that
+such ﬁne-grained disentangled learning with multiple BNs
+can improve performance further. A more general usage of
+multiple BNs will be further explored in future works.
+
+4.3. AdvProp
+
+We formally propose AdvProp in Algorithm 1 to accu-
+rately acquire clean and adversarial features during train-
+ing. For each clean mini-batch, we ﬁrst attack the network
+using the auxiliary BNs to generate its adversarial counter-
+part; next we feed the clean mini-batch and the adversar-
+ial mini-batch to the same network but applied with differ-
+ent BNs for loss calculation, i.e., use the main BNs for the
+clean mini-batch and use the auxiliary BNs for the adver-
+sarial mini-batch; ﬁnally we minimize the total loss w.r.t.
+the network parameter for gradient updates. In other words,
+except BNs, convolutional and other layers are jointly opti-
+mized for both adversarial examples and clean images. At
+test time, all auxiliary BNs are dropped and we only use the
+main BNs for inference.
+
+Algorithm 1: Pseudo code of AdvProp
+
+Data: A set of clean images with labels;
+Result: Network parameter θ ;
+for each training step do
+Sample a clean image mini-batch xc with label y ;
+Generate the corresponding adversarial mini-batch xa
+using the auxiliary BNs;
+Compute loss Lc (θ , xc , y) on clean mini-batch xc using
+the main BNs;
+Compute loss La (θ, xa , y) on adversarial mini-batch xa
+using the auxiliary BNs;
+Minimize the total loss w.r.t. network parameter
+
+arg min
+
+La (θ , xa , y) + Lc (θ , xc , y).
+
+θ
+
+end
+return θ
+
+Experiments show that such disentangled learning
+framework enables networks to get much stronger perfor-
+mance than the adversarial training baseline [5, 15]. Be-
+sides, compared to the ﬁne-tuning strategy in Sec. 3, Ad-
+vProp also demonstrates superior performance as it enables
+networks to jointly learn useful feature from adversarial ex-
+amples and clean examples at the same time.
+
+convBNReLUxcleanxadv,xcleanxadvconvReLUxadv,xcleanBNAuxiliaryBNxprobablitycleanadvclean + adv(𝝁𝒄𝒍𝒆𝒂𝒏+𝒂𝒅𝒗,𝝈𝒄𝒍𝒆𝒂𝒏+𝒂𝒅𝒗)(𝝁𝒂𝒅𝒗,𝝈𝒂𝒅𝒗)(𝝁𝒄𝒍𝒆𝒂𝒏,𝝈𝒄𝒍𝒆𝒂𝒏)ProbabilityxProbabilityxcleanadvclean + advcleanadvclean+advconvBNReLUxcleanxadv,xcleanxadvconvReLUxadv,xcleanBNAuxiliaryBN(𝝁𝒄𝒍𝒆𝒂𝒏+𝒂𝒅𝒗,𝝈𝒄𝒍𝒆𝒂𝒏+𝒂𝒅𝒗)xprobablitycleanadvclean + adv(𝝁𝒂𝒅𝒗,𝝈𝒂𝒅𝒗)(𝝁𝒄𝒍𝒆𝒂𝒏,𝝈𝒄𝒍𝒆𝒂𝒏)ProbabilityxProbabilityxcleanadvclean + advcleanadvclean+adv(a) Traditional BN(b) Proposed Auxiliary BN Design5. Experiments
+
+5.1. Experiments Setup
+
+Architectures. We choose EfﬁcientNets [28] at different
+computation regimes as our default architectures, rang-
+ing from the light-weight EfﬁcientNet-B0 to the large
+EfﬁcientNet-B7. Compared to other ConvNets, Efﬁcient-
+Net achieves much better accuracy and efﬁciency. We fol-
+low the settings in [28] to train these networks: RMSProp
+optimizer with decay 0.9 and momentum 0.9; batch norm
+momentum 0.99; weight decay 1e-5; initial learning rate
+0.256 that decays by 0.97 every 2.4 epochs; a ﬁxed Au-
+toAugment policy [1] is applied to augment training images.
+Adversarial Attackers. We train networks with a mixture
+of adversarial examples and clean images as in Eq. (3). We
+choose Projected Gradient Descent (PGD) [19] under L∞
+norm as the default attacker for generating adversarial ex-
+amples on-the-ﬂy. We try PGD attackers with different per-
+turbation size , ranging from 1 to 4. We set the number
+iteration for the attackers n=+1, except for the case =1
+where n is set to 1. The attack step size is ﬁxed to α=1.
+Datasets. We use the standard ImageNet dataset [23] to
+train all models. In addition to reporting performance on
+the original ImageNet validation set, we go beyond by test-
+ing the models on the following test sets:
+• ImageNet-C [7]. The ImageNet-C dataset is designed
+for measuring the network robustness to common image
+corruptions. It consists of 15 diverse corruption types and
+each type of corruption has ﬁve levels of severity, result-
+ing in 75 distinct corruptions.
+• ImageNet-A [8]. The ImageNet-A dataset adversarially
+collects 7,500 natural, unmodiﬁed but “hard” real-world
+images. These images are drawn from some challenging
+scenarios (e.g., occlusion and fog scene) which are difﬁ-
+cult for recognition.
+• Stylized-ImageNet [4]. The Stylized-ImageNet dataset
+is created by removing local texture cues while retaining
+global shape information on natural images via AdaIN
+style transfer [11]. As suggested in [4], networks are re-
+quired to learn more shape-based representations to im-
+prove accuracy on Stylized-ImageNet.
+Compared to ImageNet,
+images from ImageNet-C,
+ImageNet-A and Stylized-ImageNet are much more chal-
+lenging, even for human observers.
+
+5.2. ImageNet Results and Beyond
+
+ImageNet Results. Fig. 4 shows the results on the Ima-
+geNet validation set. We compare our method with the
+vanilla training setting. The family of EfﬁcientNets pro-
+vides a strong baseline, e.g., EfﬁcientNet-B7’s 84.5% top-1
+accuracy is the prior art on ImageNet [28].
+
+Figure 4. AdvProp boosts model performance over the vanilla
+training baseline on ImageNet. This improvement becomes more
+signiﬁcant if trained with larger networks. Our strongest result is
+reported by the EfﬁcientNet-B7 trained with AdvProp, i.e., 85.2%
+top-1 accuracy on ImageNet.
+
+As different networks favor different attacker strengths
+when trained with AdvProp (which we ablate next), we ﬁrst
+report the best result in Fig. 4. Our proposed AdvProp sub-
+stantially outperforms the vanilla training baseline on all
+networks. This performance improvement is proportional
+to the network capacity and larger networks tend to perform
+better if they are trained with AdvProp. For example, the
+performance gain is at most 0.4% for networks smaller than
+EfﬁcientNet-B4, but is at least 0.6% for networks larger
+than EfﬁcientNet-B4.
+Compared to the prior art, i.e., 84.5% top-1 accuracy,
+an EfﬁcientNet-B6 trained with AdvProp (with ∼2× less
+FLOPs than EfﬁcientNet-B7) already surpasses it by 0.3%.
+Our strongest result is obtained by the EfﬁcientNet-B7
+trained with AdvProp which achieves 85.2% top-1 accuracy
+on ImageNet, beating the prior art by 0.7%.
+
+Generalization on Distorted ImageNet Datasets. Next,
+
+we evaluate models on distorted ImageNet datasets, which
+are much more difﬁcult than the original ImageNet. For
+instance, though ResNet-50 demonstrates reasonable per-
+formance on ImageNet (76.7% accuracy), it only achieves
+74.8% mCE (mean corruption error, lower is better) on
+ImageNet-C, 3.1% top-1 accuracy on ImageNet-A and
+8.0% top-1 accuracy on Stylized-ImageNet.
+The results are summarized in Tab. 1. Again, our pro-
+posed AdvProp consistently outperforms the vanilla train-
+ing baseline for all models on all distorted datasets. The
+improvement here is much more signiﬁcant than that on
+
+010203040FLOPs (x 109)777879808182838485ImageNet Top-1 Accuracy (%)83.384.384.885.283.083.784.284.5Vanilla TrainingAdvProp (ours)B7(+0.7)B6(+0.6)B5(+0.6)B4(+0.3)B3(+0.2)B2(+0.2)B1(+0.4)B0(+0.3)Model
+
+ResNet-50
+EfﬁcientNet-B0
++ AdvProp (ours)
+EfﬁcientNet-B1
++ AdvProp (ours)
+EfﬁcientNet-B2
++ AdvProp (ours)
+EfﬁcientNet-B3
++ AdvProp (ours)
+EfﬁcientNet-B4
++ AdvProp (ours)
+EfﬁcientNet-B5
++ AdvProp (ours)
+EfﬁcientNet-B6
++ AdvProp (ours)
+EfﬁcientNet-B7
++ AdvProp (ours)
+
+ImageNet-C* [7]
+mCE ↓
+74.8
+70.7
+
+66.2 (-4.5)
+
+ImageNet-A [8]
+Top-1 Acc. ↑
+3.1
+6.7
+
+7.1 (+0.4)
+
+Stylized-ImageNet* [4]
+Top-1 Acc. ↑
+8.0
+13.1
+
+14.6 (+1.5)
+
+65.1
+
+60.2 (-4.9)
+
+64.1
+
+61.4 (-2.7)
+
+62.9
+
+57.8 (-5.1)
+
+60.7
+
+58.6 (-2.1)
+
+62.3
+
+56.2 (-6.1)
+
+60.6
+
+53.6 (-7.0)
+
+59.4
+
+52.9 (-6.5)
+
+9.0
+
+10.1 (+1.1)
+
+10.8
+
+11.8 (+1.0)
+
+17.9
+
+18.0 (+0.1)
+
+26.4
+
+27.9 (+1.5)
+
+29.4
+
+34.4 (+5.0)
+
+34.5
+
+40.6 (+6.1)
+
+37.7
+
+44.7 (+7.0)
+
+15.0
+
+16.7 (+1.7)
+
+16.8
+
+17.8 (+1.0)
+
+17.8
+
+21.4 (+3.6)
+
+20.2
+
+22.5 (+1.7)
+
+20.8
+
+24.4 (+3.6)
+
+20.9
+
+25.9 (+4.0)
+
+21.8
+
+26.6 (+4.8)
+
+Table 1. AdvProp signiﬁcantly boost models’ generalization abil-
+ity on ImageNet-C, ImageNet-A and Stylized-ImageNet. The
+highest result on each dataset is 52.9%, 44.7% and 26.6% re-
+spectively, all achieved by the EfﬁcientNet-B7 trained with Ad-
+vProp. *For ImageNet-C and Stylized-ImageNet, as distortions
+are speciﬁcally designed for images of the size 224×224×3, so
+we follow the previous setup [4, 7] to ﬁx the testing image size at
+224×224×3 for a fair comparison.
+
+the original ImageNet. For example, AdvProp improves
+EfﬁcientNet-B3 by 0.2% on ImageNet, and substantially
+boosts the performance by 5.1% on ImageNet-C and 3.6%
+on Stylized-ImageNet.
+The EfﬁcientNet-B7 trained with AdvProp reports the
+strongest results on these datasets—it obtains 52.9% mCE
+on ImageNet-C, 44.7% top-1 accuracy on ImageNet-A and
+26.6% top-1 accuracy on Stylized-ImageNet. These are the
+best results so far if models are not allowed to train with
+corresponding distortions [4] or extra data [20, 31].
+To summarize, the results suggest that AdvProp signif-
+icantly boosts the generalization ability by allowing mod-
+els to learn much richer internal representations than the
+vanilla training. The richer representations not only provide
+models with global shape information for better classifying
+Stylized-ImageNet dataset, but also increase model robust-
+ness against common image corruptions.
+
+Ablation on Adversarial Attacker Strength. We now ab-
+
+late the effects of attacker strength used in AdvProp on net-
+work performance. Speciﬁcally, the attacker strength here
+is determined by perturbation size , where larger perturba-
+tion size indicates stronger attacker. We try with different 
+ranging from 1 to 4, and report the corresponding accuracy
+on the ImageNet validation set in Tab. 2.
+
+PGD5 (=4)
+PGD4 (=3)
+PGD3 (=2)
+PGD1 (=1)
+
+B0
+77.1
+77.3
+77.4
+
+77.6
+
+B1
+79.2
+79.4
+79.4
+
+79.6
+
+B2
+80.3
+80.4
+80.4
+
+80.5
+
+B3
+81.8
+
+81.9
+81.9
+
+81.8
+
+B4
+
+83.3
+83.3
+
+83.1
+83.1
+
+B5
+
+84.3
+84.3
+84.3
+84.3
+
+B6
+
+84.8
+
+84.7
+84.7
+84.6
+
+B7
+
+85.2
+
+85.1
+85.0
+85.0
+
+Table 2. ImageNet performance of models trained with AdvProp
+and different attack strength. In general, smaller networks favor
+weaker attackers, while larger networks favor stronger attackers.
+
+With AdvProp, we observe that smaller networks gen-
+erally favor weaker attackers.
+For example,
+the light-
+weight EfﬁcientNet-B0 achieves the best performance by
+using 1-step PGD attacker with perturbation size 1 (denoted
+as PGD1 (=1)), signiﬁcantly outperforms the counterpart
+which trained with 5-step PGD attacker with perturbation
+size 4 (denoted as PGD5 (=4)), i.e., 77.6% v.s. 77.1%.
+This phenomenon is possibly due to that small networks are
+limited by their capacity to effectively distill information
+from strong adversarial examples, even the mixture distri-
+butions are well disentangled via auxiliary BNs.
+Meanwhile, networks with enough capacity tend to fa-
+vor stronger attackers. By increasing attacker strength from
+PGD1 (=1) to PGD5 (=4), AdvProp boosts EfﬁcientNet-
+B7’s accuracy by 0.2%. This observation motivate our later
+ablation on keeping increasing attackers strength to fully
+exploit the potential of large networks.
+
+5.3. Comparisons to Adversarial Training
+
+As shown in Fig. 4 and Tab. 1, AdvProp improves mod-
+els for better recognition than the vanilla training baseline.
+These results contradict previous conclusions [15, 29, 13]
+that the performance degradation is always observed if ad-
+versarial examples are used for training. We hereby pro-
+vide a set of ablations for explaining this inconsistency. We
+choose the PGD5 (=4) as the default attacker to generate
+adversarial examples during training.
+
+Figure 5. AdvProp substantially outperforms adversarial training
+[5] on ImageNet, especially for small models.
+
+Comparison Results. We compare AdvProp to traditional
+adversarial training [5], and report evaluation results on Im-
+ageNet validation set in Fig. 5. Compared to the traditional
+adversarial training, our method consistently achieves better
+accuracy on all models. This result suggests that carefully
+handling BN statistics estimation is important for training
+better models with adversarial examples.
+The biggest
+improvement
+is observed when using
+EfﬁcientNet-B0 where our method beats the traditional ad-
+versarial training by 0.9%. While by using larger models,
+this improvement becomes smaller—it stays at ∼0.5% un-
+til scaling to EfﬁcientNet-B5, but then drops to 0.3% for
+EfﬁcientNet-B6 and 0.1% for EfﬁcientNet-B7, respectively.
+
+76.278.779.781.382.983.884.585.1+0.9+0.5+0.6+0.5+0.4+0.5+0.3+0.1757779818385B0B1B2B3B4B5B6B7ImageNet Top-1Accuracy(%)Adversarial Training [5]AdvProp (ours)Quantifying Domain Differences. One possible hypothe-
+
+sis for the observation above is that more powerful networks
+have stronger ability to learn a uniﬁed internal representa-
+tions on the mixed distributions, therefore mitigate the issue
+of distribution mismatch at normalization layers even with-
+out the help of auxiliary BNs. To support this hypothesis,
+we take models trained with AdvProp, and compare the per-
+formance difference between the settings that use either the
+main BNs or the auxiliary BNs. As such resulted networks
+share all other layers except BNs, the corresponding perfor-
+mance gap empirically captures the degree of distribution
+mismatch between adversarial examples and clean images.
+We use ImageNet validation set for evaluation, and summa-
+rize the results in Tab. 3.
+
+B0
+BN
+77.1
+Auxiliary BN 73.7
++3.4
+
+(cid:52)
+
+B1
+79.2
+75.9
++3.3
+
+B2
+80.3
+77.0
++3.3
+
+B3
+81.8
+78.6
++3.2
+
+B4
+83.3
+80.5
++2.8
+
+B5
+84.3
+82.1
++2.2
+
+B6
+84.8
+82.7
++2.1
+
+B7
+85.2
+83.3
++1.9
+
+Table 3. Performance comparison between settings that use either
+the main BNs and auxiliary BNs on ImageNet. This performance
+difference captures the degree of distribution mismatch between
+adversarial examples and clean images.
+
+By training with larger networks, we observe this perfor-
+mance difference gets smaller. Such gap for EfﬁcientNet-
+B0 is 3.4%, but then is reduced to 1.9% for EfﬁcientNet-
+B7. It suggests that the internal representations of adver-
+sarial examples and clean images learned on large networks
+are much more similar than that learned on small networks.
+Therefore, with a strong enough network, it is possible to
+accurately and effectively learn a mixture of distributions
+even without a careful handling at normalization layers.
+Why AdvProp? For small networks, our comparison
+shows that AdvProp substantially outperforms the adver-
+sarial training baseline. We attribute this performance im-
+provement mainly to the successful disentangled learning
+via auxiliary BNs.
+For larger networks, though the improvement is rela-
+tively small on ImageNet, AdvProp consistently outper-
+forms the adversarial training baseline by a large margin
+on distorted ImageNet datasets. As shown in Tab. 4, Ad-
+vProp improves EfﬁcientNet-B7 by 3.1% on ImageNet-C,
+4.3% on ImageNet-A and 1.5% on Stylized-ImageNet over
+the adversarial training baseline.
+
+ImageNet-C [7]
+mCE ↓
+55.8
+
+53.6
+
+ImageNet-A [8]
+Top-1 Acc. ↑
+37.0
+
+40.6
+
+Stylized-ImageNet [4]
+Top-1 Acc. ↑
+24.7
+
+25.9
+
+56.0
+
+52.9
+
+40.4
+
+44.7
+
+25.1
+
+26.6
+
+Model
+
+B6 + Adv. Training
+B6 + AdvProp (ours)
+B7 + Adv. Training
+B7 + AdvProp (ours)
+
+Table 4. AdvProp demonstrates much stronger generalization abil-
+ity on distorted ImageNet datasets (e.g., ImageNet-C) than the ad-
+versarial training baseline for larger models.
+
+Moreover, AdvProp enables large networks to perform
+better if trained with stronger attackers. For example,
+by slightly increasing attacker strength from PGD5 (=4)
+to PGD7 (=6), AdvProp further helps EfﬁcientNet-B7 to
+
+achieve 85.3% top-1 accuracy on ImageNet. Conversely,
+applying such attacker to traditional adversarial training de-
+creases EfﬁcientNet-B7’s accuracy to 85.0%, possibly due
+to a more severe distribution mismatch between adversarial
+examples and clean images.
+In summary, AdvProp enables networks to enjoy the
+beneﬁts of adversarial examples even with limited capacity.
+For networks with enough capacity, compared to adversar-
+ial training, AdvProp demonstrates much stronger general-
+ization ability and better at exploiting model capacity for
+improving performance further.
+
+Missing Pieces in Traditional Adversarial Training. In
+
+our reproduced adversarial training, we note it is already
+better than the vanilla training setting on large networks.
+For example, our adversarially trained EfﬁcientNet-B7 has
+85.1% top-1 accuracy on ImageNet, which beats the vanilla
+training baseline by 0.6%. However, previous works [15,
+13] show adversarial training always degrades performance.
+Compared to [15, 13], we make two changes in our re-
+implementation: (1) using stronger networks; and (2) train-
+ing with weaker attackers. For examples, previous works
+use networks like Inception or ResNet for training, and set
+the perturbation size =16; while we use much stronger Ef-
+ﬁcientNet for training, and limit the perturbation size to a
+much smaller value =4. Intuitively, weaker attackers push
+the distribution of adversarial examples less away from the
+distribution of clean images, and larger networks are better
+at bridging domain differences. Both factors mitigate the
+issue of distribution mismatch, thus making networks much
+easier to learn valuable feature from both domains.
+
+5.4. Ablations
+
+Fine-grained Disentangled Learning via Multiple Aux-
+
+iliary BNs. Following [28], our networks are trained with
+AutoAugment [1] by default, which include operations like
+rotation and shearing. We hypothesize these operations
+(slightly) shift the original data distribution and propose to
+add an extra auxiliary BN to disentangle these augmented
+data further for ﬁne-grained learning. In total, we keep one
+main BN for clean images without AutoAugment, and two
+auxiliary BNs for clean images with AutoAugment and ad-
+versarial examples, respectively.
+We try PGD attackers with perturbation size ranging
+from 1 to 4, and report the best result on ImageNet in Tab. 5.
+Compared to the default AdvProp, this ﬁne grained strat-
+egy further improves performance.
+It helps EfﬁcientNet-
+B0 to achieve 77.9% accuracy with just 5.3M parameters,
+which is the state-of-the-art performance for mobile net-
+works. As a comparison, MobileNetv3 has 5.4M param-
+eters with 75.2% accuracy [9]. These results encourage
+the future investigation on more ﬁne-grained disentangled
+learning with mixture distributions in general, not just for
+adversarial training.
+
+AdvProp
+Fine-Grained AdvProp
+
+B0
+77.6
+
+77.9
+
+B1
+79.6
+
+79.8
+
+B2
+80.5
+
+82.0
+
+B3
+81.9
+
+83.5
+
+B4
+83.3
+
+83.5
+
+B5
+84.3
+
+84.4
+
+B6
+
+84.8
+84.8
+
+B7
+
+85.2
+85.2
+
+Table 5. Fine-grained AdvProp substantially boosts model accu-
+racy on ImageNet, especially for small models. We perform ﬁne-
+grained disentangled learning by keeping an additional auxiliary
+BN for AutoAugment images.
+
+Comparison to AutoAugment. Training with adversarial
+
+examples is a form of data augmentation. We choose
+the standard Inception-style pre-processing [25] as base-
+line, and compare the beneﬁts of additionally applying Au-
+toAugment or AdvProp. We train networks with PGD5
+(=4) and evaluate performance on ImageNet.
+Results are summarized in Tab. 6. For small models,
+AutoAugment is slightly better than AdvProp although we
+argue this gap can be addressed by adjusting the attacker
+strength. For large models, AdvProp signiﬁcantly outper-
+forms AutoAugment. Training with AutoAugment and Ad-
+vProp in combination is better than using AdvProp alone.
+
+Inception Pre-process [25]
++ AutoAugment [1]
++ AdvProp (ours)
+
++ Both (ours)
+
+B0
+76.8
++0.5
++0.3
++0.3
+
+B1
+78.8
++0.4
++0.3
++0.4
+
+B2
+79.8
++0.5
++0.2
++0.5
+
+B3
+81.0
++0.7
++0.4
++0.8
+
+B4
+82.6
++0.4
++0.3
++0.7
+
+B5
+83.2
++0.5
++0.8
++1.1
+
+B6
+83.7
++0.5
++0.9
++1.1
+
+B7
+84.0
++0.5
++0.9
++1.2
+
+Table 6. Both AutoAugment and AdvProp improves model per-
+formance over the Inception-style pre-processing baseline on Ima-
+geNet. Large Models generally perform better with AdvProp than
+AutoAugment. Training with a combination of both is better than
+using AdvProp alone on all networks
+
+Attackers Other Than PGD. We hereby study the effects
+of applying different attackers in AdvProp on model per-
+formance. Speciﬁcally, we try two different modiﬁcations
+on PGD: (1) we no longer limit the perturbation size to be
+within the -ball, and name this attacker to Gradient Descent
+(GD) as it removes the projection step in PGD; or (2) we
+skip the random noise initialization step in PGD, turn it to I-
+FGSM [15]. Other attack hyper-parameters are unchanged:
+the maximum perturbation size =4 (if applicable), number
+of attack iteration n=5 and attack step size α=1.0.
+For simplicity, we only experiment with EfﬁcientNet-
+B3, EfﬁcientNet-B5 and EfﬁcientNet-B7, and report the Im-
+ageNet performance in Tab. 7. We observe that all attackers
+substantially improve model performance over the vanilla
+training baseline. This result suggests that our AdvProp is
+not designed for a speciﬁc attacker (e.g., PGD), but a gen-
+eral mechanism for improving image recognition models
+with different adversarial attacker.
+
+Vanilla Training
+PGD [19]
+I-FGSM [15]
+GD
+
+B3
+81.7
+81.8
+81.9
+81.7
+
+B5
+83.7
+84.3
+84.3
+84.3
+
+B7
+84.5
+85.2
+85.2
+85.3
+
+Table 7. ImageNet performance when trained with different attack-
+ers. With AdvProp, all attackers successfully improve model per-
+formance over the vanilla training baseline.
+
+ResNet Results. Besides EfﬁcientNets, we also experi-
+ment with ResNet [6]. We compare AdvProp against two
+baselines: vanilla training and adversarial training. We ap-
+ply PGD5 (=4) to generate adversarial examples, and fol-
+low the settings in [6] to train all networks.
+We report model performance on ImageNet in Tab. 8.
+Compared to vanilla training, adversarial training always
+degrades model performance while AdvProp consistently
+leads to better accuracy on all ResNet models. Take
+ResNet-152 for example, adversarial training decreases the
+baseline performance by 2.0%, but our AdvProp further
+boosts the baseline performance by 0.8%.
+
+Vanilla Training
+Adversarial Training
+AdvProp (ours)
+
+ResNet-50 ResNet-101 ResNet-152 ResNet-200
+76.7
+78.3
+79.0
+79.3
+-3.2
+-1.8
+-2.0
+-1.4
+
++0.4
+
++0.6
+
++0.8
+
++0.8
+
+Table 8. Performance comparison among vanilla training, adver-
+sarial training and AdvProp on ImageNet. AdvProp reports the
+best result on all ResNet models.
+
+In Sec. 5.3, we show that adversarial training can im-
+prove performance if large EfﬁcientNets are used for train-
+ing. However, this phenomenon is not observed on ResNet,
+e.g., adversarial training still leads to inferior accuracy even
+trained with the large ResNet-200. It may suggest that ar-
+chitecture design also plays an important role when training
+with adversarial example, and we leave it as a future work.
+
+Pushing The Envelope with a Larger Model. Previous
+
+results suggest AdvProp performs better with larger net-
+works. To push the envelope, we train a larger network,
+EfﬁcientNet-B8, by scaling up EfﬁcientNet-B7 further ac-
+cording to the compound scaling rule in [28].
+Our AdvProp improves the accuracy of EfﬁcientNet-B8
+from 84.8% to 85.5%, achieving a new state-of-the-art ac-
+curacy on ImageNet without using extra data. This result
+even surpasses the best model reported in [20], which is pre-
+trained on 3.5B extra Instagram images (∼3000× more than
+ImageNet) and requires ∼9.4× more parameters (829M vs.
+88M) than our EfﬁcientNet-B8.
+
+6. Conclusion
+
+Previous works commonly view adversarial examples as
+a threat to ConvNets, and suggest training with adversarial
+examples lead to accuracy drop on clean images. Here we
+offer a different perspective: to use adversarial examples for
+improving accuracy of ConvNets. As adversarial examples
+have different underlying distributions to normal examples,
+we propose to use an auxiliary batch norm for disentangled
+learning by processing adversarial examples and clean im-
+ages separately at normalization layers. Our method, Ad-
+vProp, signiﬁcantly improves accuracy of all ConvNets in
+our experiments. Our strongest model reports the state-of-
+the-art 85.5% top-1 accuracy on ImageNet without any ex-
+tra data.
+
+References
+
+[1] Ekin D Cubuk, Barret Zoph, Dandelion Mane, Vijay Vasude-
+van, and Quoc V Le. Autoaugment: Learning augmentation
+policies from data. In CVPR, 2019. 2, 5, 7, 8
+[2] Ekin D Cubuk, Barret Zoph, Jonathon Shlens, and Quoc V
+Le. Randaugment: Practical data augmentation with no sep-
+arate search. arXiv preprint arXiv:1909.13719, 2019. 2
+[3] Terrance DeVries and Graham W Taylor. Improved regular-
+ization of convolutional neural networks with cutout. arXiv
+preprint arXiv:1708.04552, 2017. 2
+[4] Robert Geirhos, Patricia Rubisch, Claudio Michaelis,
+Matthias Bethge, Felix A Wichmann, and Wieland Brendel.
+Imagenet-trained cnns are biased towards texture; increasing
+shape bias improves accuracy and robustness. In ICLR, 2018.
+1, 2, 5, 6, 7
+[5] Ian J Goodfellow, Jonathon Shlens, and Christian Szegedy.
+Explaining and harnessing adversarial examples. In ICLR,
+2015. 1, 2, 3, 4, 6
+[6] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.
+Deep residual learning for image recognition.
+In CVPR,
+2016. 2, 4, 8
+[7] Dan Hendrycks and Thomas G Dietterich. Benchmarking
+neural network robustness to common corruptions and sur-
+face variations. arXiv preprint arXiv:1807.01697, 2018. 1,
+2, 5, 6, 7
+[8] Dan Hendrycks, Kevin Zhao, Steven Basart, Jacob Stein-
+hardt, and Dawn Song. Natural adversarial examples. arXiv
+preprint arXiv:1907.07174, 2019. 1, 2, 5, 6, 7
+[9] Andrew Howard, Mark Sandler, Grace Chu, Liang-Chieh
+Chen, Bo Chen, Mingxing Tan, Weijun Wang, Yukun Zhu,
+Ruoming Pang, Vijay Vasudevan, et al. Searching for mo-
+bilenetv3. In International Conference on Computer Vision,
+2019. 7
+[10] Gao Huang, Zhuang Liu, and Kilian Q Weinberger. Densely
+connected convolutional networks. In CVPR, 2017. 4
+[11] Xun Huang and Serge Belongie. Arbitrary style transfer in
+real-time with adaptive instance normalization.
+In ICCV,
+2017. 5
+[12] Sergey Ioffe and Christian Szegedy. Batch normalization:
+Accelerating deep network training by reducing internal co-
+variate shift. In ICML, 2015. 4
+[13] Harini Kannan, Alexey Kurakin, and Ian Goodfellow. Adver-
+sarial logit pairing. arXiv preprint arXiv:1803.06373, 2018.
+1, 2, 6, 7
+[14] Alex Krizhevsky, Ilya Sutskever, and Geoff Hinton.
+Ima-
+genet classiﬁcation with deep convolutional neural networks.
+In NIPS, 2012. 2
+[15] Alexey Kurakin, Ian Goodfellow, and Samy Bengio. Adver-
+sarial machine learning at scale. In ICLR, 2017. 1, 2, 3, 4, 6,
+7, 8
+[16] Joseph Lemley, Shabab Bazrafkan, and Peter Corcoran.
+Smart augmentation learning an optimal data augmentation
+strategy. IEEE Access, 2017. 2
+[17] Sungbin Lim,
+Ildoo Kim, Taesup Kim, Chiheon Kim,
+and Sungwoong Kim. Fast autoaugment. arXiv preprint
+arXiv:1905.00397, 2019. 2
+
+[18] Raphael Gontijo Lopes, Dong Yin, Ben Poole, Justin Gilmer,
+and Ekin D Cubuk. Improving robustness without sacriﬁcing
+accuracy with patch gaussian augmentation. arXiv preprint
+arXiv:1906.02611, 2019. 2
+[19] Aleksander Madry, Aleksandar Makelov, Ludwig Schmidt,
+Dimitris Tsipras, and Adrian Vladu. Towards deep learning
+models resistant to adversarial attacks. In ICLR, 2018. 1, 2,
+3, 5, 8
+[20] Dhruv Mahajan, Ross Girshick, Vignesh Ramanathan,
+Kaiming He, Manohar Paluri, Yixuan Li, Ashwin Bharambe,
+and Laurens van der Maaten. Exploring the limits of weakly
+supervised pretraining. In ECCV, 2018. 1, 2, 6, 8
+[21] Takeru Miyato, Shin-ichi Maeda, Masanori Koyama, and
+Shin Ishii.
+Virtual adversarial
+training:
+a regulariza-
+tion method for supervised and semi-supervised learning.
+TPAMI, 2018. 1, 2
+[22] Siyuan Qiao, Wei Shen, Zhishuai Zhang, Bo Wang, and Alan
+Yuille. Deep co-training for semi-supervised image recogni-
+tion. In ECCV, 2018. 1, 2
+[23] Olga Russakovsky, Jia Deng, Hao Su, Jonathan Krause, San-
+jeev Satheesh, Sean Ma, Zhiheng Huang, Andrej Karpathy,
+Aditya Khosla, Michael Bernstein, Alexander C. Berg, and
+Li Fei-Fei. ImageNet Large Scale Visual Recognition Chal-
+lenge. IJCV, 2015. 1, 5
+[24] Karen Simonyan and Andrew Zisserman. Very deep convo-
+lutional networks for large-scale image recognition. In ICLR,
+2015. 2
+[25] Christian Szegedy, Wei Liu, Yangqing Jia, Pierre Sermanet,
+Scott Reed, Dragomir Anguelov, Dumitru Erhan, Vincent
+Vanhoucke, and Andrew Rabinovich. Going deeper with
+convolutions. In CVPR, 2015. 8
+[26] Christian Szegedy, Vincent Vanhoucke, Sergey Ioffe,
+Jonathon Shlens, and Zbigniew Wojna. Rethinking the in-
+ception architecture for computer vision.
+In CVPR, 2016.
+4
+[27] Christian Szegedy, Wojciech Zaremba, Ilya Sutskever, Joan
+Bruna, Dumitru Erhan, Ian Goodfellow, and Rob Fergus. In-
+triguing properties of neural networks. In ICLR, 2014. 1
+[28] Mingxing Tan and Quoc Le. Efﬁcientnet: Rethinking model
+scaling for convolutional neural networks. In ICML, 2019.
+1, 2, 5, 7, 8
+[29] Florian Tram `er, Alexey Kurakin, Nicolas Papernot, Ian
+Goodfellow, Dan Boneh, and Patrick McDaniel. Ensemble
+adversarial training: Attacks and defenses. In ICLR, 2018.
+1, 2, 6
+[30] Dimitris Tsipras, Shibani Santurkar, Logan Engstrom,
+Alexander Turner, and Aleksander Madry. There is no free
+lunch in adversarial robustness (but there are unexpected
+beneﬁts). arXiv:1805.12152, 2018. 2, 3
+[31] Cihang Xie, Yuxin Wu, Laurens van der Maaten, Alan Yuille,
+and Kaiming He. Feature denoising for improving adversar-
+ial robustness. In CVPR, 2019. 1, 2, 3, 6
+[32] Dong Yin, Raphael Gontijo Lopes, Jonathon Shlens, Ekin D
+Cubuk, and Justin Gilmer.
+A fourier perspective on
+model robustness in computer vision.
+arXiv preprint
+arXiv:1906.08988, 2019. 2, 3
+
+[33] Hongyi Zhang, Moustapha Cisse, Yann N Dauphin, and
+David Lopez-Paz. mixup: Beyond empirical risk minimiza-
+tion. In ICLR, 2018. 2
+[34] Hongyang Zhang, Yaodong Yu, Jiantao Jiao, Eric P Xing,
+Laurent El Ghaoui, and Michael I Jordan. Theoretically prin-
+cipled trade-off between robustness and accuracy. In ICML,
+2019. 2
+[35] Tianyuan Zhang and Zhanxing Zhu. Interpreting adversari-
+ally trained convolutional neural networks. In ICML, 2019.
+2, 3
+[36] Barret Zoph, Ekin D Cubuk, Golnaz Ghiasi, Tsung-Yi Lin,
+Jonathon Shlens, and Quoc V Le. Learning data aug-
+mentation strategies for object detection.
+arXiv preprint
+arXiv:1906.11172, 2019. 2
+
+

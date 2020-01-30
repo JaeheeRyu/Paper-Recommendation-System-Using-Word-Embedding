@@ -1,0 +1,3970 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+M
+
+.
+
+t
+
+a
+
+t
+
+s
+
+[
+
+2
+v
+1
+2
+4
+5
+0
+
+.
+
+4
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+TH E W E IGH T FUNC T ION IN THE SU BTR E E K ERN EL I S D EC I S IVE
+
+Romain Aza¨ıs
+romain.azais@inria.fr
+
+Florian Ingels
+ﬂorian.ingels@inria.fr
+
+Laboratoire Reproduction et D ´eveloppement des Plantes, Univ Lyon, ENS de Lyon, UCB Lyon 1, CNRS,
+INRA, Inria, F-69342, Lyon, France
+
+Abstract
+
+Tree data are ubiquitous because they model a large variety of situations, e.g., the architecture of plants,
+the secondary structure of RNA, or the hierarchy of XML ﬁles. Nevertheless, the analysis of these non-
+Euclidean data is difﬁcult per se. In this paper, we focus on the subtree kernel that is a convolution kernel
+for tree data introduced by Vishwanathan and Smola in the early 2000’s. More precisely, we investigate the
+inﬂuence of the weight function from a theoretical perspective and in real data applications. We establish
+on a 2-classes stochastic model that the performance of the subtree kernel is improved when the weight
+of leaves vanishes, which motivates the deﬁnition of a new weight function, learned from the data and
+not ﬁxed by the user as usually done. To this end, we deﬁne a uniﬁed framework for computing the
+subtree kernel from ordered or unordered trees, that is particularly suitable for tuning parameters. We
+show through eight real data classiﬁcation problems the great efﬁciency of our approach, in particular for
+small datasets, which also states the high importance of the weight function. Finally, a visualization tool of
+the signiﬁcant features is derived.
+keywords: classiﬁcation of tree data; kernel methods; subtree kernel; weight function; tree compression
+
+1 Introduction
+
+1.1 Analysis of tree data
+
+Tree data naturally appear in a wide range of scientiﬁc ﬁelds, from RNA secondary structures in
+biology [22] to XML ﬁles [8] in computer science through dendrimers [23] in chemistry and physics.
+Consequently, the statistical analysis of tree data is of great interest. Nevertheless, investigating
+these data is difﬁcult due to the intrinsic non-Euclidean nature of trees.
+Several approaches have been considered in the literature to deal with this kind of data: edit
+distances between unordered or ordered trees (see [6] and the references therein), coding processes
+for ordered trees [27], with a special focus on conditioned Galton-Watson trees [3, 5]. One can also
+mention the approach developed in [31]. In the present paper, we focus on kernel methods, a
+complementary family of techniques that are well-adapted to non-Euclidean data.
+Kernel methods consists in mapping the original data into a (inner product) feature space. Choos-
+ing the proper feature space and ﬁnding out the mapping might be very difﬁcult. Furthermore,
+the curse of dimensionality takes place and the feature space may be extremely big, therefore im-
+possible to use. Fortunately, a wide range of prediction algorithms do not need to access that
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+→
+
+constructing a mapping. Indeed, K : X 2 → R is said to be a kernel function on X if, for any
+feature space, but only the inner product between elements of the feature space. Building a func-
+tion, called a kernel, that simulates an inner product in an implicit feature space, frees us from
+(x1 , . . . , xn ) ∈ X n , the Gram matrix [K(xi , xj )]1≤i,j≤n is positive semideﬁnite. By virtue of Mer-
+cer ’s theorem [24], there exists a (inner product) feature space Y and a mapping ϕ : X
+Y such
+that, for any (x, y) ∈ X 2 , K(x, y) = (cid:104)ϕ(x), ϕ(y)(cid:105)Y . This technique is known as the kernel trick.
+Algorithms that can use kernels include Support Vector Machines (SVM), Principal Components
+Analyses (PCA) and many others. We refer the reader to the books [9, 25, 26] and the references
+therein for more detailed explanations of theory and applications of kernels.
+To use kernel-based algorithms with tree data, one needs to design kernel functions adapted to
+trees. Convolution kernels, introduced by Haussler [18], measure the similarity between two com-
+plex combinatorial objects based on the similarity of their substructures. Based on this strategy,
+many authors have developed convolution kernels for trees, among them the subset tree kernel
+[7], the subtree kernel [30] and the subpath kernel [21]. A recent state-of-the-art on kernels for
+trees can be found in the thesis of Da San Martino [10], as well as original contributions on re-
+lated topics. In this article, we focus on the subtree kernel as deﬁned in [30]. In this introduction,
+we develop some concepts on trees in Subsection 1.2. They are required to deal with the pre-
+cise deﬁnition of the subtree kernel in Subsection 1.3 as well as the aim of the paper presented in
+Subsection 1.4.
+
+1.2 Unordered and ordered rooted trees
+
+Rooted trees A rooted tree T is a connected graph with no cycle such that there exists a unique
+vertex R(T ), called the root, which has no parent, and any vertex different from the root has exactly
+one parent. The leaves L(T ) are all the vertices without children. The height of a vertex v of a tree
+T can be recursively deﬁned as H(v) = 0 if v is a leaf of T and
+
+H(v) = 1 + max
+w∈C (v) H(w)
+
+otherwise. The height H(T ) of the tree T is deﬁned as the height of its root, i.e., H(T ) = H(R(T )).
+The outdegree of T is the maximal branching factor that can be found in T , that is
+
+deg(T ) = max
+
+v∈T
+
+# C (v),
+
+where C (v) denotes the set of children of v. For any vertex v of T , the subtree T [v] rooted in v is the
+tree composed of v and all its descendants D(v). S (T ) denotes the set of subtrees of T .
+Unordered trees Rooted trees are said unordered if the order between the sibling vertices of any
+vertex is not signiﬁcant. The precise deﬁnition of unordered rooted trees, or simply unordered
+trees, is obtained from the following equivalence relation: two trees T1 and T2 are isomorphic (as
+unordered trees) if there exists a one-to-one correspondence Φ from the set of vertices of T1 into
+the set of vertices of T2 such that, if w is a child of v in T1 , then Φ(w) is a child of Φ(v) in T2 . The
+set of unordered trees is the quotient set of rooted trees by this equivalence relation.
+
+2
+
+Ordered trees
+In ordered rooted trees, or simply ordered trees, the set of children of any vertex is
+ordered. As before, ordered trees can be deﬁned as a quotient set if one adds the concept of order
+to the equivalence relation: two trees T1 and T2 are isomorphic (as ordered trees) if there exists a
+one-to-one correspondence Φ from the set of vertices of T1 into the set of vertices of T2 such that,
+if w is the rth child of v in T1 , then Φ(w) is the rth child of Φ(v) in T2 .
+∗ denotes the set of ∗-trees with ∗ ∈ {ordered, unordered}.
+In the whole paper, T
+
+1.3 Subtree kernel
+
+The subtree kernel has been introduced in [30] as a convolution kernel on trees for which the
+similarity between two trees is measured through the similarity of their subtrees. A subtree kernel
+K on ∗-trees is deﬁned as,
+
+(cid:88)
+
+∀ T1 , T2 ∈ T
+
+∗ , K(T1 , T2 ) =
+
+wτ κ (Nτ (T1 ), Nτ (T2 )) ,
+
+(1)
+
+τ∈T ∗
+
+where wτ is the weight associated to τ, Nτ (T ) counts the number of subtrees of T that are isomor-
+phic (as ∗-trees) to τ and κ is a kernel function on N, Z or R (see [25, Section 2.3] for some classic
+examples). Assuming κ(0, n) = κ(n, 0) = 0, the formula (1) of K becomes
+
+(cid:88)
+
+K(T1 , T2 ) =
+
+τ∈S (T1 )∩S (T2 )
+
+wτ κ (Nτ (T1 ), Nτ (T2 )) ,
+
+making the sum ﬁnite. Indeed, all the subtrees τ ∈ T
+
+∗ \ S (T1 )
+
+1.4 Aim of the paper
+
+The aim of the present paper is threefold:
+
+1. We investigate the theoretical properties of the subtree kernel on a 2-classes model of random
+trees in Section 2. More precisely, we provide a lower-bound for the contrast of the kernel
+in Proposition 2.2. Indeed, the higher the contrast, the less data are required to achieve a
+given performance in prediction (see [4] for general similarity functions and Corollary 2.3
+for the subtree kernel). We exploit this result to show in Subsection 2.4 that the contrast of
+the subtree kernel is improved if the weight of leaves vanishes. The relevance of the model
+is discussed in Remark 2.1.
+
+2. We rely on [1, 10] on ordered trees to develop in Section 3 a uniﬁed framework based on DAG
+reduction for computing the subtree kernel from ordered or unordered trees, with or with-
+out labels on their vertices. Subsection 3.1 is devoted to DAG reduction of unordered then
+ordered trees. DAG reduction of a forest is introduced in Subsection 3.2. Then, the subtree
+kernel is computed from the annotated DAG reduction of the dataset is Subsection 3.3. We
+notice in Remark 3.8 that DAG reduction of the dataset is costly but makes possible super-
+fast repeated computations of the kernel, which is particularly adapted for tuning parame-
+ters. This is the main advantage of the DAG computation of the subtree kernel compared to
+the algorithm based on string representations [30]. Our method allows the implementation
+of any weighting function, while the recursive computation of the subtree kernel proposed
+in [10, Chapter 6] also uses DAG reduction of tree data but makes an extensive use of the
+exponential form of the weight (combining equations (3.12) and (6.2) from [10]). We also in-
+vestigate the theoretical complexities of the different steps of the DAG computation for both
+ordered and unordered trees (see Proposition 3.2 and Remark 3.8). This kind of question
+has been tackled in the literature only for ordered trees and from a numerical perspective [1,
+Section 4].
+
+3. As aforementioned, we show in the context of a stochastic model that the performance of
+the subtree kernel is improved when the weight of leaves is 0 (see Section 2). Relying on this
+(see also Remark 2.5 on the possible generalization of this result), we deﬁne in Section 4 a
+new weight function, called discriminance, that is not a function of the size of the argument
+as in the literature, but is learned from the data. The learning step of the discriminance
+weight function strongly relies on the DAG computation of the subtree kernel presented
+above because it allows the enumeration of all the subtrees composing the dataset without
+redundancies. We explore in Section 5 the relevance of this new weighting scheme across
+several datasets, notably on the difﬁcult prediction problem of the language of a Wikipedia
+article from its structure in Subsection 5.2. Beyond very good classiﬁcation results, we show
+that the methodology developed in the paper can be used to extract the signiﬁcant features
+of the problem and provide a visualization at a glance of the dataset. In addition, we remark
+that the average discriminance weight decreases exponentially as a function of the height
+(except for leaves). Thus, the discriminance weight can be interpreted as the second order
+of the exponential weight introduced in the literature. Application to real-world datasets in
+Subsections 5.3, 5.4 and 5.5 shows that the discriminance weight is particularly relevant for
+small databases when the classiﬁcation problem is rather difﬁcult, as depicted in Fig. 18.
+
+4
+
+Finally, concluding remarks are presented in Section 6. Technical proofs have been deferred into
+Appendices A and B.
+
+2 Theoretical study
+
+In this section, we deﬁne a stochastic model of 2-classes tree data. From this ideal dataset, we
+prove the efﬁciency of the subtree kernel and derive the sufﬁcient size of the training dataset to
+get a classiﬁer with a given prediction error. We also state on this simple model that the weight of
+leaves should always be 0. We emphasize that this study is valid for both ordered and unordered
+trees.
+
+2.1 Two trees as different as possible
+
+Our goal is to build a 2-classes dataset of random trees. To this end, we ﬁrst deﬁne two typical
+trees T0 and T1 that are as different as possible in terms of subtree kernel.
+Let T0 and T1 be two trees that fulﬁll the following conditions:
+1. ∀ i ∈ {0, 1}, ∀ u, v ∈ Ti \ L(Ti ), if u (cid:54)= v then Ti [u] (cid:54)= Ti [v], i.e, two subtrees of Ti are not
+isomorphic (except leaves).
+2. ∀ u ∈ T0 \ L(T0 ), ∀ v ∈ T1 \ L(T1 ), T0 [u] (cid:54)= T1 [v], i.e., any subtree of T0 is not isomorphic to a
+subtree of T1 (except leaves).
+These two assumptions ensure that the trees T0 and T1 are as different as possible. Indeed, it is
+easy to see that
+
+which is the minimal value of the kernel and where ω• is the weight of leaves. We refer to Fig. 1
+for an example of trees that satisfy these conditions.
+
+K(T0 , T1 ) = w•# L(T0 )# L(T1 ),
+
+Figure 1: Two trees T0 and T1 that fulﬁll conditions 1 and 2.
+
+→ τ) denotes the
+Trees of class i will be obtained as random editions of Ti . In the sequel, Ti (v (cid:55)
+tree Ti in which the subtree rooted at u has been replaced by τ. These random edits will tend to
+make trees of class 0 closer to trees of class 1. To this end, we introduce the following additional
+→ τH(u) ) and T (cid:48)
+assumption. Let (τh ) a sequence of trees such that H(τh ) = h.
+0 )(cid:1), ∀ v (cid:48)
+1 )(cid:1), T (cid:48)
+3. Let u ∈ T0 and v ∈ T1 . We consider the edited trees T (cid:48)
+τH(v) ). Then, ∀ u (cid:48)
+∈ T (cid:48)
+∈ T (cid:48)
+In other words, if one replaces subtrees of T0 and T1 by subtrees of the same height, then any
+subtree of T0 is not isomorphic to a subtree of T1 (except the new subtrees and leaves). This means
+that the similarity between random edits of T0 and T1 will come only from the new subtrees and
+not from collateral modiﬁcations. We refer to Fig. 2 for an example of trees that satisfy these
+conditions.
+
+\ (cid:0)τH(v) ∪ L(T (cid:48)
+0 = T0 (u (cid:55)
+
+1 = T1 (v (cid:55)
+0 [u (cid:48) ] (cid:54)= T (cid:48)
+1 [v (cid:48) ].
+
+\ (cid:0)τH(u) ∪ L(T (cid:48)
+
+0
+
+1
+
+→
+
+5
+
+Figure 2: Two trees T0 and T1 that fulﬁll conditions 1, 2 and 3.
+
+2.2 A stochastic model of 2-classes tree data
+
+→ τH(u) ).
+
+From now on, we assume that, for any h > 0, τh is not a subtree of T0 nor T1 . For the sake of
+simplicity, T0 and T1 have the same height H. In addition, if u ∈ Ti then T u
+i denotes Ti (u (cid:55)
+The stochastic model of 2-classes tree data that we consider is deﬁned from the binomial distribu-
+tion Pρ = B(H, ρ/H) on support {0, . . . , H} with mean Pρ = ρ. The parameter ρ ∈ [0, H] is ﬁxed. In
+the dataset, class i is composed of random trees T u
+i , where the vertex u has been picked uniformly
+at random among vertices of height h in Ti , where h follows Pρ . Furthermore, the considered
+training dataset is well-balanced in the sense that it contains the same number of data of each
+class.
+Intuitively, when ρ increases, the trees are more degraded and thus two trees of different class are
+closer. ρ somehow measures the similarity between the two classes. In other words, the larger ρ,
+the more difﬁcult is the supervised classiﬁcation problem.
+
+Remark 2.1. The structure of a markup document such as an HTML page can be described by a tree (see
+Subsection 5.1 and Fig. 6 for more details). In this context, the tree Ti , i ∈ {0, 1}, can be seen as a model
+of the structure of a webpage template. By assumption, the two templates of interest are as different as
+possible. However, they are completed in a similar manner, for example to present the same content in two
+different layouts. Edition of the templates is modeled by random edit operations. They tend to bring trees
+from different templates closer.
+terms of similarity-based properties. A similarity function over X is a pairwise function K : X 2 →
+The authors of [4] have introduced a theory that describes the effectiveness of a given kernel in
+[−1, 1] [4, Deﬁnition 1]. It is said (, γ)-strongly good [4, Deﬁnition 4] if, with probability at most
+
+2.3 Theoretical guarantees on the subtree kernel
+
+1 − ,
+
+Ex (cid:48) ,y [K(x, x (cid:48) ) − K(x, y)] ≥ γ,
+
+where label(x) = label(x (cid:48) ) (cid:54)= label(y). From this deﬁnition, the authors derive the following
+simple classiﬁer: the class of a new data x is predicted by 1 if x is more similar on average to
+points in class 1 than to points in class 0, and 0 otherwise. In addition, they prove [4, Theorem 1]
+that a well-balanced training dataset of size 32/γ2 log(2/δ) is sufﬁcient so that, with probability at
+least 1 − δ, the above algorithm applied to an (, γ)-strongly good similarity function produces a
+classiﬁer with error at most  + δ.
+We aim to prove comparable results for the subtree kernel that is not a similarity function. To this
+end, we focus for i ∈ {0, 1} on
+
+∆i
+x = Eu,v [K(T x
+i , T u
+i ) − K(T x
+i , T v
+1−i )].
+
+(3)
+
+6
+
+We emphasize that the two following results (Proposition 2.2 and Corollary 2.3) assume that the
+weight of leaves ω• is 0. For the sake of readability, we introduce the following notations, for any
+
+0 ≤ h ≤ H and i ∈ {0, 1},
+
+Ki,h =
+
+max
+
+{u∈Ti : H(u)=h}
+
+K(Ti [u], Ti [u]),
+
+Ci,h =
+
+Gρ (h) = 1 −
+
+,
+
+H(cid:88)
+
+K(Ti , Ti ) − Ki,h
+# L(Ti )
+Pρ (k).
+
+k=h+1
+
+The following results are expressed in terms of a parameter 0 ≤ h < H. The statement is then true
+with probability Gρ (h). This is equivalent to state a result that is true with probability 1 − , for
+any  > 0.
+
+Proposition 2.2. If wTi > 0 then ∆i
+x = 0 if and only if x = R(Ti ). In addition, if ρ > H/2, for any
+0 ≤ h < H, with probability Gρ (h), one has
+
+∆i
+x ≥ Pρ (0)Ci,h .
+
+(4)
+
+Proof. The proof lies in Appendix A.
+This result shows that the two classes can be well-separated by the subtree kernel. The only data
+that can not be separated are the trees completely edited. In addition, the lower-bound in (4) is of
+order H exp(−ρ) (up to a multiplicative constant).
+
+(cid:102)
+
+Corollary 2.3. For any 0 ≤ h ≤ H, a well-balanced training dataset of size
+
+2 maxi K(Ti , Ti )2
+
+mini C2
+
+i,h
+
+exp(2ρ)
+H2
+
+log
+
+(cid:18) 2
+
+(cid:19)
+
+δ
+
+is sufﬁcient so that, with probability at least 1 − δ, the aforementioned classiﬁcation algorithm produces a
+classiﬁer with error at most 1 − Gρ (h) + δ.
+
+Proof. The proof is based on the demonstration of [4, Theorem 1]. However, in our setting, the
+kernel K is bounded by maxi K(Ti , Ti ) and not by 1. Consequently, by Hoeffding bounds, the
+sufﬁcient size of the training dataset if of order
+
+(cid:18) 2
+
+δ
+
+(cid:19) maxi K(Ti , Ti )2
+γ2
+
+2 log
+
+,
+
+(5)
+
+where γ can be read in Proposition 2.2, γ = Pρ (0)Ci,h ≥ Pρ (0) mini Ci,h . The coefﬁcient 2 lies
+because we consider here the total size of the dataset and not only the number of examples of each
+class. Together with Pρ (0) ∼ H exp(−ρ), we obtain the expected result.
+
+(cid:102)
+
+7
+
+2.4 Weight of leaves
+
+Here K+ is the subtree kernel obtained from the weights used in the computation of K together
+with a positive weight on leaves, w• > 0. We aim to show that K+ separates the two classes less
+than K. ∆+,i
+x denotes the conditional expectation (3) computed from K+ .
+
+Proposition 2.4. For any x ∈ Ti ,
+
+x = ∆i
+x + w•# L(Ti [x])Di,1−i ,
+where Di,1−i = Eu,v [# L(T u
+i ) − # L(T v
+1−i )].
+
+∆+,i
+
+Proof. We have the following decomposition, for any trees T1 and T2 ,
+
+in light of the formula (2) of K. Thus, with (3),
+
+∆+,i
+x
+
+K+ (T1 , T2 ) = K(T1 , T2 ) + w•# L(T1 )# L(T2 ),
+(cid:2)K(T x
+i , T u
+i ) + w•# L(T x
+i )# L(T u
+i ) − K(T x
+i , T v
+1−i ) − w•# L(T x
+i )# L(T v
+= ∆i
+x + Eu,v [w•# L(T x
+i )(# L(T u
+i ) − # L(T v
+i ))] ,
+
+= Eu,v
+
+1−i )(cid:3)
+
+which ends the proof.
+The sufﬁcient number of data provided in Corollary 2.3 is obtained (5) through the square ratio
+of maxi K(Ti , Ti ) over mini ∆i
+x . First, it should be noticed that K+ (Ti , Ti ) > K(Ti , Ti ). In addition,
+by virtue of Proposition 2.4, either ∆+,0
+x (and the inequality is strict if trees of
+classes 0 and 1 have not the same number of leaves on average). Consequently,
+
+x ≤ ∆0
+
+x ≤ ∆1
+
+x or ∆+,1
+
+(cid:102)
+
+x ≤ min
+and thus the sufﬁcient number of data mentioned above is minimum for ω• = 0.
+
+min
+
+∆i
+x ,
+
+i
+
+∆+,i
+
+i
+
+Remark 2.5. The results stated in this section establish that the subtree kernel is more efﬁcient when
+the weight of leaves is 0. It should be placed in perspective with the exponential weighting scheme of the
+literature [1, 7, 10, 21, 30] for which the weight of leaves is maximal. We conjecture that the accuracy of
+the subtree kernel should be in general improved by imposing a null weight to any subtree present in two
+different classes. This can not be established from the model for which the only such subtrees are the leaves.
+Relying on this, one of the objectives of the sequel of the paper is to develop a learning method for the weight
+function that improves in practice the classiﬁcation results (see Sections 4 and 5).
+
+3 DAG computation of the subtree kernel
+
+In this section, we deﬁne DAG reduction, an algorithm that achieves both compression of data and
+enumeration of all subtrees of a tree without redundancies. DAG reduction of a tree is presented
+in Subsection 3.1, while Subsection 3.2 is devoted to the compression of a forest. In Subsection 3.3,
+we state that the subtree kernel can be computed from the DAG reduction of dataset of trees.
+
+8
+
+3.1 DAG reduction of a tree
+
+Trees can present internal repetitions in their structure. Eliminating these structural redundancies
+deﬁnes a reduction of the initial data that can result in a Directed Acyclic Graph (DAG). In partic-
+ular, beginning with [29], DAG representations of trees are also much used in computer graphics
+where the process of condensing a tree into a graph is called object instancing [17]. DAG reduction
+can be computed upon unordered or ordered trees. We begin with the case of unordered trees.
+
+Unordered trees We consider the equivalence relation “existence of an unordered tree isomor-
+phism” on the set of the subtrees of a tree T : Q(T ) = (V, E) denotes the quotient graph obtained
+from T using this equivalence relation. V is the set of equivalence classes on the subtrees of T ,
+while E is a set of pairs of equivalence classes (C1 , C2 ) such that R(C2 ) ∈ C (R(C1 )) up to an
+isomorphism. The graph Q(T ) is a DAG [15, Proposition 1] that is a connected directed graph
+without path from any vertex v to itself. Let (C1 , C2 ) be an edge of the DAG Q(T ). We deﬁne
+L(C1 , C2 ) as the number of occurrences of a tree of C2 just below the root of any tree of C1 . The
+tree reduction of T is deﬁned as the quotient graph Q(T ) augmented with labels L(C1 , C2 ) on its
+edges. We refer to Fig. 3a for an example of DAG reduction of an unordered tree. Two different
+algorithms that allow the computation of the DAG reduction of an unordered tree but that share
+the same time-complexity in O(#T 2 deg(T ) log(deg(T ))) are presented in [15].
+Ordered trees
+In the case of ordered trees, it is required to preserve the order of the children
+in the DAG reduction. As for unordered trees, we consider the quotient graph Q(T ) = (V, E)
+obtained from T using the equivalence relation between ordered trees. V is the set of equivalence
+classes on the subtrees of T . Here, the edges of the graph are ordered as follows. (C1 , C2 ) is the
+rth edge between C1 and C2 if R(C2 ) is the rth child of R(C1 ) up to an isomorphism. We obtain
+a DAG with ordered edges that compresses the initial tree T . An example of DAG reduction of
+an ordered tree is presented in Fig. 3b. Polynomial algorithms have been developed to allow the
+computation of a DAG, with complexities ranging in O(#T 2 ) to O(#T ) for ordered trees [12].
+
+2
+
+(a) Unordered
+
+(b) Ordered
+
+Figure 3: A tree (left) and its DAG reduction (right) seen (a) as an unordered tree and (b) as an
+ordered tree. In each ﬁgure, roots of isomorphic subtrees are displayed with the same color, which
+is reproduced on the corresponding vertex of the DAG. Note that the subtree on the left is colored
+differently in the two cases, whether the order of its children is relevant or not.
+If no label is
+speciﬁed on an edge (in the unordered case), it is equal to 1.
+In this paper, R∗ (T ) denotes the DAG reduction of T as ∗-tree, ∗ ∈ {ordered, unordered}. It is
+crucial to notice that the function R∗ is a one-to-one correspondence, which means that DAG
+
+9
+
+reduction is a lossless compression algorithm. In other words, T can be reconstructed from R∗ (T )
+and (R∗ )−1 stands for the inverse function.
+The DAG structure inherits of some properties of trees. For a vertex ν in a DAG D, we will denote
+by C (ν) (P (ν), respectively) the set of children (parents, respectively) of ν. H(ν) and deg(ν) are
+inherited as well. Similarly to trees, we denote by D[ν] the subDAG rooted in ν composed of ν
+and all its descendants in D.
+
+3.2 DAG reduction of a forest
+
+(cid:80)
+
+N
+
+i=1 deg(Di ).
+
+R∗ (FT ) = R∗ (TFT ).
+
+Let TFT be the super-tree obtained from a forest of ∗-trees FT = (T1 , . . . , TN ) by placing in this
+order each Ti as a subtree of an artiﬁcial root. We deﬁne the DAG reduction of the forest FT as
+However, if the forest FT is stocked as a forest of compressed DAGs, that is, FD = (D1 , . . . , DN )
+(with Di = R∗ (Ti )), it would be superﬂuous to decompress all trees before reducing the super-
+tree. So, one would rather compute R∗ (FT ) directly from FD . From now on, we consider only
+forests of DAGs that we will denote unambiguously F . In this context, R∗ (F ) stands for the DAG
+reduction of the forest of trees ((R∗ )−1 (D1 ), . . . , (R∗ )−1 (DN )). We deﬁne the degree of the forest
+as deg(F ) = maxN
+Computing R∗ (F ) from (D1 , . . . , DN ) is in two steps: (i) we construct a super-DAG DF from
+F = (D1 , . . . , DN ) by placing in this order each Di as a subDAG of an artiﬁcial root (with time-
+complexity O(deg(F )
+i=1 #Di )), and (ii) we recompress DF using Algorithm 1. Fig. 4 illustrates
+step by step Algorithm 1 on a forest of two trees seen as unordered then ordered trees.
+Proposition 3.1. Algorithm 1 correctly computes R∗ (F ).
+Proof. Starting from the leaves, we examine all vertices of same height in DF . Those with same
+children (with respect to ∗) are merged into a single vertex. The algorithm stops when at some
+height h, we cannot ﬁnd any vertices to be merged. Vertices that are merged in the algorithm
+represents isomorphic subtrees, so it sufﬁces to prove that the algorithm stops at the right time.
+Let h be the ﬁrst height for which σ(h) = ∅.
+Suppose by contradiction that some vertices were to be merged at some height h (cid:48) > h. They
+represents isomorphic subtrees, so that their respective children should also be merged together,
+and all of their descendants by induction. As any vertex of height h (cid:48)(cid:48) + 1 admits at least one child
+of height h (cid:48)(cid:48) , σ(h) would not be empty, which is absurd.
+
+(cid:102)
+
+Proposition 3.2. Algorithm 1 has time-complexity:
+1. O(# DF deg(F )(log deg(F ) + H(DF ))) for unordered trees;
+2. O(# DF deg(F ) H(DF )) for ordered trees.
+Proof. The proof lies in Appendix B.
+
+(cid:102)
+
+Remark 3.3. One might also want to treat online data, but without recompressing the whole dataset when
+adding a single entry in the forest. Let R∗ (F ) be the already recompressed forest and D a new DAG to be
+introduced in the data. It sufﬁces to place D has the rightmost child of the artiﬁcial root of R∗ (F ) to get
+DF ∪D , then run Algorithm 1 to obtain R∗ (F ∪ D).
+
+10
+
+Algorithm 1: DAGR ECOM PR E S S ION
+
+(cid:8)
+
+(cid:9)
+
+→
+
+Let σ(h) =
+
+be the set of vertices to be merged at
+
+f−1 ({S}) : S ∈ Im f, #f−1 ({S}) ≥ 2
+C (ν)
+
+Data: DF the superdag obtained from a forest of DAG reductions of ∗-trees,
+∗ ∈ {ordered, unordered}
+→ DF h where DF h is the set of
+Result: R∗ (F )
+1 Construct, within one exploration of DF , the mapping h (cid:55)
+vertices of DF at height h
+2 for h from 0 to H(DF ) − 1 do
+height h, where f : ν ∈ DF h (cid:55)
+if σ(h) = ∅ then
+Exit algorithm;
+else
+for M in σ(h) do
+Choose one element νM in M to remain in DF
+Denote by δM the other elements of M
+for ν in DF such that H(ν) > h do
+for µ in C (ν) such that ∃ M ∈ σ(h), δM (cid:51) µ do
+Delete µ from C (ν)
+Add νM in C (ν)
+for M ∈ σ(h) do
+Delete δM from DF
+
+3
+
+4
+5
+6
+7
+8
+9
+
+10
+11
+12
+13
+
+14
+15
+
+16 return DF
+
+It should be noticed that Im f (that appears line 3) depends on ∗. Indeed, if ∗ = ordered, Im f is the set of all lists of
+children; otherwise, Im f is the set of all multisets of children.
+
+11
+
+(
+
+a
+
+)
+
+F
+
+i
+
+g
+
+u
+
+r
+
+e
+
+4
+
+:
+
+A
+
+n
+
+l
+l
+i
+
+u
+
+s
+
+t
+
+r
+
+a
+
+i
+t
+
+n
+o
+
+s
+
+t
+
+e
+
+p
+
+y
+b
+
+s
+
+t
+
+e
+
+p
+
+o
+
+f
+
+t
+
+h
+
+e
+
+A
+
+l
+
+o
+g
+
+r
+
+t
+i
+
+h
+
+m
+
+1
+
+w
+
+t
+i
+
+h
+
+(
+
+a
+
+)
+
+t
+
+w
+
+o
+
+t
+
+r
+
+e
+e
+
+s
+
+T
+
+r
+1
+
+i
+(
+
+n
+
+c
+
+y
+
+a
+
+n
+
+)
+
+a
+
+d
+n
+
+T
+
+2
+l
+(
+
+i
+(
+
+y
+n
+
+e
+
+l
+l
+
+o
+
+w
+
+)
+
+,
+
+s
+
+e
+e
+
+n
+
+a
+
+s
+
+(
+
+b
+
+)
+
+o
+n
+u
+
+r
+
+d
+
+e
+
+r
+
+e
+
+d
+
+o
+
+r
+
+(
+
+c
+
+)
+
+o
+
+r
+
+d
+
+e
+
+r
+
+e
+
+d
+
+t
+
+r
+
+e
+e
+
+s
+
+.
+
+O
+
+n
+
+c
+e
+
+a
+
+b
+o
+n
+
+s
+
+e
+
+v
+
+e
+
+t
+
+h
+
+e
+
+G
+A
+D
+
+s
+
+e
+
+)
+t
+f
+
+a
+
+d
+n
+
+t
+
+h
+
+e
+
+c
+e
+x
+e
+
+u
+
+i
+t
+
+o
+n
+o
+
+f
+
+t
+
+h
+
+e
+
+a
+
+l
+
+o
+g
+
+r
+
+t
+i
+
+h
+
+m
+
+(
+
+r
+
+i
+
+h
+g
+
+)
+t
+
+.
+
+A
+
+t
+
+a
+e
+
+c
+
+h
+
+s
+
+t
+
+e
+
+p
+
+1
+
+,
+
+2
+
+a
+
+d
+n
+
+3
+
+,
+
+w
+
+e
+
+a
+x
+e
+
+m
+
+i
+
+n
+
+e
+
+v
+
+e
+
+r
+
+i
+t
+
+e
+c
+
+s
+
+a
+
+t
+
+h
+
+e
+
+i
+
+h
+g
+
+t
+
+(
+
+0
+
+,
+
+1
+
+,
+
+2
+
+)
+
+a
+
+d
+n
+
+m
+
+e
+
+r
+
+g
+
+e
+
+t
+
+o
+h
+
+s
+
+e
+
+w
+
+h
+
+i
+
+c
+
+h
+
+h
+
+a
+
+v
+
+e
+
+s
+
+a
+
+m
+
+e
+
+c
+
+h
+
+l
+i
+
+d
+
+r
+
+e
+
+n
+
+.
+
+A
+
+t
+
+s
+
+t
+
+e
+
+p
+
+4
+
+,
+
+w
+
+e
+
+c
+
+a
+
+o
+n
+n
+
+t
+
+d
+n
+ﬁ
+
+a
+
+v
+y
+n
+
+e
+
+r
+
+t
+
+x
+e
+
+t
+
+o
+
+m
+
+e
+
+r
+
+g
+
+e
+
+a
+
+d
+n
+
+w
+
+e
+
+s
+
+t
+
+o
+
+p
+
+.
+
+N
+
+o
+
+t
+
+e
+
+t
+
+h
+
+a
+
+t
+
+i
+
+n
+
+(
+
+c
+
+)
+
+a
+
+t
+
+s
+
+t
+
+e
+
+p
+
+3
+
+,
+
+w
+
+e
+
+d
+n
+ﬁ
+
+t
+
+w
+
+o
+
+p
+
+a
+
+i
+
+s
+r
+
+o
+
+f
+
+v
+
+e
+
+r
+
+i
+t
+
+e
+c
+
+s
+
+t
+
+b
+o
+
+e
+
+m
+
+e
+
+r
+
+g
+
+e
+
+d
+
+:
+
+w
+
+e
+
+a
+
+r
+
+e
+
+o
+n
+
+t
+
+r
+
+e
+
+s
+
+t
+
+r
+
+i
+
+c
+
+t
+
+e
+
+d
+
+t
+
+n
+o
+o
+
+e
+
+p
+b
+n
+
+a
+a
+
+i
+
+r
+
+p
+k
+
+e
+
+r
+
+h
+
+e
+
+i
+
+h
+g
+
+t
+
+.
+
+M
+
+e
+
+r
+
+g
+
+e
+
+d
+
+v
+
+e
+
+r
+
+i
+t
+
+e
+c
+
+s
+
+a
+
+r
+
+e
+
+c
+
+o
+
+l
+
+o
+
+r
+
+e
+
+d
+
+i
+
+n
+
+r
+
+e
+
+d
+
+.
+
+h
+T
+
+e
+
+a
+
+r
+
+i
+t
+
+ﬁ
+
+c
+
+i
+
+a
+
+l
+
+r
+
+o
+o
+
+t
+
+i
+
+s
+
+c
+
+o
+
+l
+
+o
+
+r
+
+e
+
+d
+
+i
+
+l
+
+c
+
+.
+
+1
+
+2
+
+=
+
+2
+
+2
+
+=
+
+3
+
+2
+
+=
+
+4
+
+2
+
+=
+
+2
+
+(
+
+b
+
+)
+
+1
+
+=
+
+2
+
+=
+
+3
+
+=
+
+=
+
+4
+
+=
+
+(
+
+c
+
+)
+
+12
+
+(cid:54)
+(cid:54)
+3.3 DAG annotation and kernel computation
+
+We consider a dataset composed of two parts: the train dataset Xtrain = (T1 , . . . , Tn ) and the dataset
+to predict Xpred = (Tn+1 , . . . , TN ). In the train dataset, the classes of the data are assumed to be
+known. Our aim is to compute two Gram matrices G = [K(Ti , Tj )]i,j , where:
+• (i, j) ∈ Xtrain × Xtrain for the training matrix Gtrain ;
+• (i, j) ∈ Xpred × Xtrain for the prediction matrix Gpred .
+SVM algorithms will use Gtrain to learn their classifying rule, and Gpred to make predictions [9,
+Section 6.1]. Other algorithms, such as kernel PCA, would also require to compute a Gram matrix
+before processing [25, Section 14.2]. We denote by ∆ = R∗ (Xtrain ∪ Xpred ) the DAG reduction of
+the dataset and, for any 1 ≤ i ≤ N, Di = R∗ (Ti ). DAG computation of the subtree kernel requires
+to annotate the DAG with different pieces of information.
+
+Origins
+In order to compute the subtree kernel, it will be necessary to retrieve from the vertices
+of ∆ their origin in the dataset, that is, from which tree they come from. For any vertex ν in
+∆ \ R(∆), the origin of ν is deﬁned as
+
+(cid:8)
+
+(cid:9)
+
+o(ν) =
+
+i ∈ {1, . . . , n, n + 1, . . . , N} : Di (cid:51) ν
+
+.
+
+Assuming that (D1 , . . . , DN ) are children of the root of ∆ in this order (which is achieved if ∆ had
+been constructed following the ideas developed in Subsection 3.2) leads to the following proposi-
+tion.
+
+Proposition 3.4. Origins can be calculated using the recursive formula,
+
+∀ ν ∈ ∆ \ R(∆), o(ν) =
+
+if ν is the ith child of R(∆),
+otherwise.
+
+
+
+(cid:83)
+
+{i}
+
+o(p)
+
+p∈P (ν)
+
+Proof. Using the assumption, origins are correct for the children of R(∆). If Di (cid:51) ν for some
+i ∈ {1, . . . , N} and ν ∈ ∆, then Di ⊇ D(ν). The statement follows by induction.
+Frequency vectors Remember that in (2) Nτ (T ) counts the number of subtrees of a tree T that are
+∗-isomorphic to the tree τ. To compute the kernel, we need to know this value, and we claim that
+we can compute it using only ∆. We associate to each vertex ν ∈ ∆ \ R(∆) a frequency vector ϕν
+
+(cid:102)
+
+where, for any 1 ≤ i ≤ N, ϕν (i) = N(R∗ )−1 (∆[ν]) (Ti ).
+
+Proposition 3.5. Frequency vectors can be calculated using the recursive formula,
+
+(1{i ∈ o(ν)} )i∈{1,...,N}
+p∈P (ν)
+
+L(p, ν) ϕp
+
+(cid:80)
+
+if ν ∈ C (R(∆)),
+otherwise,
+
+∀ ν ∈ ∆ \ R(∆), ϕν =
+
+where either L(p, ν) = 1 if ∗ = ordered, or L(p, v) is the label on the edge between p and ν in ∆ if
+∗ = unordered.
+
+13
+
+Proof. Let ν be in ∆ \ R(∆). If ν ∈ C (R(∆)), then ν represents the root of a tree Ti (possibly several
+trees if there are repetitions in the dataset), and therefore ϕν (i) = NTi (Ti ) = 1. Otherwise, suppose
+by induction that ϕp (i) is correct for all p ∈ P (ν), and any i. We ﬁx p ∈ P (ν). ν appears L(p, ν)
+times as a child of p, so if (R∗ )−1 (∆[p]) appears ϕp (i) times in Ti , then the number of occurrences
+of (R∗ )−1 (∆[ν]) in Ti as a child of (R∗ )−1 (∆[p]) is L(p, ν) ϕp (i). Summing over all p ∈ P (ν) leads
+ϕν (i) to be correct as well.
+→ R+ . As we only need to know the
+DAG weighting The last thing that we lack to compute the kernel is the weight function. Re-
+member that it is deﬁned for trees as a function w : T
+weights of the subtrees associated to vertices of ∆, we deﬁne the weight function for DAG as, for
+
+(cid:102)
+
+any ν ∈ ∆, ων = w(R∗ )−1 (∆[ν]) .
+
+Remark 3.6. In light of Propositions 3.4 and 3.5, it should be noted that both o and ϕ can be calculated in
+one exploration of ∆. By deﬁnition, this is also true for ω.
+
+DAG computation of the subtree kernel We introduce the matching subtrees function M as
+
+M : {1, . . . , N}2 → 2∆
+→ {ν ∈ ∆ : {i, j} ⊆ o(ν)}
+(i, j) (cid:55)
+
+where 2∆ is the powerset of the vertices of ∆. Note that M is symmetric. This leads us to the
+following proposition.
+Proposition 3.7. For any Ti , Tj ∈ Xtrain ∪ Xpred , we have
+
+(cid:88)
+
+K(Ti , Tj ) =
+
+ν∈M(i,j)
+
+ων ϕν (i) ϕν (j).
+
+Proof. By construction, it sufﬁces to show that R∗ (S (Ti )
+
+Remark 3.9. The DAG computation of the subtree kernel investigated in this section relies on the references
+[1, 10]. Our work and the aforementioned papers are different and complementary. First, our framework
+is valid for both ordered and unordered trees, while these papers focus only on ordered trees. In addition,
+the method developed in [1, 10] is only adapted to exponential weights (see equations (3.12) and (6.2) from
+[10]). Thus, even if this algorithm is also based on DAG reduction of trees, it is less general than ours since
+the weight function is not constrained (see in particular Section 4 where the weight function is learned from
+the data). Finally, in [1, Section 4], the time-complexities are studied only from a numerical point of view,
+while we state theoretical results.
+
+4 Discriminance weight function
+
+For a given probability level and a given classiﬁcation error, and under the stochastic model of
+Subsection 2.2, we state in Subsection 2.4 that the sufﬁcient size of the training dataset is min-
+imum when the weight of leaves is 0. In other words, counting the leaves, which are the only
+subtrees that appear in both classes, does not provide a relevant information to the classiﬁcation
+problem associated to this model. As mentioned in Remark 2.5, we conjecture that, in a more
+general model, this result would be true for any subtree present in both classes. In this section, we
+propose to rely on this idea by deﬁning a new weight function, learned from the data and called
+discriminance weight that assigns a large weight to subtrees, that help to discriminate the classes,
+i.e., that are present or absent in exactly one class, and a low weight otherwise.
+The training dataset is divided into two parts: Xweight = (T1 , . . . , Tm ) to learn the weight function,
+and Xclass = (Tm+1 , . . . , Tn ) to estimate the Gram matrix. For the sake of readability, ∆ denotes the
+DAG reduction of the whole dataset, including Xweight , Xclass and Xpred . In addition, we assume
+that the data are divided into K classes numbered from 1 to K.
+For any vertex ν ∈ ∆ \ R(∆), we deﬁne the vector ρν of length K as,
+
+(cid:88)
+
+∀ 1 ≤ k ≤ K, ρν (k) =
+
+1
+#Ck
+
+1{i ∈ o(ν)} ,
+
+Ti∈Ck
+
+where (Ck )1≤k≤K forms a partition of Xweight such that Ti ∈ Ck if and only if Ti is in class k. In other
+words, ρν (k) is the proportion of data in class k that contain the subtree (R∗ )−1 (∆[ν]). Therefore,
+ρν belongs to the K-dimensional hypercube. It should be noticed that ρν is a vector of zeros as
+soon as (R∗ )−1 (∆[ν]) is not a subtree of a tree of Xweight .
+For any 1 ≤ k ≤ K, let ek (ek , respectively) be the vector of zeros with a unique 1 in position k
+(vector of ones with a unique 0 in position k, respectively). If ρν = ek , the vertex ν corresponds
+to the subtree (R∗ )−1 (∆[ν]), which only appears in class k: ν is thus a good discriminator of this
+class. Otherwise, if ρν = ek , the vertex ν appears in all the classes except class k and is still a good
+discriminator of the class. For any vertex ν, δν measures the distance between ρν and its nearest
+point of interest ek or ek ,
+
+δν =
+
+K
+
+min
+
+k=1
+
+min(|ρν − ek |, |ρν − ek |).
+
+It should be noted that the maximum value of δν depends on the number of classes and can
+be larger than 1.
+If δν is small, then ρν is close to a point of interest. Consequently, since ν
+tends to discriminate a class, its weight should be large. In light of this remark, the discriminance
+
+15
+
+weight of a vertex ν is deﬁned as ων = f(1 − δν ), where f : (−∞, 1] → [0, 1] is increasing with
+→ 3x2 − 2x3 . We borrowed the smoothstep
+ων = f∗ (1 − δν ) with the smoothstep function f∗ : x (cid:55)
+f(x) = 0 for x ≤ 0 and f(1) = 1. Fig. 5 illustrates some usual choices for f. In the sequel, we chose
+function from computer graphics [13, p. 30], where it is mostly used to have smooth transition in
+a threshold function.
+f : (−∞, 1] → [0, 1] is increasing with
+Figure 5: The discriminance weight
+is deﬁned by ωτ = f(1 − δτ ) where
+f(0) = 0 and f(1) = 1. This ﬁgure
+presents some usual choices for f.
+
+identity
+smoothstep
+smoothstep ◦ smoothstep
+threshold
+
+1
+
+0
+
+
+
+1
+
+Since leaves appear in all the trees of the training dataset, ρ• is a vector of ones and thus δ• = 1,
+which implies ω• = 0. This is consistent with the result developed in Subsection 2.4 on the
+stochastic model. As aforementioned, the discriminance weight is inspired from the theoretical
+results established in Subsection 2.4 and the conjecture presented in Remark 2.5. The relevance
+in practice of this weight function will be investigated in the sequel of the paper through two
+applications.
+
+Remark 4.1. The discriminance weight is deﬁned from the proportion of data in each class that contain
+a given subtree, for all the subtrees appearing in the dataset. It is thus required to enumerate all these
+subtrees. This is done, without redundancy, via the DAG reduction ∆ of the dataset deﬁned and investigated
+in Section 3. As the m trees of the training dataset dedicated to learning the discriminance weight are
+partitioned into K classes, computing one ρν vector is of complexity O(m). Therefore, computing all of
+them is in O(#∆m). In addition, computing all values of δν is in O(#∆K2 ), as there are 2K Euclidean
+distances to be computed for each vector of length K. All gathered, computing the discriminance weight
+function has an overall complexity of O(#∆(N + K2 )).
+
+5 Real data analysis
+
+This section is dedicated to the application of the methodology developed in the paper to eight real
+datasets with various characteristics in order to show its strengths and weaknesses. The related
+questions are supervised classiﬁcation problems. As mentioned in Subsection 3.3, our approach
+consists in computing the Gram matrices of the subtree kernel via DAG reduction and with a
+new weight function called the discriminance (see Section 4). In particular, we aim to compare
+the usual exponential weight of the literature and the latter in terms of prediction capability. In
+all the sequel, the Gram matrices are used as inputs to SVM algorithms in order to tackle these
+classiﬁcation problems. We emphasize that this approach is not restricted to SVM but can be
+applied with other prediction algorithms.
+
+5.1 Preliminaries
+
+In this subsection, we introduce (i) the protocol that we have followed to investigate several
+datasets, together with a description of (ii) the classiﬁcation metrics that we use to assess the
+
+16
+
+quality of our results, (iii) an extension of DAG reduction to take into account discrete labels on
+vertices of trees, and (iv) the standard method to convert a markup document into a tree. It should
+be already noted that all the datasets presented in the sequel are composed of trees (that can be
+ordered or unordered, labeled or not) together with their class.
+
+Protocol For each dataset, we have followed the same presentation and procedure. First, a de-
+scription of the data is made notably via histograms describing the size, outdegree, height and
+class repartition of trees. Given the dispersion of some of these quantities, we have binned
+together the values that does not ﬁt inside the interval [Q1 − 1.5 · IQR; Q3 + 1.5 · IQR] where
+IQR = Q3 − Q1 is the interquartile range. Therefore, the ﬂattened-large bins that appears in some
+histograms represents those outliers bins. The objective of this part is to show the wide range of
+datasets considered in the paper.
+→ λH(τ) we randomly split the data in half, one for
+In a second time, we evaluated the performance of the subtree kernel on a classiﬁcation task via
+two methods: (i) for exponential weights τ (cid:55)
+training a SVM, and one for prediction; (ii) for discriminance weight, we randomly split the data
+in thirds, one for training the discriminance weight, one for training a SVM, and the last one for
+prediction. We repeated 50 times this random split for discriminance, and for different values of
+λ. The classiﬁcation results are assessed by some metrics deﬁned in the upcoming paragraph, and
+gathered in boxplots. The ﬁrst application example, presented in Subsection 5.2, is slightly differ-
+ent since (i) we have worked with 50 distinct databases, and (ii) the results have been completed
+with a deeper analysis of the discriminance weights, in relation with the usual weighting scheme
+of the literature.
+
+Classiﬁcation metrics To quantify the quality of a prediction, we use four standard metrics that
+are accuracy, precision, recall and F-score. For a class k, one can have true positives TPk , false
+positives FPk , true negatives TNk and false negatives FNk .
+In a binary classiﬁcation problem,
+those metrics are deﬁned as,
+
+Accuracy(k) =
+
+Precision(k) =
+
+Recall(k) =
+
+F-score(k) =
+
+,
+
+TPk + TNk
+TPk + FPk + FNk + TNk
+TPk
+TPk + FPk
+TPk
+TPk + FNk
+
+,
+
+,
+
+2 Precision(k) Recall(k)
+Precision(k) + Recall(k)
+
+.
+
+For a problem with K > 2 classes, we adopt the macro-average approach, that is,
+
+K(cid:88)
+
+Metric =
+
+1
+K
+
+Metric(k).
+
+k=1
+
+We used the implementation available in the scikit-learn Python library, via the two functions
+
+accuracy_score and precision_recall_fscore_support.
+
+17
+
+DAG reduction with labels
+In the sequel, some of the presented datasets are composed of la-
+beled trees, that are trees which each vertex possesses a label. Labels are supposed to take only
+a ﬁnite number of different values. Two labeled ∗-trees are said isomorphic if (i) they are ∗-
+isomorphic, and (ii) the underlying one-to-one correspondence mapping vertices of T1 into ver-
+tices of T2 is such that ∀ v ∈ T1 , v and Φ(v) have the same label. The set of labeled ∗-trees is the
+quotient set of rooted trees by this equivalence relation. It should be noticed that the subtree ker-
+nel as well as DAG reduction are deﬁned through only the concept of isomorphic subtrees. As
+a consequence, they can be straightforwardly extended to labeled ∗-trees. This formalization is
+an extension of the deﬁnition introduced by the authors of [1, 10], as they consider only ordered
+labeled trees, whereas we can consider unordered labeled trees as well.
+
+From a markup document to a tree Some of the datasets come from markup documents (XML
+or HTML ﬁles). From such a document, one can extract a tree structure, identifying each couple of
+opening and closing tags as a vertex, which children are the inner tags. It should be noticed that,
+during this transcription, semantic data is forgotten: the tree only describes the topology of the
+document. Fig. 6 illustrates the conversion from HTML to tree on a small example. Such a tree is
+ordered but can be considered as unordered. Finally, a tag can also be chosen as a label for the
+corresponding vertex in the tree.
+
+Figure 6: Underlying ordered tree structure (right) present in a HTML document (left). Each level
+in the tree is colored in the same way as the corresponding tags in the document. Natural order
+from top to bottom in the HTML document corresponds to left-to-right order in the tree.
+
+5.2 Prediction of the language of a Wikipedia article from its topology
+
+Classiﬁcation problem and results Wikipedia pages are encoded in HTML and, as aforemen-
+tioned, can therefore be converted into trees. In this context, we are interested in the following
+question: does the (ordered or unordered) topology of a Wikipedia article (as an HTML page)
+contain the information of the language in which it has been written? This can be formulated
+as a supervised classiﬁcation problem: given a training dataset composed of the tree structures
+
+18
+
+<html><body><h1>Loremipsumdolorsitamet,consecteturadipiscingelit.</h1><p>Sednonrisus.</p><ul><li>Suspendisselectustortor,dignissimsitamet,adipiscingnec,ultriciessed,dolor.</li><li>Craselementumultricesdiam.<ol><li>Maecenasligulamassa,variusa,sempercongue,euismodnon,mi.</li><li>Proinporttitor,orcinecnonummymolestie,enimesteleifendmi,nonfermentumdiamnislsitameterat.</li></ol></li><li>Duissemper.Duisarcumassa,scelerisquevitae,consequatin,pretiuma,enim.</li></ul><p>Pellentesquecongue.Utinrisusvolutpatliberopharetratempor.</p></body></html>of Wikipedia articles labeled with their language, is a prediction algorithm able to predict the
+language of a new data only from its topology? The interest of this question is discussed in Re-
+mark 5.1.
+In order to tackle this problem, we have built 50 databases of 480 trees each, converted from
+Wikipedia articles as follows. Each of the databases is composed of 4 datasets:
+• a dataset to predict Xpred made of 120 trees;
+• a small train dataset X small
+train made of 40 trees;
+• a medium train dataset X medium
+train made of 120 trees;
+• and a large train dataset X
+train made of 200 trees.
+For each dataset, and each language, we picked Wikipedia articles at random using the Wikipedia
+API1 , and converted them into unlabeled trees. It should be noted that the probability to have
+the same article in at least two different languages is extremely low. For each database, we aim at
+predicting the language of the trees in Xpred using a SVM algorithm based on the subtree kernel for
+ordered and unordered trees, and trained with X size
+train where size ∈ {small, medium, large}. Fig. 8
+provides the description of one typical database. All trees seem to share common characteristics,
+regardless of their class.
+
+large
+
+Figure 7: Description of a Wikipedia dataset (480 trees).
+
+Classiﬁcation results over the 50 databases are displayed in Fig. 8. Discriminance weighting achie-
+ves highly better results than exponential weighting, with all metrics greater than 90% on average
+from only 200 training data. This points out that the language information exists in the structure
+of Wikipedia pages, whether they are considered as ordered or unordered trees, unlike what in-
+tuition as well as subtree kernel with exponential weighting suggest. It should be added that the
+variance of all metrics seem to decrease with the size of the training dataset when using discrimi-
+nance.
+
+1https://www.mediawiki.org/wiki/API:Random (last accessed in October 2019)
+
+19
+
+01000200030004000500060007000800090000.00.1Sizerepartition03060901201501802102402700.00.2Outdegreerepartition1015202530354045500.00.5Heightrepartition0.00.2ClassrepartitionUniform→ λH(τ) . The colors of the
+Figure 8: Classiﬁcation results for the 50 Wikipedia databases as ordered (left) and unordered
+(right) trees. λ values stands for exponential decay weight of the form τ (cid:55)
+boxplot indicates, for each size ∈ {small, medium, large}, the results obtained for the classiﬁcation
+of Xpred from X size
+
+train .
+
+These numerical results show the great interest of the discriminance weight, in particular with
+respect to an exponential weight decay. Nevertheless, it should be compelling in this context to
+understand the classiﬁcation rule learned by the algorithm. Indeed, this could lead to explain how
+the information of the language is present in the topology of the article.
+
+Comprehensive learning and data visualization When a learning algorithm is efﬁcient for a
+given prediction problem, it is interesting to understand which features are signiﬁcant. In the
+subtree kernel, the features are the subtrees appearing in all the trees of all the classes. Looking
+at (2), the contribution of any subtree τ to the subtree kernel with discriminance weighting is the
+product of two terms: the discriminance weight wτ quantiﬁes the ability of τ to discriminate a
+class, while κ(Nτ (T1 ), Nτ (T2 )) evaluates the similarity between T1 and T2 with respect to τ through
+the kernel κ. As explained in Section 4, if wτ is close to 1, τ is an important feature in the prediction
+problem.
+As shown in Section 3, DAG reduction provides a tool to compress a dataset without loss. We
+recall that each vertex of the DAG represents a subtree appearing in the data. Consequently, we
+propose to visualize the important features on the DAG of the dataset where the radius of the
+vertices is an increasing function of the discriminance weight. In addition, each vertex of the DAG
+can be colored as the class that it helps to discrimine, either positively (the vertex of the DAG
+corresponds to a subtree that is present almost only in the trees of this class), or negatively. This
+provides a visualization at a glance of the whole dataset that highlights the signiﬁcant features for
+the underlying classiﬁcation problem. We refer the reader to Fig. 9 for an application to one of our
+datasets. Thanks to this tool, we have remarked that the subtree corresponding to the License at
+the bottom of any article highly depends on the language, and thus helps to predict the class.
+
+20
+
+λ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminance0.00.20.40.60.81.0AccuracyPrecisionRecallF-scoreSmallMediumLargeλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminance0.00.20.40.60.81.0AccuracyPrecisionRecallF-scoreSmallMediumLargee
+
+n
+
+:
+
+a
+
+b
+
+s
+
+e
+
+n
+
+e
+c
+
+e
+
+n
+
+:
+
+p
+
+r
+
+e
+
+s
+
+e
+
+n
+
+e
+c
+
+e
+
+s
+
+:
+
+a
+
+b
+
+s
+
+e
+
+n
+
+e
+c
+
+e
+
+s
+
+:
+
+p
+
+r
+
+e
+
+s
+
+e
+
+n
+
+e
+c
+
+d
+
+e
+
+:
+
+a
+
+b
+
+s
+
+e
+
+n
+
+e
+c
+
+d
+
+e
+
+:
+
+p
+
+r
+
+e
+
+s
+
+e
+
+n
+
+e
+c
+
+f
+
+r
+
+:
+
+a
+
+b
+
+s
+
+e
+
+n
+
+e
+c
+
+f
+
+r
+
+:
+
+p
+
+r
+
+e
+
+s
+
+e
+
+n
+
+e
+c
+
+F
+
+i
+
+g
+
+u
+
+r
+
+e
+
+9
+
+:
+
+V
+
+i
+
+s
+
+u
+
+a
+
+i
+l
+
+a
+z
+
+i
+t
+
+n
+o
+
+o
+
+f
+
+n
+o
+
+e
+
+d
+
+a
+
+t
+
+a
+
+(
+s
+∗
+
+e
+
+t
+
+X
+−
+
+X
+=
+
+m
+
+e
+t
+a
+
+u
+d
+n
+
+i
+
+∪
+m
+
+t
+
+r
+
+i
+
+X
+
+e
+r
+p
+
+r
+
+e
+d
+
+o
+
+f
+
+o
+n
+u
+
+r
+
+d
+
+e
+
+r
+
+e
+
+d
+
+t
+
+r
+
+e
+e
+
+s
+
+a
+
+m
+
+g
+n
+o
+
+t
+
+h
+
+e
+
+0
+3
+
+W
+
+i
+
+p
+k
+
+i
+
+e
+
+d
+
+i
+
+a
+
+d
+
+a
+
+t
+
+a
+
+b
+
+a
+
+s
+
+e
+
+s
+
+.
+
+E
+
+a
+
+c
+
+h
+
+v
+
+e
+
+r
+
+t
+
+x
+e
+
+ν
+
+∈
+
+R
+
+(
+∗
+
+X
+
+)
+
+i
+
+s
+
+c
+s
+
+a
+
+l
+
+e
+
+d
+
+a
+
+c
+c
+
+o
+
+r
+
+g
+n
+d
+
+i
+
+t
+
+o
+
+f
+
+1
+
+δ
+
+ν
+
+)
+
+s
+
+o
+
+h
+
+a
+
+t
+
+t
+
+h
+
+e
+
+l
+
+a
+
+g
+
+s
+
+t
+
+v
+
+e
+
+r
+
+i
+t
+
+e
+c
+
+s
+
+a
+
+r
+
+e
+
+t
+
+o
+h
+
+s
+
+e
+
+t
+
+h
+
+a
+
+t
+
+b
+
+e
+
+s
+
+t
+
+d
+
+i
+
+c
+s
+
+r
+
+i
+
+m
+
+i
+
+n
+
+a
+
+t
+
+e
+
+t
+
+h
+
+e
+
+d
+
+f
+f
+i
+
+e
+
+r
+
+e
+
+n
+
+t
+
+c
+
+l
+
+a
+
+s
+s
+
+e
+
+s
+
+.
+
+o
+F
+
+r
+
+a
+e
+
+c
+
+h
+
+ν
+
+,
+
+w
+
+e
+
+d
+n
+ﬁ
+
+t
+
+h
+
+e
+
+c
+
+l
+
+a
+
+s
+s
+
+k
+
+s
+
+u
+
+c
+
+h
+
+t
+
+h
+
+a
+
+t
+
+ρ
+
+ν
+
+h
+
+a
+
+s
+
+m
+
+i
+
+n
+
+i
+
+m
+
+a
+
+l
+
+d
+
+i
+
+s
+
+t
+
+a
+
+n
+
+e
+c
+
+t
+
+o
+
+e
+
+t
+i
+
+h
+
+e
+
+r
+
+e
+
+k
+
+o
+
+r
+
+e
+
+k
+s
+
+.
+
+f
+I
+
+t
+i
+
+i
+
+s
+
+e
+
+k
+
+,
+
+w
+
+e
+
+s
+
+a
+
+y
+
+t
+
+h
+
+a
+
+t
+
+ν
+
+d
+
+i
+
+c
+s
+
+r
+
+i
+
+m
+
+i
+
+n
+
+a
+
+t
+
+e
+
+s
+
+y
+b
+
+t
+i
+
+s
+
+p
+
+r
+
+e
+
+s
+
+e
+
+n
+
+e
+c
+
+,
+
+a
+
+d
+n
+
+f
+i
+
+t
+i
+
+i
+
+s
+
+e
+
+k
+
+,
+
+d
+ν
+
+i
+
+c
+s
+
+r
+
+i
+
+m
+
+i
+
+n
+
+a
+
+t
+
+e
+
+s
+
+y
+b
+
+t
+i
+
+s
+
+a
+
+b
+
+s
+
+e
+
+n
+
+e
+c
+
+.
+
+W
+
+e
+
+c
+
+o
+
+l
+
+o
+
+r
+
+ν
+
+f
+
+o
+
+l
+l
+
+o
+
+w
+
+i
+
+g
+n
+
+t
+
+h
+
+i
+
+d
+
+i
+
+s
+
+i
+t
+
+n
+
+c
+
+i
+t
+
+n
+o
+
+a
+
+c
+c
+
+o
+
+r
+
+g
+n
+d
+
+i
+
+t
+
+o
+
+t
+
+h
+
+e
+
+l
+
+e
+
+g
+
+e
+
+d
+n
+
+,
+
+w
+
+h
+
+e
+
+r
+
+e
+
+e
+“
+
+n
+
+”
+
+i
+
+s
+
+f
+
+o
+
+r
+
+g
+n
+E
+
+i
+l
+
+s
+
+h
+
+l
+
+a
+
+g
+n
+
+u
+
+a
+
+g
+
+e
+
+,
+
+“
+
+d
+
+”
+e
+
+f
+
+o
+
+r
+
+G
+
+e
+
+r
+
+m
+
+a
+
+n
+
+,
+
+“
+
+f
+
+r
+
+”
+
+f
+
+o
+
+r
+
+F
+
+r
+
+e
+
+n
+
+c
+
+h
+
+,
+
+a
+
+d
+n
+
+e
+“
+
+s
+
+”
+
+f
+
+o
+
+r
+
+S
+
+p
+
+a
+
+n
+
+i
+
+s
+
+h
+
+.
+
+21
+
+Distribution of discriminance weights To provide a better understanding of our results, we
+have analyzed in Fig. 10 the distribution of discriminance weights of one of our large training
+datasets. It shows that the discriminance weight behaves on average as a shifted exponential.
+Considering the great performance achieved by the discriminance weight, this illustrates that ex-
+ponential weighting presented in the literature is indeed a good idea, when setting w• = 0 as
+shown in Subsection 2.4 or suggested in [30, 6 Experimental results]. However, a closer look to
+the distribution in Fig. 10 (left) reveals that important features in the kernel are actually outliers:
+relevant information is both far from the average behavior and scarce. To a certain extent and
+regarding these results, discriminance weight is the second order of the exponential weight.
+
+Figure 10: Estimation of the distribution of the discriminance weight function h (cid:55)
+h, ν ∈ R∗ (X )} from one large training Wikipedia dataset of unordered trees (left) and ﬁt of its
+average behavior (in red) to an exponential function (in blue). All ordered and unordered datasets
+show a similar behavior.
+
+→ {wν : H(ν) =
+
+Remark 5.1. The classiﬁcation problem considered in this subsection may seem unrealistic as ignoring the
+text information is obviously counterproductive in the prediction of the language of an article. Neverthe-
+less, this application example is of interest for two main reasons. First, this prediction problem is difﬁcult
+as shown by the bad results obtained from the subtree kernel with exponential weights (see Fig. 8). As high-
+lighted in Fig. 9 and 10 (left), the subtrees that can discriminate the classes are very unfrequent and diverse
+(in terms of size and structure), so difﬁcult to be identiﬁed. On a different level, as Wikipedia has a very
+large corpus of pages, it provides a practical tool to test our algorithms and investigate the properties of
+our approach. Indeed, we can virtually create as many different datasets as we want by randomly picking
+articles, ensuring that we avoid overﬁtting.
+
+5.3 Markup documents datasets
+
+We present and analyze in this subsection three datasets obtained from markup documents.
+
+INEX 2005 and 2006 These datasets originate from the INEX competition [11]. There are XML
+documents, that we have been considering as ordered and unordered in our experiments. INEX
+
+22
+
+2005 is made of 9 630 documents arranged in 11 classes, whereas INEX 2006 has 18 classes for
+12 107 documents. For INEX 2005, classes can be split into two groups of trees with similar char-
+acteristics, as shown in Fig. 11 (left). However, inside each group, all trees are alike. In the case
+of INEX 2006, no special group seems to emerge from topological characteristics of the data, as
+pointed out in Fig. 11 (right).
+The classiﬁcation results are depicted in Fig. 12, for both datasets, and with trees considered suc-
+cessively as ordered and unordered. For INEX 2005, both exponential decay and discriminance
+achieve similar good performance. However, for INEX 2006, neither of them are able to achieve
+signiﬁcant results. Actually, discriminance performs slightly worse than exponential decay. From
+these results we deduce that subtrees do not seem to form the appropriate substructure to capture
+the information needed to properly classify the data.
+
+Figure 11: Description of INEX 2005 (9 630 trees, left) and INEX 2006 (12 107 trees, right) datasets.
+
+Videogame sellers We manually collected, for two major websites selling videogames2 , the
+URLs of the top 100 best-selling games, and converted them into ordered labeled trees. As web-
+pages might seem similar to some extent, the trees are actually very different, as highlighted in
+Fig. 13. We found that the subtree kernel retrieves this information as, for both exponential decay
+and discriminance weights, we achieved 100% of correct classiﬁcations in all our tests.
+
+5.4 Biological datasets
+
+In this subsection, three datasets from the literature are analyzed, all related to biological topics.
+
+Vascusynth The Vascusynth dataset from [16, 20] is composed of 120 unordered trees that rep-
+resent blood vasculatures with different bifurcations numbers. In a tree, each vertex has a contin-
+uous label describing the radius r of the corresponding vessel. We have discretized these contin-
+uous labels in three categories: small if r < 0.02, medium if 0.02 ≤ r < 0.04 and large if r ≥ 0.04
+(all values are in arbitrary unit). We split up the trees into three classes, based on their bifurcation
+number. Based on Fig. 14 (left), we can distinguish between the three classes by looking only at
+
+2steam.com and gog.com (last accessed in October 2019)
+
+23
+
+01020304050607080900.00.5Sizerepartition481216202428320.00.5Outdegreerepartition12301Heightrepartition0.00.1ClassrepartitionUniform01530456075901050.00.2Sizerepartition081624324048560.00.5Outdegreerepartition23401Heightrepartition0.00.1ClassrepartitionUniformFigure 12: Classiﬁcation results for INEX 2005 (top) and INEX 2006 (bottom) as ordered (left) and
+unordered (right) trees.
+
+the size of trees. Contrary to the videogame sellers dataset that had the same property, the clas-
+siﬁcation does not achieve 100% of good classiﬁcation, as depicted in Fig. 14 (right). On average,
+discriminance performs better than the other weights, despite having a larger variance. This is
+probably due to the small size of the dataset, as the discriminance is learned only with around 13
+trees per class.
+
+Hicks et al. cell lineage trees Across cellular division, tracking the lineage of a single cell nat-
+urally deﬁnes a tree. In a recent article, Hicks et al. have been investigating the variability inside
+cell lineages trees of three different species [19]. From the encoding of the data that they have pro-
+vided as a supplementary material3 , we have extracted ordered unlabeled trees that are presented
+in Fig. 15 (left). The dataset contains, for two classes, trees of outdegree 0 (i.e., isolated leaves) that
+can be considered as noise. With respect to the exponential weight, the value of the kernel between
+such trees will be identical, whether they belong to the same class or to two different classes. They
+therefore contribute to reducing the kernel’s ability to effectively discriminate between these two
+
+3https://doi.org/10.1101/267450 (last accessed in October 2019)
+
+24
+
+λ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminance0.00.20.40.60.81.0AccuracyPrecisionRecallF-scoreλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminance0.00.20.40.60.81.0AccuracyPrecisionRecallF-scoreλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminance0.00.20.40.60.81.0AccuracyPrecisionRecallF-scoreλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminance0.00.20.40.60.81.0AccuracyPrecisionRecallF-scoreFigure 13: Description of the videogame sellers dataset (200 trees).
+
+Figure 14: Description of the Vascusynth dataset (120 trees, left) and classiﬁcation results (right).
+
+classes. On the other hand, the discriminance weight will assign them a zero value, “de-noising”,
+in a way, the data. This observation may explain why discriminance weight achieves better results
+than exponential weight.
+
+Faure et al. cell lineage trees Faure et al. have developed a method to construct cell lineage trees
+from microscopy [14] and provided their data online4 . We extracted 300 unordered and unlabeled
+trees, divided between three classes. It seems from Fig. 16 (left) that one class among the three
+can be distinguished from the two others. Classiﬁcation results can be found in Fig. 16 (right):
+the discriminance weight performs better than the exponential weight, whatever the value of the
+parameter.
+
+4https://bioemergences.eu/bioemergences/openworkflow-datasets.php (last accessed in October
+
+2019)
+
+25
+
+400800120016002000240028003200360040000.000.25Sizerepartition1530456075901050.00.5Outdegreerepartition01504509000.00.2Heightrepartition0.00.5ClassrepartitionUniform01530456075901051200.00.5Sizerepartition201Outdegreerepartition36912151821240.000.25Heightrepartition0.00.2ClassrepartitionUniformλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminance0.00.20.40.60.81.0AccuracyPrecisionRecallF-scoreFigure 15: Description of the Hicks et al. dataset (345 trees, left) and classiﬁcation results (right).
+
+Figure 16: Description of the Faure et al. dataset (300 trees, left) and classiﬁcation results (right).
+
+5.5 LOGML
+
+The LOGML dataset is made of user sessions on an academic website, namely the Rensselaer
+Polytechnic Institute Computer Science Department website5 , that registered the navigation of
+users across the website. 23 111 unordered labeled trees are present, divided into two classes. The
+trees are very alike, as shown in Fig. 17 (left), and the classiﬁcation results of Fig. 17 (right) are very
+similar to INEX 2005, where all weight functions behave similarly, without any advantage for the
+discriminance weight in terms of prediction.
+
+5https://science.rpi.edu/computer-science (last accessed in October 2019)
+
+26
+
+0601201802403003604204805400.00.5Sizerepartition01201Outdegreerepartition024680.00.5Heightrepartition0.00.5ClassrepartitionUniformλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminance0.00.20.40.60.81.0AccuracyPrecisionRecallF-score32404856647280880.00.5Sizerepartition12301Outdegreerepartition262728293001Heightrepartition0.00.2ClassrepartitionUniformλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminance0.00.20.40.60.81.0AccuracyPrecisionRecallF-scoreFigure 17: Description of the LOGML dataset (23 111 trees, left) and classiﬁcation results (right).
+
+6 Concluding remarks
+
+6.1 Main interest of the DAG approach: learning the weight function
+
+In Section 2, we have shown on a 2-classes stochastic model that the efﬁciency of the subtree
+kernel is improved by imposing that the weight of leaves is null. As explained in Remark 2.5, we
+conjecture that the weight of any subtree present in two different classes should be 0. The main
+interest of the DAG approach developed in Section 3 is that it allows to learn the weight function
+from the data, as developed in Section 4 with the discriminance weight function. Our method has
+been implemented and tested in Section 5 on eight real datasets with very different characteristics
+that are summed up in Table 1.
+As a conclusion of our experiments, we have analyzed the relative improvement in prediction
+obtained with the discriminance weight against the best exponential weight in order to show both
+the importance of the weight function and the relevance of the method developed in this paper.
+More precisely, for each dataset and each classiﬁcation metric, we have calculated
+
+RI =
+
+Metricdiscr − max(Metricλ )
+max(Metricλ )
+
+,
+
+from the average values of the different metrics. The results are presented in Fig. 18. We have
+found that, except in one case, discriminance behaves as good as exponential weight decay and
+even performs better in most of the datasets. Furthermore, one can observe a kind of trend, where
+the relative improvement decreases when the number of trees in the training dataset is increasing,
+which proves the great interest of the discriminance to handle small datasets, provided that (i) the
+problem is difﬁcult enough that the exponential weights are not already high performing, as it is
+the case in the Videogames sellers dataset, and (ii) the dataset is not too small, as for Vascusynth.
+Indeed, as the discriminance is learned independently from the SVM, one must have enough
+training data to divide them efﬁciently. Nevertheless, it should be noted that, in the framework
+of the DAG approach, results from the discriminance weight can be obtained much faster due to
+the fact that the Gram matrices are estimated from one half of the training dataset, while learning
+
+27
+
+040801201602002402800.00.2Sizerepartition01530456075901051200.000.25Outdegreerepartition01530456075901050.000.25Heightrepartition0.00.5ClassrepartitionUniformλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminanceλ=0.3λ=0.5λ=0.7Discriminance0.00.20.40.60.81.0AccuracyPrecisionRecallF-scorethe discrimance is very fast as it can be done in one traversal of the DAG (see time-complexity
+presented in Remark 4.1). Finally, we have investigated on a single example some properties of
+the discriminance, discovering that it can be interpreted as a second-order exponential weight, as
+well as a method for visualizing the important features in the data.
+
+Dataset
+Ord. / Unord.
+labeled
+Number of trees
+Number of classes
+
+W i k i p e d i a
+
+g a
+
+V i d e o
+
+Both
+
+
+
+(cid:88)
+
+e s
+
+E
+
+X
+
+2 0 0 5
+
+I N
+(cid:88)
+
+m
+I N
+(cid:88)
+
+2 0 0 6
+
+X
+
+E
+
+V a s c u s y
+
+n t h
+
+H i c k s e t a l.
+F a u r e
+
+e t a l.
+
+L
+
+M
+
+G
+
+O
+
+L
+
+Ord. Both
+
+Both Unord. Ord. Unord. Unord.
+
+(cid:88)
+
+
+
+
+
+(cid:88)
+
+160 – 320
+4
+
+200
+2
+
+9 630
+11
+
+12 107
+18
+
+120
+3
+
+345
+3
+
+300
+3
+
+23 111
+2
+
+Table 1: Summary of the 8 datasets.
+
+Figure 18: Relative improvement RI (in percentage) of the discriminance against the best value of
+λ for all datasets (sorted by increasing number of trees in the training dataset) and all metrics.
+
+6.2
+
+Interest of the DAG approach in terms of computation time
+
+As shown in Fig. 16 (right), the exponential decay classiﬁcation results for the Faure et al. dataset
+are very dependent on the value chosen for the parameter λ. In this case, it can be interesting to
+tune this parameter and estimate its best value with respect to a prediction score. This requires to
+
+28
+
+VascusynthWikipedia-smallVideogamesellersWikipedia-mediumFaureetal.Wikipedia-largeHicksetal.INEX2005INEX2006LOGML−20020406080100120140AccuracyPrecisionRecallF-scorecompute the Gram matrices from different weight functions. We present in Fig. 19 the computation
+time required to compute the Gram matrices from a given number of values of the parameter. As
+expected from the theoretical results, we observe a linear dependency: the intercept corresponds
+to the computation time required to compute and annotate the DAG reduction, while the slope
+is associated with the time required to compute the Gram matrices, which is proportional to the
+average of O(min(#Ti , #Tj )) (see Remark 3.8). This can be compared to the time-complexity of the
+algorithm developed in [30] which is the average of O(#Ti + #Tj ). Consequently, the corresponding
+computation times should be proportional to at least twice the slope that we observe with the
+DAG approach. This shows another interest of our method that is not related to the discriminance
+weight function. It should be faster to compute several repetitions of the subtree kernel from the
+DAG approach than from the previous algorithm [30] provided that the number of repetitions is
+large enough.
+
+Figure 19: Computation time required to com-
+pute several repetitions of the kernel on the
+Faure et al. dataset. All those calculations have
+been repeated 50 times for each number of rep-
+etitions. The intercept corresponds to the DAG
+compression of the dataset, which is indepen-
+dent on the number of repetitions. The blue
+curve is a linear ﬁtting of all the measurement
+points.
+
+6.3
+
+Implementation and reproducibility
+
+The treex library for Python [2] is designed to manipulate rooted trees, with a lot of diversity
+(ordered or not, labeled or not). It offers options for random generation, visualization, edit opera-
+tions, conversions to other formats, and various algorithms. We implemented the subtree kernel
+as a module of treex so that the interested reader can manipulate the concepts discussed in this
+paper in a ready-to-use manner.
+Basically, the subtree_kernel module allows the computation of formula (2) with options for
+choosing (i) κ among some classic choices of kernels [25, Section 2.3] and (ii) the weight function
+among exponential decay or discriminance. Resorting to dependencies to scikit-learn, tools
+for processing databases and compute SVM are also provided for the sake of self-containedness.
+Finally, visualization tools are also made available to perform the comprehensive learning ap-
+proach discussed in Subsection 5.2.
+Installing instructions and the documentation of treex can be found from [2]. For the sake of
+reproducibility, the databases used in Section 5, as well as the scripts that were designed to create
+them and process them, have been made available on the ﬁrst author webpage6 .
+
+6http://perso.ens-lyon.fr/romain.azais/subtree-kernel/
+
+29
+
+135791113151719Numberofkernelrepetitions050100150200250300350Computationtime(s)Acknowledgments
+
+This work has been supported by the European Union’s H2020 project ROMI. The authors would
+like to thank Dr. Bruno Leggio as well as Dr. Giovanni Da San Martino for helping them to access
+some of the datasets presented in the paper: grazie. Last but not least, the authors are grateful to
+three anonymous reviewers for their valuable comments on a ﬁrst version of the manuscript.
+
+References
+
+[1] Fabio Aiolli, Giovanni Da San Martino, Alessandro Sperduti, and Alessandro Moschitti. Fast
+on-line kernel learning for trees. In Sixth International Conference on Data Mining (ICDM’06),
+pages 787–791. IEEE, 2006.
+
+[2] Romain Aza¨ıs, Guillaume Cerutti, Didier Gemmerl ´e, and Florian Ingels.
+treex: a python
+package for manipulating rooted trees. The Journal of Open Source Software, 4, 2019.
+
+[3] Romain Aza¨ıs, Alexandre Genadot, and Benoˆıt Henry.
+Inference for conditioned Galton-
+Watson trees from their Harris path. To appear in ALEA, 2019.
+
+[4] Maria-Florina Balcan, Avrim Blum, and Nathan Srebro. A theory of learning with similarity
+functions. Machine Learning, 72(1-2):89–112, 2008.
+
+[5] Karthik Bharath, Prabhanjan Kambadur, Dipak Dey, Rao Arvin, and Veerabhadran Baladan-
+dayuthapani. Statistical tests for large tree-structured data. Journal of the American Statistical
+Association, 2016.
+
+[6] Philip Bille. A survey on tree edit distance and related problems. Theoretical Computer Science,
+337(1-3):217 – 239, 2005.
+
+[7] Michael Collins and Nigel Duffy. Convolution kernels for natural language. In Advances in
+neural information processing systems, pages 625–632, 2002.
+
+[8] Gianni Costa, Giuseppe Manco, Riccardo Ortale, and Andrea Tagarelli. A tree-based ap-
+proach to clustering xml documents by structure. In Jean-Franc¸ ois Boulicaut, Floriana Es-
+posito, Fosca Giannotti, and Dino Pedreschi, editors, Knowledge Discovery in Databases: PKDD
+2004, pages 137–148, Berlin, Heidelberg, 2004. Springer Berlin Heidelberg.
+
+[9] Nello Cristianini, John Shawe-Taylor, et al. An introduction to support vector machines and other
+kernel-based learning methods. Cambridge university press, 2000.
+
+[10] Giovanni Da San Martino. Kernel methods for tree structured data. PhD thesis, alma, 2009.
+
+[11] Ludovic Denoyer and Patrick Gallinari. Report on the xml mining track at inex 2005 and inex
+2006: categorization and clustering of xml documents.
+In SIGIR Forum, volume 41, pages
+79–90, 2007.
+
+[12] Peter J. Downey, Ravi Sethi, and Robert Endre Tarjan. Variations on the common subexpres-
+sion problem. J. ACM, 27(4):758–771, October 1980.
+
+30
+
+[13] David S. Ebert and F. Kenton Musgrave. Texturing & modeling: a procedural approach. Morgan
+Kaufmann, 2003.
+[14] E Faure, T Savy, B Rizzi, C Melani, M Reme ˇs´ıkova, R ˇSpir, O Drbl´ıkov ´a, R ˇCunderl´ık,
+G Recher, B Lombardot, et al. An algorithmic workﬂow for the automated processing of
+3d+ time microscopy images of developing organisms and the reconstruction of their cell
+lineage. Nat. Commun, 2015.
+
+[15] Christophe Godin and Pascal Ferraro. Quantifying the degree of self-nestedness of trees: ap-
+plication to the structural analysis of plants. IEEE/ACM Transactions on Computational Biology
+and Bioinformatics (TCBB), 7(4):688–703, 2010.
+
+[16] Ghassan Hamarneh and Preet Jassi. Vascusynth: Simulating vascular trees for generating vol-
+umetric image data with ground truth segmentation and tree analysis. Computerized Medical
+Imaging and Graphics, 34(8):605–616, 2010.
+
+[17] John C. Hart and Thomas A. DeFanti. Efﬁcient antialiased rendering of 3-d linear fractals.
+SIGGRAPH Comput. Graph., 25(4):91–100, July 1991.
+
+[18] David Haussler. Convolution kernels on discrete structures. Technical report, Department of
+Computer Science, University of California, 1999.
+
+[19] Damien G Hicks, Terence P Speed, Mohammed Yassin, and Sarah M Russell. Maps of vari-
+ability in cell lineage trees. PLoS computational biology, 15(2):e1006745, 2019.
+
+[20] Preet Jassi and Ghassan Hamarneh. Vascusynth: Vascular tree synthesis software. Insight
+Journal, January-June:1–12, 2011.
+
+[21] Daisuke Kimura, Tetsuji Kuboyama, Tetsuo Shibuya, and Hisashi Kashima. A subpath kernel
+for rooted unordered trees. In Paciﬁc-Asia Conference on Knowledge Discovery and Data Mining,
+pages 62–74. Springer, 2011.
+
+[22] Shu-Yun Le, Ruth Nussinov, and Jacob V. Maizel. Tree graphs of RNA secondary structures
+and their comparisons. Computers and Biomedical Research, 22(5):461 – 473, 1989.
+
+[23] M. A. Mart´ın-Delgado, J. Rodriguez-Laguna, and G. Sierra. Density-matrix renormalization-
+group study of excitons in dendrimers. Phys. Rev. B, 65:155116, Apr 2002.
+
+[24] James Mercer. Xvi. functions of positive and negative type, and their connection the theory
+of integral equations. Philosophical transactions of the royal society of London. Series A, containing
+papers of a mathematical or physical character, 209(441-458):415–446, 1909.
+
+[25] Bernhard Sch ¨olkopf and Alexander J. Smola. Learning with Kernels: Support Vector Machines,
+Regularization, Optimization, and Beyond. MIT Press, Cambridge, MA, USA, 2001.
+
+[26] John Shawe-Taylor, Nello Cristianini, et al. Kernel methods for pattern analysis. Cambridge
+university press, 2004.
+
+[27] Dan Shen, Haipeng Shen, Shankar Bhamidi, Yolanda Mu ˜noz Maldonado, Yongdai Kim, and
+J. Stephen Marron. Functional data analysis of tree data objects. Journal of computational and
+graphical statistics : a joint publication of American Statistical Association, Institute of Mathematical
+Statistics, Interface Foundation of North America, 23 2:418–438, 2014.
+
+31
+
+[28] Steven S Skiena. Sorting and searching.
+Springer, 2012.
+
+In The Algorithm Design Manual, pages 103–144.
+
+[29] Ivan E. Sutherland. Sketchpad: A man-machine graphical communication system. In Pro-
+ceedings of the May 21-23, 1963, Spring Joint Computer Conference, AFIPS ’63 (Spring), pages
+329–346, New York, NY, USA, 1963. ACM.
+
+[30] S.V.N. Vishwanathan and Alexander J Smola. Fast kernels on strings and trees. Advances on
+Neural Information Proccessing Systems, 14, 2002.
+
+[31] Haonan Wang and J. S. Marron. Object oriented data analysis: Sets of trees. Ann. Statist.,
+35(5):1849–1873, 10 2007.
+
+A Proof of Proposition 2.2
+
+The proof is mainly based on the following technical lemma, which statement requires the follow-
+ing notation. If u is a vertex of a tree T , F (u) denotes the family of u, i.e., the set composed of
+the ascendants of u, u, and the descendants of u in T . We recall that D(u) stands for the set of
+descendants of u.
+Lemma A.1. Let u, v ∈ Ti , i ∈ {1, 2}. One has
+
+(cid:88)
+
+K(T u
+i , T v
+i ) = K(Ti , Ti ) −
+
+ωTi [x] + K(τH(u) , τH(v) ),
+
+x∈Bu,v
+
+(cid:12)
+
+Bu,v =
+
+D(u) ∪ {u}
+F (u) ∪ F (v)
+
+if u = v,
+else.
+
+(6)
+
+where
+
+Let u ∈ T1 and v ∈ T2 . Then,
+
+K(T u
+1 , T v
+2 ) = K(τH(u) , τH(v) ).
+
+Proof. We begin with the case u (cid:54)= v. The result relies on the following decomposition which is
+valid under the assumptions made on Ti and the sequence (τh ),
+
+S (T u
+i )
+
+in light of (2) again. Furthermore, if θ ∈ S (Ti ) \ {Ti [z]
+z ∈ {u, v}, and (cid:88)
+
+(cid:88)
+
+: z ∈ F (u) ∪ F (v)}, then Nθ (T z
+i ) = Nθ (Ti ),
+
+wθNθ (T u
+i )Nθ (T v
+i ) =
+
+wθNθ (Ti )Nθ (Ti )
+
+θ∈S (Ti )\{Ti [z] : z∈F (u)∪F (v)}
+
+(cid:88)
+
+θ∈S (Ti )
+
+(cid:88)
+
+θ∈S (Ti )\{Ti [z] : z∈F (u)∪F (v)}
+
+wθNθ (Ti )Nθ (Ti )
+
+θ∈{Ti [u] : u∈F (v)∪F (w)}
+
+(cid:88)
+
+=
+
+−
+
+wθNθ (Ti )Nθ (Ti )
+
+wθ ,
+
+(8)
+
+(cid:88)
+
+ωTi [z] = K(Ti [x], Ti [x]),
+
+(cid:88)
+
+z∈{x}∪D(x)
+
+ωTi [z] = K(Ti , Ti ) −
+
+ωTi [z] .
+
+z /∈F (x)∪F (u)
+
+z∈Bx,u
+
+33
+
+since Nθ (Ti ) = 1 because of the ﬁrst assumption on Ti . (7) and (8) state the ﬁrst result. When u = v,
+the decomposition is slightly different,
+
+i ) = (cid:2)
+S (T u
+
+θ∈{Ti [z] : z∈F (u)∪F (v)}
+
+= K(Ti , Ti ) −
+S (Ti ) \ {Ti [z] : z ∈ {u} ∪ D(u)}(cid:3)
+∪ S (τH(u) ),
+1 , T v
+
+but the rest of the proof is similar. Finally, the formula for K(T u
+third assumption on T1 , T2 and the sequence (τh ).
+By virtue of the previous lemma, one can derive the following result on the quantity ∆i
+x deﬁned
+by (3).
+Lemma A.2. Let x ∈ Ti , i ∈ {1, 2}. One has
+
+2 ) is a direct consequence of the
+
+(cid:102)
+
+(cid:34) (cid:88)
+
+(cid:35)
+
+Proof. In light of Lemma A.1, one has
+
+∆i
+x = K(Ti , Ti ) − Eu
+
+z∈Bx,u
+
+wTi [z]
+
+z∈Bx,u
+
+∆i
+x = K(Ti , Ti ) − Eu
+.
+(cid:2)K(τH(x) , τH(u) )(cid:3) − Ev
+
++ Eu
+
+(cid:35)
+
+(cid:34) (cid:88)
+
+wTi [z]
+
+(cid:2)K(τH(x) , τH(v) )(cid:3) .
+
+By assumption on the stochastic model of random trees, H(u) and H(v) have the same distribution
+and thus Eu [K(τH(x) , τH(u) )] = Ev [K(τH(x) , τH(v) )], which states the expected result.
+The next decomposition is useful to prove the result of interest.
+If ci
+h denotes the number of
+subtrees of height h appearing in Ti , h ≥ 0, then the probability of picking a particular vertex u is
+
+(cid:102)
+
+Pρ (H(u))/ciH(u) and thus
+
+(cid:34) (cid:88)
+
+(cid:35)
+
+Eu
+
+wTi [z]
+
+=
+
+z∈Bx,u
+
+In addition, for u ∈ Ti \ {x}, (cid:88)
+
+(cid:88)
+
+(cid:88)
+
+(cid:88)
+
+Pρ (H(x))
+
+ciH(x)
+
+z∈{x}∪D(x)
+
+wTi [z] +
+
+u∈Ti \{x}
+
+Pρ (H(u))
+
+ciH(u)
+
+wTi [z] .
+
+z∈Bx,u
+
+(9)
+
+(10)
+
+(9) and (10) together with Lemma A.2 show that
+
+∆i
+x =
+
+Pρ (H(x))
+
+ciH(x)
+
+(K(Ti , Ti ) − K(Ti [x], Ti [x]) +
+
+(cid:88)
+
+u∈Ti \{x}
+
+Pρ (H(u))
+
+ciH(u)
+
+(cid:88)
+
+ωTi [z] .
+
+z /∈F (x)∪F (u)
+
+The left-hand term (and the right-hand term when wTi > 0) is null if and only if x = R(Ti ), which
+shows the ﬁrst result. In addition,
+
+∆i
+
+x ≥
+
+Pρ (H(x))
+
+ciH(x)
+
+(K(Ti , Ti ) − K(Ti [x], Ti [x]) ,
+
+which states the expected formula (4) with Pρ (0) ≤ Pρ (H(x)) (true if ρ > H/2) and ciH(x) ≤ # L(Ti ).
+The conclusion comes from the fact that the probability of drawing a vertex x of height greater
+than h is Gρ (h).
+
+B Proof of Proposition 3.2
+
+O(# DF ) = O(Nm) = O(NHn) and deg(F ) = deg(∆) = d.
+
+We denote by Dh the set of vertices at height h in any DAG D, and ∗ ∈ {ordered, unordered} the
+type of isomorphism considered. From the forest (D1 , . . . , DN ), we construct the DAG ∆ such
+that (i) Di is a subDAG of ∆ for all i, (ii) H(∆) = maxi H(Di ), (iii) all vertices in ∆ have degree
+maxi deg(Di ), and (iv) at each height except 0 and H(D), #∆h = maxi #Dh
+i . If ∆ is placed N times
+under an artiﬁcial root, and then recompressed by the algorithm, indeed the output contains the
+recompression of the original forest. Therefore, this case is the worst possible for the algorithm,
+and we claim that it achieves the proposed complexity.
+Let ∆ be now a DAG with following properties : #∆ = m, H(∆) = H, at each height h /∈ {0, H},
+#∆h = n (so that n(H − 2) + 2 = m), and all vertices have degree d. DF is the super-DAG
+obtained after placing N copies of ∆ under an artiﬁcial root. We then have # DF = 1 + Nm so that
+→ DF h in one exploration of DF
+At the beginning of the algorithm, constructing the mapping h (cid:55)
+has complexity O(# DF ). We will now examine the complexity of the further steps, with respect to
+n, m, d, H and N. We introduce the following lemma :
+Lemma B.1. Constructing σ(h) has time-complexity:
+ν∈DF h # C (ν) log # C (ν)(cid:1) for unordered trees;
+ν∈DF h # C (ν)(cid:1) for ordered trees.
+1. O
+2. O
+Proof. When sorting lists of size L, merge sort is known to have O(L log L) complexity in the worst
+case [28]. Accordingly, we introduce
+
+(cid:0) (cid:80)
+(cid:0) (cid:80)
+
+(cid:14)
+
+g∗ (x) =
+
+if ∗ = ordered;
+if ∗ = unordered.
+At height h, we construct σ(h) = {f−1 (S) : S ∈ Im(f), #f−1 (S) ≥ 2} where f : ν ∈ DF h (cid:55)
+Finding the preimage of f requires ﬁrst to construct f, by copying the children of each vertex in
+
+x
+x(1 + log x)
+
+→
+
+C (ν).
+
+34
+
+H(∆)(cid:88)
+h=0
+
+C(DF ) = O(# DF ) +
+
+(cid:80)H(D)
+
+O(Nng∗ (d)) + O(Nn) +
+
+O(Ndn).
+
+(cid:88)
+
+h (cid:48)>h
+H(D)(cid:88)
+h=0
+
+(cid:88)
+
+h (cid:48)>h
+
+(cid:33)
+
+1
+
+.
+
+(cid:32)
+
+(cid:80)
+
+DF h (in the unordered case, we also need to sort them, so that we get rid of the order and can
+properly compare them). Then we only need to explore once the image and check whether an
+element has two or more antecedents. The global cost is then O(
+We reuse the notation g∗ from the proof of Lemma B.1. With respect to ∆, the complexity for
+constructing σ(·) is O(Nng∗ (d)). Exploring the elements of σ(h) for (i) choosing a vertex νM to
+remain, and (ii) delete the other elements δM has complexity O(Nn). In addition, at height h (cid:48) > h,
+exploring the children to replace them or not costs O(
+The global complexity C(DF ) of the algorithm is then
+
+ν∈DF h (cid:48) # C (ν)) = O(Ndn).
+
+ν∈DF h g∗ (# C (ν))).
+
+(cid:80)
+
+(cid:102)
+
+Remark that
+
+h=0 O(Nn) = O(Nm) = O(# DF ), this leads to
+
+C(DF ) = O(# DF g∗ (deg(F ))) + O
+
+Ndn
+
+The right-hand inner sum is in O(H2 ). As
+
+O(NdnH2 ) = O(# DF Hd) = O(# DF H(DF ) deg(F )),
+
+this leads to our statement.
+
+35
+
+

@@ -1,0 +1,1783 @@
+Learning to Reason: Leveraging Neural Networks
+for Approximate DNF Counting
+
+Ralph Abboud, ˙Ismail ˙Ilkan Ceylan, Thomas Lukasiewicz
+
+Department of Computer Science
+{ralph.abboud, ismail.ceylan, thomas.lukasiewicz}@cs.ox.ac.uk
+University of Oxford, UK
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+I
+
+A
+
+.
+
+s
+
+c
+
+[
+
+4
+v
+8
+8
+6
+2
+0
+
+.
+
+4
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+Weighted model counting (WMC) has emerged as a preva-
+bilistic guarantees are obtained in O(nm), where n denotes
+lent approach for probabilistic inference. In its most general
+form, WMC is #P-hard. Weighted DNF counting (weighted
+#DNF) is a special case, where approximations with proba-
+the number of variables, and m the number of clauses of the
+input DNF, but this is not scalable in practice. In this paper,
+we propose a neural model counting approach for weighted
+#DNF that combines approximate model counting with deep
+learning, and accurately approximates model counts in lin-
+ear time when width is bounded. We conduct experiments to
+validate our method, and show that our model learns and gen-
+eralizes very well to large-scale #DNF instances.
+
+1
+
+Introduction
+
+Propositional model counting (MC), or #SAT, is the task
+of counting the number of satisfying assignments for a
+given propositional formula (Gomes, Sabharwal, and Sel-
+man 2009). Weighted model counting (WMC), or weighted
+#SAT, additionally incorporates a weight function over the
+set of all possible assignments. Offering an elegant for-
+malism for encoding various probabilistic inference prob-
+lems, WMC is a unifying approach for inference in a wide
+range of probabilistic models. In particular, probabilistic
+graphical models (Koller and Friedman 2009), probabilis-
+tic planning (Domshlak and Hoffmann 2007), probabilis-
+tic logic programming (De Raedt, Kimmig, and Toivonen
+2007), probabilistic databases (Suciu et al. 2011), and prob-
+abilistic ontologies (Borgwardt, Ceylan, and Lukasiewicz
+2017) can greatly beneﬁt from advances in WMC.
+Two important special cases of WMC are weighted #CNF
+and weighted #DNF, which require the input formula to be
+in conjunctive normal form (CNF) and disjunctive normal
+form (DNF), respectively. Inference in probabilistic graphi-
+cal models typically reduces to solving weighted #CNF in-
+stances, while query evaluation in probabilistic databases
+reduces to solving weighted #DNF instances (Suciu et al.
+2011). However, both weighted #CNF and weighted #DNF
+
+Copyright © 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+are known to be #P-hard (Valiant 1979), and this compu-
+tational complexity is a major bottleneck for solving large-
+scale WMC instances.
+To overcome this problem, two main paradigms have
+been developed. The ﬁrst paradigm is knowledge compila-
+tion (Cadoli and Donini 1997; Selman and Kautz 1996),
+which solves computationally difﬁcult problems by compil-
+ing them into a new representation (i.e., a target language),
+where they can be subsequently solved efﬁciently. Following
+compilation, exact inference in WMC can be done in linear
+time (Darwiche and Marquis 2002). However, the compila-
+tion process can produce exponentially-sized problem rep-
+resentations (i.e., arithmetic circuits). Furthermore, knowl-
+edge compilation is not robust to changes: for every change
+in the underlying model, the computationally demanding
+knowledge compilation process needs to be repeated. As a
+result, approaches based on knowledge compilation struggle
+to scale to large and varying problem instances.
+The second paradigm is approximate solving (Ermon et
+al. 2013; Chakraborty, Meel, and Vardi 2016; Meel, Shrotri,
+and Vardi 2017), which provides approximations of the
+model count as opposed to an exact solution. Loosening the
+requirement for exactitude renders WMC more tractable, es-
+pecially for #DNF counting, where approximate solving ad-
+mits a fully polynomial randomized approximation scheme
+(FPRAS) due to Karp, Luby, and Madras (1989), which we
+denote KLM. KLM allows for faster estimation of #DNF
+weighted #DNF. Nonetheless, KLM runs in O(nm), where
+model counts, while also providing probabilistic guaran-
+tees on its approximations, and it is the state of the art for
+n denotes the number of variables and m the number of
+clauses of the input DNF formula. Hence, KLM struggles
+to scale to real-world DNF formulas.
+In this work, we propose Neural#DNF, an approach that
+combines deep learning and approximate model counting
+and enables fast weighted #DNF approximation. We ﬁrst
+generate instances of weighted #DNF and solve them us-
+Neural#DNF produces approximations in O(m ¯w), where
+ing KLM to produce training data. We then use a graph
+neural network (GNN) to capture the symbolic structure
+of DNF formulas and train our system. By construction,
+¯w denotes the average clause width. This reduces to just
+
+ 
+ 
+ 
+ 
+ 
+ 
+O(n + m) for bounded width. Our approach does not pro-
+age case. This is especially true, since, in practice, ¯w << n.
+vide guarantees as with KLM, but instead enables a rela-
+tive speed-up of multiple orders of magnitude in the aver-
+Our experiments show that the GNN learns to accurately
+estimate weighted model counts and generalizes to novel
+formulas. Indeed, our model computes solutions to unseen
+weighted #DNF instances with 99% accuracy relative to an
+additive error threshold of 0.1 with respect to tight KLM ap-
+proximations. It also generalizes to larger problem instances
+involving up to 15K variables remarkably well, despite only
+seeing formulas with at most 5K variables during training.
+In summary, Neural#DNF makes the following contribu-
+tions:
+approximations in O(m ¯w), and in linear time with boun-
+• It produces efﬁcient and highly accurate weighted #DNF
+ded width.
+• It reliably scales to #DNF instances with up to 15K vari-
+ables, which, to our knowledge, is a ﬁrst for neural-sym-
+bolic methods.
+• It is robust in that it can produce approximations for any
+problem instance over a given domain following training.
+Our ﬁndings suggest that GNNs can effectively and ef-
+ﬁciently perform large-scale #DNF through training with
+dense and reliable data. Further experiments and details are
+deferred to the appendix of this paper.1
+
+The KLM Algorithm
+
+) 1
+
+δ
+
+τ = 8(1 + )m log( 2
+
+Exactly solving weighted #DNF instances is #P-hard and
+for weighted #DNF. More formally, given an error  > 0 and
+thus intractable. The KLM algorithm (Karp, Luby, and
+Madras 1989) is a fully polynomial randomized approxima-
+a conﬁdence value 0 < δ < 1, KLM computes ˆµ, an approx-
+tion scheme (FPRAS), and provides probabilistic guarantees
+time such that Pr µ(1 − ) ≤ ˆµ ≤ µ(1 + ) ≥ 1 − δ .
+imation of the true weighted model count µ, in polynomial
+Speciﬁcally, for a DNF φ with n variables and m
+clauses, KLM computes a number of sampling trials
+2 , and initializes a trial counter N
+to 0. Then, at every trial, KLM performs the following steps:
+1. If no current sample assignment exists, randomly select
+j=1 p(Cj ) , then randomly
+a clause Ci with probability
+generate a satisfying assignment for Ci using the variable
+probability distribution.
+2. Check whether the current assignment satisﬁes a ran-
+domly selected clause Ck . If so, increment N and gen-
+KLM returns τ ∑m
+DNF count. Since assignment checking runs in O(n), the
+erate a new sample assignment. Otherwise, do nothing.
+complexity of KLM amounts to Onm−2 log( 1
+). KLM is
+as an estimate for the weighted
+the state of the art for approximate weighted #DNF, so we
+use it to label DNF formulas used to train our model.
+
+j=1 p(Cj )
+mN
+
+p(Ci )
+
+∑m
+
+δ
+
+2 Preliminaries
+
+Graph Neural Networks
+
+Weighted Model Counting
+
+We brieﬂy introduce weighted model counting, the KLM al-
+gorithm, and graph neural networks.
+of the form v , or ¬v , where v ∈ S . A conjunctive clause is
+Given a (ﬁnite) set S of propositional variables, a literal is
+a conjunction of literals, and a disjunctive clause is a dis-
+junction of literals. A clause has width k if it has exactly k
+literals. A formula φ is in conjunctive normal form (CNF)
+if it is a conjunction of disjunctive clauses, and it is in dis-
+junctive normal form (DNF) if it is a disjunction of con-
+ν ∶ S  {0, 1} maps every variable to either 0 (false), or 1
+junctive clauses. We say that a DNF (resp., CNF) has width
+denoted ν  φ, in the usual sense, where  is the proposi-
+k if it contains clauses of width at most k . An assignment
+(true). An assignment ν satisﬁes a propositional formula φ,
+tional entailment relation.
+model count of φ is given by ∑νφ w(ν ), where w ∶ A  R
+Given a propositional formula φ, its model count #φ is
+the number of assignments ν satisfying φ. The weighted
+ments. In this work, we set w ∶ A  [0, 1] ∩ Q such that
+∑ν ∈A w(ν ) = 1. As common in the literature, we view every
+is a weight function, and A is the set of all possible assign-
+every assignment is mapped to a rational probability and
+propositional variable as an independent Bernoulli random
+variable and assign probabilities to literals.
+
+1The extended version of this paper including the appendix is
+available at: arxiv.org/pdf/1904.02688.pdf.
+
+Graph neural networks (GNNs) (Gori, Monfardini, and
+Scarselli 2005; Scarselli et al. 2009) are neural networks
+tion from its neighborhood N (x), which is the set of nodes
+speciﬁcally designed to process structured graph data. In a
+GNN, every graph node x is given a vector representation
+vx , which is updated iteratively. A node x receives informa-
+connected by an edge to x. Let vx,t denote the value of vx at
+iteration t. We write a node update as:
+
+vx,t+1 = combinevx,t , aggregateN (x),
+
+where combine and aggregate are functions, and aggregate
+is permutation-invariant. We use layer-norm LSTMs (Ba,
+Kiros, and Hinton 2016) as our combine function, and sum
+as our aggregate function. This is similar to gated graph neu-
+ral networks (Li et al. 2016), except that we replace the gated
+recurrent unit (GRU) (Chung et al. 2014) with a layer-norm
+LSTM, given the remarkable empirical success of the lat-
+ter (Selsam et al. 2019; Prates et al. 2019). Upon termina-
+tion of all iterations, the ﬁnal node representations are used
+to compute the target output.
+GNNs are highly expressive computational models:
+GNNs can be as discerning between graphs as the
+Weisfeiler-Lehman (WL) graph isomorphism heuristic (Xu
+et al. 2019; Morris et al. 2019). Unlike feature engineer-
+ing (Kashima, Tsuda, and Inokuchi 2003) and static embed-
+ding methods (Wang et al. 2014), GNNs can autonomously
+learn relationships between nodes, identify important fea-
+tures, and build models that can generalize to unseen graphs.
+
+x1¬x1
+x2¬x2
+
+c1
+
+c2
+
+(a)
+
+d
+
+x1¬x1
+x2¬x2
+
+c1
+
+c2
+
+d
+
+x1¬x1
+x2¬x2
+
+c1
+
+c2
+
+d
+
+x1¬x1
+x2¬x2
+
+Figure 1: Message passing protocol on the DNF formula ψ = (x1 ∧ x2 ) ∨ (¬x1 ∧ ¬x2 ).
+
+(b)
+
+(c)
+
+d
+
+c1
+
+c2
+
+(d)
+
+¬x1
+
+x1
+
+x2
+
+¬x2
+
+∧1
+
+¬x3
+
+¬x4
+
+x4
+
+x3
+
+∧2
+
+∨
+
+φ = (x1 ∧ ¬x2 ∧ x4 ) ∨ (x1 ∧ x2 ∧ ¬x3 ).
+Figure
+2: Graph
+encoding
+of
+the DNF formula
+
+3 Graph Neural Network Model
+
+We propose Neural#DNF, a new method for solving
+weighted #DNF problems based on GNNs. We model DNF
+formulas as graphs, and use a GNN to iterate over these
+graphs to compute an approximate weighted model count.
+
+Model Setup
+
+We encode a DNF formula as a graph with 3 layers as shown
+in Figure 2: a literal layer, a conjunction layer, and a disjunc-
+tion layer. In the literal layer, every DNF variable is repre-
+sented by 2 nodes corresponding to its positive and negative
+literals, which are connected by a (dashed) edge to highlight
+that they are complementary. In the conjunction layer, ev-
+ery node represents a conjunction and is connected to literal
+nodes whose literals appear in the conjunction. Finally, the
+disjunction layer contains a single disjunction node, which
+is connected to all nodes in the conjunction layer.
+To approximate the model count of a DNF formula, we
+use a message-passing GNN model that iterates over the cor-
+responding DNF graph and returns a Gaussian distribution.
+perceptron (MLP) fenc . More formally, a k−dimensional
+Initially, the network computes vector representations for all
+literal nodes, given their probabilities, using a multi-layer
+puted as vxi ,0 = fenc (pi ). Nodes in the conjunction and dis-
+representation vxi ,0 of a literal xi with probability pi is com-
+junction layers are initialized to two representation vectors
+vc and vd , respectively, and the values for these vectors are
+learned over the course of training. After initialization, node
+representations are updated across T message passing itera-
+tions.
+
+Message Passing Protocol
+
+A message passing iteration consists of the following 4
+steps:
+(a) Literal layer nodes compute messages using an MLP Ml
+and pass them to their neighboring conjunction layer nodes.
+These conjunction nodes then aggregate these messages us-
+resentations, denoted ˆvxc ,t+1 , are given formally as:
+ing the sum function and update their representation using a
+layer-norm LSTM Lc1 . The updated conjunction node rep-
+
+xl ∈N (xl ) Ml (vxl ,t ).
+vxd ,t+1 = Ld vxd ,t , Q
+
+(b) Conjunction layer nodes compute and send messages to
+the disjunction node via an MLP Mc . The disjunction node
+aggregates these and updates using a layer-norm LSTM Ld ,
+i.e.,
+
+ˆvxc ,t+1 = Lc1
+
+vxc ,t , Q
+
+xc ∈N (xd ) Mc (ˆvxc ,t+1 ).
+ˆvxc ,t+1 , Md (vxd ,t+1 ).
+
+(c) The disjunction node computes a message using an MLP
+Md and sends it to the conjunction nodes, which update their
+representation using a different LSTM cell Lc2 :
+
+vxc ,t+1 = Lc2
+
+(d) Using their latest representations, conjunction nodes
+them (represented with   ) with messages from their corre-
+send messages to neighboring nodes in the literal layer. Lit-
+eral layer nodes aggregate these messages and concatenate
+sponding negated literal. Then, they use this message to up-
+date their representations using a layer-norm LSTM Ll :
+
+xc ∈N (xl ) Mc (vxc ,t+1 )  Ml (v¬xl ,t ).
+
+vxl ,t+1 = Ll vxl ,t ,  Q
+
+A visual representation of the 4 message passing steps for
+a simple formula is provided in Figure 1. In this protocol,
+we use 2 distinct LSTM cells Lc1 and Lc2 to update the rep-
+resentations of conjunction nodes at steps (a) and (c), so that
+the network learns separate update procedures for literal-
+based and disjunction-based updates. At the end of message
+passing, the ﬁnal disjunction node representation vxd ,T is
+passed through an MLP fout . The ﬁnal layer of this MLP
+consists of two neurons nµ and nσ , which return the mean
+and standard deviation, respectively, of a predicted Gaussian
+distribution.
+
+Table 1: Distribution of formula sizes in the training set.
+
+Size (n)
+Count
+
+Size (n)
+Count
+
+50
+30000
+
+750
+10000
+
+100
+20000
+
+1000
+8000
+
+250
+16000
+
+2500
+6000
+
+500
+12000
+
+5000
+3000
+
+Loss Function
+
+2
+
+log ˆµ − log (1 + ) ≤ log µ ≤ log ˆµ + log (1 + ).
+
+this bound holds with probability 1− δ . By identifying differ-
+Given  and δ , KLM returns an estimate ˆµ of the true model
+count µ within a multiplicative bound with respect to , and
+ent conﬁgurations of  and δ that lead to an identical KLM
+running time, one can deduce that the probability mass is
+concentrated around ˆµ and decays away from it, and this
+holds for all DNFs. Note that the multiplicity of the bound
+interval on ˆµ w.r.t.  makes it hard to ﬁt standard distribu-
+tions on it. Hence, we apply a natural logarithm to this bound
+to get the additive bound on log µ:
+We can then ﬁt a Gaussian N (µ′ , σ) to this bound by set-
+ting µ′ = ˆµ and σ = log (1 + )~F −1 (1 − δ
+), where F −1 denotes
+the inverse cumulative distribution function of the standard
+Gaussian distribution. The GNN is thus trained to predict
+log µ, a negative number. We adapt the exponential linear
+unit (ELU) (Clevert, Unterthiner, and Hochreiter 2016) acti-
+if x ≤ 0
+vation function and apply it to nµ and nσ . More speciﬁcally,
+we use
+such that nµ uses −ELU + 1(x), and nσ uses ELU + 1(x),
+otherwise,
+thereby restricting their outputs to be negative and positive,
+respectively.
+Gaussians N1 (µ1 , σ1 ) and N2 (µ2 , σ2 ) is given by:
+To compare the predicted Gaussian and the KLM result,
+we use Kullback-Leibler (KL) divergence, which for two
+We set N1 to be the prediction returned by the network and
+N2 to be the KLM approximation. This choice is critical in
+order to avoid the system minimizing the training loss by
+learning to produce arbitrarily large values of σ2 .
+
+ELU + 1(x) = e−x
+x + 1
+
+K L(N1 , N2 ) = log
+
++ σ2
+
+1
+
+− 1
+
+2
+
++ (µ1 − µ2 )2
+2σ2
+
+2
+
+.
+
+σ2
+σ1
+
+4 Experiments
+
+We train our model on a large set of DNF formulas and mea-
+sure its generalization relative to new DNF formulas. These
+formulas are distinct in terms of structure (i.e., the under-
+lying clauses and variables in every clause) and size (i.e.,
+the number of clauses and variables is larger), so our ex-
+periments target generalization in both aspects. To evaluate
+structure generalization, we run our GNN on unseen formu-
+las of comparable size to training formulas and measure its
+performance. To evaluate size generalization, we run tests
+
+s
+
+n
+o
+
+i
+t
+
+a
+
+m
+
+i
+
+x
+o
+
+r
+
+p
+p
+
+A
+N
+N
+G
+
+1.0
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.1
+0.0
+
+0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
+KLM Approximations
+
+Figure 3: A gray-scale heat map representing the distribution
+of GNN predictions compared to KLM approximations.
+
+on novel, larger formulas and assess how well the GNN per-
+forms. To further validate our model and data generation
+procedure, we also run these experiments using differently
+generated synthetic datasets (Meel, Shrotri, and Vardi 2018).
+
+Experimental Setup
+
+of clauses m from {0.25, 0.375, 0.5, 0.625, 0.75} ⋅ n, such
+
+In our experiments, we compare Neural#DNF predictions ˆµ
+with those of KLM and check whether their absolute differ-
+ence falls within pre-deﬁned additive thresholds. We opt for
+additive error, as opposed to multiplicative error, as the for-
+mer produces an absolute distance metric, whereas the latter
+is relative to the model count.
+Owing to the lack of standardized benchmarks, we gener-
+ate synthetic formulas using a novel randomized procedure
+designed to produce more variable formulas. We generate
+with ﬁxed clause width w ∈ {3, 5, 8, 13, 21, 34} and number
+100K distinct training formulas, where formula counts per
+that every valid setting (i.e., all conﬁgurations except w = 3
+n are shown in Table 1. For every n, formulas are generated
+and m = 0.25 ⋅ n) is represented equally, and each formula
+has 4 variable probability distributions. More details about
+our data generation can be found in the appendix. The struc-
+tains 348 formulas with n = 10K and 116 formulas with
+n = 15K , with one probability distribution each.
+ture evaluation test set is generated analogously, and con-
+tains 13080 distinct formulas. The size evaluation set con-
+For all experiments, we use k = 128-dimensional vector
+representations. We deﬁne fenc as a 3-layer MLP with layer
+sizes 8, 32, and 128, message-generating MLPs (Ml , Mc ,
+and Md ) as 4-layer MLPs with 128-sized layers, and fout
+as a 3-layer MLP with layers of size 32, 8, and 2. We use
+the rectiﬁed linear unit (ReLU) as the activation function at
+MLP hidden layers, and linear activation at the output layer
+KLM with  = 0.1 and δ = 0.05 to achieve a reasonable
+for all MLPs except fout . For fout , output activation is as
+deﬁned in Section 3. Generated formulas were labelled using
+
+Table 2: GNN accuracy (%) w.r.t. to additive thresholds.
+
+Table 3: GNN accuracy (%) over test set by threshold versus
+number of formula variables (n).
+
+Evaluation Data
+
+Training Set
+Test Set
+
+Thresholds
+
+0.05
+98.80
+98.76
+
+0.10
+99.97
+99.95
+
+0.15
+99.99
+99.98
+
+0.02
+87.14
+87.37
+
+2015), a learning rate of λ = 10−5 , a gradient clipping ratio
+trade-off between label accuracy and generation tractability.
+of 0.5, and T = 8 message passing iterations.
+We train the system for 4 epochs on a P100 GPU using
+KL divergence loss, the Adam optimizer (Kingma and Ba
+
+Results
+
+On the structure generalization test, Neural#DNF predic-
+tions align very closely with those of KLM, as shown in
+Figure 3. The model is within 0.02 of the KLM WMC es-
+timate over 87.37% of the test set, and this rises to 99.95%
+for a threshold of 0.1. The model also performs consistently
+across different n, with accuracy varying by at most 4.5%
+between any two different n values for all four test thresh-
+olds. Overall test results are given in Table 2.
+The proximity between training and testing accuracies at
+all thresholds shows that the network has not ﬁt or mem-
+orized its training formulas, but has instead learned a gen-
+eral WMC procedure. The results parametrized by n are
+provided in Table 3. These results show that the network
+maintains a high accuracy (e.g., 95.5% for threshold 0.05)
+across all n values, and so does not rely on a particular n
+to achieve its high overall performance. Notably, the model
+is also robust against variation in w . As shown in Table 4,
+the model scores above 96% and 99% across all widths for
+tively higher accuracy at threshold 0.02 when w = 3, where
+thresholds 0.05 and 0.1, respectively. Interestingly, it has
+near-perfect performance for larger widths 13, 21, and 34,
+where weighted model counts are near-zero, and has rela-
+counts are almost one. Simultaneously performing well in
+both extreme cases, coupled with high accuracy on interme-
+diate widths, further highlights the robustness of our model.
+On the size generalization task, our model maintains ac-
+curacies of 97.13% and 94.83% with a threshold of 0.1 on
+10K and 15K-variable formulas, respectively, despite having
+as many as triple the variables as in training. The full results
+3, 5, and 8, but performs less well at w = 13. This is due
+for size generalization are given in Table 5. The same results
+to formulas with w = 13 exhibiting a “phase transition” at
+parametrized by width w are also given in Table 6. These
+show that the network performs consistently across widths
+p−1 , the inverse expected clause satisfaction probability. In
+this n and m. Indeed, in this setting, model counts ﬂuctuate
+but never for w = 13, so this is an entirely new situation for
+dramatically, since m is in the same order of magnitude as
+the training set, this phenomenon occurs at smaller widths,
+the model, at a much larger scale. Nonetheless, it achieves
+an encouraging accuracy of 82.5% for the threshold 0.1.
+These results show that reliable approximate model
+counting on large-scale formulas can be achieved, even with
+
+n
+
+50
+100
+250
+500
+750
+1000
+2500
+5000
+
+Thresholds
+
+0.02
+85.58
+87.87
+87.93
+87.67
+87.56
+86.79
+90.06
+88.15
+
+0.05
+98.58
+98.87
+99.24
+99.40
+99.15
+99.01
+98.17
+95.86
+
+0.10
+99.98
+100.0
+100.0
+99.99
+100.0
+99.98
+99.85
+99.48
+
+0.15
+100.0
+100.0
+100.0
+100.0
+100.0
+100.0
+99.94
+99.74
+
+Table 4: GNN accuracy (%) over test set by threshold versus
+formula clause widths (w).
+
+Thresholds
+
+0.02
+80.42
+68.04
+79.10
+99.70
+100.0
+100.0
+
+0.05
+98.66
+96.56
+97.77
+99.98
+100.0
+100.0
+
+0.10
+99.87
+99.90
+99.96
+100.0
+100.0
+100.0
+
+0.15
+99.93
+99.98
+99.98
+100.0
+100.0
+100.0
+
+w
+
+3
+5
+8
+13
+21
+34
+
+training restricted to smaller formulas. From a practical per-
+spective, this gives further evidence that large-scale solvers
+can be trained using smaller formulas that are tractably la-
+belled with existing solvers. In additional experiments run
+on differently generated datasets (cf. appendix), our system
+also maintains very high performance, and in fact performs
+better on fully random formulas (Meel, Shrotri, and Vardi
+2018) than on formulas generated with our protocol. This
+further highlights the robustness of Neural#DNF, and vali-
+dates the quality of our data generation procedure.
+For all these results, message passing iterations are es-
+sential. Indeed, when run with just 2 message passing itera-
+tions for our ablation study, the GNN performs signiﬁcantly
+worse across all experiments. However, this does not imply
+that performance always improves with more message pass-
+ing. In fact, running too many message passing iterations
+makes the system prone to overﬁtting: When run with 32 it-
+erations, the system achieves a similar performance in struc-
+ture generalization, but its performance drops signiﬁcantly
+in size generalization. This shows that a trade-off value of
+message passing iterations, in our case 8, must be selected,
+to enable sufﬁcient communication, while not encouraging
+overﬁtting. Further details on our ablation study and experi-
+ments with 32 iterations can be found in the appendix.
+All in all, our model achieves remarkable performance
+both in terms of structure and size generalization. These
+results highlight the power and scalability of neural mes-
+sage passing (NMP) methods to perform advanced reason-
+ing tasks, and therefore justify further consideration of NMP.
+
+Table 5: Accuracy (%) by threshold with respect to additive
+thresholds on size generalization test formulas.
+
+variables (n), with w = 3, 34 and m = 0.75n.
+Table 7: Runtimes (s) for KLM and our GNN by number of
+
+n
+
+0.02
+10K 79.89
+15K 72.41
+
+Thresholds
+
+0.05
+89.94
+81.90
+
+0.10
+97.13
+94.83
+
+0.15
+99.71
+97.41
+
+Table 6: Accuracy (%) by threshold over size generalization
+test formulas versus w .
+
+w
+
+3
+5
+8
+13
+21,34
+
+Thresholds
+
+Running Time Analysis
+
+0.02
+0.05
+0.10
+0.15
+78.13
+90.63
+98.44
+100.0
+73.75
+90.0
+100.0
+100.0
+76.25
+91.25
+98.75
+100.0
+40.0
+56.25
+82.5
+95.0
+100.0
+100.0
+100.0
+100.0
+In the average case, our GNN runs in O(m ¯w), where ¯w de-
+runs in O(nm), so is much slower for standard cases in
+practice, where ¯w << n. In the worst case, our GNN runs
+in O(nm), which is asymptotically identical to KLM. How-
+notes the average formula clause width. By contrast, KLM
+GNN complexity drops to just O(n + m), enabling linear-
+O(nm), since its complexity does not depend on ¯w . Hence,
+ever, in a best-case scenario where ¯w is upper-bounded, the
+time approximations to be made, whereas KLM remains
+in practice, where ¯w << n, and these approximations are in
+our system enables much faster approximations than KLM
+linear time with bounded clause width ¯w . A detailed com-
+plexity analysis for Neural#DNF can be found in the ap-
+pendix.
+show running times for the GNN vs. KLM ( = 0.1, δ = 0.05)
+for formulas with (w = 3, 34, m = 0.75n) at every n in
+Furthermore, our GNN runs on graphics processing units
+(GPUs) and thus beneﬁts from accelerated computation. We
+Table 7, and running times for all widths are provided in
+the appendix. However, we note that KLM and the GNN
+ran over different hardware (Haswell E5-2640v3 CPU vs.
+P100 GPU, resp.), since they are best suited to their re-
+spective devices (CPUs more efﬁciently handle multiple op-
+erations, like sampling, slicing, and comparison, whereas
+GPUs are efﬁcient for repetitive ﬂoating point operations).
+Hence, these running times are only provided to highlight
+the scalability of the GNN with increasing formula size,
+for w = 34, n = 1K , and this rises rapidly to 305.61s for
+which supports the formal running time expectations of the
+respective algorithms. Indeed, KLM requires 7.62 seconds
+w = 34, n = 15K , whereas the GNN only needs 0.02 and
+0.223 seconds, respectively. This is because the GNN takes
+advantage of limited width to deliver linear scalability, while
+KLM scales quadratically with n and m.
+Finally, the GNN does not perform slower at smaller
+
+w
+
+3
+
+34
+
+s
+a
+
+l
+
+u
+
+m
+
+r
+
+o
+
+F
+
+Algorithm
+
+KLM
+GNN
+KLM
+GNN
+
+1K
+22.59
+0.017
+7.62
+0.020
+
+5K
+270.77
+0.040
+43.57
+0.074
+
+n
+
+10K
+1151.86
+0.073
+164.46
+0.145
+
+15K
+2375.56
+0.104
+305.61
+0.223
+
+21
+19
+17
+15
+13
+11
+9
+7
+5
+3
+1
+
+1
+
+2
+
+3
+4
+5
+6
+Message Passing Iteration
+
+7
+
+8
+
+Figure 4: GNN estimates over message passing iterations.
+Red denotes small probability and blue high probability.
+
+Discussions: Analyzing the Model
+
+widths as with KLM, as it does not rely on sampling. With
+KLM, random assignments are replaced when they satisfy a
+clause, which means that with smaller clause widths, more
+formula with n = 15K and w = 3, using  = 0.1 and δ = 0.05,
+replacements are made, as clause satisfaction is more likely,
+and this causes a heavy computational overhead. For exam-
+whereas it only requires 306s when w = 34. By contrast, the
+ple, KLM needs 2375 seconds (about 40 minutes) to run on a
+GNN requires only 0.104 and 0.223 seconds, respectively.
+21 formulas fi ∶ i ∈ [1, 21] from the structure test set with
+To examine how our model makes predictions, we selected
+weighted KLM model counts of roughly 21−i
+20 . We then ran
+our GNN model on these formulas and computed the pre-
+dicted probability at the end of every message passing itera-
+tion. Results are visualized in Figure 4. Initially, the network
+starts with a low estimate. Then, in the ﬁrst 3 iterations, it
+accumulates probabilities and hits a “spike”, which can be
+mapped to messages from literal nodes reaching the disjunc-
+tion node. Following this, the network lowers its estimates,
+before adjusting and reﬁning them in the ﬁnal iterations.
+Unlike (Selsam et al. 2019), where the estimate of satisﬁa-
+bility increases mostly monotonically, our network estimates
+ﬂuctuate aggressively. A large initial estimate is made, and
+
+then reduced and reﬁned. In doing so, the network seems to
+be initially estimating the naive sum of conjunction prob-
+abilities, and subsequently revisiting its estimates as it bet-
+ter captures intersections between conjunctions. This falls in
+line with our observations, as any understanding of intersec-
+tions can only occur starting from the third iteration, when
+the disjunction and conjunction nodes will have passed each
+other more global information. This also explains the limited
+performance observed in our ablation study: With just 2 iter-
+ations, the system cannot capture conjunction intersections,
+so can only make naive estimates.
+
+5 Related Work
+
+Weighted #DNF belongs to the wider family of WMC prob-
+lems, which have been extensively studied due to their con-
+nection with probabilistic inference. Weighted #DNF is #P-
+hard (Valiant 1979), so is highly intractable. In fact, Toda
+proved that the class P #P contains the entire polynomial
+hierarchy (Toda 1989). Surprisingly, even weighted #DNF
+counting on positive, partitioned DNF formulas with clause
+width at most 2 (Provan and Ball 1983) remains #P-hard.
+As a result, many methods have been developed to exactly
+solve or approximate WMC solutions. One such method
+is knowledge compilation (KC), where WMC problems are
+compiled into a new representation in which they are solved
+efﬁciently and exactly. KC pushes computational overhead
+to a preprocessing phase, but compensates for this by sub-
+sequently enabling efﬁcient, linear-time probabilistic infer-
+ence (Darwiche and Marquis 2002). However, compiled rep-
+resentations can be of exponential size in the worst-case.
+Hence, KC has limited scalability and robustness to model
+change, which has motivated research in approximate KC
+(Lowd and Domingos 2010; Friedman and Van den Broeck
+2018). Our model training emulates KC preprocessing, but
+ultimately our model provides approximations and is more
+scalable. Moreover, it is robust to input changes, as it con-
+ceptually handles any formula over a ﬁxed domain of vari-
+ables and any probability distribution.
+Another important paradigm is to produce approximate
+solutions to circumvent the intractability of WMC (Stock-
+meyer 1983). For the unweighted case (MC), hashing-based
+methods (Ermon et al. 2013; Chakraborty, Meel, and Vardi
+2013) (see also (Chakraborty, Meel, and Vardi 2016)) pro-
+duce an approximation with probabilistic guarantees. Im-
+portantly, (Chakraborty, Meel, and Vardi 2013) also yields
+an FPRAS when restricted to unweighted DNF; see, e.g.,
+(Meel, Shrotri, and Vardi 2017). For hashing methods,
+approximation-preserving reductions from WMC to MC
+are known for CNF, but this remains open for the case
+of DNF (Chakraborty et al. 2015). Hence, none of these
+hashing methods apply to weighted #DNF. Beyond hash-
+ing techniques, loopy belief propagation (LBP) (Pearl 1982;
+Murphy, Weiss, and Jordan 1999) has been applied to ap-
+proximate WMC. LBP does not provide any guarantees
+(Weiss 2000). Conceptually, our work also uses message
+passing, but instead learns messages and states so as to best
+capture the necessary information to relay. It also restricts
+all outgoing messages from a node to be identical.
+
+Our work builds on recent applications of GNNs
+(Scarselli et al. 2009) to a variety of reasoning tasks, such as
+solving SAT (Selsam et al. 2019) and the traveling salesman
+problem (TSP) (Prates et al. 2019). There has also been work
+aging results, but only on very small instances (i.e., ∼40 vari-
+towards outright learning of inference in probabilistic graph-
+ical models (Yoon et al. 2018). These works achieve encour-
+ables) of their respective problems. Indeed, they struggle to
+generalize to larger (but still small) instances. This is ex-
+pected, since SAT and TSP are NP-complete and are hard to
+approximate with strong guarantees. Similarly, probabilistic
+inference in graphical models is #P-hard and remains NP-
+hard to approximate (as is weighted #CNF). Thus, signiﬁ-
+cant work must be done in this direction to reach results of
+practical use. In contrast, our work tackles a problem with
+a known polynomial-time approximation, and learns from a
+dense dataset of approximate solutions with a very high ac-
+curacy at a large scale, and can generalize even further with
+tolerable loss in performance. To our knowledge, our model
+is the ﬁrst proposal that combines reasoning and deep learn-
+ing, while also scaling to realistic problem instance sizes.
+
+6 Summary and Outlook
+
+We presented Neural#DNF, a neural-symbolic approach that
+leverages the traditional KLM approximate weighted #DNF
+counter and GNNs to produce weighted #DNF approxima-
+tions. This work shows that neural networks can be effec-
+tively and efﬁciently applied to large-scale weighted #DNF,
+given sufﬁciently dense and reliable training data. Therefore,
+it is particularly useful for query evaluation on large online
+probabilistic databases, where queries have computational
+limitations (Ceylan, Darwiche, and Van den Broeck 2016).
+Looking forward, we will analyze the viability of GNNs
+for other reasoning problems, particularly in light of their
+expressive power, which could be limiting for problems
+with less structured graph representations. We hope that this
+work inspires further research leading to less data-dependent
+neural-symbolic methods, and a greater understanding of
+neural method performance over challenging problems.
+
+7 Acknowledgements
+
+This work was supported by the Alan Turing Institute un-
+der the UK EPSRC grant EP/N510129/1, the AXA Re-
+search Fund, and by the EPSRC grants EP/R013667/1,
+EP/L012138/1, and EP/M025268/1. Ralph Abboud is
+funded by the Oxford-DeepMind Graduate Scholarship and
+the Alun Hughes Graduate Scholarship. Experiments for
+this work were conducted on servers provided by the Ad-
+vanced Research Computing (ARC) cluster administered by
+the University of Oxford.
+
+References
+
+[Ba, Kiros, and Hinton 2016] Ba, J. L.; Kiros, J. R.; and Hin-
+ton, G. E. 2016. Layer normalization. arXiv preprint
+arXiv:1607.06450.
+[Borgwardt, Ceylan, and Lukasiewicz 2017] Borgwardt, S.;
+Ceylan, ˙I. ˙I.; and Lukasiewicz, T. 2017. Ontology-mediated
+queries for probabilistic databases. In Proc. of AAAI.
+
+[Cadoli and Donini 1997] Cadoli, M., and Donini, F. 1997.
+A survey on knowledge compilation. AI Communications
+10(3-4).
+[Ceylan, Darwiche, and Van den Broeck 2016] Ceylan, ˙I. ˙I.;
+Darwiche, A.; and Van den Broeck, G. 2016. Open-world
+probabilistic databases. In Proc. of KR.
+[Chakraborty et al. 2015] Chakraborty, S.; Fried, D.; Meel,
+K. S.; and Vardi, M. Y. 2015. From weighted to unweighted
+model counting. In Proc. of IJCAI.
+[Chakraborty, Meel, and Vardi 2013] Chakraborty, S.; Meel,
+K. S.; and Vardi, M. Y. 2013. A scalable approximate model
+counter. In Proc. of CP.
+[Chakraborty, Meel, and Vardi 2016] Chakraborty, S.; Meel,
+K. S.; and Vardi, M. Y. 2016. Algorithmic improvements
+in approximate counting for probabilistic inference: From
+linear to logarithmic SAT calls. In Proc. of IJCAI.
+[Chung et al. 2014] Chung, J.; Gulcehre, C.; Cho, K.; and
+Bengio, Y.
+2014. Empirical evaluation of gated recur-
+rent neural networks on sequence modeling. arXiv preprint
+arXiv:1412.3555.
+[Clevert, Unterthiner, and Hochreiter 2016] Clevert, D.; Un-
+terthiner, T.; and Hochreiter, S. 2016. Fast and accurate
+deep network learning by exponential linear units (ELUs).
+In Proc. of ICLR.
+[Darwiche and Marquis 2002] Darwiche, A., and Marquis, P.
+2002. A knowledge compilation map. JAIR 17(1).
+[De Raedt, Kimmig, and Toivonen 2007] De Raedt,
+L.;
+Kimmig, A.; and Toivonen, H. 2007. ProbLog: A proba-
+bilistic prolog and its application in link discovery. In Proc.
+of IJCAI.
+[Domshlak and Hoffmann 2007] Domshlak, C., and Hoff-
+mann, J. 2007. Probabilistic planning via heuristic forward
+search and weighted model counting. JAIR 30(1).
+[Ermon et al. 2013] Ermon, S.; Gomes, C. P.; Sabharwal, A.;
+and Selman, B. 2013. Taming the curse of dimensionality:
+Discrete integration by hashing and optimization. In Proc.
+of ICML.
+[Friedman and Van den Broeck 2018] Friedman, T.,
+and
+Van den Broeck, G.
+2018. Approximate knowledge
+compilation by online collapsed importance sampling.
+In
+Proc. of NeurIPS.
+[Gomes, Sabharwal, and Selman 2009] Gomes, C. P.; Sab-
+harwal, A.; and Selman, B. 2009. Model counting.
+In
+Handbook of Satisﬁability. IOS Press.
+[Gori, Monfardini, and Scarselli 2005] Gori, M.; Monfar-
+dini, G.; and Scarselli, F. 2005. A new model for learning in
+graph domains. In Proc. of IJCNN.
+[Karp, Luby, and Madras 1989] Karp, R. M.; Luby, M.; and
+Madras, N. 1989. Monte-Carlo approximation algorithms
+for enumeration problems. J. Algorithms 10(3).
+[Kashima, Tsuda, and Inokuchi 2003] Kashima, H.; Tsuda,
+K.; and Inokuchi, A. 2003. Marginalized kernels between
+labeled graphs. In Proc. of ICML.
+[Kingma and Ba 2015] Kingma, D. P., and Ba, J.
+
+2015.
+
+In Proc. of
+
+Adam: A method for stochastic optimization.
+ICLR.
+[Koller and Friedman 2009] Koller, D., and Friedman, N.
+2009. Probabilistic Graphical Models: Principles and Tech-
+niques. MIT Press.
+[Li et al. 2016] Li, Y.; Tarlow, D.; Brockschmidt, M.; and
+Zemel, R. 2016. Gated graph sequence neural networks.
+In Proc. of ICLR.
+[Lowd and Domingos 2010] Lowd, D., and Domingos, P. M.
+2010. Approximate inference by compilation to arithmetic
+circuits. In Proc. of NIPS.
+[Meel, Shrotri, and Vardi 2017] Meel, K. S.; Shrotri, A. A.;
+and Vardi, M. Y. 2017. On hashing-based approaches to
+approximate DNF-counting. In Proc. of FSTTCS.
+[Meel, Shrotri, and Vardi 2018] Meel, K.; Shrotri, A.; and
+Vardi, M. 2018. Not all FPRASs are equal: Demystifying
+FPRASs for DNF-counting. Constraints.
+[Morris et al. 2019] Morris, C.; Ritzert, M.; Fey, M.; Hamil-
+ton, W. L.; Lenssen, J. E.; Rattan, G.; and Grohe, M. 2019.
+Weisfeiler and Leman go neural: Higher-order graph neural
+networks. In Proc. of AAAI.
+[Murphy, Weiss, and Jordan 1999] Murphy, K. P.; Weiss, Y.;
+and Jordan, M. I. 1999. Loopy belief propagation for ap-
+proximate inference: An empirical study. In Proc. of UAI.
+[Pearl 1982] Pearl, J. 1982. Reverend Bayes on inference
+engines: A distributed hierarchical approach.
+In Proc. of
+AAAI.
+[Prates et al. 2019] Prates, M. O. R.; Avelar, P. H. C.; Lemos,
+H.; Lamb, L.; and Vardi, M. 2019. Learning to solve NP-
+complete problems - A graph neural network for the decision
+TSP. In Proc. of AAAI.
+[Provan and Ball 1983] Provan, J. S., and Ball, M. O. 1983.
+The complexity of counting cuts and of computing the prob-
+ability that a graph is connected. SIAM 12(4).
+[Scarselli et al. 2009] Scarselli, F.; Gori, M.; Tsoi, A. C.; Ha-
+genbuchner, M.; and Monfardini, G. 2009. The graph neu-
+ral network model. IEEE Transactions on Neural Networks
+20(1).
+[Selman and Kautz 1996] Selman, B., and Kautz, H. 1996.
+Knowledge compilation and theory approximation. JACM
+43(2).
+[Selsam et al. 2019] Selsam, D.; Lamm, M.; B ¨unz, B.;
+Liang, P.; de Moura, L.; and Dill, D. L. 2019. Learning
+a SAT solver from single-bit supervision. In Proc. of ICLR.
+[Stockmeyer 1983] Stockmeyer, L. 1983. The complexity of
+approximate counting. In Proc. of STOC. ACM.
+[Suciu et al. 2011] Suciu, D.; Olteanu, D.; R ´e, C.; and Koch,
+C. 2011. Probabilistic Databases, volume 3. Morgan &
+Claypool.
+[Toda 1989] Toda, S. 1989. On the computational power of
+PP and +P. In Proc. of FOCS.
+[Valiant 1979] Valiant, L. G. 1979. The complexity of com-
+puting the permanent. TCS 8(2).
+
+[Wang et al. 2014] Wang, Z.; Zhang, J.; Feng, J.; and Chen,
+Z. 2014. Knowledge graph embedding by translating on
+hyperplanes. In Proc. of AAAI.
+[Weiss 2000] Weiss, Y. 2000. Correctness of local proba-
+bility propagation in graphical models with loops. Neural
+Computation 12(1).
+[Xu et al. 2019] Xu, K.; Hu, W.; Leskovec, J.; and Jegelka,
+S. 2019. How powerful are graph neural networks? In Proc.
+of ICLR.
+[Yoon et al. 2018] Yoon, K.; Liao, R.; Xiong, Y.; Zhang, L.;
+Fetaya, E.; Urtasun, R.; Zemel, R. S.; and Pitkow, X. 2018.
+Inference in probabilistic graphical models by graph neural
+networks. In Workshop Proc. of ICLR.
+
+A Details of Data Generation
+
+Standard Generation Procedure
+
+To generate data, we develop a comprehensive randomized
+generation procedure, which takes as input the target number
+hence, set minW = maxW = w . Initially, the procedure ran-
+of variables n, the target number of clauses m, and minimum
+and maximum bounds minW and maxW on clause widths w
+within the formula. In the paper, we use ﬁxed-width clauses,
+domly generates m clause widths using a uniform distribu-
+tinues generation only if s ≥ n. It then allocates the s slots
+tion bounded between minW and maxW inclusive. It then
+computes their sum, which we call the slot count s, and con-
+to the n variables, such that every variable is allocated at
+least one slot, ensuring all variables appear in the generated
+formula. This is equivalent to the combinatorial problem of
+putting k balls into n boxes such that no boxes are empty.
+Once all variable allocations are determined, all variables
+are sorted in decreasing allocation order and then assigned to
+clauses in that order. This ensures that more prominent vari-
+ables, which appear more in the formula, are accommodated
+ﬁrst, when more empty slots are available, thus maximiz-
+ing the likelihood of generation success. In this assignment
+phase, a variable having s slot allocations will be assigned
+to s clauses by randomly, selecting these clauses from the m
+total clauses without replacement. This ensures no variable
+is assigned to the same clause twice, to prevent redundancy.
+Further heuristics are also added to this mechanism to prior-
+itize selecting clauses with more empty slots at this phase,
+so that all clauses are ﬁlled in a uniform fashion. At the end
+of variable assignment to clauses, all variable instances are
+individually randomized to be positive or negative literals.
+Probabilities for variables are chosen uniformly at ran-
+dom. In our experiments, we use 4 distributions for every
+formula in our training and evaluation sets, such that one dis-
+tribution is randomly generated, and the other 3 distributions
+are quarter increments of the random distribution modulo 1.
+For example, if a variable v1 is assigned probability 0.1 for
+the entire [0, 1] range as evenly as possible, so as to have
+the random distribution, it will have probabilities 0.35, 0.6,
+and 0.85, respectively, in the 3 other distributions. This en-
+sures that we produce formulas with model counts covering
+more representative training and testing data.
+
+Adding Non-uniformity to Generation
+
+n
+
+In the standard generation procedure presented earlier, every
+variable appears between 1 and m times in a formula, and S
+times in expectation. However, it is highly unlikely, by the
+Chernoff bound, to produce formulas with high dependence
+on a small subset of variables, i.e., with some variables ap-
+pearing far more frequently than others and across a majority
+of clauses. Thus, with very high probability, formulas gen-
+erated according to this procedure will have their weighted
+model count depend almost exclusively on clause widths and
+m, with individual variables having very little impact on the
+model count. This is highly undesirable, as it prevents the
+network from learning the contributions of individual vari-
+ables, and encourages overﬁtting to higher-level structural
+details of the formula, namely, w and m.
+
+q , r ∈ [0, 1]. These variables create a set of p = q ⋅n privileged
+To tackle this, we introduce two new variables
+more severely. These variables are exclusively assigned r ⋅ e
+slots at random, where e is the excess slots e = s − n. The
+variables, which will appear far more frequently than their
+non-privileged counterparts and impact the model counts
+remaining s − e ⋅ r slots are then subsequently allocated to all
+variables (including privileged ones) using the standard gen-
+eration procedure, and assignment to clauses is done analo-
+gously afterwards. Therefore, the expected number of allo-
+cations for a privileged variable vpriv given non-zero values
+of q and r is:
+
+= 1 + e(q(1 − r) + r)
+
+q ⋅ n
+
+.
+
+1 + r ⋅ e
+q ⋅ n
+
++ (1 − r) ⋅ e
+
+n
+
+Generating Formulas for Experiments
+
+To further enforce dependence on privileged variables, all
+corresponding privileged literals for a privileged variable are
+randomised together, such that they all are unanimously pos-
+itive or negative. This makes that all clauses require the same
+assignment of the privileged variable, and that no mutually
+exclusive clauses are created, which would greatly increase
+formula counts and reduce variability. Therefore, literals of
+privileged variables are all set to the same sign to give them
+more impact on the model count
+set q = 0 and r = 0 with probability 0.5, and therefore gen-
+When generating formulas for the experimental data sets, we
+bution with λ = 1, take the remainder of this value modulo
+erate 50% of our formulas without privileged variables. For
+the remaining 50%, we sample q from an exponential distri-
+, and round this value up to the nearest multiple of
+= 0. As a result, privileged
+increases, since limn→∞ log (n)
+n . This privileged variable selection process is highly selec-
+tive. In fact, this process becomes increasingly selective as n
+variables have a strong effect on the formula model count.
+With q set, we ﬁnally, set r as being the value for which
+generation can succeed (i.e., no privileged variable gets al-
+located more than the number of clauses) with probability at
+least 0.5 by a one-sided Chebyshev bound.
+
+log (n)
+n
+1
+
+n
+
+B Further Experiments
+
+Ablation Testing
+
+4 using only T = 2 iterations for both training and testing.
+To evaluate the role of message passing for model perfor-
+mance, we ran the same experimental protocol as in Section
+With 2 iterations, only one full pass through the 3 network
+layers is possible: in the ﬁrst iteration, literal node messages
+update all conjunction node states, and in the second iter-
+ation, these nodes provide a meaningful update to the dis-
+junction node. With this conﬁguration, we observed a large
+drop in system performance, both in terms of structure and
+size generalization. The results of this experiment are pro-
+vided in Tables 8 and 9. From this, we learn that message
+passing is essential to model performance. Indeed, the model
+cannot deliver a reliable estimate within just 2 iterations, as
+it cannot learn about intersections between clauses, thereby
+
+structure evaluation datasets for ablation study (T = 2).
+Table 8: Accuracy (%) on all thresholds on training and
+
+structure evaluation datasets for T = 32.
+Table 10: Accuracy (%) on all thresholds on training and
+
+Evaluation Data
+
+Thresholds
+
+0.02
+0.05
+Training Set
+71.84
+82.91
+Test Set
+72.08
+82.80
+tion datasets for ablation study (T = 2).
+Table 9: Accuracy (%) on all thresholds on size generaliza-
+
+0.10
+91.62
+91.36
+
+0.15
+95.18
+94.97
+
+Evaluation Data
+
+Thresholds
+
+0.02
+87.68
+87.32
+
+0.05
+98.22
+98.02
+
+0.10
+99.87
+99.83
+
+0.15
+99.99
+99.95
+
+Training Set
+Test Set
+tion datasets for T = 32.
+Table 11: Accuracy (%) on all thresholds on size generaliza-
+
+n
+
+0.02
+10K 71.84
+15K 66.37
+
+Thresholds
+
+0.05
+76.72
+69.83
+
+0.10
+84.20
+79.31
+
+0.15
+89.94
+87.93
+
+n
+
+0.02
+10K 74.43
+15K 68.97
+
+Thresholds
+
+0.05
+83.91
+80.17
+
+0.10
+93.67
+87.93
+
+0.15
+96.26
+92.24
+
+Experiments with More Iterations
+
+limiting it to naive guesses based on disjoint unions. This is
+also evidenced in Figure 4, where this phenomenon occurs
+within the ﬁrst 2 iterations of the 8-iteration set.
+system using T = 32 message passing iterations. With this
+In addition to our ablation study, we also train and run our
+many iterations, the system is expected to build a more
+comprehensive understanding of connections between dif-
+ilar performance compared with T = 8, but performs signiﬁ-
+ferent components of the graph, and so should perform bet-
+ter. However, we found that this was not the case. In terms of
+structure generalization (Table 10), the system achieves sim-
+cantly worse in terms of size generalization (Table 11). This
+shows that the system overﬁts with too many iterations, such
+that it learns a message passing optimized for its training set,
+but cannot generalize to larger formulas.
+
+Results on Other Datasets
+
+We generated two new synthetic datasets of identical size
+and composition to the original structure evaluation set. The
+ﬁrst dataset is entirely based on our generator, such that priv-
+ileged variables are always used during generation (in the
+main experiments, this is only used 50% of the time). As
+a result, this dataset consists entirely of formulas where a
+small subset of variables have a major effect on the over-
+all weighted model count. We refer to this dataset as Fully
+Privileged.
+The second dataset, on the other hand, is generated us-
+ing a random generator similar to the one used in (Meel,
+Shrotri, and Vardi 2018), where variables and clauses are
+generated and allocated uniformly at random, and we call it
+the Meel et al. dataset. We evaluated our model on both these
+sets, and show results in Table 12. Our system performs very
+well on the “privileged” data set, in close proximity to orig-
+inal test set performance, and actually performs better on
+the fully random dataset. This is not surprising, as (Meel,
+Shrotri, and Vardi 2018) allocates variables uniformly, thus
+
+producing formulas with model counts that can be statisti-
+cally approximated more easily. These results highlight the
+robustness of our GNN, and also show the quality of our
+generation procedure.
+
+Table 12: Results over other synthetic datasets.
+
+Dataset
+
+Fully Privileged
+Meel et al.
+
+Thresholds
+
+0.02
+86.33
+88.26
+
+0.05
+98.88
+98.67
+
+0.10
+99.96
+99.98
+
+0.15
+99.99
+100.0
+
+C Complexity of Algorithms
+
+δ
+
+∑m
+
+m
+
+i=1 wi
+
+Onm−2 log( 1
+
+show that our tool has average-case complexity O(m ¯w) and
+number of clauses, and ¯w be the average clause width. We
+Let n be the number of variables in a DNF formula, m be the
+), since, in practice, ¯w << n:
+is therefore more efﬁcient than KLM, which has complexity
+• In a message passing iteration, 2 ∑m
+i=1 wi messages are
+nodes, where wi denotes the width of clause i. 2 ∑m
+can be rewritten as 2m ¯w , where ¯w = 1
+passed between literal layer nodes and conjunction layer
+Furthermore, 2n messages pass between literal nodes and
+their negations, and 2m messages pass between conjunc-
+tion nodes and the disjunction node. All messages are
+2n + m + 1 constant-time state updates are made. Since
+summed at their respective destinations, thus yielding
+as many additions as messages passed. Following this,
+ways have that n ≤ mw . As a result, the average-case
+complexity of a message passing iteration is O(m ¯w). Fi-
+every variable is assumed to appear in a clause, we al-
+is also O(m ¯w), which is signiﬁcantly better than KLM’s
+nally, since the number of message passing iterations T is
+), particularly since ¯w << n, in practice.
+ﬁxed, we deduce that the average-case GNN complexity
+
+Onm−2 log( 1
+
+i=1 wi .
+
+δ
+
+Table 13: Runtimes (s) for KLM, GNN by number of vari-
+ables (n) and width (w) for m = 0.75n.
+
+w
+
+Algorithm
+
+3
+
+5
+
+8
+
+13
+
+21
+
+34
+
+KLM
+GNN
+KLM
+GNN
+KLM
+GNN
+KLM
+GNN
+KLM
+GNN
+KLM
+GNN
+
+1K
+22.59
+0.017
+15.32
+0.017
+9.32
+0.017
+7.07
+0.017
+7.26
+0.018
+7.62
+0.020
+
+5K
+270.77
+0.040
+145.47
+0.042
+81.39
+0.045
+40.58
+0.050
+41.28
+0.058
+43.57
+0.074
+
+n
+
+10K
+1151.86
+0.073
+608.13
+0.077
+322.56
+0.083
+158.09
+0.094
+157.85
+0.113
+164.46
+0.145
+
+15K
+2375.56
+0.104
+1298.38
+0.110
+689.50
+0.121
+299.26
+0.138
+293.83
+0.167
+305.61
+0.223
+
+• Even in the worst-case where all clauses have width n,
+O(nm), which is asymptotically identical to KLM.
+2nm messages are passed between literals nodes and con-
+junctions nodes, and the GNN therefore has complexity
+comes O(n + m). And since state updates are also
+• In the best-case, when clause width is upper-bounded
+O(n + m), the complexity of an iteration therefore re-
+duces to O(n + m), allowing for linear-time estimation
+by a constant,
+the number of messages passed be-
+of weighted DNF counts.
+
+D Algorithm Running Times
+
+KLM ran on a single Haswell E5-2640v3 CPU, which has a
+clock speed of 2.60GHz. This CPU was part of a node with
+has 64 GB of memory. Our GNN ran on a Tesla P100 GPU,
+which has 12 GB of on-device memory. Running times for
+both algorithms were measured across 50 runs and averaged
+to produce the results in Table 13.
+
+

@@ -1,0 +1,3174 @@
+The Next 700 Relational Program Logics
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+P
+
+.
+
+s
+
+c
+
+[
+
+3
+v
+4
+4
+2
+5
+0
+
+.
+
+7
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+KENJI MAILLARD, Inria Paris and ENS Paris, France
+CĂTĂLIN HRIT, CU, Inria Paris, France
+EXEQUIEL RIVAS, Inria Paris, France
+ANTOINE VAN MUYLDER, Inria Paris and Université de Paris, France
+We propose the first framework for defining relational program logics for arbitrary monadic effects. The
+framework is embedded within a relational dependent type theory and is highly expressive. At the semantic
+level, we provide an algebraic presentation of relational specifications as a class of relative monads, and link
+computations and specifications by introducing relational effect observations, which map pairs of monadic
+computations to relational specifications in a way that respects the algebraic structure. For an arbitrary
+relational effect observation, we generically define the core of a sound relational program logic, and explain
+how to complete it to a full-fledged logic for the monadic effect at hand. We show that this generic framework
+can be used to define relational program logics for effects as diverse as state, input-output, nondeterminism,
+and discrete probabilities. We, moreover, show that by instantiating our framework with state and unbounded
+iteration we can embed a variant of Benton’s Relational Hoare Logic, and also sketch how to reconstruct
+Relational Hoare Type Theory. Finally, we identify and overcome conceptual challenges that prevented
+previous relational program logics from properly dealing with control effects, and are the first to provide a
+relational program logic for exceptions.
+CCS Concepts: • Theory of computation → Type theory; Program specifications; Program verifica-
+
+tion; Categorical semantics; Program reasoning ; Pre- and post-conditions; Hoare logic.
+
+Additional Key Words and Phrases: program verification, relational program logics, side-effects, monads, state,
+I/O, nondeterminism, probabilities, exceptions, dependent types, semantics, relative monads, foundations
+ACM Reference Format:
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder. 2020. The Next 700 Relational Program
+Logics. Proc. ACM Program. Lang. 4, POPL, Article 4 ( January 2020), 33 pages. https://doi.org/10.1145/3371072
+
+1 INTRODUCTION
+
+Generalizing unary properties, which describe single program runs, relational properties describe
+relations between multiple runs of one or more programs [Abate et al. 2019; Clarkson and Schneider
+2010]. Formally verifying relational properties has a broad range of practical applications. For
+instance, one might be interested in proving that the observable behaviors of two programs are
+related, showing for instance that the programs are equivalent [Blanchet et al. 2008; Chadha et al.
+2016; Ştefan Ciobâcă et al. 2016; Godlin and Strichman 2010; Hur et al. 2012, 2014; Kundu et al. 2009;
+Timany et al. 2018; Wang et al. 2018; Yang 2007], or that one refines the other [Timany and Birkedal
+2019]. In other cases, one might be interested in relating two runs of a single program, but, as soon
+as the control flow can differ between the two runs, the compositional verification problem becomes
+the same as relating two different programs. This is for instance the case for noninterference, which
+
+Authors’ addresses: Kenji Maillard, Inria Paris, Paris, ENS Paris, Paris, France; Cătălin Hrit, cu, Inria Paris, Paris, France;
+Exequiel Rivas, Inria Paris, Paris, France; Antoine Van Muylder, Inria Paris, Paris, Université de Paris, Paris, France.
+
+4
+
+This work is licensed under a Creative Commons Attribution 4.0 International License
+© 2020 Copyright held by the owner/author(s).
+2475-1421/2020/1-ART4
+https://doi.org/10.1145/3371072
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+ 
+ 
+ 
+ 
+ 
+ 
+4:2
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+requires that a program’s public outputs are independent of its private inputs [Antonopoulos et al.
+2017; Banerjee et al. 2016; Barthe et al. 2019; Clarkson and Schneider 2010; Nanevski et al. 2013;
+Sabelfeld and Myers 2003; Sousa and Dillig 2016]. The list of practical applications of relational
+verification is, however, much longer, including verified program transformations [Benton 2004],
+cost analysis [Çiçek et al. 2017; Qu et al. 2019; Radicek et al. 2018], program approximation [Carbin
+et al. 2012; He et al. 2018], semantic diffing [Girka et al. 2015, 2017; Lahiri et al. 2012; Wang et al.
+2018], cryptographic proofs [Barthe et al. 2009, 2013a, 2014; Petcher and Morrisett 2015; Unruh
+2019], differential privacy [Barthe et al. 2013b, 2015b; Gavazzo 2018; Zhang and Kifer 2017], and
+even machine learning [Sato et al. 2019].
+As such, many different relational verification tools have been proposed, making different
+tradeoffs, for instance between automation and expressiveness (see §6 for further discussion). In
+this paper we focus on relational program logics, which are a popular formal foundation for various
+relational verification tools. Relational program logics are proof systems whose rules can be used to
+prove that a pair of programs meets a rich relational specification. As such they are very expressive,
+and can in particular handle situations in which verifying the desired relational properties requires
+showing the full functional correctness of certain pieces of code. Yet they can often greatly simplify
+reasoning by leveraging the syntactic similarities between the programs one relates. Since Benton’s
+[2004] seminal Relational Hoare Logic, many relational program logics have been proposed [Aguirre
+et al. 2017; Banerjee et al. 2016; Barthe et al. 2013b, 2014, 2015b, 2016; Carbin et al. 2012; Nanevski
+et al. 2013; Petcher and Morrisett 2015; Qu et al. 2019; Radicek et al. 2018; Sato et al. 2019; Sousa
+and Dillig 2016; Unruh 2019; Yang 2007; Zhang and Kifer 2017]. However, each of these logics is
+specific to a particular combination of side-effects that is completely fixed by the programming
+language and verification framework; the most popular side-effects these logics bake in are mutable
+state, recursion, cost, and probabilities.
+The goal of this paper is to distil the generic relational reasoning principles that work for a broad
+class of side-effects and that underlie most relational program logics. We do this by introducing the
+first framework for defining program logics for arbitrary monadic effects. Our generic framework is
+embedded within a dependent type theory, e.g., Coq, which makes it highly expressive and simpler
+to describe.
+Syntactic rules. To factor out the fully generic parts, the rules of the relational program logics
+derived in our framework are divided into three categories, following the syntactic shape of the
+monadic programs on which they operate:
+R1 rules for pure language constructs, derived from the ambient dependent type theory (these
+rules target the elimination constructs for positive types, like if-then-else for booleans,
+recursors for inductive types, etc.);
+R2 rules for the generic monadic constructs return and bind; and
+R3 rules for effect-specific operations (e.g., get and put for the state monad, or throw and catch
+for the exception monad).
+This organization allows us to clearly separate not only the generic parts (R1&R2) from the effect-
+specific ones (R3), but also the effect-irrelevant parts (R1) from the effect-relevant ones (R2&R3).
+In its simplest form (§2), the judgment of the relational program logics of our framework has
+the shape: ⊢ c 1 ∼ c 2 { w } , where c 1 : M1 A1 is a computation in monad M1 producing results of
+type A1 , where c 2 : M 2 A2 is a computation in monad M2 producing results of type A2 , and where
+w is a relational specification of computations c 1 and c 2 drawn from the type Wrel (A1 , A2 ). Here
+M1 and M2 are two arbitrary and potentially distinct computation monads (e.g., the state monad
+St A = S → A × S and the exception monad Exc A = A + E ), while w could, for instance, be a pair
+of a relational precondition and a relational postcondition, or a relational predicate transformer—in
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:3
+
+this introduction we will use relational weakest preconditions. For instance, for relating two state
+monads on states S 1 and S 2 , we often use relational specifications drawn from
+
+WSt
+rel (A1 , A2 ) = ((A1 × S 1 ) × (A2 × S 2 ) → P) → S 1 × S 2 → P
+
+which are predicate transformers mapping postconditions relating two pairs of a result value and a
+final state to a precondition relating two initial states (here P stands for the type of propositions of
+our dependent type theory). As an example of the judgment above, consider the programs c 1 =
+bindSt (get ()) (λx . put (x + k)), which increments the content of a memory cell by k , and c 2 = retSt (),
+which does nothing. These two programs are related by the specification w = λφ (s 1 , s 2 ). φ (((), s 1 +
+k ), ((), s 2 )) : WSt
+rel (1, 1) saying that for the postcondition φ to hold for the final states of c 1 and c 2 , it
+is enough for it to hold for s 1 + k and s 2 , where s 1 and s 2 are the computation’s initial states. Note
+that since c 1 , c 2 , and w are terms of our ambient type theory, free variables (like k ) are handled
+directly by the type theory, which saves the simple judgment from an explicit context.
+For pure language constructs R1, we try to use the reasoning principles of our ambient dependent
+type theory as directly as possible. For instance, our framework (again in its simplest incarnation
+from §2) provides the following rule for the if-then-else construct:
+
+⊤ (cid:9) else ⊢ c 1 ∼ c 2
+(cid:8) if b then w
+if b then ⊢ c 1 ∼ c 2
+⊢ c 1 ∼ c 2
+⊤ else w
+
+(cid:8) w
+
+⊥ (cid:9)
+
+(cid:8) w
+
+⊥ (cid:9)
+
+In order to prove that c 1 and c 2 satisfy the relational specification if b then w⊤ else w⊥ , it is enough
+to prove that c 1 and c 2 satisfy both branches of the conditional in a context extended with the value
+of b . Interestingly, this rule does not make any assumption on the shape of c 1 and c 2 . Relational
+program logics often classify each rule depending on whether it considers a syntactic construct
+that appears on both sides (synchronous), or only on one side (asynchronous). In the rule above,
+taking c 1 to be of the shape if b then c ⊤
+1 and c 2 to be independent of b , we can simplify
+the premise according to the possible values of b to derive an asynchronous variant of the rule:
+
+1 else c ⊥
+
+(cid:8) w
+(cid:8) w
+
+⊥
+
+⊥
+
+⊢ c
+
+⊤ (cid:9)
+⊤ (cid:9)
+
+(cid:8) w
+⊥ (cid:9)
+(cid:8) w
+⊥ (cid:9)
+
+(cid:8) if b then w
+1 ∼ c 2
+1 ∼ c
+2
+1 ∼ if b2 then c
+2 else c
+
+1 ∼ c 2
+
+⊢ c
+
+⊥
+⊤
+
+⊥
+
+⊥
+
+⊥ (cid:9)
+
+⊤ else w
+
+⊤
+
+⊤
+
+⊢ c
+
+1 ∼ c 2
+⊢ if b then c
+1 else c
+1 ∼ c
+⊢ if b1 then c
+2
+1 else c
+
+⊢ c
+
+⊤
+
+⊤
+
+(1)
+
+By requiring that both commands are conditionals, we can also derive the synchronous rule:
+
+⊤
+
+⊥
+
+• }
+
+2 { w
+
+(2)
+where the relational specification w • = λφ s 12 . (b⇔b1 ) ∧ (b⇔b2 ) ∧ if b then w ⊤ φ s 12 else w ⊥ φ s 12
+ensures that the booleans b1 and b2 controlling the choice of the branch in each computation share
+the same value b .
+For the monadic constructs R2, the challenge is in lifting the binds and returns of the two
+computation monads M1 and M2 to the specification level. For instance, in a synchronous rule
+one would relate bindM1 m 1 f 1 to bindM2 m 2 f 2 by first relating computations m 1 and m 2 , say via
+relational specification wm , and then one would relate the two functions f 1 and f 2 pointwise via a
+function w f mapping arguments in A1 × A2 to relational specifications:
+
+w f (a 1 , a 2 ) (cid:111)
+bindWrel wm w f (cid:111)
+⊢ m 1 ∼ m 2 { wm }
+∀a 1 , a 2 ⊢ f 1 a 1 ∼ f 2 a 2
+⊢ bindM1 m 1 f 1 ∼ bindM2 m 2 f 2
+
+In the conclusion of this rule, we need a way to compose w : Wrel (A1 , A2 ) and w f
+Wrel (B 1 , B 2 ) to obtain a relational specification for the two binds. We do this via a bind-like construct:
+(4)
+
+bindWrel : Wrel (A1 , A2 ) → (A1 × A2 → Wrel (B 1 , B 2 )) → Wrel (B 1 , B 2 )
+
+: A1 × A2 →
+
+(cid:110)
+
+(cid:110)
+
+(3)
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:4
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+For the concrete case of WSt
+rel , this bind-like construct takes the form
+
+bindWSt
+rel wm w f = λφ (s 1 , s 2 ). wm (λ ((a 1 , s
+
+′
+
+1 ), (a 2 , s
+
+′
+
+2 )). w f (a 1 , a 2 ) (s
+
+′
+
+1 , s
+
+′
+
+2 ) φ ) (s 1 , s 2 ).
+
+(cid:111)
+
+(cid:110)
+
+(cid:110)
+
+(5)
+
+(6)
+
+(cid:110)
+(cid:110)
+
+This construct is written in continuation passing style: the specification of the continuation w f maps
+a postcondition φ : (B 1×S 1 )×(B 2×S 2 )→P to an intermediate postcondition (A1×S 1 )×(A2×S 2 )→P,
+then wm turns it into a precondition for the whole computation.
+Asynchronous rules for bind can be derived from the rule above, by taking m 1 to be retM1 () or
+f 1 to be retM1 above and using the monadic laws of M1 (and symmetrically for M2 ):
+
+Finally, for the effect-specific operations R3, we provide a recipe for writing rules guided by our
+framework. For state, we introduce the following asynchronous rules for any a 1 , a 2 and s :
+
+bindWrel wm (λ((), a 2 ). w f a 2 ) (cid:111)
+⊢ retM1 () ∼ m 2 { wm }
+∀a 2 ⊢ c 1 ∼ f 2 a 2
+w f (a 1 , a 2 ) (cid:111)
+w f a 2
+⊢ c 1 ∼ bindM2 m 2 f 2
+∀a 1 , a 2 ⊢ retM1 a 1 ∼ f 2 a 2
+bindWrel wm w f (cid:111)
+⊢ c 1 ∼ m 2 { wm }
+⊢ c 1 ∼ bindM2 m 2 f 2
+⊢ ret a 1 ∼ get () (cid:8) w getr (cid:9)
+⊢ get () ∼ ret a 2
+⊢ ret a 1 ∼ put s (cid:8) w putr (cid:9)
+where w getl = λφ (s 1 , s 2 ). φ ((s 1 , s 1 ), (a 2 , s 2 )), w getr = λφ (s 1 , s 2 ). φ ((a 1 , s 1 ), (s 2 , s 2 )), w putl =
+⊢ put s ∼ ret a 2
+⊢ get () ∼ get () (cid:8) w get
+′ (cid:8) w put
+⊢ get () ∼ get () (cid:8) w get
+⊢ put s ∼ put s
+where w get = λφ s 1 s 2 . φ ((s 1 , s 1 ), (s 2 , s 2 )) and w put = λφ s 1 s 2 . φ (((), s ), ((), s ′)). These rules can be
+⊢ ret () ∼ get () (cid:8) w getl
+(λ(u , s 2 ). w getr ) (cid:111)
+∀u : 1, s 2 : S 2 ⊢ get u ∼ ret s 2
+⊢ bindStS1 (ret ()) get ∼ bindStS2 (get ()) retStS2
+bindWSt
+
+λφ (s 1 , s 2 ). φ (((), s ), (a 2 , s 2 )) and w putr = λφ (s 1 , s 2 ). φ ((a 1 , s 1 ), ((), s )). Each of these rules describes
+at the specification level the action of a basic stateful operation (get, put) from either the left or
+the right computations, namely returning the current state for get or updating it for put. From
+these rules, we can derive two synchronous rules:
+(cid:9) by the following derivation
+derived from the rule for bindWrel , since by the monadic equations we can replace for instance
+
+(cid:8) w getl
+(cid:8) w putl
+
+(cid:8) w getr (cid:9)
+
+(cid:9)
+(cid:9)
+
+(cid:9)
+
+(cid:9)
+
+(7)
+
+(8)
+
+(cid:9)
+
+(cid:110)
+
+rel w getl
+rel .
+
+where the last specification reduces to w get using the definition of bindWSt
+Simple semantics. To define a semantics for the ⊢ judgment above, we generalize recent
+work on (non-relational) effect observations [Maillard et al. 2019] to the relational setting, which
+raises significant challenges though. We start from two ideas from the non-relational setting:
+(1) specifications are drawn from a monad, ordered by precision [Ahman et al. 2017; Delbianco and
+Nanevski 2013; Maillard et al. 2019; Nanevski et al. 2008a,b, 2013; Swamy et al. 2013, 2016] and (2) one
+can link any computation with its specification by defining a monad morphism, i.e., a mapping
+between two monads that respects their monadic structure. In the case of state, an example monad
+morphism is θ St (c ) = λφ s . φ (c s ) : St A → WSt A, mapping a stateful computation to the unary
+specification monad WSt A = (A×S→P)→S→P, by running the computation and then checking
+whether the postcondition holds of the result. Inspired by Katsumata [2014], Maillard et al. [2019]
+call such monad morphisms effect observations and use them to decouple the computational monad
+from the specification monad, which brings great flexibility in choosing the specification monad and
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:5
+
+verification style most suitable for the verification task at hand. Intuitively, an effect observation
+accounts for the various choices available when specifying computations with a particular effect,
+for instance total or partial correctness, angelic or demonic nondeterminism, ghost state, etc. In
+this paper we bring this flexibility to the relational verification world.
+For this, we observe that even though Wrel (A1 , A2 ) is not a monad, it is a relative monad [Altenkirch
+et al. 2015] over the product (A1 , A2 ) (cid:55)→ A1 × A2 , as illustrated by the type of bindWrel above (4),
+where the continuation specification is passed a pair of results from the first specification. Similarly,
+we generalize monad morphisms to relative monads and observe that a relative monad morphism
+θ rel : M1 A1 × M2 A2 → Wrel (A1 , A2 ) can immediately give us a semantics for the judgment above:
+
+⊨θ rel c 1 ∼ c 2 { w } = θ rel (c 1 , c 2 ) ≤ w ,
+
+by asking that the specification obtained by θ rel is more precise than the user-provided specification
+rel (c 1 , c 2 ) = λφ (s 1 , s 2 ). φ (c 1 s 1 , c 2 s 2 ) simply runs the two computations and
+w . In the case of state, θ St
+passes the results to the postcondition. If we unfold this, and the definition of precision for WSt
+(9)
+we obtain the standard semantics of a relational program logic for stateful computations (but
+without other side-effects):
+
+′ ≤WSt
+rel w = ∀φ s 1 s 2 . w φ (s 1 , s 2 ) ⇒ w
+
+φ (s 1 , s 2 ),
+
+w
+
+rel
+
+′
+
+c 1 ∼ c 2 { w } = ∀φ s 1 s 2 . w φ (s 1 , s 2 ) ⇒ φ (c 1 s 1 , c 2 s 2 )
+
+⊨
+
+θ St
+
+rel
+
+Another important point is that the relational effect observation can help us in deriving simple
+effect-specific rules, such as the ones for get (7) and put (8) above. For deriving such rules, one
+first has to choose c 1 and c 2 (and we hope that the product programs of §5 can provide guidance
+on this in the future) and then one can simply compute the specification using θ . For instance,
+w getl = λφ (s 1 , s 2 ). φ ((s 1 , s 1 ), (a 2 , s 2 )) in the first get rule (7) really is just θ (get (), ret a 2 ). This idea
+is illustrated for various other effects in §2.6.
+Finally, for probabilities and sometimes nondeterminism, one has to relax the definition of
+relational effect observations to account for the fact that, in the relational setting, modular verifica-
+tion can have a precision cost compared to whole-program verification. While for relative monad
+morphisms the following bind law has to hold with equality (and analogously for returns):
+
+θ rel (bindM1 m 1 f 1 , bindM2 m 2 f 2 ) = bindWrel (θ rel (m 1 , m 2 )) (θ rel ◦ ( f 1 , f 2 ))
+
+θ
+
+rel (c 1 , c 2 ) = λφ . ∀a 1 ∈c 1 . ∃a 2 ∈c 2 . φ (a 1 , a 2 )
+
+θ rel (bindM1 m 1 f 1 , bindM2 m 2 f 2 ) ≤ bindWrel (θ rel (m 1 , m 2 )) (θ rel ◦ ( f 1 , f 2 )).
+
+we introduce a notion of lax relative monad morphism that allows the left-hand-side (i.e., less
+modular verification) to be more precise than the right-hand-side (i.e., more modular verification):
+For instance, the refinement relational effect observation θ
+∀∃ interprets two nondeterministic
+computations c 1 : Nd A1 and c 2 : Nd A2 (represented as finite sets of possible outcomes) into the
+relational specification monad WPure
+(A1 , A2 ) = (A1 × A2 → P) → P as follows:
+∀∃
+This interpretation is a natural generalization of subset inclusion (i.e., refinement of nondeterminism)
+to arbitrary relational postconditions φ , but only satisfies the lax monad morphism law relating
+
+bindNd m f = 
+a ∈m f a and bindWPure
+rel w f = λφ . w (λ(a 1 , a 2 ). f (a 1 , a 2 ) φ ):
+rel (bindNd m 1 f 1 , bindNd m 2 f 2 ) = λφ . ∀a 1 ∈m 1 . ∀b1 ∈ f 1 a 1 . ∃a 2 ∈m 2 . ∃b2 ∈ f 2 a 2 . φ (b1 , b2 )
+θ
+rel (m 1 , m 2 )) (θ
+rel ◦ ( f 1 , f 2 )) = λφ . ∀a 1 ∈m 1 . ∃a 2 ∈m 2 . ∀b1 ∈ f 1 a 1 . ∃b2 ∈ f 2 a 2 . φ (b1 , b2 )
+bindWPure
+
+∀∃
+∀∃
+On the left-hand-side one can choose a different a 2 for every b1 , while on the right-hand-side a
+single a 2 has to work for every b1 , so the two preconditions are not logically equivalent. Supporting
+such lax relational effect observations when needed is still relatively simple, even if deriving useful
+effect specific rules is generally more challenging in this case.
+
+(θ
+
+∀∃
+
+≤
+
+rel
+
+rel
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:6
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+Exceptions, and why the simple semantics is not enough. The simple construction we
+described so far is a natural extension of the solution we previously proposed in the unary set-
+ting [Maillard et al. 2019]. It works well for defining relational program logics for state and
+nondeterminism (and also input-output and probabilities), but it hits a limit when we try to incor-
+porate exceptions. Indeed, defining a relational program logic for exceptions was an open research
+problem, and our proposed solution depends on solving several non-trivial technical challenges.
+Here we begin with an analysis of the main obstruction of applying the simple construction above
+to exceptions, and how that guides us to a generic construction that can be made to work.
+For relating computations that can raise exceptions, we often need to use expressive specifications
+that can tell whether an exception was raised or not in each of the computations. For instance,
+such relational specifications could be drawn from:
+A predicate transformer w : WExc
+(A1 , A2 ) maps an exception-aware postcondition φ : (A1 + E 1 ) ×
+(A2 + E 2 ) → P to a precondition, which is just a proposition in P. However, more work is needed
+(cid:8) w f (a 1 , a 2 ) (cid:9) with specifications wm and w f (a 1 , a 2 ) drawn from WExc
+to obtain a compositional proof system. Indeed, suppose we have derivations for ⊢ m 1 ∼ m 2 { wm }
+.
+In order to build a composite proof relating c 1 = bindExc m 1 f 1 and c 2 = bindExc m 2 f 2 we need
+compose wm and w f in some way. If wm ensures that m 1 and m 2 terminate both normally returning
+values we can compose with w f and if they both throw exceptions we can pass the exceptions
+to the final postcondition. Otherwise, a computation, say m 1 , returns a value and the other, m 2 ,
+raises an exception. In this situation, the specification relating c 1 and c 2 needs a specification for
+the continuation f 1 of m 1 , but this cannot be extracted out of w f alone. In terms of the constructs
+of WExc
+, this failure is an obstruction to complete the following tentative definition of bindWExc
+
+(A1 , A2 ) = ((A1 + E 1 ) × (A2 + E 2 ) → P) → P.
+
+and ∀a 1 , a 2 , ⊢ f 1 a 1 ∼ f 2 a 2
+
+rel :
+
+rel
+
+WExc
+
+rel
+
+rel
+
+rel
+
+let bindWExc
+
+rel wm (w f : A1 × A2 → (((B1 + E1 ) × (B2 + E2 )) → P) → P) (φ : (B1 + E1 ) × (B2 + E2 ) → P) =
+wm (λx : (A1 + E1 ) × (A2 + E2 ).
+
+match x with
+
+| Inl a1 , Inl a2 → w f a1 a2 φ
+
+| Inr e1 , Inr e2 → φ (Inr e1 , Inr e2 )
+| _ → ??? )
+
+Our solution is to pass in two independent unary (i.e., non-relational) specifications for the contin-
+uations f 1 and f 2 as additional arguments for bind:
+
+let bindWExc
+
+rel wm (w f1 : A1 → ((B1 + E1 ) → P) → P) (w f2 : A2 → ((B2 + E2 ) → P) → P) w f φ =
+wm (λx : (A1 + E1 ) × (A2 + E2 ).
+
+match x with
+
+...
+| Inl a1 , Inr e2 → w f1 a1 (λbe . φ be (Inr e2 ))
+| Inr e1 , Inl a2 → w f2 a2 (λbe . φ (Inr e1 ) be) )
+
+The first new case corresponds to when m 2 terminated with an exception whereas m 1 returned a
+value normally. In this situation, we use the unary specification w f2 to further evaluate the first
+computation, independently of the second one, which already terminated. The key observation
+is that the operation bindWExc
+rel can still be used to define a relative monad, but in a more complex
+relational setting that we introduce in §3. As a consequence of moving to this more complex setting
+our relational judgment needs to also keep track of unary specifications, and its semantics also
+becomes more complex. We tame this complexity by working this out internally to a relational
+dependent type theory [Tonelli 2013]. These two novel conceptual ideas (combining unary and
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:7
+
+binary specifications, and embedding inside a relational dependent type theory for dealing with
+contexts) are fundamental pieces that make the generic framework work. In practice we can still
+implement this relational dependent type theory inside our ambient type theory and continue using
+the same tools for verification. We use Coq for developing a proof of concept implementation: we
+represent the types in the relational type theory using relations, and implement a set of combinators
+that account for type formers such as Π-types.
+This paper makes the following contributions:
+▶ We introduce the first generic framework for deriving relational program logics for arbitrary
+monadic effects, distilling the essence of previous relational program logics for specific effects.
+The proposed framework is highly expressive, and not only allows one to prove arbitrary
+relations between two programs with different monadic effects, but it also inherits the features
+of dependent type theory (higher-order logic, dependent types, polymorphism, lambdas, etc).
+▶ We provide a generic semantics for these relational program logics based on the novel observa-
+tions that (1) the algebraic structure of relational specifications can be captured by particular
+relative monads, and (2) the two considered computations can be mapped to their specifications
+by particular relative monad morphisms we call relational effect observations. Our framework
+provides great flexibility in choosing the kind of relational specifications and the effect observa-
+tion best suited for the verification task at hand. Finally, our generic rules are proven sound for
+any specification monad and any effect observation.
+▶ We show that this generic framework can be used to define relational program logics for effects
+as diverse as state, input-output, nondeterminism, and discrete probabilities. Moreover, we show
+that by instantiating our framework with state and unbounded iteration, we obtain a logic
+expressive enough to encode a variant of Benton’s [2004] Relational Hoare Logic (RHL) (§4.1).
+Finally, we also sketch how Nanevski et al.’s [2013] Relational Hoare Type Theory (RHTT) can
+be reconstructed on top of our framework (§4.2).
+▶ We identify and overcome conceptual challenges that prevented previous relational program
+logics from dealing with control effects such as exceptions [Barthe et al. 2016]. We provide a
+proper semantic account of exceptions and the first relational program logic for this effect.
+▶ We propose a monadic notion of product programs, and illustrate it for the state effect.
+Outline. After recalling how computational monads can express a wide range of effects, §2
+introduces relational specification monads and effect observations, on top of which we build a
+simplified variant of our relational reasoning framework, which we illustrate for state, input-output,
+nondeterminism, discrete probabilities, and unbounded iteration, and also with proofs of non-
+interference. §3 then extends this simplified setting to account for effects including exceptions,
+based on a relational dependent type theory and also using relative monads as a unifying tool for
+the two settings. §4 explains how to embed RHL and the connection to RHTT. In §5 we discuss
+product programs, before reviewing related work in §6 and concluding in §7. The ideas of this
+paper are supported by an accompanying Coq development providing a proof of concept imple-
+mentation (available at https://gitlab.inria.fr/kmaillar/dijkstra-monads- for- all/tree/relational) that
+includes both the simplified and generic frameworks.
+
+2 SIMPLIFIED FRAMEWORK
+
+In this section we introduce a simple framework for relational reasoning about monadic programs
+based on (1) relational specification monads, capturing relations between monadic programs, and (2)
+relational effect observations, lifting a pair of computations to their specification. By instantiating
+this framework with specific effects, we show how the specific rules of previous relational program
+logics can be recovered in a principled way and illustrate by example how these rules can be used
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:8
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+to prove relational properties of monadic programs, such as noninterference. But first, we recall
+the monadic presentation of a few effects such as state, exceptions, and nondeterminism.
+
+2.1 From Effects to Monads
+
+The seminal work of Moggi [1989] proposes using computational monads to encapsulate effects.
+A monad is a parametrized type M A equipped with two operations retM : A → M A, sending a
+value to an effectful context, and bindM : M A → (A → M B ) → M B , sequentially composes an
+effectful computation returning values in A with a continuation returning values in B , resulting in
+a B -valued computation. Crucially, these operations obey 3 laws – unitality of ret with respect to
+bind and associativity of bind – ensuring that any combinations of retM and bindM can be seen
+as a linear sequence of computations.
+
+bindM (retM a ) f = f a
+bindM m retM = m
+bindM m (λx . bindM ( f x ) д) = bindM (bindM m f ) д
+
+A considerable number of effects are captured by monads, including stateful computations,
+exceptions, interactive input-output, nontermination, nondeterminism, and continuations [Benton
+et al. 2000]. Each monad comes with specific operations [Plotkin and Power 2002] that allow the
+computation to perform the actual effects that the monad provides. To fix notation, we recall the
+basic monads corresponding to the effects that we will use in the rest of the paper.
+Stateful computations. State passing functions St A = S → A × S are used to model state,
+where S is the type of the state. The functions retSt and bindSt are defined as
+
+let retSt a : St A = λs. (a,s)
+
+let bindSt (m:St A) (f:A → St B) : St B = λs. let (a,s') = m s in f a s'
+
+This monad comes with two operations
+
+let get : St S = λs. (s,s)
+
+let put (s:S) : St 1 = λs0 . ((), s)
+
+that permit reading and updating the state. A particular case of state are stores with many locations
+of a particular type V al. If L is a set of locations, then a computations with a store of type
+S = L → V al are expressed by monad StS . In this case, we have custom operations that are
+parameterized by the location which we are accessing in the store:
+
+let get L (l:L ) : St V al= λs. (s l,s)
+
+let put L (l : L ) (v : V al) : St 1 = λs. ((), upd s l v)
+
+where let upd s l1 v = λ l2 . if l2 = l1 then v else s l2 .
+
+Exceptions. Computations potentially throwing exceptions of type E are captured by the type
+constructor Exc A = A + E . The monadic operations are
+
+let retExc a : Exc A = Inl a
+
+let bindExc (m:Exc A) (f:A → Exc B) : Exc B = match m with | Inl a → f a | Inr e → Inr e
+
+The operations provided are throwing and catching exceptions1 :
+
+let throw (e:E) : Exc 0= Inr e
+let catch (m:Exc A) (mexc : E → Exc A) : Exc A = match m with | Inl a → Inl a | Inr e → mexc e
+
+Interactive Input-output. Computations doing interactive input of type I and output of type
+O are captured using monads as well. The type constructor has a tree-like form
+
+type IO A = | Ret : A → IO A | Input : (I → IO A) → IO A | Output : O → IO A → IO A
+
+1Catching exceptions is the primary example of a handler [Plotkin and Pretnar 2009]; we use here the term operation in a
+wide sense englobing both algebraic operations (that we present as generic effects [Plotkin and Power 2002]) and handlers.
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:9
+
+let input : IO I = Input (λ i . retIO i)
+
+which consists of three possible cases: either we are done with a return value (Ret), or we expect a
+new input and then continue (Input), or we output and the continue (Output). The monadic function
+retIO constructs a unique leaf tree using Ret and bindIO does tree grafting. The operations perform
+input and output, and they are directly captured using the corresponding constructors.
+We call this monad the input-output monad on (I , O ).
+and the bind operation uses union to collect all results, i.e., bindNd m f = 
+Nondeterminism. The finite powerset Nd X = Pfin (X ) models nondeterministic computa-
+tions as a set of possible outcomes. The return operation maps a value v to the singleton {v } ,
+v ∈m f v . The opera-
+tion pick = {tt, ff} : Nd B nondeterministically select a boolean value, whereas the operation
+fail : Nd 0 does not return any value. Repeating this operation, we can nondeterministically
+choose : (n : N) → fin n an element of a finite set fin n .
+Imp-like effect. To capture the syntax of simple imperative programs, manipulating state and
+unbounded iteration, we introduce the Imp monad:
+
+let output (o : O) : IO 1 = Output o (retIO ())
+
+type Imp A = | Ret : A → Imp A
+| Get : (S → Imp A) → Imp A
+
+| DoWhile : Imp B→ Imp A → Imp A
+| Put : S → Imp A → Imp A
+
+Besides the monadic operations and the stateful ones, the Imp monad is built to offer an operation
+
+let do_while (body : Imp B) : Imp 1 = DoWhile body (Ret ())
+
+do_while body = bindImp body (λb . if b then do_while body else retImp ())
+
+The expected semantics of this operation is to take a computation body and to iterate body as long
+as it returns true, so that the following equation – which does not hold in Imp – is satisfied
+When defining functions out of Imp, we will thus make sure that it holds in the target.
+the unit interval [0; 1]) such that 
+Probabilities. A probabilistic computation is a sub-probability distribution on possible out-
+comes, i.e., for a countable type A, Prob A represents functions f : A → I (where we write I for
+a ∈A f a ≤ 1. Restricting our attention to discrete probabilities,
+the monad structure on Prob is known as the Giry monad [Giry 1982]. The Dirac distribution at
+v assigning weight 1 to v and 0 to any other value implements returns. Binding a distribution
+m : Prob A to a function f : A → Prob B amounts to computing the distribution on B given by
+λy . Σx ∈supp(m ) f x y . We can consider various basic distributions on countable spaces as operations,
+for instance flip : I → Prob B provides a Bernoulli distribution Bp on booleans (with parameter
+p ∈ I).
+
+2.2 Specifications as (Relative) Monads
+
+An important idea in the non-relational verification setting is to encapsulate the specification of a
+monadic computation inside a monad [Ahman et al. 2017; Delbianco and Nanevski 2013; Maillard
+et al. 2019; Nanevski et al. 2008a,b, 2013; Swamy et al. 2013, 2016], giving the same algebraic footing
+to both computations and specifications. For instance, stateful computations returning values in A
+are elements of a state monad St A = S → (A × S ) and can be given specifications drawn from the
+monad WSt A = (A × S → P) → (S → P) equipped with the monad structure given by
+
+let retWSt (a:A) : WStA = λφ s. φ (a,s)
+let bindWSt (wm : WStA) (wf : A → WStB) : WStB = λφ s. wm (λ a. wf a φ ) s
+
+Intuitively, a specification w : WSt A is a predicate transformer mapping postconditions, which are
+predicates on the return value and final state, to preconditions, which are predicates on the initial
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:10
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+state. The monadic structure on WSt provides a canonical way to describe the monadic rules of a
+non-relational program logic, i.e.,
+⊢ v : A
+⊢ m : St A { wm }
+a : A ⊢ f a : St B { w f }
+
+(10)
+
+⊢ retSt v : St A { retWSt
+
+v }
+
+⊢ bindSt m f : St B { bindWSt
+
+wm w f }
+
+WSt
+rel (A1 , A2 ) = ((A1 × S 1 ) × (A2 × S 2 ) → P) → S 1 × S 2 → P.
+
+This is, in fact, the main idea behind Dijkstra monads [Ahman et al. 2017; Jacobs 2015; Maillard
+et al. 2019; Swamy et al. 2013, 2016], which additionally internalize St A {w } as a computation type.
+Now returning to the relational setting, a relational specification for a pair of stateful compu-
+tations c 1 : StS 1 A1 and c 2 : StS 2 A2 consists of a predicate transformer w mapping postconditions
+relating two pairs of a result value and a final state to a precondition relating two initial states, i.e.,
+(11)
+rel does not posses the monad structure its unary variant has. To begin with it is not even an
+endofunctor: it takes two types as input and produces one. However, in order to derive a relational
+program logic, we need operations playing the role of retWSt and bindWSt in the unary rules (10). In
+detail, we need a specification covering the case of two returns, as well as a combinator producing
+a specification for a pair of bindSt out of specifications for the subcomputations. In the particular
+case of WSt
+rel , the monadic operations of the unary variant WSt can be naturally extended to the
+relational setting providing such combinators:
+
+WSt
+
+let retWSt
+
+rel (a1 ,a2 ):A1 × A2 : WSt
+rel (A1 ,A2 ) = λφ (s1 , s2 ). φ ((a1 ,s1 ), (a2 ,s2 ))
+rel (A1 ,A2 )) (wf:A1 × A2 → WSt
+rel (wm : WSt
+rel (B1 ,B2 )) : WSt
+rel (B1 ,B2 ) =
+λφ (s1 ,s2 ). wm (λ ((a1 ,s1 '),(a2 ,s2 ')). wf (a1 , a2 ) φ (s1 ',s2 '))
+
+let bindWSt
+
+These operations satisfy equations analogous to the monadic ones and are part of a relative monad
+structure in the sense of Altenkirch et al. [2015]. The relational specifications for state WSt
+rel are also
+naturally ordered by ≤WSt
+rel (see (9) in §1) and this ordering is compatible with the relative monad
+structure, as long as we restrict our attention to monotonic predicate transformers, a condition that
+we will assume from now on for all monads on predicate transformers. We call such a monad-like
+structure equipped with a compatible ordering a simple relational specification monad.
+Definition 1. A simple relational specification monad consist of
+
+• an operation retWrel : A1 × A2 → Wrel (A1 , A2 )
+
+• for each pair of types (A1 , A2 ), a type Wrel (A1 , A2 ) equipped with a preorder ≤Wrel
+• an operation bindWrel : Wrel (A1 , A2 ) → (A1 × A2 → Wrel (B 1 , B 2 )) → Wrel (B 1 , B 2 ) monotonic in
+both arguments
+• satisfying the 3 following equations
+
+bindWrel (retWrel (a 1 , a 2 )) w f = w f (a 1 , a 2 )
+bindWrel wm retWrel = wm
+bindWrel (bindWrel wm w f ) w д = bindWrelwm (λx . bindWrel (w f x ) w д )
+: A1 ×A2→Wrel (B 1 , B 2 ), wm : Wrel (A1 , A2 ), w д : B 1 ×B 2→Wrel (C 1 , C 2 ).
+for any a 1 : A1 , a 2 : A2 , w f
+
+A simple way to produce various examples of simple relational specification monads besides WSt
+is to start from a non-relational specification monad W in the sense of Maillard et al. [2019], that is a
+monad equipped with a compatible order, and to compose it with the function (A1 , A2 ) (cid:55)→ A1 ×A2 . A
+result of Altenkirch et al. [2015] (prop. 2.3.(1)) then ensures that Wrel (A1 , A2 ) = W(A1 ×A2 ) is a simple
+relational specification monad. In the following paragraphs, we illustrate this construction with a
+few concrete instances showing the flexibility of this construction. Depending on the property we
+want to verify and the desired verification style, we can pick relational specification monads among
+
+rel
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:11
+
+many different alternatives. For instance, choosing a simpler relational specification monad can
+often simplify verification, but also have less expressive power than more sophisticated variants.
+Similarly, relational weakest preconditions are better suited for (semi-)automated verification, but
+relational pre-/postconditions are more intuitive to humans and make the connection to established
+relational program logics more evident.
+Backward predicate transformer. A stateless version of WSt
+rel is the predicate transformer
+
+WPure
+
+rel
+
+(A1 , A2 ) = (A1 × A2 → P) → P
+
+equipped with monadic operations and order derived from the monotonic continuation monad. We
+call this simple relational specification monad Pure because it naturally applies to the relational
+verification of pure code, however it can also be useful to verify effectful code as we will see for
+nondeterministic computations in §2.6.
+Pre-/postconditions. Specifications written in terms of pre-/postconditions are simpler to
+understand than their predicate transformer equivalents. We show that relational specifications
+written as pre-/postcondition also form a relational specification monad. The type constructor
+
+PPPure
+
+rel
+
+(A1 , A2 ) = P × (A1 × A2 → P)
+
+models a pair consisting of a precondition in P and a postcondition, that is a relation on final values
+of two computations. There is a natural ordering between such pairs, namely
+
+(pre1 , post 1 ) ≤PPSt
+rel (pre2 , post 2 ) ⇐⇒
+
+The monadic structure is given by
+
+pre2 ⇒ pre1 ∧
+
+∀(a 1 : A1 )(a 2 : A2 ).post 1 (a 1 , a 2 )⇒post 2 (a 1 , a 2 ).
+
+let retPPPure
+let bindPPPure
+
+rel
+
+(a1 , a2 ) = ( ⊤, λ(a1 ', a2 '). a1 = a1 ' ∧ a2 = a2 ' )
+
+rel
+
+(pre, post) f =
+let pre' = pre ∧ ∀a1 , a2 . post (a1 , a2 ) =⇒ π 1 (f (a1 , a2 )) in
+let post' (b1 , b2 ) = ∃a1 , a2 . post (a1 , a2 ) ∧ π 2 (f (a1 , a2 )) (b1 , b2 ) in
+(pre', post')
+
+rel
+
+rel
+
+The return operation results in a trivial precondition and a postcondition holding exactly for the
+given arguments, whereas bindPPPure
+strengthens the precondition of its first argument so that the
+postcondition of the first computation entails the precondition of the continuation.
+Stateful pre-/postconditions. Continuing on pre-/postconditions, we consider a stateful vari-
+ant of PPPure
+:
+
+rel (A1 , A2 ) = (S 1 × S 2 → P) × ((S 1 × A1 × S 1 ) × (S 2 × A2 × S 2 ) → P)
+
+PPSt
+These are pairs, where the first component consists of a precondition on a pair of initial states, one
+for each sides, while the second component is a postcondition formed by a relation on triples of an
+initial state, a final value and a final state.
+The simple relational monadic specification structure is similar to the one of PPPure
+, threading in
+the state where necessary, and specifying that the initial state does not change for return:
+
+rel
+
+let retPPSt
+
+rel (a1 ,a2 ) = (λ(s1 , s2 ) . ⊤, λ((s i
+1 , a1 ', s
+
+f
+
+1 ),(s i
+
+1 , a2 ', s
+
+f
+
+2 )) . a1 = a1 ' ∧ a2 = a2 ' ∧ s i
+
+1 = s
+
+f
+
+1 ∧ s i
+2 = s
+
+f
+
+2 ).
+
+There is a natural embedding of stateful pre-/postconditions (pre, post ) : PPSt
+rel (A1 , A2 ) into stateful
+rel (A1 , A2 ) given by
+backward predicate transformers WSt
+2 )) : WSt
+Errorful backward predicate transformer. While exceptions turn out to be complex in
+general, a coarse approach is still possible using the simple relational monad
+
+2 )∧∀a 1 , a 2 , s
+1 , s i
+
+2 ))⇒φ ((a 1 , s
+
+1 ), (s i
+2 , a 2 , s
+
+λφ (s i
+1 , s i
+
+2 ). pre(s i
+
+rel (A1 , A2 ).
+
+2 .post ((s i
+
+1 ), (a 2 , s
+
+1 , a 1 , s
+
+1 , s
+
+f
+
+f
+
+f
+
+f
+
+f
+
+f
+
+WErr
+rel (A1 , A2 ) = ((A1 × A2 + 1) → P) → P.
+
+(12)
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:12
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+WSt
+
+This construction represents a predicate transformer that works on either successful computations,
+or on an indication that at least one of the computations threw an exception, but losing the
+information of which of the two sides raised the exception. We can actually show that, under mild
+assumptions, no simple relational specification monad accounting for exceptions can distinguish
+the three situations where the left, the right, or both programs are raising exceptions. Intuitively,
+this is due to the fact that the two programs are supposed to run independently, but the simple
+relational specification monad impose some amount of synchronization. We return to WExc
+from
+§1 and solve this problem in §3, while previous relational program logics have generally been stuck
+with weak specification monads in the style of WErr
+rel above [Barthe et al. 2016].
+Input-output backward predicate transformer. A relational specification monad similar to
+rel can be used to specify interactive I/O computations. For relating two computational monads
+on input-output sets (I 1 , O 2 ) and (I 2 , O 2 ), we use
+rel (A1 , A2 ) = (A1 × A2 → list(E1 ) × list(E2 ) → P) → list(E1 ) × list(E2 ) → P
+(13)
+where E1 = I 1 + O 1 and E2 = I 2 + O 2 represent a log element of possible input-output behaviour.
+rel (A1 , A2 ) is a backward predicate transformer that transforms a
+Intuitively, a specification of type WIO
+postcondition on the output results and the I/O history into a precondition describing the I/O history
+before running the computations. Alternative relational specification monads for input-output are
+easily defined following the discussion in Maillard et al. [2019].
+Quantitative predicate transformers. The backward predicate transformer WPure
+generalizes
+to quantitative settings were propositions are replaced by a notion of resource. We use a particular
+case of this generalization as the relational specification monad for probabilities, restricting to
+monotonic additive continuous2 maps in the type [Audebaud and Paulin-Mohring 2006; Faissole
+and Spitters 2017]
+
+WIO
+
+rel
+
+rel
+
+WProb
+
+rel
+
+(A1 , A2 ) = (A1 × A2 → I) → I
+
+2.3 Relational Semantics from Effect Observations
+
+The relational judgment ⊢ c 1 ∼ c 2 { w } should assert that monadic computations c 1 : M1A1
+and c 2 : M2A2 satisfy a relational specification w : Wrel (A1 , A2 ) drawn from a simple relational
+specification monad. What does this judgment mean in our semantic framework? Certainly it
+requires a specific connection between the computational monads M1 , M2 and the simple relational
+specification monad Wrel . In the non-relational setting, this is accomplished by an effect observation,
+i.e., a monad morphism from the computational monad to the specification monad [Katsumata
+2014; Maillard et al. 2019]. An effect observation accounts for the various choices available when
+specifying a particular effect, for instance total or partial correctness in the case of errors or
+recursion, angelic or demonic interpretations of nondeterministic computations, or connecting
+ghost state with actual state or with past IO events. In the relational setting, we introduce relational
+effect observations, families of functions respecting the monadic structure, defined here from first
+principles, but arising as an extension of monad morphisms as we will show in §3.4.
+Definition 2. A simple lax relational effect observation θ rel from computational monads M1 , M2
+
+to a simple relational specification monad Wrel is given by
+• for each pair of types A1 , A2 a function θ rel : M1 A1 × M2 A2 → Wrel (A1 , A2 )
+• such that
+
+θ rel (retM1 a 1 , retM2 a 2 ) ≤Wrel retWrel (a 1 , a 2 )
+θ rel (bindM1 m 1 f 1 , bindM2 m 2 f 2 ) ≤Wrel bindWrel (θ rel (m 1 , m 2 )) (θ rel ◦ ( f 1 , f 2 ))
+
+2 as maps between ω -cpo
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+(cid:16)
+
+(cid:16)
+
+λa 2 . retM (a 1 , a 2 )(cid:17) (cid:17)
+
+(cid:16)
+
+The Next 700 Relational Program Logics
+
+4:13
+
+We say that θ rel is a simple strict relational effect observation if these two laws hold with equality.
+
+θ St
+rel (c 1 , c 2 ) = λφ (s 1 , s 2 ). φ (c 1 s 1 , c 2 s 2 ).
+
+As explained in the introduction, for stateful computations a simple strict relational effect
+observation targeting WSt
+rel runs the two computations and passes the results to the postcondition:
+(14)
+A more interesting situation happens when interpreting nondeterministic computations (c 1 , c 2 ) :
+Nd A1 × Nd A2 into the relational specification monad WPure
+(A1 , A2 ). Two natural simple strict
+relational effect observations are given by
+∀
+∃
+
+(15)
+∀
+The first one θ
+rel prescribes that all possible results from the left and right computations have to
+satisfy the relational specification, corresponding to a demonic interpretation of nondeterminism,
+∃
+whereas the angelic θ
+rel requires at least one final value on each sides to satisfy the relation.
+These examples are instances of the following theorem, which allows to lift unary effect obser-
+vations to simple strict relational effect observations. To state it, we first recall that two monadic
+computations c 1 : M A1 and c 2 : M A2 commute [Bowler et al. 2013; Führmann 2002] when
+
+rel (c 1 , c 2 ) = λφ . ∃a 1 ∈ c 1 , a 2 ∈ c 2 . φ (a 1 , a 2 ).
+
+rel (c 1 , c 2 ) = λφ . ∀a 1 ∈ c 1 , a 2 ∈ c 2 . φ (a 1 , a 2 ),
+
+θ
+
+θ
+
+rel
+
+(cid:16)
+
+λa 1 . retM (a 1 , a 2 )(cid:17) (cid:17)
+
+.
+
+bindM c 1
+
+λa 1 . bindM c 2
+
+= bindM c 2
+
+λa 2 . bindM c 1
+
+The intuition is that executing c 1 and then c 2 is the same as executing c 2 and then c 1 .
+
+Theorem 1. Let θ 1 : M1 → W and θ 2 : M2 → W be unary effect observations, where M1 and M2
+are computational monads and W is a (unary) specification monad. We denote with Wrel (A1 , A2 ) =
+W (A1 × A2 ) the simple strict relational specification monad derived from W (see §2.2). If for all
+c 1 : M1 A1 and c 2 : M2 A2 , we have that θ 1 (c 1 ) and θ 2 (c 2 ) commute, then the following function
+θ rel : M1 A1 × M2 A2 → Wrel (A1 , A2 ) is a simple relational effect observation
+
+λa 1 . bindW θ 2 (c 2 ) (cid:16)
+
+λa 2 . retW (a 1 , a 2 )(cid:17) (cid:17)
+
+θ rel (c 1 , c 2 ) = bindW θ 1 (c 1 ) (cid:16)
+
+.
+
+θ rel
+
+Moreover, a partial converse for this theorem holds: given a simple relational effect observation
+: M1 A1 × M2 A2 → Wrel (A1 , A2 ) where Wrel is a lifting of a unary specification monad (i.e.,
+Wrel (A1 , A2 ) = W(A1 × A2 )), then there exist commuting unary effect observations θ 1 : M1 → W
+and θ 2 : M2 → W such that θ rel is equal to the simple relational effect observation obtained from
+applying Theorem 1 to these.
+Another class of examples of lax effect observations, covering for instance the refinement
+observation for nondeterminism θ
+∀∃
+by the following theorem that connects lax effect observations to relators Γ over the monad M [Dal
+Lago et al. 2017; Gavazzo 2018] which lift relations on values to relations on monadic computations:
+:
+
+rel (c 1 , c 2 ) = λφ . ∀a 1 ∈c 1 . ∃a 2 ∈c 2 . φ (a 1 , a 2 ) from §1, is provided
+
+(A1 × A2 → P) −→ MA1 × MA2 → P.
+
+Γ
+
+rel
+
+Theorem 2. A relator Γ over a monad M induces a simple lax relational effect observation of the
+form θ Γ
+
+rel : MA1 × MA2→WPure
+
+(A1 , A2 ).
+
+rel : M A1 × M A2 → (A1 × A2 → P) → P is obtained by swapping the
+Proof. The carrier of θ Γ
+arguments of Γ , while the two inequalities are direct consequences of the compatibility of the
+relator Γ with the monad M .
+Relators provide interesting examples of relational effect observations for nondeterminism and
+for probabilities. Relational effect observation extend relators by providing the possibility of relating
+two different computational monads, as well as having more sophisticated specifications with ghost
+state or exceptional postconditions. Conversely, relators preserve – in a lax sense – identities and
+relational composition.
+
+□
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:14
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+In general, given a simple lax relational effect observation θ rel : M1 , M2 → Wrel , we define the
+semantic relational judgment by
+
+(16)
+where we make use of the preorder given by Wrel . The following 3 subsections explain how to derive
+sound rules for a relational logic parameterized by the computational monads M1 , M2 , the simple
+relational specification monad Wrel , and the simple lax relational effect observation θ rel .
+
+= θ rel (c 1 , c 2 ) ≤Wrel w ,
+
+⊨θ rel c 1 ∼ c 2 { w }
+
+2.4 Pure Relational Rules
+
+We start with rules coming from the ambient dependent type theory. Even though the semantics
+of the relational judgment depends on the choice of an effect observation, the soundness of the
+basic pure rules introduced in Figure 1 is independent from both the computational monads and
+effects observation. Indeed, the proof of soundness of these follows from applying the adequate
+dependent eliminator coming from the type theory.
+
+⊥ (cid:9)
+
+(cid:8) w
+
+(cid:8) w
+
+⊤ (cid:9) else ⊢ c 1 ∼ c 2
+(cid:8) if b then w
+if b then ⊢ c 1 ∼ c 2
+⊢ c 1 ∼ c 2
+⊤ else w
+∀n : N, ⊢ c 1 ∼ c 2 { w n } ⇒ ⊢ c 1 [S n/n] ∼ c 2 [S n/n] { w s u c (w n) }
+w = elimN w 0 w s u c
+⊢ c 1 ∼ c 2 { w n }
+
+⊢ c 1 [0/n] ∼ c 2 [0/n] { w 0 }
+
+⊥ (cid:9)
+
+0-Elim2
+
+n : N
+
+w ≤ (cid:219)⊥
+
+N-Elim
+
+⊢ c 1 ∼ c 2 { w }
+
+B-Elim
+
+Fig. 1. Pure relational rules
+
+These rules can then be tailored as explained in the introduction to derive asynchronous (1) or
+synchronous (2) rules more suited for applications. For some of the derived rules, there is, however,
+an additional requirement on the simple relational specification monad, so that we can strengthen
+preconditions. This small mismatch in the theory, already present in the unary setting of Maillard
+et al. [2019] on top of which we work, could be solved by adopting a richer definition of specification
+monads, for instance taking inspiration in the work of Gavazzo [2018], and is left as future work.
+
+2.5 Generic Monadic Rules
+
+Given any computational monads M1 , M2 and a simple relational specification monad Wrel , we
+introduce three rules governing the monadic part of a relational program logic (Figure 2). Each of
+
+Ret
+
+(cid:8) retWrel (a 1 , a 2 ) (cid:9)
+a 1 : A1
+a 2 : A2
+⊢ c 1 ∼ c 2 { w }
+⊢ retM1 a 1 ∼ retM2 a 2
+w f (a 1 , a 2 ) (cid:111)
+⊢ c 1 ∼ c 2 { w
+⊢ m 1 ∼ m 2 { wm }
+∀a 1 , a 2 ⊢ f 1 a 1 ∼ f 2 a 2
+bindWrel wm w f (cid:111)
+⊢ bindM1 m 1 f 1 ∼ bindM2 m 2 f 2
+Fig. 2. Generic monadic rules in the simple framework
+
+Weaken
+
+Bind
+
+(cid:110)
+
+(cid:110)
+
+′
+
+w ≤ w
+
+′ }
+
+these rules directly corresponds to one aspect of the simple relational specification monad and are
+
+2Assuming that Wrel contains a top element (cid:219)⊥ that entails falsity of the precondition; this is the case for all our examples.
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:15
+
+all synchronous. As explained in the introduction (5), it is then possible to derive asynchronous
+variants using the monadic laws of the computational monads.
+Theorem 3 (Soundness of generic monadic rules). The relational rules in Figure 2 are sound
+
+with respect to any lax relational effect observation θ rel , that is
+
+⊢ c 1 ∼ c 2 { w }
+
+∀θ rel , ⊨θ rel c 1 ∼ c 2 { w } .
+and θ rel (bindM1 m 1 f 1 , bindM2 m 2 f 2 ) ≤ bindW (θ rel (m 1 , m 2 )) (θ rel ◦ ( f 1 , f 2 )), which are exactly the
+
+Proof. For rules Ret and Bind, we need to prove that θ rel (retM1 a 1 , retM2 a 2 ) ≤ retW (a 1 , a 2 )
+laws of a lax relational effect observation. For Weaken, we need to show that θ rel (c 1 , c 2 ) ≤ w ′ under
+the assumptions that θ rel (c 1 , c 2 ) ≤ w and w ≤ w ′ so we conclude by transitivity.
+
+⇒
+
+□
+
+2.6 Effect-Specific Rules
+
+The generic monadic rules together with the rules coming from the ambient type theory allow to
+derive relational judgments for the main structure of the programs. However, these rules are not
+enough to handle full programs written in the computational monads M1 and M2 , as we also need
+rules to reason about the specific effectful operations that these monads provide. The soundness of
+effect-specific relational rules is established with respect to a particular choice of relational effect
+observation θ rel : M1 , M2 → Wrel . Consequently, we make essential use of θ rel to devise effect-specific
+rules. The recipe was already illustrated for state in the introduction: first pick a pair of effectful
+algebraic operations (or ret for the asynchronous rules), unfold their definition, and then compute
+a sound-by-design relational specification for this pair by simply applying θ rel . By following this
+recipe, we are decoupling the problem of choosing the computations on which these rules operate
+(e.g., synchronous vs. asynchronous rules to which we return in §5) from the problem of choosing
+sensible specifications, which is captured in the choice of θ rel .
+∀
+∃
+Nondeterministic computations. The two relational effect observations θ
+rel provide
+different relational rules for the operation pick. As an example of how the recipe works, suppose
+that we want to come up with an asymmetric rule for nondeterministic computations that works
+∀
+on the left program, and which is sound with respect to θ
+rel . This means that the conclusion will
+be of the form ⊢ pick ∼ ret a 2
+for some w pickl : PPPure
+. To obtain w pickl , we apply the
+effect observation to the two computations involved in the rule
+∀
+obtaining a rule that is trivially sound:
+
+rel (pick, ret a 2 ) = λφ . ∀b ∈ {tt, ff}, a ∈ {a 2 } . φ (b , a ) = λφ . φ (tt, a 2 ) ∧ φ (ff, a 2 ),
+
+w pickl = θ
+
+rel and θ
+
+w pickl
+
+(cid:110)
+
+(cid:111)
+
+rel
+
+Similarly for fail, we compute w faill for ⊢ fail ∼ ret a 2
+∀
+
+DemonicPickLeft ⊢ pick ∼ ret a 2 { λφ . φ (tt, a 2 ) ∧ φ (ff, a 2 ) } .
+rel (fail, ret a 2 ) = λφ . ∀b ∈ {tt, ff}, a ∈ ∅ . φ (b , a ) = λφ . ⊤,
+
+w faill = θ
+
+(cid:8) w faill
+
+(cid:9) as follows:
+
+DemonicFailLeft ⊢ fail ∼ ret a 2 { λφ . ⊤ } .
+
+Following the same approach, we can come up with an asymmetric rule on the right as well as a
+∃
+symmetric one. For concreteness, we show the symmetric rule for the effect observation θ
+
+rel :
+
+Angelic ⊢ pick ∼ pick { λφ . φ (tt, tt) ∨ φ (tt, ff) ∨ φ (ff, tt) ∨ φ (ff, ff) } .
+
+Taking inspiration from the sample rule in [Barthe et al. 2015a], we introduce a rule for the refine-
+∀∃
+ment effect observation θ
+rel using an auxilliary function to select the elements in correspondence:
+
+Refinement
+
+h : fin n → fin m
+⊢ choose n ∼ choose m { λφ . ∀k .φ (k , h k ) } .
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:16
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+Exceptions using WErr
+. Taking M1 and M2 to be exception monads on exception sets E 1 and E 2 ,
+and the relational specification monad WErr
+(Equation 12 on page 11), we have an effect observation
+interpreting any thrown exception as a unique erroneous termination situation, that is
+
+rel
+
+rel
+
+let θ Err
+
+((c1 , c2 ) : Exc A1 ×Exc A2 ) : WErr
+λφ . match c1 , c2 with | Inl a1 , Inl a2 → φ (Inl (a1 , a2 )) | _, _ → φ (Inr ())
+(A1 ,A2 ) =
+
+rel
+
+rel
+
+Under this interpretation we can show the soundness of the following rules:
+
+✠
+
+(cid:8) w
+
+✠ (cid:9)
+
+✠
+
+✠
+
+✠
+
+✠
+
+✠
+
+2 e 2
+
+Catch
+
+ThrowL ⊢ throw e 1 ∼ ret a 2 { λφ . φ (Inr ()) }
+⊢ c 1 ∼ c 2 { w }
+∀e 1 a 2 ⊢ c
+1 e 1 ∼ ret a 2
+⊢ catch c 1 c
+1 ∼ catch c 2 c
+2
+
+ThrowR ⊢ ret a 1 ∼ throw e 2 { λφ . φ (Inr ()) }
+∀e 1 e 2 ⊢ c
+1 e 1 ∼ c
+∀a 1 e 2 ⊢ ret a 1 ∼ c
+2 e 2
+
+(cid:8) λφ .w (λa0 . match a0 with Inl a → φ (Inl a) | Inr () → w
+
+φ ) (cid:9)
+
+(cid:8) w
+
+(cid:8) w
+
+✠ (cid:9)
+
+✠ (cid:9)
+
+The rules ThrowL and ThrowR can be derived using the recipe above, but the exceptions have
+to be conflated to the same exceptional result Inr (), a situation that is forced by the choice of
+relational effect observation and a weak specification monad. As a consequence, the Catch rule
+considers one successful case and three exceptional cases. The specification in the conclusion
+takes a postcondition φ and computes a precondition by running the transformer w on a new
+postcondition that depends on the result of c 1 and c 2 . If both computations were successful, then
+this new postcondition is simply the original φ . If an exception was thrown (in any of the sides
+✠ , which specifies the
+or both), then the new postcondition is computed using the transformer w
+three exceptional cases. The specification for Catch does not follow mechanically from θ Err
+rel using
+our recipe, since it is a handler and not an algebraic operation.
+Input-output computations. Let M1 and M2 be the input-output monads on (I 1 , O 1 ) and
+(I 2 , O 2 ) respectively (§2.1). We want an effect observation on the relational specification monad
+(Equation 13 on page 12):
+
+WIO
+
+✠
+
+rel
+
+θ IO
+
+rel
+
+: M1 A1 × M2 A2 → WIO
+rel (A1 , A2 )
+
+Notice that WIO
+rel (A1 , A2 ) = WIO (A1 × A2 ), where WIO is a unary specification monad defined by
+WIO (A) = (A → list(E1 ) × list(E2 ) → P) → list(E1 ) × list(E2 ) → P
+By applying Theorem 1 to unary effect observations θ IO
+: M1 → WIO and θ IO
+: M2 → WIO , we
+obtain the desired relational effect observation θ IO
+rel . The unary effect observation θ IO
+is defined by
+recursion on the computation trees (θ IO
+is analogous):
+
+1
+
+2
+
+1
+
+let rec θ IO
+
+1
+
+2
+(c : M1 A) : WIO A = match c with
+
+| Ret x → retWIO x
+| Input k → bindWIO (λ φ (h1 , h2 ) . ∀i, φ i (Inl i :: h1 , h2 )) (λ i . θ IO
+
+(k i))
+| Output o k → bindWIO (λ φ (h1 , h2 ) . φ () (Inr o :: h1 , h2 )) (λ () . θ IO
+
+1
+
+1 k)
+
+The relational rules we get by applying our recipe to input and output are the following:
+
+InputL ⊢ input ∼ ret a 2 { λφ , (h 1 , h 2 ). ∀i 1 ∈ I 1 , φ (i 1 , a 2 ) (Inl i 1 :: h 1 , h 2 ) }
+OutputL ⊢ output o 1 ∼ ret a 2 { λφ , (h 1 , h 2 ). φ ((), a 2 ) (Inr o :: h 1 , h 2 ) }
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:17
+
+Unbounded iteration. Specifications for imperative programs as modeled by the Imp monad
+from §2.1 come in two flavors. This is reflected here by two unary effect observations: a first
+one for total correctness θ Tot ensuring the termination of a program; and a second one for partial
+correctness θ Part assuming the termination of a program. We explain how this situation extends to
+the relational setting, focusing on partial correctness, but the same methodology applies to total
+correctness. Concretely, we define a simple strict relational effect observation
+: Imp A1 × Imp A2 → WSt
+by applying Theorem 1 to a unary effect observation θ Part defined using the domain structure with
+which WSt is naturally endowed. From basic domain theoretic results, WSt can be endowed with a
+least fixpoint combinator fix : (WSt B → WSt B) → WSt B, used to define
+
+rel (A1 , A2 )
+
+θ Part
+
+rel
+
+let θ Part (c : Imp A) : WSt A = match c with
+
+| Ret x → retWSt x
+
+| DoWhile body k →
+
+| Get k → λφ s . θ Part (k s) φ s
+
+| Put s' k → λφ s . θ Part k φ s'
+
+let loop (w : WSt B) = bindWSt (θ Part body) (λ b. if b then w else retWSt
+bindWSt (fix loop) (λ _ . θ Part k)
+
+ff) in
+
+2
+
+1
+
+rel
+
+θ Part
+
+rel
+
+rel
+
+How does θ Part work? In the first three cases, it trivially returns in the Ret branch, evaluates a
+continuation to the current state in the Get branch, and evaluates a continuation with an updated
+state in the Put branch. The interesting part is in the DoWhile branch, where the body is repeatedly
+run using fix as long as the guard returns tt. We proved by induction on c that θ Part is a monad
+morphism. Theorem 1 asks for two monad morphisms whose images commute. We provided those
+morphisms by tweaking a bit the definition of θ Part : we embed in a variation of WSt that accounts
+for a pair of states, the first θ Part
+: Imp → WSt uses the left state and the second θ Part
+: Imp → WSt
+uses the right state. Applying Theorem 1, we obtain the definition of θ Part
+.
+This simple relational effect observation θ Part
+captures partial correctness in the following sense:
+intuitively, ⊨
+{ ψ } c 1 ∼ c 2 { φ } implies that if ψ (s 1 , s 2 ) holds and the two programs c 1 and c 2
+terminate on these initial states s 1 , s 2 , then the postcondition holds of the final states. This judgment
+using pre-/postconditions is expressed in terms of the usual judgment by applying the translation
+into stateful backward predicate transformers (see §2.2). On top of this θ Part
+, we devise a rule for
+do_while using an invariant invb1, b2 : S × S → P:
+
+(cid:8) λ(_, b1 , s 1 ) (_, b2 , s 2 ). b1 = b2 ∧ invb1, b2 (s 1 , s 2 ) (cid:9)
+(cid:8) λ(_, (), s 1 ) (_, (), s 2 ). invff, ff (s 1 , s 2 ) (cid:9)
+⊢ { invtt, tt } body1 ∼ body2
+⊢ { invtt, tt } do_while body1 ∼ do_while body2
+
+This rule is synchronous in the sense that the bodies always yield the same boolean values. Conse-
+quently the two loops run the same number of steps. The postcondition ensures that if the loop
+terminates, then the invariant invff, ff holds.
+Probabilistic computations. For discrete probabilistic computations modeled by the monad
+Prob, a first idea would be to use a unary effect observation and appeal once again to Theorem 1.
+This simple strict relational effect observation however does not validate a rule correlating two
+flip operations with an arbitrary coupling between the Bernoulli distributions on each side [Barthe
+et al. 2009]. A posteriori this is not so surprising, since the commutation hypothesis of Theorem 1
+implies that the effects on each side are observed in an independent fashion.
+Hence we rely on a more sophisticated lax relational effect observation θ Prob : Prob A1 ×
+Prob A2 → WProb (A1 , A2 ) defined as
+
+(17)
+
+rel
+
+
+
+θ Prob (c 1 , c 2 ) = λφ .
+
+inf
+
+d ∼c 1, c 2
+
+a 1 :A1, a2 :A2
+
+d (a 1 , a 2 ) · φ (a 1 , a 2 )
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:18
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+where we write d ∼ c 1 , c 2 to specify a coupling d of the two distributions c 1 and c 2 , i.e., a distribution
+on A1 × A2 such that the marginals satisfy Prob(π1 )d = c 1 and Prob(π2 )d = c 2 . Since we are taking
+the infimum over all such couplings, the resulting relational effect observation is necessarily lax
+and the conditions of linearity and continuity imposed on WProb are needed to show the monadic
+inequalities. Using this relational effect observation we straightforwardly validate the following
+rule for correlating two sampling operations as in (×)pRHL [Barthe et al. 2009, 2017].
+
+⊢ flip p ∼ flip q (cid:8) λφ . 
+b1, b2 :B d (b1 , b2 ) · φ (b1 , b2 ) (cid:9)
+d ∼ Bp , Bq
+
+2.7 Example: Noninterference
+
+As a specific example of the simplified framework, we explore noninterference, a popular relational
+property for information flow control systems [Antonopoulos et al. 2017; Banerjee et al. 2016;
+Barthe et al. 2019; Clarkson and Schneider 2010; Nanevski et al. 2013; Sabelfeld and Myers 2003].
+The noninterference property dictates that the public outputs of a program cannot depend on its
+private inputs. Formally, and in its most basic form, we can capture this property by classifying the
+store’s locations by two security levels: high for private information and low for public information.
+By s =L s ′ we express that the two stores s and s ′ are equal for all low locations. We use s
+denote that the execution of a program p on a store s ends in store s ′ . The noninterference property
+is then written as
+
+p(cid:123) s ′ to
+
+∀s i , s
+
+′
+
+′
+
+i , so , s
+
+o .
+
+s i =L s
+
+′
+
+i ∧ s i
+
+p(cid:123) so ∧ s
+
+′
+
+i
+
+p(cid:123) s
+
+′
+
+o =⇒ so =L s
+
+′
+
+o
+
+A typical solution for enforcing noninterference is to define a static type system which is capable
+of rejecting obviously interferent programs [Sabelfeld and Myers 2003]. For example, such a type
+system can rule out interferent programs such as
+
+if h > 0 then l := 1 else l := 0
+
+where h is a high reference and l is a low one. However, the static nature of these type systems
+restricts the family of programs that we can show noninterferent. A characteristic example of this
+limitation is the following noninterferent program:
+
+if h = 1 then l := h else l := 1
+
+Relational program logics such as Benton’s [2004] RHL provide a less restrictive framework for
+proving non-interference, as the proof can rely on information accumulated during the derivation
+steps. We follow the approach of relational program logics and show how noninterference proofs
+can be done in our framework. We restrict ourselves to programs with conditionals but without
+while-loops. In §4.1, we will show a complete embedding of RHL, including iteration. For now
+though, we assume that we are working with a memory consisting of locations L = {l, h} storing
+natural numbers, and consider the data in h to be private and the data in l to be public. As discussed
+in §2.1, these stateful computations can be captured using the monad StS where S = L → N. The
+program above can be represented using this monad as follows:
+
+c = let x = get h in if x = 1 then put l x else put l 1 : St 1
+
+(cid:110)
+
+We instantiate our framework with the computational monad StS on both sides, and use the simple
+relational specification monad WSt
+rel from §1. The judgment we establish to prove noninterference is
+
+⊢ c ∼ c
+
+λφ (s i
+2 ). s i
+2 l ∧ ∀ s
+1 , s i
+1 l = s i
+
+f
+
+f
+
+f
+
+1 s
+
+2 .s
+
+1 l = s
+
+f
+
+2 l =⇒ φ (((), s
+
+This weakest precondition transformer comes from taking the pre-/postcondition pair
+
+λ(s 1 , s 2 ). s 1 l = s 2 l : S ×S → P λ(s i
+1 , (), s
+
+f
+
+1 ) (s i
+2 , (), s
+
+f
+
+2 ). s
+
+f
+
+1 l = s
+
+2 ) (cid:111)
+2 l : (S ×1×S )×(S ×1×S ) → P
+
+1 ), ((), s
+
+f
+
+f
+
+f
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:19
+
+and translating it to its predicate transformer form following the description in §2.2. The proof
+derivation consists of applying the Bind rule after a weakening, and later applying the asymmetric
+conditional rules (see page 3) for covering the four cases.
+A similar example of noninterference can be done by changing the state monad St for the input-
+output monad IO described in §2.1. In this case, input and output channels are classified as high
+or low, and the noninterference policy is spelled out in terms of these by using the specification
+monad WIO
+rel or one of its variants.
+Finally, an interesting characteristic of our framework is that we can easily adapt the setting to
+handle more than one effect at the same time. For example, if we are interested in modeling both
+IO and state with noninterference, then it is enough to apply the state monad transformer to the IO
+monad, and replace the relational specification monad WSt
+rel by a monad which takes into account
+the input-output in the specifications as well.
+
+3 GENERIC FRAMEWORK
+
+While the simple framework works well for a variety of effects, it falls short of providing a convinc-
+ing treatment of control effects such as exceptions. This limitation is due to the fact that simple
+relational specification monads merge tightly together the specification of two independent compu-
+tations. We now explain how to overcome these limitations starting with the example of exceptions,
+and how it leads to working inside a relational dependent type theory. Informed by the generic
+constructions on relative monads underlying the simple setting, we derive a notion of relational
+specification monad and relational effect observation in this enriched setting. These relational speci-
+fication monads require an important amount of operations so we introduce relational specification
+monad transformers for state and exceptions, simplifying the task of building complex relational
+specification monad from simpler ones. As a consequence, we can easily combine exceptions with
+any of the effects already handled by the simplified framework (e.g., state, nondeterminism, IO, and
+probabilities).
+
+3.1 Exceptional Control Flow in Relational Reasoning
+
+We explained in §2.6 how to prove relational properties of programs raising exceptions, as long as
+we give up on the knowledge of which program raised an exception at the level of relational speci-
+fications. This restriction prevents us from even stating natural specifications such as simulations:
+“if the left program raises, so does the right one”.
+In order to go beyond this unsatisfying state of affairs, we consider a type of relational specifica-
+tions allowing to write specifications consisting of predicate transformers mapping a postcondition
+on pairs of either a value or an exceptional final state to a proposition:
+
+For instance, the specification of simulation above can be stated as
+
+WExc
+(A1 , A2 ) = ((A1 + E 1 ) × (A2 + E 2 ) → P) → P.
+λφ . ∀ae 1ae 2 .(Inr? ae 1 ⇒ Inr? ae 2 ) ⇒ φ (ae 1 , ae 2 ) : WExc
+(A1 , A2 ),
+
+rel
+
+rel
+
+where Inr? ae = match ae with Inr _ → ⊤| _ → ⊥.
+
+: A1 × A2 → WExc
+
+As explained in the introduction, this type does not admit a monadic operation bind wm w f using
+(B 1 , B 2 ) due to the fact that wm could result in an
+only a continuation of type w f
+intermediate pair consisting of a normal value on one side and an exception on the other side. Our
+solution is to provide to bindWExc
+the missing information it needs in such cases. To that purpose,
+we use the unary specification monads WExc
+to provide independent specifications of each program. With the addition of these, we can write a
+combinator that relies on the unary specifications when the results of the first computations differ
+(one raise an exception and the other returns).
+
+1 A1 = (A1 + E 1→P)→P and WExc
+2 A2 = (A2 + E 2→P)→P
+
+rel
+
+rel
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:20
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+val bindWExc
+
+rel
+
+let bindWExc
+
+rel
+
+: WExc
+
+(A1 ,A2 ) → (A1 → WExc
+1 B1 ) → (A2 → WExc
+2 B2 ) →
+(A1 ×A2 → WExc
+(B1 ,B2 )) → WExc
+(B1 ,B2 )
+rel wm (f1 : A1 → ((B1 + E1 ) → P) → P) (f2 : A2 → ((B2 + E2 ) → P) → P) f =
+wm (λ ae : (A1 + E1 ) × (A2 + E2 ).
+| Inl a1, Inl a2 → f a1 a2 φ
+
+match ae with
+
+λ(φ : (B1 + E1 ) → P).
+
+rel
+
+rel
+
+| Inr e1, Inr e2 → φ (Inr e1, Inr e2)
+
+| Inl a1 , Inr e2 → f1 a1 (λ be → φ be (Inr e2 ))
+| Inr e1 , Inl a2 → f2 a2 (λ be → φ (Inr e1 ) be))
+
+3.2 A Problem of Context
+
+In order to keep track of these unary specifications drawn from WExc
+proofs, we extend the relational judgment to
+
+1
+
+and WExc
+
+2
+
+in the relational
+
+⊢ c 1 {w 1 } ∼ c 2 {w 2 } | w rel .
+
+Here, w 1 : WExc
+1 A1 is a unary specification for c 1 : Exc1 A1 , symmetrically w 2 : WExc
+2 A2 is a unary
+(A1 , A2 ) specifies the relation between the programs c 1
+specification for c 2 : Exc2 A2 , and w rel : WExc
+and c 2 . Using this richer judgment, we would like a rule for sequencing computations as follows,
+where a bold variable w stands for the triple (w 1 , w 2 , w rel ):
+
+rel
+
+⊢ m 1 {wm
+1 } ∼ m 2 {wm
+2 } | wm
+⊢ bindExc1 m 1 f 1 {bindWExc
+1 w
+
+1 wm
+
+rel
+
+∀a 1 , a 2 ⊢ f 1 a 1 {w
+1 a 1 } ∼ f 2 a 2 {wm
+2 a 2 } | w
+rel a 1 a 2
+1 } ∼ bindExc2 m 2 f 2 {bindWExc
+2 } | bindWExc
+2 w
+
+2 wm
+
+f
+
+f
+
+f
+
+f
+
+rel wm w f
+
+What would the semantics of such a relational judgment be? A reasonable answer at first sight
+is to state formally the previous intuition in terms of unary and relational effect observations:
+
+⊨ c 1 {w 1 } ∼ c 2 {w 2 } | w rel
+
+= θ Exc
+1
+
+c 1 ≤ w 1 ∧ θ Exc
+2
+
+c 2 ≤ w 2 ∧ θ Exc
+rel (c 1 , c 2 ) ≤ w rel
+
+1
+
+f
+
+f
+
+1 wm
+
+∀a 1 , a 2 , θ WExc
+1
+
+(bindExc
+1 m 1 f 1 ) ≤ bindWExc
+( f 1 a 1 ) ≤ w
+
+However this naive attempt does not validate the rule for sequential composition above. The problem
+lies in the management of context. To prove the soundness of this rule, we have in particular to
+show that θ Exc
+1 under the hypothesis θ Exc
+1 ∧ . . . and
+1 a 1 ∧ . . ., in particular the second hypothesis requires an element a 2 : A2
+that prevents3 us from concluding by monotonicity of bindWExc
+.
+This problematic hypothesis only depends on the part of the context relevant for the left program
+and not on the full context, so we introduce structured contexts Γ = (Γ1 , Γ2 ) in our judgments,
+where Γ1 and Γ2 are simple contexts. The judgment Γ ⊢ c 1 {w 1 } ∼ c 2 {w 2 } | w rel now presupposes
+that Γi ⊢ c i : Mi Ai , Γi ⊢ w i : Wi (i = 1, 2) and that Γ1 , Γ2 ⊢ w rel : Wrel (A1 , A2 ). The semantics of this
+judgment is given by
+
+1 m 1 ≤ wm
+
+1 w
+
+1
+
+Γ ⊨ c 1 {w 1 } ∼ c 2 {w 2 } | w rel
+
+=
+
+(cid:169)(cid:173)(cid:171)
+
+∀γ 1 : Γ1 , θ 1 (c 1 γ 1 ) ≤ w 1 γ 1 ,
+∀γ 2 : Γ2 , θ 2 (c 2 γ 2 ) ≤ w 2 γ 2 ,
+∀(γ 1 , γ 2 ) : Γ1 × Γ2 , θ rel (c 1 γ 1 , c 2 γ 2 ) ≤ w rel (γ 1 , γ 2 )
+
+(18)
+
+(cid:170)(cid:174)(cid:172)
+
+A conceptual understanding of this interpretation that will be useful in the following is to consider
+Γ as a (trivial) relation Γr = (Γ1 , Γ2 , λ(γ 1 : Γ1 )(γ 2 : Γ2 ). 1) instead of a pair and define the family of
+relations Θr (γ ) = (Θ1 (γ 1 ), Θ2 (γ 2 ), Θrelγ ) dependent over Γr :
+
+Θ1 (γ 1 : Γ1 ) = θ 1 (c 1 γ 1 ) ≤ w 1 γ 1 ,
+Θ2 (γ 2 : Γ2 ) = θ 2 (c 2 γ 2 ) ≤ w 2 γ 2 ,
+Θrel (γ : Γ )(w 1 : Θ1 γ 1 , w 2 : Θ2 γ 2 ) = θ rel (c 1 γ 1 , c 2 γ 2 ) ≤ w relγ .
+
+3 Instead of insisting that ⊢ c 1 {w 1 } ∼ c 2 {w 2 } | w rel proves the correctness of c 1 and c 2 with respect to w 1 and w 2 we
+could try to presuppose it, however this idea does not fare well since it would require a property akin of cancellability with
+respect to bind θ Exc
+that has no reason to hold in our examples.
+
+(bindExc
+1 m1 f1 ) ≤ bindWExc
+
+1 w f
+1 ⇒ θ Exc
+
+1 m1 ≤ w m
+
+1 w m
+
+1
+
+1
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+Ar , B r , Γr ::= 0r | 1r | Br | Nr | Ar + Br | (a : Ar ) × B r a | (a : Ar ) → Br a
+
+(cid:74)−(cid:75) maps a relational type Ar to its underlying representation (cid:74)Ar (cid:75) = (A0 , A1 , Ar )
+
+(cid:74)Br (cid:75) = (B, B, =)
+
+(cid:74)Nr (cid:75) = (N, N, =)
+
+(cid:74)0r (cid:75) = (0, 0, =)
+
+(cid:74)1r (cid:75) = (1, 1, =)
+
+(cid:74)Ar + B r (cid:75) = (cid:169)(cid:173)(cid:171) ab1 : A1 + B 1
+ab2 : A2 + B 2
+case (ab1 , ab2 ) [(Inl a 1 , Inl a 2 ).Arel a 1 a 2 | (Inr b1 , Inr b2 ).B rel b1 b2 | (_, _) . 0]
+(cid:74)(a : Ar ) × B r a(cid:75) = (cid:169)(cid:173)(cid:171) (a 1 , b1 ) : (a 1 : A1 ) × B 1 a 1 ,
+(a 2 , b2 ) : (a 2 : A2 ) × B 2 a 2 ,
+(cid:74)(a : Ar ) → Br a(cid:75) = (cid:169)(cid:173)(cid:171) f 1 : (a 1 : A1 ) → B 1 a 1 ,
+(ar : Ar a 1 a 2 ) × Br a 1 a 2 ar b1 b2
+f 2 : (a 2 : A2 ) → B 2 a 2 ,
+(a 1 : A1 )(a 2 : A2 )(ar : Ar a 1 a 2 ) → Br a 1 a 2 ar ( f 1 a 1 ) ( f 2 a 2 )
+Fig. 3. Syntax of RDT T and translation to base type theory
+
+(cid:170)(cid:174)(cid:172)
+
+(cid:170)(cid:174)(cid:172)
+
+4:21
+
+(cid:170)(cid:174)(cid:172)
+
+function (cid:0)γ : Γr (cid:1) → Θr γ in an appropriate relational dependent type theory.
+Then the relational judgment Γ ⊨ c 1 {w 1 } ∼ c 2 {w 2 } | w rel can be interpreted as a dependent
+
+3.3 A Relational Dependent Type Theory
+
+Adding unary specifications in the relational judgment enables a full treatment of exceptions,
+however the pure rules of section §2.4 do not deal with a structured context Γr = (Γ1 , Γ2 , Γrel ).
+In order to recover rules dealing with such a context, we apply the same recipe internally to a
+relational dependent type theory as described by Tonelli [2013]. In practice, this type theory could
+be described as a syntactic model in the sense of Boulier et al. [2017], that is a translation from a
+source type theory to a target type theory that we take to be our ambient type theory, where a
+type in the source theory is translated to a pair of types and a relation between them. We call the
+resulting source type theory RDTT and describe part of its construction in Figure 3. A systematic
+construction of RDTT at the semantic level is obtained by considering the category with families
+Span(Type) consisting of families of types and functions indexed by the span (1 ← rel → 2), a
+special case of Kapulkin and Lumsdaine [2018]; Shulman [2014].
+Moving from our ambient type theory to RDTT informs us on how to define rules coming
+from the type theory. For instance, generalizing the rule for if-then-else, we can use the motive
+P (ab : Ar + B r ) = Θr (ab ) : Typer on the dependent eliminator for sum type
+
+elim_sum : (P : (Ar + Br )→Typer ) → (a : Ar →P a ) → (b : Br →P b ) → (x : Ar + B r )→P x
+
+to obtain a rule for case splitting. This eliminator translates to the large term in Figure 4 that
+induces the following relational rule using w l = (w l
+rel ) and the relational
+specifications of the conclusion – where we abbreviate pattern matching with a case construction
+
+rel ), w r = (w r
+
+1 , w r
+2 , w r
+
+1 , w l
+2 , w l
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:22
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+(cid:74)elim_sum(cid:75) : (P1 : A1 + B 1 → Type) → (P2 : A2 + B 2 → Type) →
+(P rel : ∀(ab1 : A1 + B 1 )(ab2 : A2 + B 2 ), (Ar + Br )rel ab1 ab2 → Type) →
+(∀(a 1 : A1 ), P1 (Inl a 1 )) → (∀(a 2 : A2 ), P2 (Inl a 2 )) →
+(∀a 1 a 2 (a rel : Ar a 1 a 2 ), P rel (Inl a 1 ) (Inl a 2 ) a rel )
+(∀(b1 : B 1 ), P1 (Inr b1 )) → (∀(b2 : B 2 ), P2 (Inr b2 )) →
+(∀b1 b2 (b rel : Br b1 b2 ), P rel (Inr b1 ) (Inr b2 ) b rel ) →
+∀ab1 ab2 (ab rel : (Ar + B r )rel ab1 ab2 ), P rel ab1 ab2 ab rel
+
+– as arguments to the eliminator
+
+Fig. 4. Relational translation of the eliminator for sum types
+Γ , a : Ar ⊢ c 1 [Inl a 1 /ab1 ] {w l
+1 } ∼ c 2 [Inl a 2 /ab2 ] {w l
+(cid:12)(cid:12)(cid:12)(cid:12)(cid:12) case ab1 , ab2
+2 } | w l
+Γ , b : B r ⊢ c 1 [Inr b1 /ab1 ] {w r
+1 } ∼ c 2 [Inr b2 /ab2 ] {w r
+2 } | w r
+{case ab1 [Inl a 1 .w l
+1 | Inr b1 .w r
+Γr , ab : Ar +B r ⊢ c 1
+{case ab2 [Inl a 2 .w l
+2 | Inr b2 .w r
+c 2
+
+1 ]}
+2 ]}
+
+∼
+
+rel [a rel /ab rel ]
+rel [b rel /ab rel ]
+
+(cid:20) Inl a 1 , Inl a 2 .w l
+Inr b1 , Inr b2 .w r
+
+rel
+
+rel
+
+(cid:21)
+
+As in the simple setting, we can then refine this rule to obtain synchronous or asynchronous rules
+specifying a required shape for the programs c 1 , c 2 .
+
+3.4 Relative Monads and Monad Morphisms
+
+Before giving the general framework able to derive monadic rules dealing with exceptions, we
+return to the notions of relative monads and relative monad morphisms, since these will be the
+common underlying concept relating the simple and generic frameworks.
+Definition 3 (relative monads [Altenkirch et al. 2015]). Let I , C be categories and J : I→C
+
+a functor between these. A J -relative monad is given by
+• for each A ∈ I , an object T A ∈ C
+• for each A ∈ I , a morphism ret T
+• for each A, B ∈ I , a function (−)†T : C (J A; T B ) → C (T A; T B )
+• satisfying the 3 following equations
+
+A ∈ C (J A; T A)
+
+†T ◦ ret T
+
+A
+
+f
+
+= f
+
+(ret T
+
+A )†T = id T A
+
+†T ◦ f
+
+†T = (д
+
+д
+
+†T ◦ f )†T
+
+Noting Type for the category of types and functions of our ambient type theory, Ord for the
+category of preordered sets and monotonic functions, and Disc : Type → Ord the functor equipping
+a type with its discrete preorder structure , a simple relational specification monad could be
+described as a relative monad Wrel : Type2→Ord over the functor Disc ◦ × : Type2→Ord sending a
+pair of types (A1 , A2 ) to their product A1 × A2 equipped with a discrete preorder. The monotonicity
+condition imposed on bindWrel amounts to require that all the structure is enriched in Ord 4 [Kelly
+1982].
+Simple relational effect observations from M1 , M2 to Wrel can also be interpreted as instances of
+relative monad morphisms. First, a pair of computational monads M1 , M2 yields a monad M1 ⊗ M2 :
+Type2 → Type2 acting on pairs of types, that is M1 ⊗ M2 (A1 , A2 ) = (M1 A1 , M2 A2 ) with monadic
+structures provided by each sides. Second, by proposition 2.3 of Altenkirch et al. [2015], the monad
+
+4 Type2 can be enriched over Ord by change-of-enrichment through the monoidal functor Disc.
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:23
+
+M1 ⊗ M2 is a relative monad on the identity functor Id Type2 . A simple relational effect observation
+is a relative monad morphism from M1 ⊗ M2 to Wrel over the functor Disc ◦ (cid:219)×.
+Definition 4 (Lax relative monad morphism). Let I , C1 , C2 be categories enriched over Ord
+
+and J1 : I → C1 , J2 : I → C2 , F : C1 → C2 be Ord -enriched functors such that φ : F ◦ J1 (cid:27) J2 .
+A lax relative monad morphism from a J1 -relative monad T1 : I → C1 to a J2 -relative monad
+• a family of morphisms θA : F ◦ T1 A → T2 A indexed by objects A ∈ I ,
+• such that
+
+T2 : I → C2 is
+
+θ ◦ F ret T1 ≤ ret T2 ◦ φ
+
+θ ◦ F ( f
+
+†T1 ) ≤ (θ ◦ F f ◦ φ
+
+−1 )†T2 ◦ θ
+
+(19)
+
+We say that θ is a relative monad morphism when the last two conditions are equalities.
+
+Crucially, this definition of relative monad morphism generalizes the notion defined by Altenkirch
+et al. [2015] by enabling different base functor, a relative monad analog to the monad opfunctors of
+Street [1972].5 Up to the enrichment, we recover the definition of Altenkirch et al. [2015] by taking
+J1 = J2 , F = Id and φ = id.
+
+3.5 Relational Specification Monads, Relational Effect Observations
+
+Motivated by the case of exceptions, we now define the general notion of a relational specification
+monad. This definition is obtained by instantiating the definitions of an (enriched) relative monad
+to our relational dependent type theory, ensuring that we obtain a theory uniform with the simple
+setting, and crucially that we can use a similar methodology to introduce relational rules. We note
+Span(Ord ) for the category of relations between ordered types, J× : Type × Type → Span(Ord )
+for the functor defined on objects by J× (A1 , A2 ) = Disc A1
+π1←−−Disc A1×Disc A2
+π2−−→Disc A2 and π1, 2 :
+Span(Ord ) → Type × Type sending a relation A1←Arel→A2 to its legs (A1 , A2 ).
+
+Definition 5. A relational specification monad consist of a pair of unary specification monads
+W1 , W2 : Type → Ord and a relative monad W : Type × Type → Span(Ord ) over J× lifting W1 , W2 ,
+that is such that π1, 2 ◦ W = W1 × W2 , and whenever π1, 2 ( f ) = ( f 1 , f 2 )
+
+π1, 2 (retW ) = (retW1 , retW2 ),
+
+π1, 2 (bindW f ) = (bindW1 f 1 , bindW2 f 2 ).
+
+In components, a relational specification monad over unary specification monads W1 , W2 consists
+of a relation Wrel (A1 , A2 ) : W1A1 → W2A2 → Type equipped with a preorder ≤W , and operations
+
+retWrel : (a 1 , a 2 ) : A1×A2 → Wrel (A1 , A2 ) (retW1 a 1 ) (retW2 a 2 )
+bindWrel :
+1 : W1A1 → wm
+2 : W2A2 → wm
+rel : Wrel (A1 , A2 ) wm
+wm
+1 wm
+1 : (A1 → W1B 1 ) → w
+w
+rel : (((a 1 , a 2 ) : A1 × A2 ) → Wrel (B 1 , B 2 ) (w
+w
+Wrel (B 1 , B 2 ) (bindW1wm
+1 ) (bindW2wm
+1 w
+2 w
+
+2 : (A2 → W2B 1 ) →
+
+1 a 1 ) (w
+
+f
+
+f
+
+2 )
+
+f
+
+f
+
+f
+
+f
+
+f
+
+2 a 2 )) →
+
+2 →
+
+satisfying equations analogous to the monadic laws.
+If these operations look complex, in most of our examples the relation Wrel (A1 , A2 ) w 1 w 2 is
+independent of w 1 and w 2 . This happens for our leading example of exceptions, but also for any
+relational specification monad constructed out of a simple relational specification monad. Indeed,
+we can associate to any simple relational specification monad Wrel the relational specification monad
+W(A1 , A2 ) = (Wrel (A1 , 1), Wrel (1, A2 ), λw 1 w 2 . Wrel (A1 , A2 )). The monadic operations just discard the
+superfluous arguments.
+
+5However, in contrast to the situation of monads, these relative monad morphisms do not dualize well.
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:24
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+′
+
+′
+
+′
+
+2
+
+Weaken
+
+′
+
+rel
+
+Ret
+
+′
+
+2 } | w
+
+w 2 ≤W2 w
+
+w rel ≤Wrel w
+
+Γr ⊢ c 1 {w 1 } ∼ c 2 {w 2 } | w rel
+w 1 ≤W1 w
+1
+Γr ⊢ c 1 {w
+1 } ∼ c 2 {w
+Γ1 ⊢ a 1 : A1
+Γ2 ⊢ a 2 : A2
+Γr ⊢ retM1 a 1 {retW1 a 1 } ∼ retM2 a 2 {retW2 a 2 } | retWrel (a 1 , a 2 )
+(cid:12)(cid:12)(cid:12)(cid:12)(cid:12) bindWrel wm w f
+Γr ⊢ m 1 {wm
+1 } ∼ m 2 {wm
+2 } | wm
+Γr , a : Ar ⊢ f 1 a 1 {w
+1 a 1 } ∼ f 2 a 2 {wm
+2 a 2 } | w f a
+Γr ⊢ bindM1 m 1 f 1
+{bindW1 wm
+1 w
+bindM2 m 2 f 2
+{bindW2 wm
+2 w
+Fig. 5. Generic monadic rules in the full relational setting
+
+1 }
+2 }
+
+∼
+
+f
+
+f
+
+′
+
+rel
+
+f
+
+Bind
+
+We now turn to the definition of a relational effect observation.
+Definition 6 (Lax relational effect observation). A lax relational effect observation from
+
+M 1 , M 2 to the relational specification monad W over W1 , W2 is a lax relative monad morphism θ from
+M 1 ⊗ M 2 to W over J× . A relational effect observation is strict when the inequalities (19) hold as
+equalities.
+
+θ rel
+
+Explicitly, such a lax relational effect observation θ of three components θ 1 , θ 2 , θ rel where θ 1 :
+M1 → W1 , θ 2 : M2 → W2 are (plain) monad morphisms, and
+:
+verify the two inequations with respect to the monadic operations
+
+((m 1 , m 2 ) : M1A1 × M2A2 ) → Wrel (A1 , A2 ) (θ 1 m 1 ) (θ 2 m 2 )
+θ rel (retM1 a 1 , retM2 a 2 ) ≤ retWrel (a 1 , a 2 ) : Wrel (A1 , A2 ) (θ 1 (retM1 a 1 )) (θ 2 (retM2 a 2 ))
+θ rel (bindM1m 1 f 1 , bindM2m 2 f 2 ) ≤ bindWrel (θ 1 m 1 ) (θ 2 m 2 ) (θ rel m rel ) θ 1 ◦ f 1 θ 2 ◦ f 2 θ rel ◦( f 1 × f 2 )
+
+Given a relational effect observation θ : M1 ⊗ M2 → W, we can define in full generality the
+semantics of the relational judgment by the Equation 18. We introduce the generic monadic rules
+in Figure 5, and similarly to the simple setting obtain the following soundness theorem.
+
+Theorem 4 (Soundness of monadic rules). The relational rules in Figure 5 are sound with
+respect to any lax relational effect observation θ , that is
+
+Γr ⊢ c 1 {w 1 } ∼ c 2 {w 2 } | w rel ⇒ ∀θ , Γr ⊨θ c 1 {w 1 } ∼ c 2 {w 2 } | w rel
+
+3.6 Relational Specification Monad Transformers
+
+Having a category of relational specification monads and relative monad morphisms between
+them, we define a relational specification monad transformer to be a pointed endofunctor on this
+category [Lüth and Ghani 2002]. Under mild assumptions, the usual state and exception transformer
+lifts to this setting, yielding in each case both a left-variant and a right-variant applying either
+to the left type A1 or right one A2 of a relational specification monad W(A1 , A2 ). Since the two
+variants are symmetric, we only detail the left ones.
+Adding state. The usual state monad transformer maps a monad M to the monad StT(M) A =
+S → M (A × S ). The left relational state monad transformer StTrel maps a relational specifica-
+tion monad W (A1 , A2 ) = (W1 A1 , W2 A2 , λw 1 w 2 . Wrel (A1 , A2 ) w 1 w 2 ) to the relational specification
+monad with carrier
+
+StTrel (W)(A1 , A2 ) = (StT(W1 ) A1 , W2A2 , λw 1 w 2 . (s 1 : S 1 ) → Wrel (A1 × S 1 , A2 ) (w 1 s 1 ) w 2 )
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:25
+
+The monadic operations on StTrel (W)1 are given by the usual state transformer. The added data
+resides in the ret and bind operations responsible for the relational part:
+
+let retStT(W)
+
+rel
+
+(a1 ,a2 ) : (s1 : S1 ) → Wrel (A1× S1 ,A2 ) (retS t T (W )1 (a1 ,s1 )) (retW2 a2 ) = λs1 . retWrel ((a1 ,s1 ), a2 )
+
+let bindStT(W)
+
+rel
+
+(m1 : StT(W)1 A1 ) (m2 : W2 A2 ) (mrel : StT(W)rel (A1 ,A2 ) m1 m2 )
+(f1 : A1 → StT(W)1 B1 ) (f2 : A2 → W2 B2 )
+
+(frel : (a1 ,a2 ):A1× A2 → StT(W)rel (B1 , B2 ) (f1 a1 ) (f2 a2 ))
+
+: StT(W)rel (B1 ,B2 ) (bindStT(W)1 m1 f1 ) (bindW2 m2 f2 ) =
+
+λs1 . bindWrel (m1 s1 ) m2 (mrel s1 ) (λ (a1 ,s1 '). f1 a1 s1 ') f2 (λ ((a1 ,s1 '), a2 ). frel (a1 ,a2 ) s1 ')
+
+Adding exceptions. In a similar flavor, the exception monad transformer ExcT mapping a
+monad M to ExcT(M)A = M(A + E 1 ) gives raise to the carrier its relational specification monad
+counterpart ExcTrel (W)(A1 , A2 ) = (ExcT(W1 )A1 , W2A2 , Wrel (A1 + E 1 , A2 )).
+However, in order to define the bind operation we need to restrict our attention to relational
+specification monad for which unary specification can be lifted to relational ones. This is provided
+by the structure of two maps:
+
+τ1 : w 1 : W1 (A1 , 1) → Wrel (A1 , 1) w 1 (retW2 ()),
+τ2 : w 2 : W2 (1, A2 ) → Wrel (1, A2 ) (retW1 ()) w 2 .
+
+such that pairing each of them with identity provides a monad morphism, that is (id, τ1 ) : W1 (A, 1) →
+(w : W1 (A, 1)) × Wrel (A, 1) w (retW2 ()) respects the monadic equations. Any relational specification
+monad induced by a simple one has a canonical such structure, taking τ1 and τ2 to be identity. The
+state transformer and the exception transformer also preserve this structure.
+Assuming that W is equipped with τ1 , τ2 , we define the return and bind operation on ExcT(Wrel )
+as:
+
+let retExcT(W)rel (a1 ,a2 ) : Wrel (A1 + E1 , A2 ) (retExcT(W)1 a1 ) (retW2 a2 ) = retWrel (Inl a1 , a2 )
+
+let bindExcT(W)rel (m1 : ExcT(W)1 A1 ) (m2 : W2 A2 ) (mrel : ExcT(W)rel (A1 ,A2 ) m1 m2 )
+(frel : (a1 ,a2 ):A1× A2 → ExcT(W)rel (B1 , B2 ) (f1 a1 ) (f2 a2 ))
+
+(f1 : A1 → ExcT(W)1 B1 ) (f2 : A2 → W2 B2 )
+
+: ExcT(W)rel (B1 ,B2 ) (bindExcT(W)1 m1 f1 ) (bindW2 m2 f2 ) =
+bindWrel m1 m2 mrel (λ ae1 . match ae1 with | Inl a1 → f1 a1 | Inr e1 → retW1 (Inr e1 )) f2
+(λ ae1 a2 . match ae1 with
+
+| Inl a1 → frel a1 a2
+| Inr e1 → bindWrel (τ 2 (f2 a2 )) (λ ((), b2 ) . retWrel (Inr e1 , b2 )))
+
+Putting these monad transformer to practice, we can finally define the full relational specification
+monad for exceptions validating the rules in Figure 6 by first lifting the simple relational WPure
+and applying the exception transformers on both left and right sides. Further, applications would
+involve specifications relating state and exceptions with rollback state. The structure provided by
+τ1 , τ2 is a technical requirement, and we leave to further investigation the conceptual understanding
+of this structure in the setting of relational specification monads.
+
+rel
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:26
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+Γr ⊢ throw e 1 {λφ 1 . φ 1 (Inr e 1 )} ∼ retExc a 2 {retWExc
+2 a 2 } | λφ . φ (Inr e 1 , Inl a 2 )
+
+Γr ⊢ retExc a 1 {retWExc
+1 a 1 } ∼ throw e 2 {λφ 2 . φ 2 (Inr e 2 )} | λφ . φ (Inl a 1 , Inr e 2 )
+Γr ⊢ c 1 {w 1 } ∼ c 2 {w 2 } | w rel
+} ∼ c e r r
+} | w e r r
+1
+2
+Γr ⊢ catch c 1 c e r r
+} ∼ catch c 2 c e r r
+1
+1
+2
+
+{w e r r
+{w e r r
+{w catch w 2 w e r r
+
+{w catch w 1 w e r r
+
+rel
+} | w catch
+rel
+
+Γr ⊢ c e r r
+
+1
+
+2
+
+2
+
+w rel w e r r
+
+rel
+
+rel
+
+let w catch
+
+let w catch (w : WExcA) (werr : E → WExcA) : W A =
+λφ . w (λ ae. match ae with | Inl a → retWExc a φ | Inr e → werr e φ )
+(w:WExc
+(A1 ,A2 )) (werr1 : E1 → WExc 1A1 ) (werr2 : E2 → WExc 2A2 )
+(werrrel : E1 × E2 → WExc
+(A1 ,A2 )) : WExc
+λφ . w (λ (ae1 , ae2 ). match ae1 , ae2 with
+| Inl a1 , Inl a2 → retWExc
+(a1 ,a2 ) φ
+| Inr e1 , Inl a2 → werr1 e1 (λ ae1 → φ (ae1 , Inl a2 ))
+| Inl a1 , Inr e2 → werr2 e2 (λ ae2 → φ (Inl a1 , ae2 ))
+| Inr e1 , Inr e2 → werrrel (e1 ,e2 ) φ )
+
+(A1 ,A2 ) =
+
+rel
+
+rel
+
+rel
+
+Fig. 6. Rules for exceptions
+
+4 EMBEDDING RELATIONAL PROGRAM LOGICS
+4.1 Relational Hoare Logic
+
+As explained in the introduction, Benton [2004]’s seminal relational Hoare logic (RHL) is at the
+origin of many works on relational program logics (see also §6). We present here a syntactic
+embedding of RHL, showing that our simple framework can host usual program logics.
+Concretely, we define a translation from While-language to monadic programs using the Imp
+monad, and show that the translation of all Benton [2004]’s rules (with the exception of two partial
+equivalence specific ones) are admissible in our framework using the effect observation θ Part
+.
+The translation from direct-style imperative programs to monadic ones follows closely Moggi’s
+[1989] interpretation of call-by-value in his monadic metalanguage. The Imp monad of §2.6 directly
+interprets read and write, and while loops are translated using the following definable combinator
+
+rel
+
+let while (guard: Imp B) (body : Imp 1 ) : Imp 1 =
+
+do_while (bindImp guard (λ b . if b then bindImp body (λ () . retImp tt) else retImp ff))
+
+The proofs of admissibility for the various rules exhibit a recurrent pattern. We first use weakening
+to adapt the specification obtained through the translation to an appropriate shape for the rules of
+our logic. Then we use the pure and generic monadic rules to decompose the programs on both
+sides. Finally, effect-specific rules together with admissibility of the premises finish the proof.
+An easy corollary of our proof is that Benton [2004]’s relational rules are valid for our partial
+correctness interpretation. However, our interpretation treats non-termination in a slightly different
+way from his semantics. Indeed, our partial correctness semantics relates two programs whenever
+one of them diverges, whereas his requires both program to have the same divergence behaviour. A
+main difference is that our semantics is more compositional and allows to compute a precise specifi-
+cation by applying θ Part
+to the parts and combining the results, while for Benton’s semantics this will
+
+rel
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+(cid:110)
+
+4:27
+
+2 )) (cid:111)
+
+f
+
+not produce precise specifications. This makes additional rules sound with respect to our semantics,
+allowing for instance to derive that ⊢ skip ∼ loop
+(equivalent to ⊢ { ⊤ } skip ∼ loop { ⊤ } in pre-/postcondition form), although it is of course a
+choice whether one wants a semantics that validates such rules or not. Another difference is that
+Benton’s semantics assumes a classical logic, in which one can "decide" termination, while our
+semantics easily works in a constructive logic. We leave as future work to investigate if Benton’s
+semantics can be successfully expressed using a simple lax effect observation.
+
+λφ (s i
+2 ). ∀a 1 , a 2 , s
+1 , s i
+
+2 .φ ((a 1 , s
+
+1 ), (a 2 , s
+
+1 , s
+
+f
+
+f
+
+f
+
+4.2 Relational Hoare Type Theory
+
+Nanevski et al. [2013] introduce Relational Hoare Type Theory (RHTT) for the specific goal of
+proving noninterference properties of programs. RHTT builds upon powerful but specific semantic
+objects embedded in the type theory of Coq to support specifications relating two runs of a single
+program. We explain here how we can reconstruct their model with a relational specification monad
+and an effect observation. This connection between the two frameworks could help extending
+RHTT to other effects, for instance exceptions.
+A model of state and partiality. The effects supported by RHTT are manipulation of a
+structured heap – a refined version of the simple state monad of §2.1 – and partiality. In order to
+model these effects, a close variant of the following monad is used
+where ≤ p = {r : heap→P | ∀h , r h⇒p h } and the predicate coherent specifies that f is defined by
+its value on singleton predicates consisting of only one heap. Using predicates enables the definition
+of fixpoint operators, in the same fashion as we did in our interpretation of while loops for the Imp
+effect in §2.6.
+The relational specification used by Nanevski et al. [2013] is a variation on the simple relational
+monad of stateful pre- and postconditions from §2.2 where the precondition only takes one input
+heap corresponding to the fact only one program is considered at a time.
+
+M A = (p : heap→P) × ( f : (r :≤ p ) → A→heap→P)×coherent( f )
+
+PPrel (A1 , A2 ) = (heap → P) × (heap × heap → A1 × A2 → heap × heap → P)
+
+Taking the same computational monad M on both sides, that is M1 = M2 = M, we define the
+following simple relational effect observation θ : M , M → PPrel
+
+θ (c 1 , c 2 ) = (λh 0 . π1 c 1 h 0 ∧ π1 c 2 h 0 ,
+λ(h 1 , h 2 )(a 1 , a 2 )(h
+2 ). π1 c 1 h 1 ∧ π2c 1h 1a 1h
+1 , h
+
+′
+
+′
+
+′
+
+1 ∧ π1 c 2 h 2 ∧ π2c 2h 2a 2h
+
+′
+
+2 )
+
+5 PRODUCT PROGRAMS
+
+The product programs methodology is an approach to prove relational properties that can serve as
+an alternative to relational program logics [Barthe et al. 2011, 2016]. In this section we show how
+to understand this methodology from the point of view of our framework.
+Product programs reduce the problem of verifying relational properties on two programs c 1 and
+c 2 to the problem of verifying properties on a single product program c capturing at the same time
+the behaviors of c 1 and c 2 . To prove a relational property w on programs c 1 and c 2 , the methodology
+tells us to proceed as follows. First, we construct a product program c of c 1 and c 2 . Then, by standard
+methods, we prove that the program c satisfies the property w seen as a non-relational property.
+Finally, from a general argument of soundness, we can conclude that φ must hold on c 1 and c 2 . In
+what follows, we show how these three steps would be understood in our framework if we wanted
+to prove ⊨θ c 1 ∼ c 2 { w } .
+First of all, we need a notion of product program. In the setting of monadic programs, we capture
+a product program of c 1 : M1A1 and c 2 : M2A2 as a program c : P(A1 , A2 ), where P is a relative
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:28
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+monad over (A1 , A2 ) (cid:55)→ A1 × A2 (see §3.4). We can think of c : P(A1 , A2 ) as a single computation
+that is computing both a value of type A1 and a value of type A2 at the same time. We expect P to
+support the effects from both M1 and M2 , mixing them in a controlled way. As a concrete example,
+we can define products of stateful programs – M1A1 = StS 1 A1 and M2A2 = StS 2 A2 – inhabiting
+the relative monad PSt (A1 , A2 ) = StS 1 ×S 2 (A1 × A2 ). To complete the definition of product programs,
+we also need to explain when a concrete product program c : P(A1 , A2 ) is capturing the behavior
+of c 1 : M1A1 and c 2 : M2A2 . We propose to capture this in a relation c 1×c 2(cid:123)c that exhibits the
+connection between pairs of computations and their potential product programs. This relation
+should be closed under the monadic construction of the effects, that is
+
+a 1 : A1
+a 2 : A2
+retM1 a 1×retM2 a 2(cid:123)retP (a 1 , a 2 )
+
+m 1×m 2(cid:123)m rel
+∀a 1 a 2 , f 1 a 1× f 2 a 2(cid:123) f rel (a 1 , a 2 )
+bindM1 m 1 f 1×bindM2 m 2 f 2(cid:123)bindP m rel f rel
+
+but also spells out how particular effects that P supports correspond to the effects from M1 and M2 .
+Second, to fully reproduce the product program methodology, we need to explain how spec-
+ifications relate to product programs. We can use simple relational specification monads (§2.2)
+for specifying the properties on products programs. The lifting of unary specification monads
+described there extends to unary effect observations, providing an important source of examples
+of effect observations for product programs. For example, going back to the example of state, we
+can specify product programs in P(A1 , A2 ) = StS 1 ×S 2 (A1 × A2 ) with specifications provided by the
+simple relational specification monad WSt
+rel , and the effect observation ζ : P → WSt
+lifting the unary effect observation θ St : St → WSt of the introduction, resulting in
+rel obtained by
+where σ : (A1×A2 )×(S 1×S 2 )→(A1×S 1 )×(A2×S 2 ) simply swaps the arguments. Then, the concrete
+proof verifying the property w in this step consists of proving ζ (c ) ≤ w as usual.
+Finally, the third step simply relies on proving and then applying a soundness theorem for
+product programs. In the case of stateful computations, this theorem has the following form:
+Theorem 5 (Soundness of product programs for state). If c 1×c 2(cid:123)c and ζ (c ) ≤ w , then
+
+ζ ( f : S 1 × S 2 → (A1 × A2 ) × (S 1 × S 2 )) = λφ (s 1 , s 2 ) . φ σ ( f (s 1 , s 2 ))
+
+⊨
+
+c 1 ∼ c 2 { w } .
+
+θ St
+
+rel
+
+In this case, the soundness theorem is proved by analyzing the relation c 1×c 2(cid:123)c and showing in
+each case that our choice of θ St
+rel and ζ agree.
+The interpretation of product programs as computations in a relative monad accommodate well
+the product program methodology. In particular we expect that algebraic presentations of these
+relative monads used for product programs could shed light on the choice of primitive rules in
+relational program logics, in a Curry-Howard fashion. We leave this as a stimulating future work.
+
+6 RELATED WORK
+
+Many different relational verification tools have been proposed, making different tradeoffs, espe-
+cially between automation and expressiveness. This section surveys this prior work, starting with
+the techniques that are closest related to ours.
+Relational program logics. Relational program logics are very expressive and provide a formal
+foundation for various tools, which have found practical applications in many domains. Benton
+[2004] introduced Relational Hoare Logic (RHL) as a way to prove the correctness of various static
+analysis and optimizing transformations for imperative programs. Yang [2007] extended this to the
+relational verification of pointer-manipulating programs. Barthe et al.’s [2009] introduced pRHL as
+an extension of RHL to discrete probabilities and showed that pRHL can provide a solid foundation
+for cryptographic proofs, which inspired further research in this area [Barthe et al. 2014; Basin et al.
+2017; Petcher and Morrisett 2015; Unruh 2019] and lead to the creation of semi-automated tools such
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:29
+
+as EasyCrypt [Barthe et al. 2013a]. Barthe et al. [2013b] also applied variants of pRHL to differential
+privacy, which led to the discovery of a strong connection [Barthe et al. 2017] between coupling
+proofs in probability theory and relational program logic proofs, which are in turn connected to
+product programs even without probabilities [Barthe et al. 2016].
+Carbin et al. [2012] introduced a program logic for proving acceptability properties of approximate
+program transformations. Nanevski et al. [2013] proposed Relational Hoare Type Theory (RHTT),
+a verification system for proving rich information flow and access control policies about pointer-
+manipulating programs in dependent type theory. Banerjee et al. [2016] addressed similar problems
+using a relational program logic with framing and hypotheses. Sousa and Dillig [2016] devised
+Cartesian Hoare Logic for verifying k-safety hyperproperties and implement it in the Descartes
+tool. Finally, Aguirre et al. [2017] introduced Relational Higher-Order Logic (RHOL) as a way of
+proving relational properties of pure programs in a simply typed λ-calculus with inductive types
+and recursive definitions. RHOL was later separately extended to two different monadic effects:
+cost [Radicek et al. 2018] and continuous probabilities with conditioning [Sato et al. 2019].
+Each of these logics is specific to a particular combination of side-effects that is fixed by the
+programming language and verification framework. We instead introduce a general framework
+for defining program logics for arbitrary monadic effects. We show that logics such as RHL and
+HTT can be reconstructed within our framework, and we expect this to be the case for many of
+the logics above. It would also be interesting to investigate whether RHOL can also be extended to
+arbitrary monads, but even properly representing arbitrary monads, which is completely straight-
+forward in dependent type theory, is not obvious in less powerful systems such as HOL. In this
+respect, Lochbihler [2018] recently built a library for effect polymorphic definitions and proofs in
+Isabelle/HOL, based on value-monomorphic monads and relators.
+Type systems and static analysis tools. Various type systems and static analysis tools
+have been proposed for statically checking relational properties in a sound, automatic, but over-
+approximate way. The type systems for information flow control generally trade off precision for
+good automation [Sabelfeld and Myers 2003]. Various specialized type systems and static analysis
+tools have also been proposed for checking differential privacy [Barthe et al. 2015b; Gaboardi et al.
+2013; Gavazzo 2018; Winograd-Cort et al. 2017; Zhang and Kifer 2017; Zhang et al. 2019] or doing
+relational cost analysis [Çiçek et al. 2017; Qu et al. 2019].
+Product program constructions. Product program constructions and self-composition are
+techniques aimed at reducing the verification of k-safety hyperproperties [Clarkson and Schneider
+2010] to the verification of traditional (unary) safety proprieties of a product program that emulates
+the behavior of multiple input programs. Multiple such constructions have been proposed [Barthe
+et al. 2016] targeted for instance at secure IFC [Barthe et al. 2011; Naumann 2006; Terauchi and
+Aiken 2005; Yasuoka and Terauchi 2014], program equivalence for compiler validation [Zaks and
+Pnueli 2008], equivalence checking and computing semantic differences [Lahiri et al. 2012], program
+approximation [He et al. 2018]. Sousa and Dillig’s [2016] Descartes tool for k-safety properties
+also creates k copies of the program, but uses lockstep reasoning to improve performance by
+more tightly coupling the key invariants across the program copies. Antonopoulos et al. [2017]
+develop a tool that obtains better scalability by using a new decomposition of programs instead
+of using self-composition for k-safety problems. Eilers et al. [2018] propose a modular product
+program construction that permits hyperproperties in procedure specifications. Recently, Farzan
+and Vandikas [2019] propose an automated verification technique for hypersafety properties by
+constructing a proof for a small representative set of runs of the product program.
+Logical relations and bisimulations. Many semantic techniques have been proposed for
+reasoning about relational properties such as observational equivalence, including techniques based
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:30
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+on binary logical relations [Ahmed et al. 2009; Benton et al. 2009, 2013, 2014; Dreyer et al. 2010,
+2011, 2012; Mitchell 1986], bisimulations [Dal Lago et al. 2017; Koutavas and Wand 2006; Sangiorgi
+et al. 2011; Sumii 2009], and combinations thereof [Hur et al. 2012, 2014]. While these powerful
+techniques are often not directly automated, they can still be used for verification [Timany and
+Birkedal 2019] and for providing semantic correctness proofs for relational program logics [Dreyer
+et al. 2010, 2011] and other verification tools [Benton et al. 2016; Gavazzo 2018].
+Other program equivalence techniques. Beyond the ones already mentioned above, many
+other techniques targeted at program equivalence have been proposed; we briefly review several
+recent works: Benton et al. [2009] do manual proofs of correctness of compiler optimizations using
+partial equivalence relations. Kundu et al. [2009] do automatic translation validation of compiler
+optimizations by checking equivalence of partially specified programs that can represent multiple
+concrete programs. Godlin and Strichman [2010] propose proof rules for proving the equivalence of
+recursive procedures. Lucanu and Rusu [2015] and Ştefan Ciobâcă et al. [2016] generalize this to a
+set of co-inductive equivalence proof rules that are language-independent. Wang et al. [2018] verify
+equivalence between a pair of programs that operate over databases with different schemas using
+bisimulation invariants over relational algebras with updates. Finally, automatically checking the
+equivalence of processes in a process calculus is an important building block for security protocol
+analysis [Blanchet et al. 2008; Chadha et al. 2016].
+Reasoning about effectful semantics. Relating monadic expressions is natural and very
+wide-spread in proof assistants like Coq, Isabelle [Lochbihler 2018], or F⋆ [Grimm et al. 2018], with
+various degrees of automation. Boulier et al. [2017]; Casinghino et al. [2014]; Pédrot and Tabareau
+[2018] extend dependent type theory with a few selected primitive effects: partiality, exceptions,
+reader. The resulting theory allows to some extent to reason directly on pairs of effectful programs,
+without resorting to a monadic encoding. In another line of work, Barthe et al. [2019] proposed to
+encode the semantics of imperative programs and their relational properties in an extension of
+first-order logic that can be automated by Vampire.
+
+7 CONCLUSION AND FUTURE WORK
+
+This paper introduced a principled framework for building relational program logics. We extended
+the work of Maillard et al. [2019] to the relational setting, and solved the additional challenges of
+correlating two independent computations with a relational specification, by we leveraging relative
+monads and introducing a novel notion of relative monad morphism. Now it’s time to put this
+framework to the test and discover whether it can be in part automated, whether it can be scaled
+to realistic relational verification tasks, and whether it can deal with more complex effects.
+In particular, it would be interesting to see whether our generic framework of §3 can support other
+control effects, such as breaking out of loops and continuations. These are, however, challenging
+to accommodate, even in our unary setting [Maillard et al. 2019]. Another interesting direction
+is providing a more precise treatment of nontermination. While the simple framework of §2 can
+already handle nontermination by choosing globally between total and partial correctness with
+an effect observation, the generic framework of §3 could allow to explicitly observe whether
+each computation terminates or not inside the relational specifications. This could allow one
+to choose at the specification level between partial or total correctness and between Benton
+[2004]’s or our semantics for RHL, or to define termination-sensitive noninterference, or that one
+computation terminates whenever the other does. Another interesting research direction, opened
+by the correspondence with product programs, would be to develop techniques to select which
+proof rules should be considered as primitive, using proof-theoretical tools like focusing [Zeilberger
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:31
+
+2009], and also to investigate at the categorical level notions of presentations of relative monads, in
+connection with the theory of monads with arities [Berger et al. 2012].
+
+ACKNOWLEDGMENTS
+
+We thank Alejandro Aguirre, Danel Ahman, Robert Atkey, Gilles Barthe, Shin-ya Katsumata, Satoshi
+Kura, Guido Martínez, Ramkumar Ramachandra, Nikhil Swamy, Éric Tanter, and the anonymous
+reviewers for their helpful feedback. This work was, in part, supported by the European Research
+Council under ERC Starting Grant SECOMP (715753) and by Nomadic Labs via a grant on the
+“Evolution, Semantics, and Engineering of the F⋆ Verification System.”
+
+REFERENCES
+
+C. Abate, R. Blanco, D. Garg, C. Hriţcu, M. Patrignani, and J. Thibault. Journey beyond full abstraction: Exploring robust
+property preservation for secure compilation. CSF , 2019. To Appear.
+A. Aguirre, G. Barthe, M. Gaboardi, D. Garg, and P.-Y. Strub. A relational logic for higher-order programs. ICFP , 2017.
+D. Ahman, C. Hriţcu, K. Maillard, G. Martínez, G. Plotkin, J. Protzenko, A. Rastogi, and N. Swamy. Dijkstra monads for free.
+POPL. 2017.
+A. Ahmed, D. Dreyer, and A. Rossberg. State-dependent representation independence. POPL. 2009.
+T. Altenkirch, J. Chapman, and T. Uustalu. Monads need not be endofunctors. LMCS , 11(1), 2015.
+T. Antonopoulos, P. Gazzillo, M. Hicks, E. Koskinen, T. Terauchi, and S. Wei. Decomposition instead of self-composition for
+proving the absence of timing channels. PLDI . 2017.
+P. Audebaud and C. Paulin-Mohring. Proofs of randomized algorithms in coq. In T. Uustalu, editor, Mathematics of Program
+
+Construction. 2006.
+
+A. Banerjee, D. A. Naumann, and M. Nikouei. Relational logic with framing and hypotheses. FST TCS . 2016.
+G. Barthe, B. Grégoire, and S. Zanella-Béguelin. Formal certification of code-based cryptographic proofs. POPL, 2009.
+G. Barthe, P. R. D’Argenio, and T. Rezk. Secure information flow by self-composition. MSCS , 21(6):1207–1252, 2011.
+G. Barthe, F. Dupressoir, B. Grégoire, C. Kunz, B. Schmidt, and P. Strub. EasyCrypt: A tutorial. In A. Aldini, J. Lopez, and
+
+F. Martinelli, editors, Foundations of Security Analysis and Design VII - FOSAD 2012/2013 Tutorial Lectures. 2013a.
+
+G. Barthe, B. Köpf, F. Olmedo, and S. Zanella-Béguelin. Probabilistic relational reasoning for differential privacy. TOPLAS ,
+35(3):9:1–9:49, 2013b.
+G. Barthe, C. Fournet, B. Grégoire, P. Strub, N. Swamy, and S. Zanella-Béguelin. Probabilistic relational verification for
+cryptographic implementations. POPL. 2014.
+G. Barthe, T. Espitau, B. Grégoire, J. Hsu, L. Stefanesco, and P. Strub. Relational reasoning via probabilistic coupling. In Logic
+
+for Programming, Artificial Intelligence, and Reasoning - 20th International Conference, LPAR-20 2015, Suva, Fiji, November
+24-28, 2015, Proceedings, 2015a.
+
+G. Barthe, M. Gaboardi, E. J. G. Arias, J. Hsu, A. Roth, and P. Strub. Higher-order approximate relational refinement types
+for mechanism design and differential privacy. POPL. 2015b.
+G. Barthe, J. M. Crespo, and C. Kunz. Product programs and relational program logics. JLAMP , 85(5):847–859, 2016.
+G. Barthe, B. Grégoire, J. Hsu, and P. Strub. Coupling proofs are probabilistic product programs. POPL. 2017.
+G. Barthe, R. Eilers, P. Georgiou, B. Gleiss, L. Kovács, and M. Maffei. Verifying relational properties using trace logic. Draft,
+2019.
+D. A. Basin, A. Lochbihler, and S. R. Sefidgar. CryptHOL: Game-based proofs in higher-order logic. IACR Cryptology ePrint
+Archive, 2017:753, 2017.
+N. Benton. Simple relational correctness proofs for static analyses and program transformations. POPL. 2004.
+N. Benton, J. Hughes, and E. Moggi. Monads and effects. APPSEM . 2000.
+N. Benton, A. Kennedy, L. Beringer, and M. Hofmann. Relational semantics for effect-based program transformations:
+higher-order store. POPL. 2009.
+N. Benton, M. Hofmann, and V. Nigam. Proof-relevant logical relations for name generation. TLCA. 2013.
+N. Benton, M. Hofmann, and V. Nigam. Abstract effects and proof-relevant logical relations. POPL. 2014.
+N. Benton, A. Kennedy, M. Hofmann, and V. Nigam. Counting successes: Effects and transformations for non-deterministic
+programs. In S. Lindley, C. McBride, P. W. Trinder, and D. Sannella, editors, A List of Successes That Can Change the
+
+World - Essays Dedicated to Philip Wadler on the Occasion of His 60th Birthday. 2016.
+
+C. Berger, P.-A. Melliès, and M. Weber. Monads with arities and their associated theories. Journal of Pure and Applied
+Algebra, 216(8-9):2029–2048, 2012. New introduction; Section 1 shortened and redispatched with Section 2; Subsections
+on symmetric operads (3.14) and symmetric simplicial sets (4.17) added; Bibliography completed.
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+4:32
+
+Kenji Maillard, Cătălin Hrit, cu, Exequiel Rivas, and Antoine Van Muylder
+
+B. Blanchet, M. Abadi, and C. Fournet. Automated verification of selected equivalences for security protocols. J. Log. Algebr.
+Program., 75(1):3–51, 2008.
+S. Boulier, P. Pédrot, and N. Tabareau. The next 700 syntactical models of type theory. CPP , 2017.
+N. Bowler, S. Goncharov, P. B. Levy, and L. Schröder. Exploring the boundaries of monad tensorability on set. Logical
+
+Methods in Computer Science, 9(3), 2013.
+
+M. Carbin, D. Kim, S. Misailovic, and M. C. Rinard. Proving acceptability properties of relaxed nondeterministic approximate
+programs. PLDI . 2012.
+C. Casinghino, V. Sjöberg, and S. Weirich. Combining proofs and programs in a dependently typed language. In The 41st
+
+Annual ACM SIGPLAN-SIGACT Symposium on Principles of Programming Languages, POPL ’14, San Diego, CA, USA,
+January 20-21, 2014, 2014.
+
+R. Chadha, V. Cheval, Ştefan Ciobâcă, and S. Kremer. Automated verification of equivalence properties of cryptographic
+protocols. ACM Trans. Comput. Log., 17(4):23:1–23:32, 2016.
+E. Çiçek, G. Barthe, M. Gaboardi, D. Garg, and J. Hoffmann. Relational cost analysis. POPL, 2017.
+M. R. Clarkson and F. B. Schneider. Hyperproperties. J. Comput. Secur., 18(6):1157–1210, 2010.
+Ştefan Ciobâcă, D. Lucanu, V. Rusu, and G. Rosu. A language-independent proof system for full program equivalence.
+Formal Asp. Comput., 28(3):469–497, 2016.
+U. Dal Lago, F. Gavazzo, and P. B. Levy. Effectful applicative bisimilarity: Monads, relators, and Howe’s method. LICS . 2017.
+G. A. Delbianco and A. Nanevski. Hoare-style reasoning with (algebraic) continuations. ICFP . 2013.
+D. Dreyer, G. Neis, A. Rossberg, and L. Birkedal. A relational modal logic for higher-order stateful ADTs. POPL. 2010.
+D. Dreyer, A. Ahmed, and L. Birkedal. Logical step-indexed logical relations. Logical Methods in Computer Science, 7(2), 2011.
+D. Dreyer, G. Neis, and L. Birkedal. The impact of higher-order state and control effects on local relational reasoning. J.
+Funct. Program., 22(4-5):477–528, 2012.
+M. Eilers, P. Müller, and S. Hitz. Modular product programs. In A. Ahmed, editor, Programming Languages and Systems -
+
+27th European Symposium on Programming, ESOP 2018, Held as Part of the European Joint Conferences on Theory and
+Practice of Software, ETAPS 2018, Thessaloniki, Greece, April 14-20, 2018, Proceedings. 2018.
+
+F. Faissole and B. Spitters. Synthetic topology in homotopy type theory for probabilistic programming. PPS 2017 - Workshop
+on probabilistic programming semantics, 2017. Poster.
+A. Farzan and A. Vandikas. Automated hypersafety verification.
+
+In I. Dillig and S. Tasiran, editors, Computer Aided
+
+Verification - 31st International Conference, CAV 2019, New York City, NY, USA, July 15-18, 2019, Proceedings, Part I. 2019.
+
+C. Führmann. Varieties of effects. FOSSACS , 2002.
+M. Gaboardi, A. Haeberlen, J. Hsu, A. Narayan, and B. C. Pierce. Linear dependent types for differential privacy. POPL. 2013.
+F. Gavazzo. Quantitative behavioural reasoning for higher-order effectful programs: Applicative distances. LICS . 2018.
+T. Girka, D. Mentré, and Y. Régis-Gianas. A mechanically checked generation of correlating programs directed by structured
+
+syntactic differences. In Automated Technology for Verification and Analysis - 13th International Symposium, ATVA 2015,
+Shanghai, China, October 12-15, 2015, Proceedings, 2015.
+
+T. Girka, D. Mentré, and Y. Régis-Gianas. Verifiable semantic difference languages. In Proceedings of the 19th International
+
+Symposium on Principles and Practice of Declarative Programming, Namur, Belgium, October 09 - 11, 2017, 2017.
+
+M. Giry. A categorical approach to probability theory. Categorical Aspects of Topology and Analysis . 1982.
+B. Godlin and O. Strichman. Inference rules for proving the equivalence of recursive procedures. In Z. Manna and D. A.
+
+Peled, editors, Time for Verification, Essays in Memory of Amir Pnueli. 2010.
+
+N. Grimm, K. Maillard, C. Fournet, C. Hriţcu, M. Maffei, J. Protzenko, T. Ramananandro, A. Rastogi, N. Swamy, and S. Zanella-
+Béguelin. A monadic framework for relational verification: Applied to information security, program equivalence, and
+optimizations. CPP , 2018.
+S. He, S. K. Lahiri, and Z. Rakamaric. Verifying relative safety, accuracy, and termination for program approximations. J.
+Autom. Reasoning, 60(1):23–42, 2018.
+C. Hur, D. Dreyer, G. Neis, and V. Vafeiadis. The marriage of bisimulations and kripke logical relations. POPL. 2012.
+C. Hur, G. Neis, D. Dreyer, and V. Vafeiadis. A logical step forward in parametric bisimulations. Technical Report
+MPI-SWS-2014-003, 2014.
+B. Jacobs. Dijkstra and Hoare monads in monadic computation. Theor. Comput. Sci., 604:30–45, 2015.
+C. Kapulkin and P. L. Lumsdaine. Homotopical inverse diagrams in categories with attributes, 2018.
+S. Katsumata. Parametric effect monads and semantics of effect systems. POPL. 2014.
+G. Kelly. Basic Concepts of Enriched Category Theory. Lecture note series / London mathematical society. Cambridge
+University Press, 1982.
+V. Koutavas and M. Wand. Small bisimulations for reasoning about higher-order imperative programs. POPL. 2006.
+S. Kundu, Z. Tatlock, and S. Lerner. Proving optimizations correct using parameterized program equivalence. PLDI . 2009.
+S. K. Lahiri, C. Hawblitzel, M. Kawaguchi, and H. Rebêlo. SYMDIFF: A language-agnostic semantic diff tool for imperative
+programs. CAV . 2012.
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+The Next 700 Relational Program Logics
+
+4:33
+
+A. Lochbihler. Effect polymorphism in higher-order logic (proof pearl). JAR, 2018.
+D. Lucanu and V. Rusu. Program equivalence by circular reasoning. Formal Asp. Comput., 27(4):701–726, 2015.
+C. Lüth and N. Ghani. Composing monads using coproducts. ICFP . 2002.
+K. Maillard, D. Ahman, R. Atkey, G. Martínez, C. Hriţcu, E. Rivas, and É. Tanter. Dijkstra monads for all. PACMPL, 3(ICFP):
+104:1–104:29, 2019.
+J. C. Mitchell. Representation independence and data abstraction. In POPL. 1986.
+E. Moggi. Computational lambda-calculus and monads. LICS . 1989.
+A. Nanevski, G. Morrisett, A. Shinnar, P. Govereau, and L. Birkedal. Ynot: dependent types for imperative programs. ICFP .
+2008a.
+A. Nanevski, J. G. Morrisett, and L. Birkedal. Hoare type theory, polymorphism and separation. JFP , 18(5-6):865–911, 2008b.
+A. Nanevski, A. Banerjee, and D. Garg. Dependent type theory for verification of information flow and access control
+policies. ACM TOPLAS , 35(2):6, 2013.
+D. A. Naumann. From coupling relations to mated invariants for checking information flow. ESORICS . 2006.
+P. Pédrot and N. Tabareau. Failure is not an option - an exceptional type theory. ESOP , 2018.
+A. Petcher and G. Morrisett. The foundational cryptography framework. POST . 2015.
+G. D. Plotkin and J. Power. Notions of computation determine monads. FOSSACS , 2002.
+G. D. Plotkin and M. Pretnar. Handlers of algebraic effects. ESOP . 2009.
+W. Qu, M. Gaboardi, and D. Garg. Relational cost analysis for functional-imperative programs. To appear at ICFP, 2019.
+I. Radicek, G. Barthe, M. Gaboardi, D. Garg, and F. Zuleger. Monadic refinements for relational cost analysis. PACMPL, 2
+(POPL):36:1–36:32, 2018.
+A. Sabelfeld and A. C. Myers. Language-based information-flow security. IEEE Journal on Selected Areas in Communications,
+21(1):5–19, 2003.
+D. Sangiorgi, N. Kobayashi, and E. Sumii. Environmental bisimulations for higher-order languages. ACM Trans. Program.
+Lang. Syst., 33(1):5:1–5:69, 2011.
+T. Sato, A. Aguirre, G. Barthe, M. Gaboardi, D. Garg, and J. Hsu. Formal verification of higher-order probabilistic programs:
+reasoning about approximation, convergence, bayesian inference, and optimization. PACMPL, 3(POPL):38:1–38:30, 2019.
+M. Shulman. Univalence for inverse diagrams and homotopy canonicity. Mathematical Structures in Computer Science, 25:
+1203–1277, 2014.
+M. Sousa and I. Dillig. Cartesian Hoare logic for verifying k-safety properties. PLDI . 2016.
+R. Street. The formal theory of monads. Journal of Pure and Applied Algebra, 2, 1972.
+E. Sumii. A complete characterization of observational equivalence in polymorphic lambda-calculus with general references.
+CSL. 2009.
+N. Swamy, J. Weinberger, C. Schlesinger, J. Chen, and B. Livshits. Verifying higher-order programs with the Dijkstra monad.
+PLDI , 2013.
+N. Swamy, C. Hriţcu, C. Keller, A. Rastogi, A. Delignat-Lavaud, S. Forest, K. Bhargavan, C. Fournet, P.-Y. Strub, M. Kohlweiss,
+J.-K. Zinzindohoué, and S. Zanella-Béguelin. Dependent types and multi-monadic effects in F*. POPL. 2016.
+T. Terauchi and A. Aiken. Secure information flow as a safety problem. SAS . 2005.
+A. Timany and L. Birkedal. Mechanized relational verification of concurrent programs with continuations. To appear at
+ICFP, 2019.
+A. Timany, L. Stefanesco, M. Krogh-Jespersen, and L. Birkedal. A logical relation for monadic encapsulation of state: proving
+contextual equivalences in the presence of runST. PACMPL, 2(POPL):64:1–64:28, 2018.
+S. Tonelli. Investigations into a model of type theory based on the concept of basic pair. Master’s thesis, Stockholm
+University, 2013. supervisors Erik Palmgren and Giovanni Sambin.
+D. Unruh. Quantum relational Hoare logic. PACMPL, 3(POPL):33:1–33:31, 2019.
+Y. Wang, I. Dillig, S. K. Lahiri, and W. R. Cook. Verifying equivalence of database-driven applications. PACMPL, 2(POPL):
+56:1–56:29, 2018.
+D. Winograd-Cort, A. Haeberlen, A. Roth, and B. C. Pierce. A framework for adaptive differential privacy. PACMPL, 1(ICFP):
+10:1–10:29, 2017.
+H. Yang. Relational separation logic. Theor. Comput. Sci., 375(1-3):308–334, 2007.
+H. Yasuoka and T. Terauchi. Quantitative information flow as safety and liveness hyperproperties. Theor. Comput. Sci., 538:
+167–182, 2014.
+A. Zaks and A. Pnueli. CoVaC: Compiler validation by program analysis of the cross-product. FM . 2008.
+N. Zeilberger. The Logical Basis of Evaluation Order and Pattern-Matching . PhD thesis, Carnegie Mellon University, 2009.
+D. Zhang and D. Kifer. LightDP: towards automating differential privacy proofs. POPL. 2017.
+H. Zhang, E. Roth, A. Haeberlen, B. C. Pierce, and A. Roth. Fuzzi: A three-level logic for differential privacy. CoRR,
+abs/1905.12594, 2019.
+
+Proc. ACM Program. Lang., Vol. 4, No. POPL, Article 4. Publication date: January 2020.
+
+

@@ -1,0 +1,784 @@
+Published in: 2019 IEEE 89th IEEE Vehicular Technology Conference (VTC-Spring)
+DOI: 10.1109/VTCSpring.2019.8746361
+
+Performance Evaluation and Optimization of
+B.A.T.M.A.N. V Routing for Aerial and
+Ground-based Mobile Ad-hoc Networks
+
+Benjamin Sliwa, Stefan Falten and Christian Wietfeld
+
+Communication Networks Institute, TU Dortmund University, 44227 Dortmund, Germany
+e-mail: {Benjamin.Sliwa, Stefan.Falten, Christian.Wietfeld}@tu-dortmund.de
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+I
+
+N
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+8
+9
+2
+2
+0
+
+.
+
+1
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract—The provision of reliable and efﬁcient end-to-
+end communication within ground- and air-based mobile mesh
+networks is a major challenge for routing protocols due to the
+mobility-related dynamics of the channel properties and the
+resulting mesh network topology. In this paper, we evaluate
+the performance of the novel Better Approach To Mobile Ad-
+hoc Networking (B.A.T.M.A.N.) V routing protocol for vehicular
+mesh networks and propose a mobility-predictive extension
+that explicitly addresses highly dynamic communication net-
+works. In order to enable large-scale simulative analysis, we
+present an open source simulation model, which is validated by
+ﬁeld experiments. Within a comprehensive evaluation campaign
+in Vehicle-to-Everything (V2X) and Unmanned Aerial Vehicle
+(UAV) scenarios, it is shown that the predictive B.A.T.M.A.N.
+V-based approach is signiﬁcantly better suited for maintaining
+reliable connectivity within highly mobile mesh networks than
+established routing protocols.
+
+• Presentation of a novel open source simulation model of
+
+B.A.T.M.A.N. V for Objective Modular Network Testbed
+in C++ (OMNeT++) [6] and its INET/ INETMANET
+framework, which is close to the Linux kernel imple-
+mentation of the protocol.
+• Simulation model validation using ﬁeld measurements
+and empirical channel modeling in Sec. V.
+• Optimization and extension of B.A.T.M.A.N. V for high
+mobility scenarios using mobility prediction in Sec. III.
+• Performance comparison of B.A.T.M.A.N. V and the
+proposed experimental extensions with established pro-
+tocols in aerial and ground-based simulation scenarios in
+Sec. VI.
+• All raw results are provided in an open access way.
+
+I . IN TRODUC T ION
+
+I I . R E LATED WORK
+
+The usage of multi-hop communication within mesh-based
+Mobile Ad-hoc Networks (MANETs) enables signiﬁcant range
+extensions as well as path redundancy, which is exploited in
+vehicular platooning, remote sensing of disaster areas using
+UAVs and ad-hoc network provisioning (c.f. Fig. 1). Due to
+the potentially high relative mobility of the different nodes and
+the short lifetime of routing paths, which results in a highly
+dynamic network topology, routing is immanently challenging
+in these networks.
+A promising solution approach that explicitly addresses
+these challenges, is the usage of anticipatory communication
+[1], [2], which aims to utilize the existing communication
+network in a more efﬁcient way by an increased situation-
+awareness. Cross-layer principles allow the integration of the
+mobility characteristics of the vehicles themselves into the
+routing decisions.
+In this paper, we extend previous work on mobility-aware
+vehicular mesh routing [3] based on the B.A.T.M.A.N. routing
+protocol [4] in order to leverage new features of the ﬁfth
+protocol version. Unlike most established routing protocols,
+which handle routing on the network layer, B.A.T.M.A.N.
+operates on the Medium Access Control (MAC) layer since
+version IV [5]. Moreover, version V introduces major changes
+and novelties in the routing behavior and its metrics.
+In
+the remainder of this paper, the following contributions to
+anticipatory mesh networking are provided:
+
+In this section, we discuss current approaches for vehicu-
+lar mesh routing and provide information about the general
+properties of the considered B.A.T.M.A.N. protocol.
+
+A. Overview of Current Vehicular Mesh Routing Approaches
+A detailed overview about current Vehicular Ad-hoc Net-
+work (VANET)– which form a subclass of MANETs– trends
+and research topics based on literature analysis is provided by
+[7]. While routing is pointed out as one of the major VANET
+research topics, it is stated that traditional (topology-based)
+routing protocols mostly cannot satisfy the requirements of
+highly mobile vehicular scenarios. Similarly, the authors of
+[8] emphasize the need for cross-layer design techniques in
+order to increase the situation-awareness for routing in mobile
+networks. Geo-based approaches such as Greedy Perimeter
+Stateless Routing (GPSR) [9] exploit positioning information
+for routing decisions, which has been demonstrated to work
+efﬁciently in vehicular networks. Consequently, predictive
+extensions have been proposed, which go another step further
+by integrating locations forecasts into the routing process for
+estimating link stability times [10], [11]. Those approaches are
+usually implemented as an extension to existing protocols –
+e.g., based on Ad hoc On-demand Distance Vector (AODV)
+[12] in [13] and GPSR-based in [14]. However, although
+existing solutions achieve signiﬁcant
+improvements in the
+resulting transmission efﬁciency, the approaches are mostly
+
+c(cid:13) 2019 IEEE. Personal use of this material is permitted. Permission from IEEE must be obtained for all other uses,
+including reprinting/republishing this material for adver tising or promotional purposes, collecting new collected works
+for resale or redistribution to servers or lists, or reuse of any copyrighted component of this work in other works.
+
+ 
+ 
+ 
+ 
+ 
+ 
+generic and rely on naive predictions, e.g., extrapolations
+based on position, direction and velocity.
+Although in the past the research in vehicular and aerial
+mesh networks has mostly been carried out with an isolated
+view on the intended usecase, recent works emphasize their
+similarities [15] and advocate for a joint consideration of
+these vehicle types within upcoming Intelligent Transportation
+System (ITS) scenarios, e.g., near-ﬁeld delivery and ad-hoc
+network provisioning and sensing at road incidents by UAVs.
+
+B. General Properties of the B.A.T.M.A.N. Routing Protocol
+B.A.T.M.A.N. [12] has been proposed by the Freifunk com-
+munity after the application of Optimized Link State Routing
+(OLSR) [16] did not fulﬁll the performance requirements of
+large-scale mesh deployments. Although B.A.T.M.A.N. is a
+proactive protocol and shows a similar performance as other
+established protocols, it has some unique properties that arise
+from its bio-inspired nature, which implement the idea of
+stigmergy.
+• B.A.T.M.A.N. strictly follows a decentralized routing
+approach: Instead of requiring complete knowledge about
+the network topology, only information about the suit-
+ability of the direct neighbors for reaching a deﬁned
+destination is maintained,
+the network in between is
+considered a black box. As information is redundantly
+received from all other nodes of the network – which are
+referred to as originators – via multiple paths through the
+immediate neighboring nodes, it is highly robust against
+packet loss.
+• The
+periodically
+transmitted Originator Messages
+(OGMs), which contain information about the reverse
+path quality, are propagated through the whole network.
+The metric calculation and message handling can easily
+be exchanged by another method, making it a promising
+research platform for optimization and development of
+new link quality assessment methods.
+
+Fig. 1. Example applications for aerial and vehicular mesh networks.
+
+Fig. 2. Architecture model and message ﬂow for B.A.T.M.A.N. V routing.
+
+• Since multiple paths are maintained for each destination,
+multi-path communication can be integrated for load
+balancing [17].
+• In contrast to other protocols, which are often only eval-
+uated in simulators, the development of B.A.T.M.A.N. V
+is driven by a practical usecase intention and implemen-
+tations are available for Linux-based operating systems.
+
+I I I . S IMU LAT ION -BA SED SY ST EM MODE L
+
+In this section, the simulation model and its extensions for
+highly mobile scenarios are presented.
+An illustration of the overall architecture model and the
+message ﬂow is shown in Fig. 2. As an entry point for all
+exchanged packets, the mesh interface bat0 is used to abstract
+the underlying mesh topology of the network, acting as a
+virtual network switch. All routing messages are encapsulated
+in raw Ethernet frames. The MAC layer approach allows the
+implementation of the routing mechanism as a linux kernel
+module, which – in contrast to network layer routing – avoids
+the necessity for packet exchange between userspace and ker-
+nelspace, reducing computing effort and energy consumption.
+Although the INETMANET framework of OMNeT++ pro-
+vides ManetRoutingBase.ned as a common abstraction
+for MANET protocols, it only considers network layer routing.
+Therefore, the simulation model is based on a novel logical
+host module Batman5Router.ned, which links the inter-
+faces of the different logical layers.
+The routing protocol uses different packet types to deter-
+mine the reverse path metric to the originators within the net-
+work, which is further explained in the following paragraphs.
+
+A. Link Quality Assessment
+Due to the decentralized approach of B.A.T.M.A.N. V, all
+decision processes are based on link-level knowledge, which
+is obtained by periodical exchange of Echo Location Protocol
+(ELP) messages. In regular protocol implementation, the latter
+are used to estimate the throughput to the direct neighbors.
+Additionally, ELP probing triggers the transmission of two
+unicast ELP messages to each forwarder within the deﬁned
+
+Aerial Mesh NetworkVehicular Mesh NetworkRemote MissionControl CenterExploring UAV SwarmMesh GatewayIncidentAreaMAC LayerB.A.T.M.A.N.AdvNetwork LayerTransport LayerPhysical LayerRoutingOGMv2 TransferPath Quality- Plausibility check- Metric update- Route update- RebroadcastELPTransferLink Quality-One-hop throughputmeasurement- Exponentially weightedmoving averagePacket ForwardingOGM - Originator MessageELP- Echo Location Protocolbat0:Virtualmesh interfaceNetworkinterfaceBatman5Routing.nedMetric updatePacketForwarder LookupTransmissionELP interval in order to artiﬁcially generate trafﬁc for the
+throughput estimation. While this procedure is mandatory in
+the linux kernel implementation, it is optional in the simulation
+model and can be conﬁgured to use variable packet sizes,
+which are further evaluated in Sec. VI. As an alternative to
+the throughput metric, a hopcount-based approach, which uses
+hop penalties, can be applied. After node N has determined
+new immediate link metric value ΦN
+F to forwarder F , the ﬁnal
+value is calculated based on the link quality history using
+Exponentially Weighted Moving Average (EWMA).
+
+B. Routing Process and Metrics
+Each node N maintains a link metric ΦN
+F for each of its
+1-hop neighbors, based on knowledge obtained from ELP
+message exchange. Routing decisions are based on the end-to-
+end path metric towards each originator, which is derived from
+the metrics of the reverse path obtained from the OGMs. Upon
+creation of an OGM, each originator initializes the reverse
+path score as the uint32 maximum 232 − 1 and announces it
+with the message. The intermediate nodes update the contained
+value based on their local knowledge about the link quality
+to the last forwarder. In the proposed simulation model, the
+metric calculation is formulated in an abstract way in order to
+emphasize its platform character, which enables the integration
+of further metrics in the future. As all logical calculations are
+performed in the continuous domain in the range [0, 1], the
+uint32 values are transformed into this value range for the
+processing step and back before the packet forwarding.
+Upon reception of an OGM of node D via a forwarder F ,
+node N computes the reverse path metric ΨN
+D|F as
+
+ΨN
+D|F = Θ( ˆΨD , ΦN
+F )
+
+(1)
+
+by applying an operator Θ to the received reverse path metric
+ˆΨD and the link metric ΦN
+F to the forwarder. A summary of
+the considered metrics for the different B.A.T.M.A.N. protocol
+versions and the proposed extensions is given in Tab. I.
+
+E S TAB L I SH ED AND EX P ER IM EN TAL ROUT ING M E TR IC S FOR THE
+D I FFEREN T B .A .T.M .A .N . V ER S ION S
+
+TABLE I
+
+Version Metric
+
+III
+
+IV
+V
+V
+V
+V
+
+Average number of received OGMs within a deﬁned
+interval
+Determination of the Transmission Quality (TQ)
+Throughput estimation based on ELP transfer
+Hop count
+Distance-based forwarding using position information
+Mobility prediction
+
+1) Distance-based Forwarding: As discussed in II-A, the
+usage of geo-information is a promising approach for routing
+in vehicular networks. Therefore, the basic B.A.T.M.A.N. V
+protocol is extended for geo-based decision making through
+a novel routing metric, which is based on position announce-
+ments within the ELP messages.
+
+With dN
+F (t) being the distance from node N to node F
+and dmax being an estimation for the transmission range, the
+proposed metric update procedure is handled as
+
+D|F (t) = ˆΨD −
+ΨN
+
+(2)
+
+(cid:18) dN
+F (t)
+
+(cid:19)α
+
+dmax
+
+with α as a weighting exponent.
+2) Mobility-predictive Forwarding: In order to achieve a
+higher level of awareness about the future network topology,
+the geo-based forwarding scheme is extended by a predictive
+component. Upon transmission of an ELP message, each node
+predicts its own future position based on trajectory knowledge
+and announces it within the message.
+In the following, it is assumed that each vehicle is able to
+determine an estimation of its near future trajectory. For com-
+pleteness, we refer to the analysis in [18], where the accuracy
+of different mobility prediction approaches is compared in real
+world vehicular scenarios. The future position ˜P(t + τ ) is then
+obtained by virtually moving the vehicle along the path of its
+trajectory for the duration of τ , which is further described in
+[18]. The mobility-predictive metric is then calculated as
+
+(cid:34)(cid:18) dN
+
+F (t)
+
+dmax
+
+(cid:32) ˜dN
+F (t + τ )
+
+(cid:33)α(cid:35)
+
+(cid:19)α
+
+,
+
+dmax
+
+D|F (t) = ˆΨD − max
+ΨN
+
+(3)
+
+with τ being the desired prediction lookahead and ˜dN
+being the anticipated distance between N and F .
+
+F (t + τ )
+
+IV. M ETHODO LOGY
+
+In this section, the setups for the simulative evaluation and
+the experimental validation are presented.
+
+A. Evaluation Scenario
+The simulation model
+is based on OMNeT++ and the
+INET/INETMANET framework and is provided in an open
+source way at [19] alongside with the raw results of the
+performed evaluations. For the ﬁeld test validation, common
+of-the-shelf embedded computers are used that run a linux-
+based operating system and execute the B.A.T.M.A.N. V
+(version 2018.0) routing mechanism.
+The default parameters for the different scenarios and rout-
+ing protocols are summarized in Tab. II. For the mobility-
+predictive metric, dmax is calculated as the maximum distance
+that satisﬁes the receiver sensitivity based on the channel
+model. The Friis model is used for rural environments and
+the Nakagami model is used to model urban scenarios. The
+prediction lookahead is chosen based on the analysis of [3].
+For the evaluations,
+the performance of a multi-hop User
+Datagram Protocol (UDP) data Constant Bitrate (CBR) stream
+is analyzed.
+
+B. Mobility Models
+For the simulative performance evaluation, a mixture of
+generic and vehicle-speciﬁc mobility models is applied. The
+initial performance evaluation and parameter optimization is
+performed using a Random Waypoint model
+in order to
+allow comparisons with other research works, however it is
+
+TABLE II
+
+D E FAU LT S IMU LAT ION PARAM E TER S
+
+Parameter
+
+Value
+
+MAC
+Channel model: Rural / Urban
+Path loss exponent η
+Receiver sensitivity
+Transmission power
+Carrier frequency
+Number of mesh nodes
+Stream data rate
+Simulation duration per run
+Simulation runs per setting
+Playground size: Generic scenario
+Playground size: UAV scenario
+Playground size: Vehicular scenario
+B.A.T.M.A.N. version
+OMNeT++/ INET version
+OGM interval
+ELP interval
+Weighting exponent α: Rural / Urban
+Prediction lookahead τ : Rural / Urban
+
+IEEE 802.11g
+{Friis, Nakagami (m=2)}
+2.65
+-83 dBm
+{10, 20} dBm
+2.4 GHz
+10
+10 MBit/s
+300 s
+25
+600 m x 600 m x 10 m
+500 m x 500 m x 250 m
+1500 m x 1000 m x 10 m
+2018.0
+5.2.1 / 3.6.3
+0.33 s
+0.2 s
+{3, 4} s
+
+{1, 2}
+
+Fig. 4. Overview of the ﬁeld test scenario and its representation within the
+OMNeT++ simulator for the validation.
+
+future.
+
+V. VA L IDAT ION
+
+In this
+section,
+the derived simulation model
+for
+B.A.T.M.A.N. V is validated using ﬁeld measurements in
+controlled scenarios using the default routing metric. Within
+the real world measurements, a mobile vehicle transmits UDP
+stream data with a trafﬁc load of 10 MBit/s to a static
+server node using the mesh network infrastructure. iperf
+is
+used for trafﬁc generation and Key Performance Indicator
+(KPI) measurement. The same scenario is modeled within a
+simulation setup.
+Fig. 4 shows a map of the real world evaluation scenario
+as well as its representation within the OMNeT++ simulator.
+All B.A.T.M.A.N. V nodes are mounted on a tripod at 1.5 m
+height. For the One-hop scenario, the server is placed centrally
+between the location markers 1 and 2. Two-hop uses location 2
+for the server and location 1 for a single relay node. Multi-hop
+applies the topology illustrated for the OMNeT++ scenario as
+shown in Fig. 4. Fig. 5 shows the measured channel properties
+and the Friis and Two Ray channel models for comparison. It
+can be seen that the mean attenuation behavior above 70 m
+can be approximated by the Friis model with a path loss
+exponent η of 2.65. The Two Ray model does not ﬁt well
+in the considered small-scale scenario.
+In order to achieve a high congruency of the real world
+and the simulation scenario, an empirical channel model is
+created based on the ﬁeld measurements and used for the
+following validation. The resulting data rate and delay of the
+measurement campaign and its simulation representation is
+shown in Fig. 6. The results substantiate the outcome of the
+channel behavior analysis. In the considered small-scale range,
+
+Fig. 3. Map of the campus area for the vehicular evaluation scenario. (Map
+data: c(cid:13)OpenStreetMap contributors, CC BY-SA.)
+
+assumed that vehicles are aware of their future trajectory.
+For the vehicular scenario, a network provisioning scenario
+using gateway vehicles is modeled using Lightweight ICT-
+centric Mobility Simulation (LIMoSim) [20]. 30 cars move
+around the campus area of the TU Dortmund University, which
+is illustrated in Fig. 3. One randomly selected vehicle aims
+to establish a stream data connection to a network gateway
+vehicle using the mesh for packet forwarding.
+For the evaluation of the applicability of the proposed
+mobility-predictive routing protocol, for low-altitude UAV
+applications, the Distributed Dispersion Detection (DDD) [21]
+algorithm applied, which is intended for agent-based plume
+exploration in hazardous environments. The mesh communi-
+cation is used to stream video data to a remote mission control
+center. Here, a trace-based mobility modeling approach is
+applied based on traces of the MATLAB-based UAV simulation
+framework of [21]. The UAVs make use of controlled mobility,
+thus each UAV is aware of its desired trajectory in the near
+
+car[0]OMNeT++Real Worldrelay[0]server[0]relay[1]relay[2]Mesh Node0123the Two Ray model is mostly in the constructive interference
+region with an unrealistic high data rate, which is more than
+twice as high as the measurement, therefore it is not considered
+further. The Nakagami model provides a close approximation
+of the real world behavior of the data rate but fails to model
+the delay behavior with a sufﬁcient accuracy. It can been seen
+that the best match for both indicators is achieved by the
+empirical channel model that is based on the measured channel
+characteristics. In conclusion, the proposed simulation model
+for B.A.T.M.A.N. V and its real world implementation show
+similar average characteristics and results.
+
+V I . S IMU LAT IV E P ER FORMANC E EVA LUAT ION
+
+In this section, B.A.T.M.A.N. V and its proposed extensions
+are evaluated in different scenarios and compared with the
+established routing protocols AODV [12], OLSR [16], and
+B.A.T.M.A.N. III [4]. All errorbars show the 0.95-conﬁdence
+interval of the mean value. At ﬁrst, the parametrization of
+B.A.T.M.A.N. V is optimized for the mobile scenario based
+on random waypoint mobility. Afterwards, the performance of
+the protocol is evaluated in two reference scenarios focusing
+on vehicular and UAV mobility.
+A. Optimization for Highly Mobile Scenarios
+B.A.T.M.A.N. V introduces ELP probing, which is intended
+to provide the throughput metric with further trafﬁc for the
+link quality assessment. Therefore, the effects of the additional
+messages are evaluated. Fig. 7 shows the impact of ELP
+probing on the resulting data rate for different ELP packet
+sizes. It can be seen that the amount of additional messages
+has a negative impact on the routing performance in the mobile
+scenario due to the increased amount of collisions. Therefore,
+ELP probing is disabled for the following evaluations.
+A comparison of the native throughput metric with the pro-
+posed mobility-aware extensions is shown in Fig. 8. Although
+both proposals outperform the native approach, the general
+Packet Delivery Ratio (PDR) in the rural scenario is very high,
+thus limiting the optimization potential. In the urban scenario,
+the throughput-based approach suffers from paket loss. Here,
+the mobility-aware approaches are able to achieve signiﬁcant
+beneﬁts, with the predictive approach increasing the PDR by
+23 %. Therefore, only the proposed predictive B.A.T.M.A.N.
+V metric will be considered in the further evaluations.
+
+Fig. 5. Empirically measured channel properties and channel model approx-
+imation.
+
+Fig. 9 shows a scalability analysis with varied vehicle
+speed, trafﬁc load and number of streams. In general, the
+extended B.A.T.M.A.N. V and reactive AODV achieve sig-
+niﬁcantly higher PDR values than OLSR and B.A.T.M.A.N.
+III. Due to its mobility-related metric, the proposed extended
+B.A.T.M.A.N. V has a higher dependency to the velocity
+than the topology-based protocols, resulting in a steeper PDR
+decrease with increased speed. With the trafﬁc load of the
+single stream being varied, the PDR is only slightly reduced
+for all considered protocols. Furthermore, the behavior of the
+protocol for a varied number of 2 MBit/s streams with ran-
+dom source-destination pairs is analyzed. Here, the extended
+B.A.T.M.A.N. V behaves slightly better than AODV. Up to
+three parallel streams, AODV beneﬁts from the increased
+trafﬁc on multiple end-to-end paths. Although AODV is a
+reactive protocol, all intermediate nodes of an active path
+maintain the reverse path quality for a deﬁned time period.
+Therefore, the presence of multiple active paths increases the
+probability that the nodes are able to switch the routing path
+within a changed network topology without requiring a route
+request phase. For a higher number of active streams, the
+increasing loss probability for routing messages signiﬁcantly
+decreases the routing performance for all considered protocols.
+
+B. UAV Evaluation Scenario
+
+Fig. 10 shows the resulting PDR and delay values for
+the considered protocols in the UAV-based plume exploration
+scenario using DDD. As the mobility algorithm itself is
+connectivity-aware, it aims to maintain the swarm coherence
+by adjusting the mobility behavior of the UAVs, which results
+in a generally high PDR level. Although the mean PDR value
+of the proposed approach is only slightly better than the result
+of OLSR and B.A.T.M.A.N. III, the occurrence of lower PDR
+values is signiﬁcantly reduced. While all proactive protocols
+achieve a similar delay, the latter is signiﬁcantly higher for
+AODV due to its on-demand approach.
+
+C. Vehicular Evaluation Scenario
+
+Fig. 11 shows the resulting PDR and delay values for the
+considered protocols. In contrast to the previously analyzed
+UAV scenario,
+the vehicular scenario is more challenging
+for the routing protocols, since the larger network causes
+a higher number of potential routing paths from source to
+destination. Moreover, the physical dimensions of the scenario
+itself are larger and since the mobility characteristics of the
+vehicles are connectivity-unaware, connectivity is not always
+guaranteed. Therefore, the general PDR level is lower than
+in the UAV scenario. The highest PDR is achieved by the
+proposed predictive B.A.T.M.A.N. V, which exploits the high
+predictability of road-based vehicular mobility. Although the
+delay for AODV is on average more than ﬁve times larger
+than for the proactive protocols, all protocols fulﬁll the delay
+ETSI requirements for safety-related vehicular communication
+in the considered scenario [22].
+
+020406080100120140160180200Distance [m]-100-80-60-40-20RSSI [dBm]Simulated receiver sensitivityMeasurementFriis withTwo RayFig. 6. Model validation: Comparison of measurements for data rate and delay with simulation results using different channel models.
+
+narios. In addition, our proposed novel routing metrics, which
+exploit distance-awareness and mobility prediction, showed a
+signiﬁcantly better performance than the throughput estimation
+metric of B.A.T.M.A.N. V. In different case-studies for aerial
+and ground-based mobile ad-hoc networks, it was shown that
+the extended protocol is well-suited for maintaining connec-
+tivity within vehicular and UAV-based mesh networks and
+outperforms established topology-based routing approaches.
+In future work, we will exploit the proposed open source
+simulation model as a platform for optimizing vehicular mesh
+routing. A promising research topic is the determination of
+routing metrics based on reinforcement learning. Additionally,
+we will analyze the performance of using B.A.T.M.A.N. V in
+scenarios with heterogeneous communication technologies.
+
+ACKNOW LEDGM ENT
+
+Part of the work on this paper has been supported by Deutsche Forschungs-
+gemeinschaft (DFG) within the Collaborative Research Center SFB 876
+“Providing Information by Resource-Constrained Analysis”, project B4.
+
+R E F ER ENC E S
+
+[1] N. Bui, M. Cesana, S. A. Hosseini, Q. Liao, I. Malanchini, and
+J. Widmer, “A survey of anticipatory mobile networking: Context-based
+classiﬁcation, prediction methodologies, and optimization techniques,”
+IEEE Communications Surveys & Tutorials, 2017.
+[2] B. Sliwa, T. Liebig, R. Falkenberg, J. Pillmann, and C. Wietfeld,
+“Efﬁcient machine-type communication using multi-metric context-
+awareness for cars used as mobile sensors in upcoming 5G networks,” in
+2018 IEEE 87th Vehicular Technology Conference (VTC-Spring), Porto,
+Portugal, Jun 2018, Best Student Paper Award.
+[3] B. Sliwa, D. Behnke, C. Ide, and C. Wietfeld, “B.A.T.Mobile: Leverag-
+ing mobility control knowledge for efﬁcient routing in mobile robotic
+networks,” in IEEE GLOBECOM 2016 Workshop on Wireless Network-
+ing, Control and Positioning of Unmanned Autonomous Vehicles (Wi-
+UAV), Washington D.C., USA, Dec 2016.
+[4] D. Johnson, N. Ntlatlapa, and C. Aichele, “A simple pragmatic approach
+to mesh routing using batman,” in In 2nd IFIP International Symposium
+on Wireless Communications and Information Technology in Developing
+Countries, Pretoria, South Africa, 2008.
+[5] T. Hardes, F. Dressler, and C. Sommer, “Simulating a city-scale com-
+munity network: From models to ﬁrst improvements for Freifunk,” in
+2017 International Conference on Networked Systems (NetSys), March
+2017, pp. 1–7.
+[6] A. Varga and R. Hornig, “An overview of the OMNeT++ simulation
+environment,” in Proceedings of the 1st International Conference on
+Simulation Tools and Techniques for Communications, Networks and
+Systems & Workshops, ser. Simutools ’08.
+ICST, Brussels, Belgium,
+Belgium: ICST (Institute for Computer Sciences, Social-Informatics and
+Telecommunications Engineering), 2008, pp. 60:1–60:10.
+
+Fig. 7.
+Impact of ELP probing on the resulting data rate for different ELP
+packet sizes.
+
+Fig. 8.
+Comparison of the native Throughput metric with the proposed
+Distance and Prediction methods for the rural and the urban evaluation
+scenario.
+
+V I I . CONC LU S ION
+
+In this paper, we presented an analysis and optimization of
+the novel MAC layer routing protocol B.A.T.M.A.N. V for ve-
+hicular scenarios. In order to allow the simulative analysis, an
+open source simulation model was derived based on the Linux
+kernel implementation and validated using ﬁeld measurements.
+Within comprehensive simulation studies, it was shown that
+some of the new features of B.A.T.M.A.N. V (e.g., ELP
+probing) decrease the routing efﬁciency in highly mobile sce-
+
+One-hopTwo-hopMulti-hopScenario246810Data Rate [MBit/s]MeasurementFriisEmpiricalChannel ModelTwo RayNakagamiOne-hopTwo-hopMulti-hopScenario0102030Delay [ms]0200400600800100012001400ELPPacket Size [Byte]0.70.750.80.850.90.95Packet Delivery RatioELPProbingDisabledThroughputDistancePredictiveThroughputDistancePredictivePath Metric0.50.60.70.80.91Packet Delivery RatioRuralUrban+ 23.9 %+ 3.2 %Fig. 9. Scalability analysis: Comparison of the resulting PDR with respect to vehicle speed, trafﬁc load and number of streams for the proposed mobility-
+predictive B.A.T.M.A.N. V and different established protocols (Rural channel).
+
+[7] E. R. Cavalcanti, J. A. R. de Souza, M. A. Spohn, R. C. d. M. Gomes,
+and A. F. B. F. d. Costa, “VANETs’ research over the past decade:
+Overview, credibility, and trends,” SIGCOMM Comput. Commun. Rev.,
+vol. 48, no. 2, pp. 31–39, May 2018.
+[8] A. Awang, K. Husain, N. Kamel, and S. A¨ıssa, “Routing in vehicular
+ad-hoc networks: A survey on single- and cross-layer design techniques,
+and perspectives,” IEEE Access, vol. 5, pp. 9497–9517, 2017.
+[9] B. Karp and H. T. Kung, “GPSR: Greedy perimeter stateless routing
+for wireless networks,” in Proceedings of the 6th Annual International
+Conference on Mobile Computing and Networking, ser. MobiCom ’00.
+New York, NY, USA: ACM, 2000, pp. 243–254.
+[10] G. Singal, V. Laxmi, M. S. Gaur, and V. Rao, “Moralism: Mobility pre-
+diction with link stability based multicast routing protocol in MANETs,”
+Wireless Networks, vol. 23, no. 3, pp. 663–679, Apr 2017.
+[11] H. Yang, M. Yu, and X. Zeng, “Link available time prediction based
+GPSR for vehicular ad hoc networks,” in 2017 IEEE 14th International
+Conference on Networking, Sensing and Control (ICNSC), May 2017,
+pp. 293–298.
+[12] C. E. Perkins and E. M. Royer, “Ad-hoc on-demand distance vector
+routing,” in Mobile Computing Systems and Applications, 1999. Pro-
+ceedings. WMCSA ’99. Second IEEE Workshop on, Feb 1999, pp. 90–
+100.
+[13] X. Hu, J. Wang, and C. Wang, “Link stability prediction and its appli-
+cation to routing in mobile ad hoc networks,” in 2009 2nd International
+Conference on Power Electronics and Intelligent Transportation System
+(PEITS), vol. 1, Dec 2009, pp. 141–144.
+[14] H. Huang and S. Zhang, “A routing algorithm based on dynamic forecast
+of vehicle speed and position in VANET,” International Journal of
+Distributed Sensor Networks, vol. 9, no. 6, p. 390795, 2013.
+[15] H. Menouar, I. Guvenc, K. Akkaya, A. S. Uluagac, A. Kadri, and
+A. Tuncer, “UAV-enabled intelligent transportation systems for the smart
+city: Applications and challenges,” IEEE Communications Magazine,
+vol. 55, no. 3, pp. 22–28, March 2017.
+[16] T. Clausen and P. Jacquet, “Optimized link state routing protocol
+(OLSR),” RFC Editor, RFC 3626, October 2003.
+[17] B. Sliwa, R. Falkenberg, and C. Wietfeld, “A simple scheme for
+distributed passive load balancing in mobile ad-hoc networks,” in IEEE
+Vehicular Technology Conference (VTC-Spring), Sydney, Jun 2017.
+[18] B. Sliwa, T. Liebig, R. Falkenberg, J. Pillmann, and C. Wietfeld,
+“Machine learning based context-predictive car-to-cloud communication
+using multi-layer connectivity maps for upcoming 5G networks,” in 2018
+IEEE 88th Vehicular Technology Conference (VTC-Fall), Chicago, USA,
+Aug 2018.
+[19] B. Sliwa, “Simulation model and raw results,” Oct 2018. [Online].
+Available: http://doi.org/10.5281/zenodo.1466638
+[20] B. Sliwa, J. Pillmann, F. Eckermann, L. Habel, M. Schreckenberg,
+and C. Wietfeld, “Lightweight joint simulation of vehicular mobility
+and communication with LIMoSim,” in IEEE Vehicular Networking
+Conference (VNC), Torino, Italy, Nov 2017.
+[21] D. Behnke, P. Bok, and C. Wietfeld, “UAV-based connectivity mainte-
+
+Fig. 10. Performance comparison using DDD mobility for UAV-based plume
+exploration (Urban channel, 10 UAVs).
+
+Fig. 11.
+Performance comparison for the vehicular network provisioning
+scenario (Urban channel, 30 vehicles).
+
+Speed [km/h]0.650.70.750.80.850.90.951Packet Delivery RatioPredictive B.A.T.M.A.N. VAODVB.A.T.M.A.N. IIIAODVOLSR25507510012515017520012345678910Traffic Load [MBit/s]0.60.650.70.750.80.850.90.951Packet Delivery Ratio12345678910Number ofStreamsParallel 2 MBit/s0.650.70.750.80.850.90.951Packet Delivery Ratio5101520Delay [ms]Routing Protocol0.750.80.850.90.95Packet Delivery RatioAODVOLSRB.A.T.M.A.N.IIIPredictiveB.A.T.M.A.N. V0.550.60.650.70.75Packet Delivery Ratio0510152025303540Delay [ms]AODVOLSRB.A.T.M.A.N.IIIPredictiveB.A.T.M.A.N. Vnance for borderline detection,” in 2013 IEEE 77th Vehicular Technology
+Conference (VTC Spring), June 2013, pp. 1–6.
+[22] ETSI, “Intelligent transport systems (ITS); vehicular communications;
+basic set of applications; deﬁnitions,” ETSI TR 102 638 V1.1.1 (2009-
+06), Tech. Rep., 2009.
+
+

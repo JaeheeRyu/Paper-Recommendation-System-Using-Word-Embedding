@@ -1,0 +1,3573 @@
+AN EX PON EN T IA L L EARN ING RATE SCH EDUL E FOR
+D EE P L EARN ING
+
+Zhiyuan Li
+
+Princeton University
+
+zhiyuanli@cs.princeton.edu
+
+arora@cs.princeton.edu
+
+Sanjeev Arora
+
+Princeton University and Institute for Advanced Study
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+3
+v
+4
+5
+4
+7
+0
+
+.
+
+0
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+AB STRAC T
+
+Intriguing empirical evidence exists that deep learning can work well with exotic
+schedules for varying the learning rate. This paper suggests that the phenomenon
+may be due to Batch Normalization or BN(Ioffe & Szegedy, 2015), which is ubiq-
+uitous and provides beneﬁts in optimization and generalization across all standard
+architectures. The following new results are shown about BN with weight decay
+and momentum (in other words, the typical use case which was not considered in
+earlier theoretical analyses of stand-alone BN (Ioffe & Szegedy, 2015; Santurkar
+et al., 2018; Arora et al., 2018)
+• Training can be done using SGD with momentum and an exponentially in-
+creasing learning rate schedule, i.e., learning rate increases by some (1 + α)
+factor in every epoch for some α > 0. (Precise statement in the paper.) To
+the best of our knowledge this is the ﬁrst time such a rate schedule has been
+successfully used, let alone for highly successful architectures. As expected,
+such training rapidly blows up network weights, but the network stays well-
+behaved due to normalization.
+• Mathematical explanation of the success of the above rate schedule: a rigor-
+ous proof that it is equivalent to the standard setting of BN + SGD + Standard
+Rate Tuning + Weight Decay + Momentum. This equivalence holds for other
+normalization layers as well, Group Normalization(Wu & He, 2018), Layer
+Normalization(Ba et al., 2016), Instance Norm(Ulyanov et al., 2016), etc.
+• A worked-out
+toy example illustrating the above linkage of hyper-
+parameters. Using either weight decay or BN alone reaches global minimum,
+but convergence fails when both are used.
+
+1
+
+IN TRODUC T ION
+
+Batch Normalization (BN) offers signiﬁcant beneﬁts in optimization and generalization across archi-
+tectures, and has become ubiquitous. Usually best performance is attained by adding weight decay
+and momentum in addition to BN.
+Usually weight decay is thought to improve generalization by controlling the norm of the parameters.
+However, it is fallacious to try to separately think of optimization and generalization because we are
+dealing with a nonconvex objective with multiple optima. Even slight changes to the training surely
+lead to a different trajectory in the loss landscape, potentially ending up at a different solution! One
+needs trajectory analysis to have a hope of reasoning about the effects of such changes.
+In the presence of BN and other normalization schemes, including GroupNorm, LayerNorm, and
+InstanceNorm, the optimization objective is scale invariant to the parameters, which means rescaling
+parameters would not change the prediction, except the parameters that compute the output which
+do not have BN. However, Hoffer et al. (2018b) shows that ﬁxing the output layer randomly doesn’t
+harm the performance of the network. So the trainable parameters satisfy scale invariance.(See
+more in Appendix C) The current paper introduces new modes of analysis for such settings. This
+rigorous analysis yields the surprising conclusion that the original learning rate (LR) schedule and
+weight decay(WD) can be folded into a new exponential schedule for learning rate: in each iteration
+multiplying it by (1 + α) for some α > 0 that depends upon the momentum and weight decay rate.
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+Theorem 1.1 (Main, Informal). SGD on a scale-invariant objective with initial learning rate η ,
+weight decay factor λ, and momentum factor γ is equivalent to SGD with momentum factor γ
+where at iteration t, the learning rate ˜ηt in the new exponential learning rate schedule is deﬁned as
+˜ηt = α−2t−1 η without weight decay(˜λ = 0) where α is a non-zero root of equation
+
+x2 − (1 + γ − λη)x + γ = 0,
+
+(1)
+Speciﬁcally, when momentum γ = 0, the above schedule can be simpliﬁed as ˜ηt = (1 − λη)−2t−1 η .
+than (1 − √
+The above theorem requires that the product of learning rate and weight decay factor, λη , is small
+γ )2 , which is almost always satisﬁed in practice. The rigorous and most general version
+of above theorem is Theorem 2.12, which deals with multi-phase LR schedule, momentum and
+weight decay.
+There are other recently discovered exotic LR schedules, e.g. Triangular LR schedule(Smith, 2017)
+and Cosine LR schedule(Loshchilov & Hutter, 2016), and our exponential LR schedule is an extreme
+example of LR schedules that become possible in presence of BN. Such an exponential increase in
+learning rate seems absurd at ﬁrst sight and to the best of our knowledge, no deep learning success
+has been reported using such an idea before. It does highlight the above-mentioned viewpoint that
+in deep learning, optimization and regularization are not easily separated. Of course, the exponent
+trumps the effect of initial lr very fast (See Figure 3), which explains why training with BN and
+WD is not sensitive to the scale of initialization, since with BN, tuning the scale of initialization is
+equivalent to tuning the initial LR η while ﬁxing the product of LR and WD, ηλ (See Lemma 2.7).
+Note that it is customary in BN to switch to a lower LR upon reaching a plateau in the validation
+loss. According to the analysis in the above theorem, this corresponds to an exponential growth
+with a smaller exponent, except for a transient effect when a correction term is needed for the two
+processes to be equivalent (see discussion around Theorem 2.12).
+Thus the ﬁnal training algorithm is roughly as follows: Start from a convenient LR like 0.1, and
+grow it at an exponential rate with a suitable exponent. When validation loss plateaus, switch to
+an exponential growth of LR with a lower exponent. Repeat the procedure until the training loss
+saturates.
+In Section 3, we demonstrate on a toy example how weight decay and normalization are inseparably
+involved in the optimization process. With either weight decay or normalization alone, SGD will
+achieve zero training error. But with both turned on, SGD fails to converge to global minimum.
+In Section 5, we experimentally verify our theoretical ﬁndings on CNNs and ResNets. We also
+construct better exponential LR schedules by incorporating the Cosine LR schedule on CIFAR10,
+which opens the possibility of even more general theory of rate schedule tuning towards better
+performance.
+
+1 .1 R ELAT ED WORK
+
+There have been other theoretical analyses of training models with scale-invariance. (Cho & Lee,
+2017) proposed to run Riemanian gradient descent on Grassmann manifold G (1, n) since the weight
+matrix is scaling invariant to the loss function. observed that the effective stepsize is proportional to
+ηw(cid:107)wt (cid:107)2 . (Arora et al., 2019) show the gradient is always perpendicular to the current parameter vector
+which has the effect that norm of each scale invariant parameter group increases monotonically,
+which has an auto-tuning effect. (Wu et al., 2018) proposes a new adaptive learning rate schedule
+motivated by scale-invariance property of Weight Normalization.
+
+Previous work for understanding Batch Normalization. (Santurkar et al., 2018) suggested that
+
+the success of BNhas does not derive from reduction in Internal Covariate Shift, but by making
+landscape smoother. (Kohler et al., 2018) essentially shows linear model with BN could achieve
+exponential convergence rate assuming gaussian inputs, but their analysis is for a variant of GD
+with an inner optimization loop rather than GD itself. (Bjorck et al., 2018) observe that the higher
+learning rates enabled by BN empirically improves generalization. (Arora et al., 2019) prove that
+with certain mild assumption, (S)GD with BN ﬁnds approximate ﬁrst order stationary point with any
+ﬁxed learning rate. None of the above analyses incorporated weight decay, but (Zhang et al., 2019;
+Hoffer et al., 2018a; van Laarhoven, 2017; Page; Wu) argued qualitatively that weight decay makes
+
+2
+
+parameters have smaller norms, and thus the effective learning rate,
+ηw(cid:107)wt (cid:107)2 is larger. They described
+experiments showing this effect but didn’t have a closed form theoretical analysis like ours. None
+of the above analyses deals with momentum rigorously.
+
+1 .2 PR EL IM INAR I E S AND NOTAT ION S
+
+For batch B = {xi }B
+i=1 , network parameter θ , we denote the network by fθ and the loss function at
+iteration t by Lt (fθ ) = L(fθ , Bt ) . When there’s no ambiguity, we also use Lt (θ) for convenience.
+We say a loss function L(θ) is scale invariant to its parameter θ is for any c ∈ R+ , L(θ) =
+L(cθ). In practice, the source of scale invariance is usually different types of normalization layers,
+including Batch Normalization (Ioffe & Szegedy, 2015), Group Normalization (Wu & He, 2018),
+Layer Normalization (Ba et al., 2016), Instance Norm (Ulyanov et al., 2016), etc.
+Implementations of SGD with Momentum/Nesterov comes with subtle variations in literature. We
+adopt the variant from Sutskever et al. (2013), also the default in PyTorch (Paszke et al., 2017). L2
+regularization (a.k.a. Weight Decay) is another common trick used in deep learning. Combining
+them together, we get the one of the mostly used optimization algorithms below.
+batch Bt , update the parameters θt and momentum vt as following:
+Deﬁnition 1.2. [SGD with Momentum and Weight Decay] At iteration t, with randomly sampled
+
+θt =θt−1 − ηt−1vt
+vt =γvt−1 + ∇θ
+
+(cid:18)
+
+Lt (θt−1 ) +
+
+λt−1
+2
+
+(cid:107)θt−1(cid:107)2
+
+(cid:19)
+
+,
+
+(2)
+
+(3)
+
+where ηt is the learning rate at epoch t, γ is the momentum coefﬁcient, and λ is the factor of weight
+decay. Usually, v0 is initialized to be 0.
+For ease of analysis, we will use the following equivalent of Deﬁnition 1.2.
+
+θt − θt−1
+ηt−1
+
+θt−1 − θt−2
+ηt−2
+
+= γ
+
+− ∇θ
+
+(L(θt−1 ) +
+
+where η−1 and θ−1 must be chosen in a way such that v0 = θ0−θ−1
+θ−1 = θ0 and η−1 could be arbitrary.
+
+η−1
+
+λt−1
+2
+
+(cid:107)θt−1 (cid:107)2
+
+,
+
+(4)
+is satisﬁed, e.g. when v0 = 0,
+
+2
+
+(cid:18)
+
+(cid:19)
+
+A key source of intuition is the following simple lemma about scale-invariant networks Arora
+et al. (2019). The ﬁrst property ensures GD (with momentum) always increases the norm of the
+weight.(See Lemma B.1 in Appendix B) and the second property says that the gradients are smaller
+for parameteres with larger norm, thus stabilizing the trajectory from diverging to inﬁnity.
+(2). ∇θ L(cid:12)(cid:12)θ=θ0
+Lemma 1.3 (Scale Invariance). If for any c ∈ R+ , L(θ) = L(cθ), then
+(1). (cid:104)∇θ L, θ(cid:105) = 0;
+2 D ER IV ING EX PON EN T IA L L EARN ING RAT E SCHEDUL E
+
+= c∇θ L(cid:12)(cid:12)θ=cθ0
+
+, for any c > 0
+
+As a warm-up in Section 2.1 we show that if momentum is turned off then Fixed LR + Fixed WD
+can be translated to an equivalent Exponential LR. In Section 2.2 we give a more general analysis
+on the equivalence between Fixed LR + Fixed WD + Fixed Momentum Factor and Exponential
+LR + Fixed Momentum Factor. While interesting, this still does completely apply to real-life deep
+learning where reaching full accuracy usually requires multiple phases in training where LR is ﬁxed
+within a phase and reduced by some factor from one phase to the next. Section 2.3 shows how to
+interpret such a multi-phase LR schedule + WD + Momentum as a certain multi-phase exponential
+LR schedule with Momentum.
+
+2 .1 R E P LAC ING WD BY EX PON EN T IA L LR IN MOM ENTUM -FR EE SGD
+
+We use notation of Section 1.2 and assume LR is ﬁxed over iterations, i.e. ηt = η0 , and γ (momen-
+tum factor) is set as 0. We also use λ to denote WD factor and θ0 to denote the initial parameters.
+
+3
+
+The intuition should be clear from Lemma 1.3, which says that shrinking parameter weights by factor
+ρ (where ρ < 1) amounts to making the gradient ρ−1 times larger without changing its direction.
+Thus in order to restore the ratio between original parameter and its update (LR×Gradient), the
+easiest way would be scaling LR by ρ2 . This suggests that scaling the parameter θ by ρ at each step
+is equivalent to scaling the LR η by ρ−2 .
+To prove this formally we use the following formalism. We’ll refer to the vector (θ , η) the state of
+a training algorithm and study how this evolves under various combinations of parameter changes.
+We will think of each step in training as a mapping from one state to another. Since mappings can be
+composed, any ﬁnite number of steps also correspond to a mapping. The following are some basic
+mappings used in the proof.
+
+1. Run GD with WD for a step:
+2. Scale the parameter θ :
+3. Scale the LR η :
+
+GDρ
+
+t (θ , η) = (ρθ − η∇Lt (θ), η);
+Πc
+1 (θ , η) = (cθ , η);
+Πc
+2 (θ , η) = (θ , cη).
+
+t
+
+ρ = 1 − λη0 , GD1−λη0
+
+For example, when ρ = 1, GD1
+t is vanilla GD update without WD, also abbreviated as GDt . When
+t, which is decided by the batch of the training samples Bt in tth iteration. Below is the main result
+is GD update with WD λ and LR η0 . Here Lt is the loss function at iteration
+of this subsection, showing our claim that GD + WD ⇔ GD+ Exp LR (when Momentum is zero).
+It will be proved after a series of lemmas.
+Theorem 2.1 (WD ⇔ Exp LR). For every ρ < 1 and positive integer t following holds:
+t−1 ◦ · · · ◦ GDρ
+◦ · · · ◦ GD1 ◦ Πρ−2
+GDρ
+With WD being λ, ρ is set as 1 − λη0 and thus the scaling factor of LR per iteration is ρ−2 =
+(1 − λη0 )−2 , except for the ﬁrst iteration it’s ρ−1 = (1 − λη0 )−1 .
+We ﬁrst show how to write GD update with WD as a composition of above deﬁned basic maps.
+
+(cid:105) ◦ Πρ−1
+
+◦ GDt−1 ◦ Πρ−2
+
+◦ GD0 ◦ Πρ−1
+
+1 ◦ Πρ2t
+Πρt
+2
+
+0 =
+
+(cid:104)
+
+2
+
+2
+
+2
+
+2
+
+.
+
+Lemma 2.2. GDρ
+
+2 ◦ Πρ
+1 ◦ GDt ◦ Πρ−1
+t = Πρ
+
+2
+
+.
+
+1 ∼ Πρ−2
+
+2
+
+2
+
+2
+
+Πc2
+
+t ∼ Πρ−1
+
+◦ GDt ◦ Πρ−1
+
+Below we will deﬁne the proper notion of equivalence such that (1). Πρ
+, which implies
+GDρ
+; (2) the equivalence is preserved under future GD updates.
+We ﬁrst extend the equivalence between weights (same direction) to that between states, with addi-
+tional requirement that the ratio between the size of GD update and that of parameter are the same
+Deﬁnition 2.3 (Equivalent States). (θ , η) is equivalent to (θ (cid:48) , η (cid:48) ) iff ∃c > 0, ( (cid:101)θ , (cid:101)η) = [Πc
+among all equivalent states, which yields the notion of Equivalent Scaling.
+2 ](θ , η) = (cθ , c2 η), which is also denoted by ( (cid:101)θ , (cid:101)η)
+2 is called Equiva-
+lent Scaling for all c > 0.
+The following lemma shows that equivalent scaling commutes with GD update with WD, implying
+that equivalence is preserved under GD update (Lemma 2.4). This anchors the notion of equiv-
+alence — we could insert equivalent scaling anywhere in a sequence of basic maps(GD update,
+LR/parameter scaling), without changing the ﬁnal network.
+Lemma 2.4. For any constant c, ρ > 0 and t ≥ 0, GDρ
+In other words, (θ , η) c∼ (θ (cid:48) , η (cid:48) ) =⇒ GDρ
+Now we formally deﬁne equivalence relationship between maps using equivalent scalings.
+Deﬁnition 2.5 (Equivalent Maps). Two maps F , G are equivalent iff ∃c > 0, F = Πc
+which is also denoted by F c∼ G.
+
+t ◦ [Πc
+2 ] = [Πc
+t (θ , η) c∼ GDρ
+t (θ (cid:48) , η (cid:48) ).
+
+c∼ (θ , η). Πc
+
+2 ] ◦ GDρ
+t .
+
+1 ◦ Πc2
+
+1 ◦ Πc2
+
+2 ◦ G,
+
+1 ◦ Πc2
+
+1 ◦ Πc2
+
+1 ◦
+
+Proof of Theorem 2.1. By Lemma 2.2,, GDρ
+. By Lemma 2.4, GD update
+preserves map equivalence, i.e. F c∼ G ⇒ GDρ
+t ◦ F c∼ GDρ
+t ◦ G, ∀c, ρ > 0. Thus,
+t−1 ◦ · · · ◦ GDρ
+◦ · · · ◦ GD1 ◦ Πρ−2
+GDρ
+
+◦ GDt−1 ◦ Πρ−2
+
+◦ GD0 ◦ Πρ−1
+
+ρt∼ Πρ−1
+2
+
+0
+
+2
+
+2
+
+2
+
+2
+
+2
+
+.
+
+t
+
+ρ∼ Πρ−1
+
+◦ GDt ◦ Πρ−1
+
+4
+
+(cid:16)
+
+(cid:16)
+
+(cid:17)
+
+(cid:17)
+
+;
+
+, η , θ , η
+
+by exponential LR according to Theorem 2.9 to the schedule (cid:101)ηt = 0.1 × 1.481t , momentum 0.9. Plot on
+Figure 1: Taking PreResNet32 with standard hyperparameters and replacing WD during ﬁrst phase (Fixed LR)
+satisfying (cid:107)wt (cid:107)2(cid:101)ηt
+right shows weight norm w of the ﬁrst convolutional layer in the second residual block grows exponentially,
+= constant. Reason being that according to the proof it is essentially the norm square of
+the weights when trained with Fixed LR + WD + Momentum, and published hyperparameters kept this norm
+roughly constant during training.
+
+2 .2 R E PLAC ING WD BY EX PON EN T IA L LR : CA SE O F CON S TAN T LR W I TH MOM ENTUM
+
+In this subsection the setting is the same to that in Subsection 2.1 except that the momentum fac-
+tor is γ instead of 0. Suppose the initial momentum is v0 , we set θ−1 = θ0 − v0 η . Presence
+of momentum requires representing the state of the algorithm with four coordinates, (θ , η , θ (cid:48) , η (cid:48) ),
+which stand respectively for the current parameters/LR and the buffered parameters/LR (from last
+iteration) respectively. Similarly, we deﬁne the following basic maps and equivalence relationships.
+
+(cid:105)
+
+(cid:104)
+
+GDρ
+
+γ θ−θ (cid:48)
+
+η (cid:48) − ∇Lt (θ)
+
+1. Run GD with WD for a step:
+
+2. Scale Current parameter θ
+3. Scale Current LR η :
+4. Scale Buffered parameter θ (cid:48) :
+5. Scale Buffered parameter η (cid:48) :
+Deﬁnition 2.6 (Equivalent States).
+
+t (θ , η , θ (cid:48) , η (cid:48) ) =
+ρθ + η
+1 (θ , η , θ (cid:48) , η (cid:48) ) = (cθ , η , θ (cid:48) , η (cid:48) );
+Πc
+2 (θ , η , θ (cid:48) , η (cid:48) ) = (θ , cη , θ (cid:48) , η (cid:48) );
+Πc
+3 (θ , η , θ (cid:48) , η (cid:48) ) = (θ , η , cθ (cid:48) , η (cid:48) );
+Πc
+Πc
+4 (θ , η , θ (cid:48) , η (cid:48) ) = (θ , η , θ (cid:48) , cη (cid:48) ).
+by (θ , η , θ (cid:48) , η (cid:48) ) c∼ ( (cid:101)θ , (cid:101)η , (cid:101)θ (cid:48) , (cid:101)η (cid:48) ). We call Πc
+0, (θ , η , θ (cid:48) , η (cid:48) ) =
+Πc
+2 ◦ Πc
+
+to ( (cid:101)θ , (cid:101)η , (cid:101)θ (cid:48) , (cid:101)η (cid:48) ) iff ∃c >
+(θ , η , θ (cid:48) , η (cid:48) ) is equivalent
+( (cid:101)θ , (cid:101)η , (cid:101)θ (cid:48) , (cid:101)η (cid:48) ) = (c (cid:101)θ , c2 (cid:101)η , c (cid:101)θ (cid:48) , c2 (cid:101)η (cid:48) ), which is also denoted
+4 Equivalent Scalings for all c > 0.
+(cid:105) ◦ GDρ
+Again by expanding the deﬁnition, we show equivalent scalings commute with GD update.
+Lemma 2.7. ∀c, ρ > 0 and t ≥ 0, GDρ
+t .
+Similarly, we can rewrite GDρ
+t as a composition of vanilla GD update and other scalings by expand-
+ing the deﬁnition, when the current and buffered LR are the same in the input of GDρ
+t .
+Lemma 2.8. For any input (θ , η , θ (cid:48) , η), if α > 0 is a root of α + γα−1 = ρ + γ , then
+(θ , η , θ (cid:48) , η). In other words,
+GDρ
+
+t ◦ (cid:104)
+
+2 ◦ Πc
+
+2 ◦ Πc
+
+2 ◦ Πc
+
+1 ◦ Πc2
+
+3 ◦ Πc2
+4
+
+1 ◦ Πc2
+
+3 ◦ Πc2
+
+3 ◦ Πc2
+4
+
+3 ◦ Πc2
+4
+
+1 ◦ Πc2
+
+1 ◦ Πc2
+
+t (θ , η , θ (cid:48) , η) α∼ (cid:104)
+t (θ , η , θ (cid:48) , η) =
+Πα
+4 ◦ Πα
+2 ◦ Πα
+1 ◦ GDt ◦ Πα−1
+
+◦ Πα−1
+
+2
+
+◦ Πα
+3 ◦ Πα
+◦ GDt ◦ Πα−1
+
+4
+
+2
+
+2
+
+4
+
+3
+
+Πα−1
+
+◦ Πα−1
+
+◦ Πα
+3 ◦ Πα
+
+GDρ
+Though looking complicated, the RHS of Equation 5 is actually the desired Πα−1
+conjugated with some scaling on momentum part Πα
+in the current update
+cancels with the Πα
+4 in the next update. Now we are ready to show the equivalence between
+WD and Exp LR schedule when momentum is turned on for both.
+t=0 and { (cid:101)θt}∞
+t=0 , satisfy (cid:101)θt = αtθt , thus they correspond to the same networks
+Theorem 2.9 (GD + WD ⇔ GD+ Exp LR; With Momentum). The following deﬁned two sequences
+, ∀t ∈ N, given (cid:101)θ0 = θ0 , (cid:101)θ−1 = θ−1α, and (cid:101)ηt = η0α−2t−1 .
+of parameters ,{θt}∞
+in function space, i.e. fθt = f (cid:101)θt
+
+(θ , η , θ (cid:48) , η).
+◦ GDt ◦ Πα−1
+
+3 ◦ Πα
+4 , and Πα−1
+
+3 ◦ Πα
+
+◦ Πα−1
+
+(5)
+
+4
+
+2
+
+2
+
+3
+
+4
+
+=
+
+Πc
+
+(cid:104)
+
+(cid:105)
+
+(cid:104)
+
+(cid:105)
+
+(cid:105)
+
+Πc
+
+1. θt−θt−1
+η0
+(cid:101)ηt
+
+2. (cid:101)θt− (cid:101)θt−1
+
+= γ (θt−1−θt−2 )
+= γ ( (cid:101)θt−1− (cid:101)θt−2 )
+η0
+(cid:101)ηt−1
+
+− ∇θ (L(θt−1 ) + λ
+2 (cid:107)θt−1 (cid:107)2
+− ∇θ L( (cid:101)θt−1 )
+2 )
+
+5
+
+Figure 2: PreResNet32 trained with standard Step Decay and its corresponding Tapered-Exponential LR sched-
+ule. As predicted by Theorem 2.12, they have similar trajectories and performances.
+
+where α is a positive root of equation x2 − (1 + γ − λη0 )x + γ = 0, which is always smaller than
+1(See Appendix A.1). When γ = 0, α = 1 − λη0 is the unique non-zero solution.
+Remark 2.10. Above we implicitly assume that λη0 ≤ (1 − √
+γ )2 such that the roots are real and
+this is always true in practice. For instance of standard hyper-parameters where γ = 0.9, η0 =
+(1−√
+Proof. Note that ( (cid:101)θ0 , (cid:101)η0 , (cid:101)θ−1 , (cid:101)η−1 ) =
+
+γ )2 ≈ 0.019 (cid:28) 1.
+
+◦ Πα
+3 ◦ Πα
+
+0.1, λ = 0.0005,
+
+Πα−1
+
+(cid:104)
+
+(cid:105)
+
+λη0
+
+4
+
+2
+
+(θ0 , η0 , θ0 , η0 ), it sufﬁces to show that
+◦ · · · ◦ GD1 ◦ Πα−2
+
+◦ GD0 ◦ Πα−1
+
+◦ Πα
+3 ◦ Πα
+
+2
+
+2
+
+4
+
+(θ0 , η0 , θ0 , η0 )
+
+◦ Πα−1
+
+2
+
+◦ GDt−1 ◦ Πα−2
+
+2
+
+(cid:105)
+
+(cid:104)
+
+Πα−1
+
+◦ Πα−1
+
+3
+4
+αt∼ GD1−λη0
+t−1
+
+◦ · · · ◦ GD1−λη0
+
+0
+
+(θ0 , η0 , θ0 , η0 ),
+
+∀t ≥ 0.
+
+which follows immediately from Lemma 2.7 and Lemma 2.8 by induction.
+
+2 .3 R E P LAC ING WD BY EX PON EN T IA L LR : CA SE O F MU LT I PL E LR PHA SE S
+
+Usual practice in deep learning shows that reaching full training accuracy requires reducing the
+learning rate a few times.
+Deﬁnition 2.11. Step Decay is the (standard) learning rate schedule, where training has K phases
+I = 0, 1, . . . , K − 1, where phase I starts at iteration TI (T0 = 0), and all iterations in phase I use
+a ﬁxed learning rate of η∗
+I .
+The algorithm state in Section 2.2, consists of 4 components including buffered and current LR.
+When LR changes, the buffered and current LR are not equal, and thus Lemma 2.8 cannot be applied
+any more. In this section we show how to ﬁx this issue by adding extra momentum correction.
+In detail, we show the below deﬁned Exp LR schedule leads the same trajectory of networks in
+function space, with one-time momentum correction at the start of each phase. We empirically ﬁnd
+on CIFAR10 that ignoring the correction term does not change performance much.
+(TEXP) {(cid:101)ηt} with momentum factor γ and no WD, leads the same sequence networks in function
+Theorem 2.12 (Tapered-Exponential LR Schedule). There exists a way to correct the momentum
+only at the ﬁrst iteration of each phase, such that the following Tapered-Exponential LR schedule
+(cid:40)(cid:101)ηt−1 × (α∗
+space as that of Step Decay LR schedule(Deﬁnition 2.11) with momentum factor γ and WD λ.
+
+(cid:101)ηt−1 × η∗
+I−1 )−2
+
+× (α∗
+
+I
+I−1
+
+η∗
+
+(cid:113)
+
+if TI−1 + 1 ≤ t ≤ TI − 1, I ≥ 1;
+I )−1 (α∗
+I−1 )−1
+if t = TI , I ≥ 1,
+, (cid:101)η0 = η0 · (α∗
+0 )−1 = η∗
+0 · (α∗
+0 )−1 .
+
+1+γ−λη∗
+I +
+
+(1+γ−λη∗
+I )2−4γ
+2
+
+I =
+
+where α∗
+The analysis in previous subsection give the equivalence within each phase, where the same LR
+is used throughout the phase. To deal with the difference between buffered LR and current LR
+when entering new phases, the idea is to pretend ηt−1 = ηt and θt−1 becomes whatever it needs
+to maintain θt−θt−1
+such that we can again apply Lemma 2.8, which requires the current LR of
+the input state is equal to its buffered LR. Because scaling α in RHS of Equation 5 is different
+in different phases, so unlike what happens within each phase, they don’t cancel with each other
+at phase transitions, thus remaining as a correction of the momentum. The proofs are delayed to
+Appendix A, where we proves a more general statement allowing phase-dependent WD, {λI }K−1
+
+ηt−1
+
+I=0 .
+
+(cid:101)ηt =
+
+(6)
+
+6
+
+Alternative interpretation of Step Decay to exponential LR schedule:Below we present a new
+
+LR schedule, TEXP++, which is exactly equivalent to Step Decay without the need of one-time
+correction of momentum when entering each phase. We further show in Appendix A.1 that when
+i.e. the ratio between the LR growth per round, (cid:101)ηt+1(cid:101)ηt
+translating from Step Decay, the TEXP++ we get is very close to the original TEXP(Equation 9),
+For example, with WD 0.0005, max LR 0.1, momentum factor 0.9, the ratio is within 1 ± 0.0015 ∗
+converges to 1 exponentially each phase.
+0.9t−TI , meaning TEXP and TEXP++ are very close for Step Decay with standard hyperparameters.
+t=0 and { (cid:101)θt}∞
+Theorem 2.13. The following two sequences of parameters ,{θt}∞
+, ∀t ∈ N, given the initial conditions, (cid:101)θ0 = P0θ0 ,
+sequence of network functions, i.e. fθt = f (cid:101)θt
+t=0 , deﬁne the same
+
+/ (cid:101)η (cid:48)
+
+t+1(cid:101)η (cid:48)
+
+t
+
+(cid:101)θ−1 = P−1θ−1 .
+
+(cid:16)
+
+(cid:17)
+
+, for t = 1, 2, . . .;
+
+2
+
+− ∇θ
+
+1. θt−θt−1
+ηt−1
+(cid:101)ηt−1
+
+2. (cid:101)θt− (cid:101)θt−1
+
+= γ (cid:101)θt−1− (cid:101)θt−2
+
+= γ θt−1−θt−2
+ηt−2
+(cid:101)ηt−2
+
+− ∇θ L( (cid:101)θt−1 ), for t = 1, 2, . . .,
+(L(θt−1 ) + λt−1
+2 (cid:107)θt−1 (cid:107)2
+where (cid:101)ηt = PtPt+1 ηt , Pt =
+α−1
+αt = −ηt−1λt−1 + 1 +
+
+t(cid:81)
+
+i=−1
+
+The LR schedule {(cid:101)ηt}∞
+t=0 is called Tapered Exponential ++, or TEXP++.
+3 EXAM PL E I LLU S TRAT ING IN TER PLAY O F WD AND BN
+
+γ (1 − α−1
+t−1 ), ∀t ≥ 1.
+
+, ∀t ≥ −1 and αt recursively deﬁned as
+
+ηt−1
+ηt−2
+
+i
+
+(7)
+
+The paper so far has shown that effects of different hyperparameters in training are not easily sep-
+arated, since their combined effect on the trajectory is complicated. We give a simple example
+to illustrate this, where convergence is guaranteed if we use either BatchNorm or weight decay in
+isolation, but convergence fails if both are used. (Momentum is turned off for clarity of presentation)
+Setting: Suppose we are ﬁne-tuning the last linear layer of the network, where the input of the last
+layer is assumed to follow a standard Gaussian distribution N (0, Im ), and m is the input dimension
+of last layer. We also assume this is a binary classiﬁcation task with logistic loss, l(u, y) = ln(1 +
+exp(−uy)), where label y ∈ {−1, 1} and u ∈ R is the output of the neural network. The training
+algorithm is SGD with constant LR and WD, and without momentum. For simplicity we assume
+the batch size B is very large so we could assume the covariance of each batch Bt concentrates and
+is approximately equal to identity, namely 1
+t,b ≈ Im . We also assume the the input of
+the last layer are already separable, and w.l.o.g. we assume the label is equal to the sign of the ﬁrst
+coordinate of x ∈ Rm , namely sign (x1 ) . Thus the training loss and training error are simply
+
+i=1 xt,bx(cid:62)
+
+(cid:80)B
+
+B
+
+(cid:2)ln(1 + exp(−x(cid:62)wy))(cid:3) ,
+
+(cid:2)x(cid:62)wy ≤ 0(cid:3) =
+
+1
+π
+
+arccos
+
+w1(cid:107)w(cid:107)
+
+Pr
+
+x∼N (0,Im ),y=sign(x1 )
+
+L(w) =
+
+E
+
+x∼N (0,Im ),y=sign(x1 )
+(cid:113) ηλ
+
+Case 1: WD alone: Since both the above objective with L2 regularization is strongly convex and
+smooth in w , vanilla GD with suitably small learning rate could get arbitrarily close to the global
+minimum for this regularized objective. In our case, large batch SGD behaves similarly to GD and
+can achieve O(
+B ) test error following the standard analysis of convex optimization.
+Case 2: BN alone: Add a BN layer after the linear layer, and ﬁx scalar and bias term to 1 and 0. The
+objective becomes
+
+(cid:20)
+
+(cid:21)
+
+LBN (w) =
+
+E
+
+x∼N (0,Im ),y=sign(x1 )
+
+[LBN (w , x)] =
+
+E
+
+x∼N (0,Im ),y=sign(x1 )
+
+ln(1 + exp(−x(cid:62) w
+(cid:107)w(cid:107) y))
+
+.
+
+there’s some constant C , such that ∀w ∈ Rm with constant prob-
+learning rate, (cid:107)wt+1(cid:107)4 ≥ 2 (cid:80)t
+From Appendix A.6,
+ability, (cid:107)∇w LBN (w, x)(cid:107) ≥
+C(cid:107)w(cid:107) . By Pythagorean Theorem, (cid:107)wt+1(cid:107)4 = ((cid:107)wt(cid:107)2 +
+i=1 η2(cid:107)w(cid:107)2 (cid:107)∇w LBN (wi , x)(cid:107)2 grows at least linearly with high
+probability. Following the analysis of Arora et al. (2019), this is like reducing the effective learning
+
+η2 (cid:107)∇w LBN (wt , x)(cid:107)2 )2 ≥ (cid:107)wt(cid:107)4 + 2η2 (cid:107)wt(cid:107)2(cid:107)∇w LBN (wt , x)(cid:107)2 . As a result, for any ﬁxed
+
+7
+
+√
+
+B
+
++ 9 ln 1
+
+rate, and when (cid:107)wt(cid:107) is large enough, the effective learning rate is small enough, and thus SGD can
+ﬁnd the local minimum, which is the unique global minimum.
+Case 3: Both BN and WD: When BN and WD are used together, no matter how small the noise is,
+which comes from the large batch size, the following theorem shows that SGD will not converge to
+any solution with error smaller than O(
+ηλ), which is independent of the batch size (noise level).
+Theorem 3.1. [Nonconvergence] Starting from iteration any T0 , with probability 1 − δ over the
+randomness of samples, the training error will be larger than ε
+√
+π at least once for the following
+consecutive
+√
+δ iterations.
+Sketch. (See full proof in Appendix A.) The high level idea of this proof is that if the test error is
+low, the weight is restricted in a small cone around the global minimum, and thus the amount of the
+gradient update is bounded by the size of the cone. In this case, the growth of the norm of the weight
+by Pythagorean Theorem is not large enough to cancel the shrinkage brought by weight decay. As a
+result, the norm of the weight converges to 0 geometrically. Again we need to use the lower bound
+for size of the gradient, that (cid:107)∇w Lt(cid:107) = Θ( η(cid:107)wt (cid:107)
+B ) holds with constant probability. Thus the
+size of the gradient will grow along with the shrinkage of (cid:107)wt(cid:107) until they’re comparable, forcing
+the weight to leave the cone in next iteration.
+
+2(ηλ−2ε2 ) ln 64(cid:107)wT0 (cid:107)2 ε
+1
+m−2
+η
+
+(cid:112) m
+
+4 V I EW ING EXP LR V IA CANON ICAL O P T IM I ZAT ION FRAM EWORK
+
+This section tries to explain why the efﬁcacy of exponential LR in deep learning is mysterious to us,
+at least as viewed in the canonical framework of optimization theory.
+Canonical framework for analysing 1st order methods This focuses on proving that each —or
+most—steps of GD noticeably reduce the objective, by relying on some assumption about the spec-
+for GD update θt+1 = θt − η∇L(θt ), we have
+trum norm of the hessian of the loss, and most frequently, the smoothness, denoted by β . Speciﬁcally,
+
+L(θt+1 ) − L(θt ) ≤ (θt+1 − θt )(cid:62)∇L(θt ) +
+
+β
+2
+
+(cid:107)θt+1 − θt(cid:107)2 = −η(1 − β η
+2
+
+)(cid:107)∇L(θt )(cid:107)2 .
+
+When β < 2
+η , the ﬁrst order term is larger than the second order one, guaranteeing the loss value
+decreases. Since the analysis framework treats the loss as a black box (apart from the assumed
+bounds on the derivative norms), and the loss is non-convex, the best one can hope for is to prove
+speedy convergence to a stationary point (where gradient is close to 0). An increasing body of work
+proves such results.
+Now we turn to difﬁculties in understanding the exponential LR in context of the above framework
+and with scale-invariance in the network.
+1. Since loss is same for θ and c · θ for all c > 0 a simple calculation shows that along any
+straight line through the origin, smoothness is a decreasing function of c, and is very high
+close to origin. (Note: it is also possible to one can show the following related fact: In any
+ball containing the origin, the loss is nonconvex.)
+Thus if one were trying to apply the canonical framework to argue convergence to a sta-
+tionary point, the natural idea would be to try to grow the norm of the parameters until
+smoothness drops enough that the above-mentioned Canonical Framework starts to ap-
+ply. Arora et al. (2019) showed this happens in GD with ﬁxed LR (WD turned off), and
+furthermore the resulting convergence rate to stationary point is asymptotically similar to
+analyses of nonconvex optimization with learning rate set as in the Canonical framework.
+Santurkar et al. (2018) observed similar phenomenon in experiments, which they described
+as a smoothening of the objective due to BN.
+2. The Canonical Framework can be thought of as a discretization of continuous gradient
+descent (i.e., gradient ﬂow): in principle it is possible to use arbitrarily small learning rate,
+but one uses ﬁnite learning rate merely to keep the number of iterations small. The discrete
+process approximates the continuous process due to smoothness being small.
+In case of gradient ﬂow with weight decay (equivalently, with exponential LR schedule) the
+discrete process cannot track the continuous process for very long, which suggests that any
+
+8
+
+explanation of the beneﬁts of exponential LR may need to rely on discrete process being
+somehow better. The reason being that for gradient ﬂow one can decouple the speed of the
+θt into the tangential and the radial components, where the former one has no effect on
+the norm and the latter one has no effect on the objective but scales the tangential gradient
+exponentially. Thus the Gradient Flow with WD gives exactly the same trajectory as vanilla
+Gradient Flow does, excepting a exponential reparametrization with respect to time t.
+3. It can be shown that if the local smoothness is upperbounded by 2
+η (as stipulated in Canon-
+ical Framework) during a sequence θt (t = 1, 2, . . .) of GD updates with WD and constant
+LR then such sequence satisﬁes θt → 0. This contrasts with the usual experimental obser-
+vation that θt stays bounded away from 0. One should thus conclude that in practice, with
+constant LR and WD, smoothness doesn’t always stay small (unlike the above analyses
+where WD is turned off).
+
+5 EX PER IM EN T S
+
+ηI−1
+
+The translation to exponential LR schedule is exact except for one-time momentum correction term
+entering new phases. The experiments explore the effect of this correction term. The Tapered
+Exponential(TEXP) LR schedule contains two parts when entering a new phase I: an instant LR
+) and an adjustment of the growth factor (α∗
+I−1 → α∗
+decay ( ηI
+I ). The ﬁrst part is relative small
+compared to the huge exponential growing. Thus a natural question arises: Can we simplify TEXP
+LR schedule by dropping the part of instant LR decay?
+Also, previously we have only veriﬁed our equivalence theorem in Step Decay LR schedules. But it’s
+not sure how would the Exponential LR schedule behave on more rapid time-varying LR schedules
+such as Cosine LR schedule.
+Settings: We train PreResNet32 on CIFAR10. The initial learning rate is 0.1 and the momentum
+is 0.9 in all settings. We ﬁx all the scalar and bias of BN, because otherwise they together with the
+following conv layer grow exponentially, sometimes exceeding the range of Float32 when trained
+with large growth rate for a long time. We ﬁx the parameters in the last fully connected layer for
+scale invariance of the objective.
+
+5 .1 TH E BEN E FIT O F IN STAN T LR D ECAY
+
+We tried the following LR schedule (we call it TEXP--). Interestingly, up to correction of momentum
+when entering a new phase, this schedule is equivalent to a constant LR schedule, but with the
+weight decay coefﬁcient reduced correspondingly at the start of each phase. (See Theorem A.2 and
+(cid:26)(cid:101)ηt × (α∗
+Figure 5)
+
+(cid:101)ηt × (α∗
+I−1 )−2
+I )−1 (α∗
+I−1 )−1
+, (cid:101)η0 = η0 · (α∗
+0 )−1 = η∗
+0 · (α∗
+0 )−1 .
+
+if TI−1 + 1 ≤ t ≤ TI − 1, I ≥ 1;
+if t = TI , I ≥ 1,
+
+(1+γ−λη∗
+I )2−4γ
+2
+
+where α∗
+
+I =
+
+1+γ−λη∗
+I +
+
+TEXP--:
+
+(cid:101)ηt+1 =
+
+(cid:113)
+
+(8)
+
+Figure 3: Instant LR decay has only temporary effect when LR growth (cid:101)ηt /(cid:101)ηt−1 − 1 is large. The blue line uses
+an exponential LR schedule with constant exponent. The orange line multiplies its LR by the same constant
+each iteration, but also divide LR by 10 at the start of epoch 80 and 120. The instant LR decay only allows the
+parameter to stay at good local minimum for 1 epoch and then diverges, behaving similarly to the trajectories
+without no instant LR decay.
+
+9
+
+Figure 4: Instant LR decay is crucial when LR growth (cid:101)ηt /(cid:101)ηt−1−1 is very small. The original LR of Step Decay
+is decayed by 10 at epoch 80, 120 respectively. In the third phase, LR growth (cid:101)ηt /(cid:101)ηt−1 − 1 is approximately 100
+a result, TEXP achieves better test accuracy than TEXP--. As a comparison, in the second phase, (cid:101)ηt /(cid:101)ηt−1 − 1
+times smaller than that in the third phase, it would take TEXP-- hundreds of epochs to reach its equilibrium. As
+is only 10 times smaller than that in the ﬁrst phase and it only takes 70 epochs to return to equilibrium.
+
+Figure 5: The orange line corresponds to PreResNet32 trained with constant LR and WD divided by 10 at
+epoch 80 and 120. The blue line is TEXP-- corresponding to Step Decay schedule which divides LR by 10 at
+epoch 80 and 120. They have similar trajectories and performances by a similar argument to Theorem 2.12.(See
+Theorem A.2 and its proof in Appendix A)
+
+5 .2 B E TT ER EX PON EN T IA L LR SCHEDUL E W I TH CO S IN E LR
+
+We applied the TEXP LR schedule (Theorem 2.12) on the Cosine LR schedule (Loshchilov &
+Hutter, 2016), where the learning rate changes every epoch, and thus correction terms cannot be
+ignored. The LR at epoch t ≤ T is deﬁned as: ηt = η0
+. Our experiments show this
+hybrid schedule with Cosine LR performs better on CIFAR10 than Step Decay, but this ﬁnding
+needs to be veriﬁed on other datasets.
+
+1+cos( t
+T π)
+2
+
+6 CONC LU S ION S
+
+The paper shows rigorously how BN allows a host of very exotic learning rate schedules in deep
+learning, and veriﬁes these effects in experiments. The lr increases exponentially in almost every
+iteration during training. The exponential increase derives from use of weight decay, but the precise
+
+Figure 6: Both Cosine and Step Decay schedule behaves almost the same as their exponential counterpart, as
+predicted by our equivalence theorem. The (exponential) Cosine LR schedule achieves better test accuracy,
+with a entirely different trajectory.
+
+10
+
+expression involves momentum as well. We suggest that the efﬁcacy of this rule may be hard to
+explain with canonical frameworks in optimization.
+Our analyses of BN is a substantial improvement over earlier theoretical analyses, since it accounts
+for weight decay and momentum, which are always combined in practice.
+Our tantalising experiments with a hybrid of exponential and cosine rates suggest that more surprises
+may lie out there. Our theoretical analysis of interrelatedness of hyperparameters could also lead to
+faster hyperparameter search.
+
+R E F ER ENC E S
+Sanjeev Arora, Nadav Cohen, and Elad Hazan. On the optimization of deep networks: Implicit
+acceleration by overparameterization.
+In International Conference on Machine Learning, pp.
+244–253, 2018.
+
+Sanjeev Arora, Zhiyuan Li, and Kaifeng Lyu. Theoretical analysis of auto rate-tuning by batch
+normalization. In International Conference on Learning Representations, 2019. URL https:
+
+//openreview.net/forum?id=rkxQ-nA9FX.
+
+Jimmy Lei Ba, Jamie Ryan Kiros, and Geoffrey E Hinton. Layer normalization. arXiv preprint
+arXiv:1607.06450, 2016.
+
+Nils Bjorck, Carla P Gomes, Bart Selman, and Kilian Q Weinberger. Understanding batch normal-
+ization. In S. Bengio, H. Wallach, H. Larochelle, K. Grauman, N. Cesa-Bianchi, and R. Garnett
+(eds.), Advances in Neural Information Processing Systems 31, pp. 7705–7716. Curran Asso-
+ciates, Inc., 2018.
+
+Minhyung Cho and Jaehyung Lee. Riemannian approach to batch normalization. In I. Guyon, U. V.
+Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett (eds.), Advances in
+Neural Information Processing Systems 30, pp. 5225–5235. Curran Associates, Inc., 2017.
+
+Sanjoy Dasgupta and Anupam Gupta. An elementary proof of a theorem of johnson and linden-
+strauss. Random Structures & Algorithms, 22(1):60–65, 2003.
+
+Robert Mansel Gower, Nicolas Loizou, Xun Qian, Alibek Sailanbayev, Egor Shulgin, and Peter
+Richt ´arik. Sgd: General analysis and improved rates. arXiv preprint arXiv:1901.09401, 2019.
+
+Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recog-
+nition. In Proceedings of the IEEE conference on computer vision and pattern recognition, pp.
+770–778, 2016a.
+
+Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.
+Identity mappings in deep residual
+networks. In European conference on computer vision, pp. 630–645. Springer, 2016b.
+
+Elad Hoffer, Ron Banner, Itay Golan, and Daniel Soudry. Norm matters: efﬁcient and accurate
+normalization schemes in deep networks. In S. Bengio, H. Wallach, H. Larochelle, K. Grauman,
+N. Cesa-Bianchi, and R. Garnett (eds.), Advances in Neural Information Processing Systems 31,
+pp. 2164–2174. Curran Associates, Inc., 2018a.
+
+Elad Hoffer, Itay Hubara, and Daniel Soudry. Fix your classiﬁer: the marginal value of training
+the last weight layer.
+In International Conference on Learning Representations, 2018b. URL
+
+https://openreview.net/forum?id=S1Dh8Tg0- .
+
+Sergey Ioffe and Christian Szegedy. Batch normalization: Accelerating deep network training by
+reducing internal covariate shift. In International Conference on Machine Learning, pp. 448–456,
+2015.
+
+Jonas Kohler, Hadi Daneshmand, Aurelien Lucchi, Ming Zhou, Klaus Neymeyr, and Thomas Hof-
+mann. Exponential convergence rates for batch normalization: The power of length-direction
+decoupling in non-convex optimization. arXiv preprint arXiv:1805.10694, 2018.
+
+Ilya Loshchilov and Frank Hutter. SGDR: Stochastic Gradient Descent with Warm Restarts. arXiv
+e-prints, art. arXiv:1608.03983, Aug 2016.
+
+11
+
+David Page. How to train your resnet 6: Weight decay?
+
+how-to-train-your-resnet-6-weight-decay/.
+
+URL https://myrtle.ai/
+
+Adam Paszke, Sam Gross, Soumith Chintala, Gregory Chanan, Edward Yang, Zachary DeVito,
+Zeming Lin, Alban Desmaison, Luca Antiga, and Adam Lerer. Automatic differentiation in
+pytorch. 2017.
+
+Shibani Santurkar, Dimitris Tsipras, Andrew Ilyas, and Aleksander Madry. How does batch nor-
+malization help optimization? In S. Bengio, H. Wallach, H. Larochelle, K. Grauman, N. Cesa-
+Bianchi, and R. Garnett (eds.), Advances in Neural Information Processing Systems 31, pp. 2488–
+2498. Curran Associates, Inc., 2018.
+
+Leslie N Smith. Cyclical learning rates for training neural networks. In 2017 IEEE Winter Confer-
+ence on Applications of Computer Vision (WACV), pp. 464–472. IEEE, 2017.
+
+Ilya Sutskever, James Martens, George Dahl, and Geoffrey Hinton. On the importance of ini-
+tialization and momentum in deep learning.
+In Proceedings of the 30th International Confer-
+ence on International Conference on Machine Learning - Volume 28, ICML’13, pp. III–1139–
+
+III–1147. JMLR.org, 2013. URL http://dl.acm.org/citation.cfm?id=3042817.
+3043064.
+
+Dmitry Ulyanov, Andrea Vedaldi, and Victor Lempitsky. Instance normalization: The missing in-
+gredient for fast stylization. arXiv preprint arXiv:1607.08022, 2016.
+
+Twan van Laarhoven. L2 regularization versus batch and weight normalization. arXiv preprint
+arXiv:1706.05350, 2017.
+
+David Wu. L2 regularization and batch norm. URL https://blog.janestreet.com/
+
+l2-regularization-and-batch-norm/.
+
+Xiaoxia Wu, Rachel Ward, and L ´eon Bottou. WNGrad: Learn the Learning Rate in Gradient De-
+scent. arXiv preprint arXiv:1803.02865, 2018.
+
+Yuxin Wu and Kaiming He. Group normalization. In The European Conference on Computer Vision
+(ECCV), September 2018.
+
+Yang You, Igor Gitman, and Boris Ginsburg. Large Batch Training of Convolutional Networks.
+arXiv e-prints, art. arXiv:1708.03888, Aug 2017.
+
+Guodong Zhang, Chaoqi Wang, Bowen Xu, and Roger Grosse. Three mechanisms of weight decay
+regularization. In International Conference on Learning Representations, 2019. URL https:
+
+//openreview.net/forum?id=B1lz-3Rct7.
+
+12
+
+A OM I T TED PROO F S
+
+A .1 OM I T TED PROO F IN S EC T ION 2
+
+Lemma A.1 (Some Facts about Equation 1). Suppose z 1 , z 2 (z 1 ≥ z 2 ) are the two real roots of the
+the following equation, we have
+
+x2 − (1 + γ − λη)x + γ = 0
+
+(1−γ )2−2(1+γ )λη+λ2 η2
+2
+
+1+γ−λη−
+
+, z 2 =
+
+√
+
+(1−γ )2−2(1+γ )λη+λ2 η2
+2
+
+√
+
+1+γ−λη+
+
+1. z 1 =
+
+2. z 1 , z 2 are real ⇐⇒ λη ≤ (1 − √
+
+γ )2 ;
+3. z 1 z 2 = γ , z 1 + z 2 = (1 + γ − λη);
+
+4. γ ≤ z 2 ≤ z 1 ≤ 1;
+5. Let t = λη
+1−γ , we have z 1 ≥ 1
+1−γ .
+6. if we view z 1 (λη), z 2 (λη) as functions of λη , then z 1 (λη) is monotone decreasing, z 2 (η)
+is monotone increasing.
+
+1+t ≥ 1 − t = 1 − λη
+
+Proof.
+4. Let f (x) = x2 − (1 + γ − λη)x + γ , we have f (1) = f (γ ) = λη ≥ 0. Note the minimum
+of f is taken at x = 1+γ−λη
+∈ [0, 1], the both roots of f (x) = 0 must lie between 0 and 1,
+if exists.
+
+2
+
+5
+
+1 − z 1 =
+
+1 − γ + λη − (cid:112)(1 − γ )2 − 2(1 + γ )λη + λ2 η2
+1 + t − (cid:113)
+2
+1−γ t + t2
+2
+2t + 2 1+γ
+1−γ t
+1−γ t + t2 )
+
+1 − 1+γ
+
+1 − 1+γ
+
+2(1 + t +
+
+(cid:113)
+
+= (1 − γ )
+
+= (1 − γ )
+
+4
+
+1−γ t
+4(1 + t)
+
+≤ (1 − γ )
+
+=
+
+t
+(1 + t)
+
+6. Note that (z 1 − z 2 )2 = (z 1 + z 2 )2 − 4z 1 z 2 = (1 + γ − λη)2 − 4γ is monotone decreasing,
+since z 1 (λη) + z 2 (λη) is constant, z 1 (λη) ≥ z 2 (λη), z 1 (λη) must be decreasing and
+z 2 (λη) must be increasing.
+
+A .2 OM I T TED PROO F S IN S ECT ION 2 .1
+
+Proof of Lemma 2.2. For any (θ , η), we have
+GDρ
+
+t (θ , η) = (ρθ − η∇Lt (θ), η) = [Πρ
+1 ◦ Πρ
+2 ◦ GDt ](θ ,
+
+1 ◦ Πρ
+2 ◦ GDt ◦ Πρ−1
+) = [Πρ
+
+2
+
+](θ , η).
+
+η
+ρ
+
+(θ , η) = GDt (cθ , c2 η) = (cθ − c2θ∇Lt (cθ), c2 η)
+
+∗
+
+= (c(θ − ∇Lt (θ)), c2 η)
+
+(cid:104)
+(cid:104)
+
+Proof of Lemma 2.4. For any (θ , η), we have
+GDt ◦ Πc
+2 ◦ GDt
+
+1 ◦ Πc2
+2
+1 ◦ Πc2
+
+(θ , η).
+
+Πc
+
+=
+
+(cid:105)
+(cid:105)
+
+∗
+=: Scale Invariance, Lemma 1.3)
+
+(
+
+13
+
+Proof of Lemma 2.7. For any input (θ , η , θ (cid:48) , η (cid:48) ), it’s easy to check both composed maps have the
+same outputs on the 2,3,4th coordinates, namely (c2 η , cθ , c2 η (cid:48) ). For the ﬁrst coordinate, we have
+θ − θ (cid:48)
+θ − θ (cid:48)
+
+(cid:19) ∗
+
+(cid:18)
+
+(cid:18)
+
+(cid:18)
+
+(cid:19)(cid:19)
+
+γ
+
+η (cid:48) − ∇Lt (cθ)
+
+= c
+
+θ + η
+
+γ
+
+η (cid:48) − ∇Lt (θ)
+
+A .3 OM I T TED PROO F S IN S ECT ION 2 .2
+(cid:2)GDρ (cθ , c2 η , cθ (cid:48) , c2 η)(cid:3)
+1 = ρcθ + c2 η
+=c [GDρ (θ , η , θ (cid:48) , η)]1 .
+
+∗
+=: Scale Invariance, Lemma 1.3
+Proof of Lemma 2.8. For any input (θ , η , θ (cid:48) , η (cid:48) ), it’s easy to check both composed maps have the
+same outputs on the 2,3,4th coordinates, namely (η , θ , η). For the ﬁrst coordinate, we have
+
+(cid:105)
+
+(cid:105)
+
+1
+
+= α (cid:2)GDt (θ , α−1 η , αθ (cid:48) , αη)(cid:3)
+
+1
+
+(cid:104)(cid:104)
+(cid:18)
+
+(cid:18)
+
+(cid:19)(cid:19)
+
+(θ , η , θ (cid:48) , η)
+
+4
+
+2
+
+θ − θ (cid:48)
+
+3 ◦ Πα
+4 ◦ Πα
+2 ◦ GDt ◦ Πα−1
+◦ Πα
+3 ◦ Πα
+Πα
+= (cid:0)α + γα−1 (cid:1) θ − η∇Lt (θ) − ηγ
+θ + α−1 η
+− ∇Lt (θ)
+=α
+γ
+η
+η
+= (ρ + γ ) θ − η∇Lt (θ) − γθ (cid:48) = [GDρ
+t (θ , η , θ (cid:48) , η)]1
+
+θ (cid:48)
+
+A .4 OM I T TED PROO F S O F TH EOR EM 2 .12
+
+In this subsection we will prove a stronger version of Theorem 2.12(restated below), allowing the
+WD,λI changing each phase.
+(TEXP) {(cid:101)ηt} with momentum factor γ and no WD, leads the same sequence networks in function
+Theorem A.2 (A stronger version of Theorem 2.12). There exists a way to correct the momentum
+only at the ﬁrst iteration of each phase, such that the following Tapered-Exponential LR schedule
+space compared to that of Step Decay LR schedule(Deﬁnition 2.11) with momentum factor γ and
+(cid:40)(cid:101)ηt × (α∗
+phase-dependent WD λ∗
+I in phase I , where phase I lasts from iteration TI to iteration TI+1 , T0 = 0.
+
+(cid:101)ηt × η∗
+I−1 )−2
+
+× (α∗
+
+I
+I−1
+
+η∗
+
+(cid:113)
+
+if TI−1 + 1 ≤ t ≤ TI − 1, I ≥ 1
+I )−1 (α∗
+I−1 )−1
+if t = TI , I ≥ 1
+, (cid:101)η0 = η0 (α∗
+0 )−1 = η∗
+0 (α∗
+0 )−1 .
+
+,
+
+where α∗
+
+I =
+
+1+γ−λ∗
+I η∗
+I +
+
+(1+γ−λ∗
+I η∗
+I )2−4γ
+2
+
+(cid:101)ηt+1 =
+
+(9)
+
+η
+
+Πc
+
+(cid:104)
+
+(cid:105)
+
+1 ◦ Πc2
+
+t ◦ N = GDρ
+t , ∀ρ > 0, t ≥ 0.
+2 ◦ Πc
+
+Towards proving Theorem 2.12, we need the following lemma which holds by expanding the deﬁ-
+nition, and we omit its proof.
+Lemma A.3 (Canonicalization). We deﬁne the Canonicalization map as N (θ , η , θ (cid:48) , η (cid:48) ) = (θ , η , θ −
+η (cid:48) (θ − θ (cid:48) ), η), and it holds that
+2. N ◦ (cid:104)
+1. GDρ
+(cid:105) ◦ N , ∀c > 0.
+(cid:105) ◦ G, which is also denoted by F c∼ G.
+Similar to the case of momentum-free SGD, we deﬁne the notion of equivalent map below
+Deﬁnition A.4 (Equivalent Maps). For two maps F and G, we say F is equivalent to G iff ∃c > 0,
+Note that for any (θ , η , θ (cid:48) , η (cid:48) ), [N (θ , η , θ (cid:48) , η (cid:48) )]2 = [N (θ , η , θ (cid:48) , η (cid:48) )]4 . Thus as a direct consequence
+of Lemma 2.8, the following lemma holds.
+4 ◦ N .
+
+Lemma A.5. ∀ρ, α > 0, GDρ
+
+t ◦ N α∼ Πα−1
+
+◦ GDt ◦ Πα−1
+
+◦ Πα
+3 ◦ Πα
+
+2 ◦ Πc
+
+2 ◦ Πc
+
+1 ◦ Πc2
+
+3 ◦ Πc2
+4
+
+3 ◦ Πc2
+4
+
+3 ◦ Πc2
+4
+
+◦ Πα−1
+
+1 ◦ Πc2
+
+Πc
+
+◦ Πα−1
+
+4
+
+F =
+
+(cid:104)
+
+Πc
+
+=
+
+3
+
+2
+
+2
+
+Proof of Theorem2.12. Starting with initial state (θ0 , η0 , θ−1 , η−1 ) where η−1 = η0 and a given LR
+schedule {ηt}t≥0 , the parameters generated by GD with WD and momentum satisﬁes the following
+relationship:
+
+14
+
+(θt+1 , ηt+1 , θt , ηt ) =
+
+(cid:20)
+
+Π
+
+ηt+1
+ηt
+
+2
+
+◦ GD1−ηt λt
+t
+
+(cid:21)
+
+(θt , ηt , θt−1 , ηt−1 ).
+
+Deﬁne
+
+b(cid:13)
+
+t=a
+
+Ft = Fb ◦ Fb−1 ◦ . . . ◦ Fa , for a ≤ b. By Lemma A.3 and Lemma A.5, letting αt be the
+
+root of x2 − (γ + 1 − ηt−1λt−1 )x + γ = 0, we have
+
+T −1(cid:13)
+T −1(cid:13)
+
+t=0
+
+(cid:20)
+(cid:20)
+(cid:20)
+
+Π
+
+ηt+1
+ηt
+
+2
+
+◦ GD1−ηt λt
+t
+◦ GD1−ηt λt
+t
+
+(cid:21)
+
+=
+
+t=0
+αi∼ T −1(cid:13)
+t=0
+
+Π
+
+ηt+1
+ηt
+
+2
+
+◦ N
+
+(cid:21)
+
+T −1(cid:81)
+
+i=0
+
+Π
+
+ηt+1
+ηt
+
+2
+
+◦ Π
+
+α
+3
+
+−1
+
+t+1
+
+◦ Π
+
+α
+4
+
+−1
+
+t+1
+
+◦ Π
+
+α
+2
+
+−1
+
+t+1
+
+◦ GDt ◦ Π
+(cid:18)T −1(cid:13)
+
+α
+2
+
+−1
+
+t+1
+
+◦ Παt+1
+3
+
+◦ Παt+1
+4
+
+◦ N
+
+(cid:21)
+
+=Π
+
+ηT
+ηT −1
+
+2
+
+◦ Π
+
+α
+3
+
+−1
+
+T −1
+
+◦ Π
+
+α
+4
+
+−1
+
+T −1
+
+◦ Πα
+
+−1
+
+T
+
+2
+
+◦ GDT −1 ◦
+
+t=1
+
+(cid:20)
+
+Π
+
+α
+2
+
+−1
+
+t+1α
+t
+
+−1
+
+◦ Ht ◦ GDt−1
+
+(cid:21)(cid:19)
+
+◦ Πα
+
+−1
+
+1
+
+2
+
+◦ Πα1
+
+3 ◦ Πα1
+
+4 ◦ N ,
+
+(10)
+
+where
+
+T −1(cid:81)
+
+i=0
+
+αi∼ is because of Lemma A.5, and Ht is deﬁned as
+
+2 ◦ Π
+Ht = Παt
+
+ηt−1
+ηt
+
+2
+
+◦ Παt+1
+3
+
+◦ Παt+1
+4
+
+◦ N ◦ Πα
+
+−1
+
+t
+
+3
+
+◦ Πα
+
+−1
+
+t
+
+4
+
+◦ Πα
+
+−1
+
+t
+
+2
+
+◦ Π
+
+ηt
+ηt−1
+
+2
+
+.
+
+Since the canonicalization map N only changes the momentum part of the state, it’s easy to check
+that Ht doesn’t touch the current parameter θ and the current LR η . Thus Ht only changes the
+momentum part of the input state. Now we claim that Ht ◦ GDt−1 = GDt−1 whenever ηt = ηt−1 .
+This is because when ηt = ηt−1 , αt = αt+1 , thus Ht ◦ GDt−1 = GDt−1 . In detail,
+Ht ◦ GDt−1
+
+=Παt
+
+2 ◦ Παt
+3 ◦ Παt
+2 ◦ Παt
+3 ◦ Παt
+
+4 ◦ N ◦ Πα
+◦ Πα
+◦ Πα
+4 ◦ Πα
+◦ Πα
+◦ Πα
+
+−1
+
+t
+
+3
+
+−1
+
+t
+
+4
+
+−1
+
+t
+
+2
+
+◦ GDt−1
+◦ GDt−1
+
+∗
+
+=Παt
+=GDt−1 ,
+
+−1
+
+t
+
+3
+
+−1
+
+t
+
+4
+
+−1
+
+t
+
+2
+
+= is because GD update GDt sets η (cid:48) the same as η , and thus ensures the input of N has the
+∗
+where
+same momentum factor in buffer as its current momentum factor, which makes N an identity map.
+Thus we could rewrite Equation 10 with a “sloppy”version of Ht , H (cid:48)
+(cid:18)T −1(cid:13)
+GDt ◦ Π
+
+t =
+
+(cid:26)Ht
+I d
+
+ηt (cid:54)= ηt−1 ;
+
+o.w.
+
+:
+
+T −1(cid:13)
+
+t=0
+
+(cid:20)
+
+Π
+
+ηt+1
+ηt
+
+2
+
+◦ GD1−ηt λt
+t
+
+(cid:21)
+
+=Π
+
+ηT
+ηT −1
+
+2
+
+◦ Π
+
+α
+3
+
+−1
+
+T −1
+
+◦ Π
+
+α
+4
+
+−1
+
+T −1
+
+◦ Πα
+
+−1
+
+T
+
+2
+
+◦ GDT −1 ◦
+(cid:18)T −1(cid:13)
+(11)
+schedule 9 and the additional one-time momentum correction per phase. Let ( (cid:101)θ0 , (cid:101)η0 , (cid:101)θ−1 , (cid:101)η−1 ) =
+Now we construct the desired sequence of parameters achieved by using the Tapered Exp LR
+
+t=1
+
+(cid:20)
+
+Π
+
+α
+2
+
+−1
+
+t+1α
+t
+
+−1
+
+◦ H (cid:48)
+t ◦ GDt−1
+◦ GD0 ◦ Πα
+
+(cid:21)(cid:19)
+
+◦ Πα
+
+−1
+
+1
+
+2
+
+◦ Πα1
+
+3 ◦ Πα1
+3 ◦ Πα1
+
+4 ◦ N
+4 ◦ N ,
+
+=Π
+
+ηT
+ηT −1
+
+2
+
+◦ Π
+
+α
+3
+
+−1
+
+T −1
+
+◦ Π
+
+α
+4
+
+−1
+
+T −1
+
+◦ Πα
+
+−1
+
+T
+
+2
+
+◦
+
+t=1
+
+(cid:20)
+
+α
+2
+
+−1
+
+t+1α
+t
+
+−1
+
+◦ H (cid:48)
+
+t
+
+(cid:21)(cid:19)
+
+−1
+
+1
+
+2
+
+◦ Πα1
+
+(θ0 , η0 , θ−1 , η0 ), and
+
+15
+
+(cid:105)
+
+(cid:17)
+
+(cid:104)
+(cid:104)
+(cid:20)
+
+1
+
+1
+
+2
+
+2
+
+−1
+
+(cid:105)
+
+◦ Πα1
+◦ Πα1
+
+3 ◦ Πα1
+3 ◦ Πα1
+4
+
+( (cid:101)θ1 , (cid:101)η1 , (cid:101)θ0 , (cid:101)η0 ) =
+( (cid:101)θt+1 , (cid:101)ηt+1 , (cid:101)θt , (cid:101)ηt ) =
+=
+
+( (cid:101)θ0 , (cid:101)η0 , (cid:101)θ−1 , (cid:101)η−1 )
+4 ◦ N
+( (cid:101)θ0 , (cid:101)η0 , (cid:101)θ−1 , (cid:101)η−1 );
+( (cid:101)θt , (cid:101)ηt , (cid:101)θt−1 , (cid:101)ηt−1 ).
+
+GD0 ◦ Πα
+GD0 ◦ Πα
+GDt ◦ Π
+◦ H (cid:48)
+we claim { (cid:101)θt}t=0 is the desired sequence of parameters. We’ve already shown that θt ∼ (cid:101)θt , ∀t.
+Clearly { (cid:101)θt}t=0 is generated using only vanilla GD, scaling LR and modifying the momentum part
+of the state. When t (cid:54)= TI for any I , ηt = ηt−1 and thus H (cid:48)
+t = I d. Thus the modiﬁcation
+on the momentum could only happen at TI (I ≥ 0). Also it’s easy to check that αt = α∗
+I , if
+
+(cid:21)
+
+t+1α
+t
+
+α
+2
+
+−1
+
+−1
+
+−1
+
+t
+
+TI + 1 ≤ t ≤ TI+1 .
+
+t=0 and { (cid:101)θt}∞
+Theorem A.6. The following two sequences of parameters ,{θt}∞
+, ∀t ∈ N, given the initial conditions, (cid:101)θ0 = P0θ0 ,
+sequence of network functions, i.e. fθt = f (cid:101)θt
+t=0 , deﬁne the same
+
+A .5 OM I T TED PROO F S O F TH EOR EM 2 .13
+(cid:101)θ−1 = P−1θ−1 .
+
+, for t = 1, 2, . . .;
+
+− ∇θ
+
+2. (cid:101)θt− (cid:101)θt−1
+
+= γ (cid:101)θt−1− (cid:101)θt−2
+
+1. θt−θt−1
+ηt−1
+(cid:101)ηt−1
+
+= γ θt−1−θt−2
+ηt−2
+(cid:101)ηt−2
+
+(L(θt−1 ) + λt−1
+2 (cid:107)θt−1 (cid:107)2
+− ∇θ L( (cid:101)θt−1 ), for t = 1, 2, . . .,
+where (cid:101)ηt = PtPt+1 ηt , Pt =
+α−1
+αt = −ηt−1λt−1 + 1 +
+
+t(cid:81)
+
+i=−1
+
+2
+
+i
+
+, ∀t ≥ −1 and αt recursively deﬁned as
+
+ηt−1
+ηt−2
+
+γ (1 − α−1
+t−1 ), ∀t ≥ 1.
+
+(12)
+lead to different trajectory for { (cid:101)θt}, but the equality that (cid:101)θt = Ptθt is always satisﬁed. If the initial
+needs to be always positive. Here α0 , α−1 are free parameters. Different choice of α0 , α−1 would
+condition is given via v0 , then it’s also free to choose η−1 , θ−1 , as long as θ0−θ−1
+Proof of Theorem 2.13. We will prove by induction. By assumption S (t) : Ptθt = (cid:101)θt for t = −1, 0.
+Now we will show that S (t) =⇒ S (t + 1), ∀t ≥ 0.
+
+= v0 .
+
+η−1
+
+(cid:16)
+
+(cid:18)
+
+(cid:19)
+
+2
+
+= γ
+
+= γ
+
+Rescaling
+
+Take gradient
+
+Scale Invariance
+
+− ∇θ
+
+θt − θt−1
+θt−1 − θt−2
+(L(θt−1 ) +
+λt−1
+(cid:107)θt−1 (cid:107)2
+======⇒ θt − θt−1
+ηt−1
+θt−1 − θt−2
+ηt−2
+2
+− ∇θ L(θt−1 ) + λt−1θt−1
+ηt−1
+ηt−2
+− Pt−1∇θ L( (cid:101)θt−1 ) + λt−1θt−1
+========⇒ θt − θt−1
+θt−1 − θt−2
+ηt−1
+= γ
+ηt−2
+− ∇θ L( (cid:101)θt−1 ) − λt−1
+=====⇒ Pt (θt − θt−1 )
+Pt−2 (θt−1 − θt−2 )
+θt−1
+t (cid:101)θt−1
+= γ
+αt−1 (cid:101)θt−1 − (cid:101)θt−2
+− ∇θ L( (cid:101)θt−1 ) − ηt−1λt−1
+======⇒ Ptθt − α−1
+PtPt−1 ηt−1
+(cid:101)ηt−1
+Pt−1Pt−2 ηt−2
+(cid:101)ηt−2
+Pt−1
+t (cid:101)θt−1
+αt−1 (cid:101)θt−1 − (cid:101)θt−2
+t (cid:101)θt−1
+Ptθt−1
+= γ
+− ∇θ L( (cid:101)θt−1 ) − ηt−1λt−1
+ηt−1Pt−1Pt
+======⇒ Ptθt − α−1
+(cid:101)ηt−1
+(cid:101)ηt−2
+α−1
+(cid:101)ηt−1
+t (1 − ηt−1λt−1 ) (cid:101)θt−1
+= γ
+αt−1 (cid:101)θt−1 − (cid:101)θt−2
+(cid:101)ηt−1
+(cid:101)ηt−2
+− ∇θ L( (cid:101)θt−1 )
+======⇒ Ptθt − α−1
+
+Simplfying
+
+Simplfying
+
+Simplfying
+
+= γ
+
+16
+
+To conclude that Ptθt = (cid:101)θt , it sufﬁces to show that the coefﬁcients before (cid:101)θt−1 is the same to that
+in (2). In other words, we need to show
+
+−1 + α−1
+t (1 − ηt−1λt−1 )
+(cid:101)ηt−1
+
+γ (1 − αt−1 )
+(cid:101)ηt−2
+
+,
+
+=
+
+which is equivalent to the deﬁnition of αt , Equation 12.
+
+Lemma A.7 (Sufﬁcient Conditions for positivity of αt ). Let λmax = maxt λt , ηmax = maxt ηt .
+Deﬁne zmin is the larger root of the equation x2 − (1 + γ − λmax ηmax )x + γ = 0. To guarantee
+the existence of zmax we also assume ηmaxλmax ≤ (1 − √
+γ )2 . Then we have
+
+∀α−1 , α0 = 1 =⇒ zmin ≤ αt ≤ 1, ∀t ≥ 0
+
+(13)
+
+Proof. We will prove the above theorem with a strengthened induction —
+(cid:94) α−1
+≤ z−1
+
+∀0 ≤ t(cid:48) ≤ t, zmin ≤ αt(cid:48) ≤ 1
+
+t(cid:48) − 1
+
+S (t) :
+
+min − 1
+ηmax
+
+.
+
+ηt(cid:48)−1
+
+Since α0 = 1, S (0) is obviously true. Now suppose S (t) is true for some t ∈ N, we will prove
+
+S (t + 1).
+First, since 0 < αt ≤ 1, αt+1 = −ηtλt + 1 + ηt
+
+γ (1 − α−1
+t ) ≤ 1.
+
+ηt−1
+
+Again by Equation 12, we have
+
+1 − αt+1 = ηtλt +
+
+α−1
+t − 1
+ηt−1
+
+ηtγ = ηtλt +
+
+z−1
+
+min − 1
+ηmax
+
+ηtγ ≤ ηtλt + (z−1
+min − 1)γ = 1 − zmin ,
+
+which shows αt+1 ≥ zmin . Here the last step is by deﬁnition of zmin .
+Because of αt+1 ≥ zmin , we have
+≤ z−1
+≤ z−1
+
+γ ) ≤ z−1
+
+t+1 − 1
+
+min (λmax+
+
+min (λt+
+
+min
+
+1 − αt+1
+ηt
+
+α−1
+t − 1
+ηt−1
+
+α−1
+ηt
+
+z−1
+
+min − 1
+ηmax
+
+γ ) = z−1
+
+min
+
+1 − zmin
+
+ηmax
+
+z−1
+
+min − 1
+ηmax
+
+.
+
+=
+
+Now we are ready to give the formal statement about the closeness of Equation 9 and the reduced
+LR schedule by Theorem 2.13.
+Theorem A.8. Given a Step Decay LR schedule with {TI }K−1
+LR schedule in Theorem 2.13 is the following(α0 = α−1 = 1, T0 = 0):
+
+I=0 , the TEXP++
+
+I=0 , {λ∗
+
+I=0 , {η∗
+
+I }K−1
+
+I }K−1
+
+I λ∗
+I + 1 + γ (1 − α−1
+t−1 ), ∀TI + 2 ≤ t ≤ TI+1 , I ≥ 0;
+I + 1 + η∗
+I λ∗
+γ (1 − α−1
+t−1 ), ∀t = TI + 1, I ≥ 0;
+α−1
+
+I
+I−1
+
+η∗
+
+;
+
+t
+
+(cid:40)−η∗
+
+−η∗
+
+t(cid:89)
+
+i=−1
+
+αt =
+
+Pt =
+
+ˆηt = PtPt+1 ηt .
+
+It’s the same as the TEXP LR schedule({ ˜ηt}) in Theorem 2.12 throughout each phase I , in the sense
+(cid:12)(cid:12)(cid:12)(cid:12) ˆηt−1
+that
+
+(cid:19)t−TI −1 ≤ 3
+
+(cid:21)(t−TI −1)
+
+(cid:12)(cid:12)(cid:12)(cid:12) < 3
+
+(cid:18) γ
+
+λmax ηmax
+
+λmax ηmax
+
+λmax ηmax
+
+(cid:30) (cid:101)ηt−1(cid:101)ηt
+
+1 − γ
+
+1 − γ
+
+1 − γ
+
+− 1
+
+γ (1 +
+
+(cid:20)
+
+z 2
+
+min
+
+)2
+
+ˆηt
+
+∀TI +1 ≤ t ≤ TI+1 .
+
+,
+
+17
+
+where zmin is the larger root of x2 − (1 + γ − λmax ηmax )x + γ = 0. In Appendix A, we show
+that z−1
+. When λmax ηmax is small compared to 1 − γ , which is usually the
+case in practice, one could approximate zmin by 1. For example, when γ = 0.9, λmax = 0.0005,
+ηmax = 0.1, the above upper bound becomes
+(cid:12)(cid:12)(cid:12)(cid:12) ˆηt−1
+Proof of Theorem A.8. Assuming z 1
+I and z 2
+I ) are the roots of Equation 1 with η = ηI and
+λ = λI , we have γ ≤ z 2
+I ≤ 1, ∀I , I (cid:48) ∈ [K − 1] by Lemma A.1.
+We can rewrite the recursion in Theorem 2.13 as the following:
+
+min ≤ 1 + ηmax λmax
+1−γ
+
+ˆηt
+
+(cid:30) (cid:101)ηt−1(cid:101)ηt
+(cid:12)(cid:12)(cid:12)(cid:12) ≤ 0.0015 × 0.9009t−TI −1 .
+I (z 1
+I ≥ z 2
+γ ≤ zmin ≤ z 1
+
+− 1
+
+I (cid:48) ≤ √
+
+αt = −ηI λI + 1 + γ (1 − α−1
+t−1 ) = −(z 1
+I + z 2
+I ) + z 1
+
+I z 2
+
+I α−1
+t−1 .
+
+(14)
+
+In other words, we have
+
+αt − z 1
+I =
+
+z 2
+αt−1
+
+I
+
+(αt−1 − z 1
+I ), t ≥ 1.
+
+(15)
+
+By Lemma A.7, we have αt ≥ zmin , ∀t ≥ 0. Thus | αt
+|, which means αt geometrically converges to its stable ﬁxed
+I ≤ 1, we have | αTI
+
+z1
+
+I
+
+− 1| = zI
+
+2
+
+αt−1
+
+| αt−1
+z1
+
+I
+
+− 1| ≤ γ
+
+z2
+
+min
+
+| αt−1
+z1
+
+I
+
+− 1| =
+
+γ
+z2
+
+min
+
+| αt−1
+z1
+
+I
+
+− 1| ≤ γ (1 + λη
+= (z 1
+I )2 . Since that zmin ≤ αt ≤ 1, zmin ≤ z 1
+)t−TI −1 ≤ 1, ∀TI + 1 ≤ t ≤ TI+1 .
+( γ
+(cid:40)(z 1
+
+1−γ )2 | αt−1
+z1
+
+I
+
+point z 1
+
+I . and (cid:101)ηt−1(cid:101)ηt
+
+z1
+
+I
+
+− 1| ≤
+
+1−zmin
+
+zmin
+
+= λmax ηmax
+
+1−γ
+I , ˆηt−1
+ˆηt
+
+≤ 1 , and thus | αt
+
+z1
+
+I
+
+− 1| ≤ λmax ηmax
+1−γ
+
+z2
+
+min
+
+Note that α∗
+
+I = z 1
+
+= αtαt+1 By deﬁnition of TEXP and TEXP++, we have
+
+(cid:101)ηt−1(cid:101)ηt
+
+=
+
+(cid:40)αt+1αt
+I−1 )2
+I z 1
+I−1
+αTI +1αTI
+
+if TI−1 + 1 ≤ t ≤ TI − 1
+if t = TI , I ≥ 1
+if TI−1 + 1 ≤ t ≤ TI − 1
+if t = TI , I ≥ 1
+(cid:12)(cid:12)(cid:12)(cid:12) αTI +1
+z 1
+
+η∗
+η∗
+
+I−1
+
+I
+
+z 1
+
+(16)
+
+ˆηt−1
+ˆηt
+
+=
+
+ηt−1
+ηt
+(cid:12)(cid:12)(cid:12)(cid:12) αTI +1
+z 1
+1 − γ
+
+αt+1αt =
+
+η∗
+η∗
+
+I−1
+
+I
+
+(17)
+
+(cid:12)(cid:12)(cid:12)(cid:12) ˆηt−1
+Thus we have when t = TI ,
+
+ˆηt
+
+(cid:30) (cid:101)ηt−1(cid:101)ηt
+(cid:30) (cid:101)ηt−1(cid:101)ηt
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12) ≤
+
+αTI
+I−1
+I
+λmax ηmax
+
+z 1
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12) ≤
+
+(cid:12)(cid:12)(cid:12)(cid:12) αTI +1
+z 1
+
+I
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12) +
+
+(cid:12)(cid:12)(cid:12)(cid:12) αTI
+
+z 1
+
+I−1
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12) +
+
+I
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12) (cid:12)(cid:12)(cid:12)(cid:12) αTI
+
+z 1
+
+I−1
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12)
+
+≤3
+
+.
+
+When TI + 1 ≤ t ≤ TI+1 , we have
+(cid:12)(cid:12)(cid:12)(cid:12) ˆηt−1
+
+ˆηt
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12) =
+
+(cid:12)(cid:12)(cid:12)(cid:12) αt+1
+
+z 1
+
+I−1
+I−1
+λmax ηmax
+
+αt
+z 1
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12) ≤
+
+(cid:12)(cid:12)(cid:12)(cid:12) αt+1
+
+z 1
+)t−TI −1 .
+(cid:19)t−TI −1 ≤ 3
+
+I−1
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12) +
+
+(cid:12)(cid:12)(cid:12)(cid:12) αt
+
+z 1
+
+I−1
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12) +
+
+(cid:12)(cid:12)(cid:12)(cid:12) αt+1
+
+z 1
+
+I−1
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12) (cid:12)(cid:12)(cid:12)(cid:12) αt
+
+z 1
+
+I−1
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12)
+
+≤3
+
+1 − γ
+
+(
+
+γ
+z 2
+
+min
+
+(cid:12)(cid:12)(cid:12)(cid:12) ˆηt−1
+Thus we conclude ∀I ∈ [K − 1], TI + 1 ≤ t ≤ TI+1 , we have
+
+ˆηt
+
+(cid:30) (cid:101)ηt−1(cid:101)ηt
+
+− 1
+
+(cid:12)(cid:12)(cid:12)(cid:12) ≤ 3
+
+λmax ηmax
+
+1 − γ
+
+(cid:18) γ
+
+z 2
+
+min
+
+λmax ηmax
+
+1 − γ
+
+·γ t−TI −1 (1+
+
+λmax ηmax
+
+1 − γ
+
+)2(t−TI −1) .
+
+18
+
+A .6 OM I T TED PROO F S IN S EC T ION 3
+
+We will use ˆw to denote w(cid:107)w(cid:107) and
+
+Step 1: Let T1 =
+
+√
+δ . Thus if we assume the training
+error is smaller than ε from iteration T0 to T0 + T1 + T2 , then by spherical triangle inequality,
+
+, and T2 = 9 ln 1
+
+2(ηλ−2ε2 ) ln 64(cid:107)wT0 (cid:107)2 ε
+1
+m−2
+η
+
+√
+
+B
+
+Note that (cid:80)B
+
+(cid:107)
+
+E At,b = Pr
+b=1 At,b ≤ B , and E (cid:80)B
+1 + exp(x(cid:62)
+
+t,b
+b=1 At,b ≥ B
+
+yt,b
+
+wt(cid:107)wt (cid:107) yt )
+
+2 , we have Pr
+
+b=1 At,b < B
+4
+
+3 . Thus,
+
+(cid:34)
+
+(cid:33)2
+
+(cid:35)
+
+≥ 1
+
+2
+
+.
+
+1 + e
+
+(cid:107) ≥ 1
+ ≥ Pr
+
+(cid:104)(cid:80)B
+(cid:34) B(cid:88)
+
+b=1
+
+(cid:105) ≤ 2
+≥ 1
+
+(cid:35)
+
+3
+
+(24)
+
+1 + exp(xt,b
+
+yt,b
+(cid:62) wt(cid:107)wt (cid:107) yt,b )
+
+≥
+
+B
+4(1 + e)2
+
+At,b ≥ B
+4
+
+.
+
+(25)
+
+(cid:32)
+
+ B(cid:88)
+
+b=1
+
+Pr
+
+B(cid:88)
+
+b=1
+
+Thus w.p. at least 1
+9 , equation 25 and equation 22 happen together, which implies
+
+(cid:107) η
+
+B
+
+∇ ln(1+exp(−x(cid:62)
+
+t,b
+
+wt(cid:107)wt(cid:107) yt,b ))(cid:107) = (cid:107) η
+B
+
+yt,b
+
+1 + exp(x(cid:62)
+
+t,b
+
+Π⊥
+
+wt
+
+xt,b
+
+(cid:107)wt(cid:107) (cid:107) ≥ η
+
+1 + e
+
+wt(cid:107)wt (cid:107) yt )
+
+B(cid:88)
+
+b=1
+
+(cid:114) m − 2
+
+B
+
+m − 2
+
+√
+8(cid:107)wt(cid:107) ≥
+
+(26)
+
+η
+32(cid:107)wt(cid:107)
+
+Step 3. To stay in the cone {w |
+
+t=T
+
+T (cid:48)(cid:88)
+
+(cid:107)θt(cid:107)2 ≤
+
+1
+1 − (1 − λη)2
+
+Thus for any T (cid:48) > T ,
+
+T (cid:48)−1(cid:88)
+Note that by assumption we have (cid:80)T (cid:48)−1
+As a conclusion, we have (cid:80)∞
+0.
+
+t=T
+
+(cid:107)∇L(θt )(cid:107)2 + (cid:107)θT (cid:107)2
+
+ ≤ 1
+
+λη
+
+T (cid:48)−1(cid:88)
+
+t=T
+
+ .
+
+(cid:107)∇L(θt )(cid:107)2 + (cid:107)θT (cid:107)2
+
+t=T (cid:107)∇L(θt )(cid:107)2 = 1
+cη f (θT ) − f (θT (cid:48) ).
++
+
+t=T (cid:107)θt(cid:107)2 ≤ f (θT )−minθ f (θ)
+cη2 λ
+
+(cid:107)θT (cid:107)2
+
+λη , which implies lim
+
+t→∞ (cid:107)θt(cid:107)2 =
+
+B OTH ER R E SU LT S
+
+Now we rigorously analyze norm growth in this algorithm. This greatly extends previous analyses
+of effect of normalization schemes (Wu et al., 2018; Arora et al., 2018) for vanilla SGD.
+Theorem B.1. Under the update rule 1.2 with λt = 0, the norm of scale invariant parameter θt
+satisﬁes the following property:
+• Almost Monotone Increasing: (cid:107)θt+1 (cid:107)2 − (cid:107)θt(cid:107)2 ≥ −γ t+1 ηt
+• Assuming ηt = η is a constant, then
+
+((cid:107)θ0(cid:107)2 − (cid:107)θ−1 (cid:107)2 ).
+(cid:0)(cid:107)θi − θi+1 (cid:107)2 + γ (cid:107)θi−1 − θi (cid:107)2 (cid:1)−γ
+
+(cid:107)θt+1(cid:107)2 =
+
+t(cid:88)
+
+η0
+
+((cid:107)θ0(cid:107)2−(cid:107)θ−1(cid:107)2 )
+
+1 − γ t+1
+1 − γ
+
+1 − γ t−i+1
+1 − γ
+
+i=0
+
+Proof. Let’s use Rt , Dt , Ct to denote (cid:107)θt(cid:107)2 , (cid:107)θt+1 − θt(cid:107)2 , θ(cid:62)
+t (θt+1 − θt ) respectively.
+The only property we will use about loss is ∇θ L(cid:62)
+Expanding the square of (cid:107)θt+1(cid:107)2 = (cid:107)(θt+1 − θt ) + θt(cid:107)2 , we have
+
+t θt = 0.
+
+∀t ≥ −1 S (t) : Rt+1 − Rt = Dt + 2Ct .
+
+θt+1 − θt
+
+ηt
+
+= θ(cid:62)
+t (γ
+
+θt − θt−1
+ηt−1
+
+− λtθt ) =
+
+γ
+ηt−1
+
+(Dt + Ct−1 ) − λtRt ,
+
+We also have
+
+= θ(cid:62)
+
+t
+
+Ct
+ηt
+
+namely,
+
+∀t ≥ 0 P (t) :
+
+Ct
+ηt
+
+− γDt
+ηt−1
+
+=
+
+γ
+ηt−1
+
+Ct−1 − λtRt .
+
+Simplify S (t)
+
+ηt
+
++ P (t), we have
+
+− γS (t−1)
+ηt−1
+Rt+1 − Rt
+
+ηt
+
+When λt = 0, we have
+
+− γ
+
+Rt − Rt−1
+ηt−1
+
+=
+
+Dt
+ηt
+
++ γ
+
+Dt−1
+ηt−1
+
+− 2λtRt .
+
+(27)
+
+Rt+1 − Rt
+
+ηt
+
+= γ t+1 R0 − R−1
+η−1
+
++
+
+t(cid:88)
+
+i=0
+
+γ t−i (
+
+Di
+ηi
+
++ γ
+
+Di−1
+ηi−1
+
+) ≥ γ t+1 R0 − R−1
+η0
+
+.
+
+Further if ηt = η is a constant, we have
+
+t(cid:88)
+
+i=0
+
+Rt+1 = R0 +
+
+1 − γ t−i+1
+1 − γ
+
+(Di + γDi−1 ) − γ
+
+1 − γ t+1
+1 − γ
+
+(R0 − R−1 ),
+
+22
+
+which covers the result without momentum in (Arora et al., 2019) as a special case:
+
+t(cid:88)
+
+i=0
+
+Rt+1 = R0 +
+
+Di .
+
+For general deep nets, we have the following result, suggesting that the mean square of the update
+are constant compared to the mean square of the norm. The constant is mainly determined by ηλ,
+explaining why the usage of weight decay prevents the parameters to converge in direction. 1
+(cid:80)T −1
+(cid:80)T −1
+Theorem B.2. For SGD with constant LR η , weight decay λ and momentum γ , when the limits
+t=0 (cid:107)wt+1 − wt(cid:107)2 exist, we have
+
+R∞ = limT →∞ 1
+
+T
+
+t=0 (cid:107)wt(cid:107)2 , D∞ = limT →∞ 1
+2ηλ
+1 + γ
+
+D∞ =
+
+T
+
+R∞ .
+
+(cid:80)T −1
+(cid:80)T −1
+Proof of Theorem B.2. Take average of Equation 27 over
+t, when the limits R∞ =
+t=0 (cid:107)wt+1 − wt(cid:107)2 exists, we have
+
+limT →∞ 1
+
+T
+
+t=0 (cid:107)wt(cid:107)2 , D∞ = limT →∞ 1
+1 + γ
+η
+
+T
+
+D∞ = 2λR∞ .
+
+C SCAL E INVAR IANC E IN MODERN N ETWORK ARCH I T EC TUR E S
+
+In this section, we will discuss how Normalization layers make the output of the network scale-
+invariant to its parameters. Viewing a neural network as a DAG, we give a sufﬁcient condition for
+the scale invariance which could be checked easily by topological order, and apply this on sev-
+eral standard network architectures such as Fully Connected(FC) Networks, Plain CNN, ResNet(He
+et al., 2016a), and PreResNet(He et al., 2016b). For simplicity, we restrict our discussions among
+networks with ReLU activation only. Throughout this section, we assume the linear layers and
+the bias after last normalization layer are ﬁxed to its random initialization, which doesn’t harm the
+performance of the network empirically(Hoffer et al., 2018b).
+
+C .1 NOTAT ION S
+
+Deﬁnition C.1 (Degree of Homogeneity). Suppose k is an integer and θ is all the parameters of
+the network, then f is said to be homogeneous of degree k , or k-homogeneous, if ∀c > 0, f (cθ) =
+ck f (θ). The output of f can be multi-dimensional. Speciﬁcally, scale invariance means degree of
+homogeneity is 0.
+
+Suppose the network only contains following modules, and we list the degree of homogeneity of
+these basic modules, given the degree of homogeneity of its input.
+
+(I) Input
+(L) Linear Layer, e.g. Convolutional Layer or Fully Connected Layer
+(B) Bias Layer(Adding Trainable Bias to the output of the previous layer)
+(+) Addition Layer (adding the outputs of two layers with the same dimension2 .)
+(N) Normalization Layer without afﬁne transformation(including BN, GN, LN, IN etc.)
+(NA) Normalization Layer with afﬁne transformation
+
+1 (Page) had a similar argument for this phenomenon by connecting this to the LARS(You et al., 2017),
+though it’s not rigorous in the way it deals with momentum and equilibrium of norm.
+2 Addition Layer(+) is mainly used in ResNet and other similar architectures. In this section, we also use it
+as an alternative deﬁnition of Bias Layer(B). See Figure 7
+
+23
+
+Module
+Input
+Output
+
+I
+-
+0
+
+L
+x
+x+1
+
+B
+1
+1
+
++
+(x,x)
+x
+
+N NA
+x
+x
+0
+1
+
+Table 1: Table showing how degree of homogeneity of the output of basic modules depends on the degree of
+homogeneity of the input. For the row of the Input , entry ‘-’ means the input of the network (I) doesn’t have
+any extra input, entry ‘1’ of Bias Layer means if the input is 1-homogeneous then the output is 1- homogeneous.
+‘(x, x)’ for ‘+’ means if the inputs of Addition Layer have the same degree of homogeneity, the output has the
+same degree of homogeneity. ReLU, Pooling( and other ﬁxed linear maps) are ignored because they keep the
+degree of homogeneity and can be omitted when creating the DAG in Theorem C.3.
+
+Remark C.2. For the purpose of deciding the degree of homogeneity of a network, there’s no
+difference among convolutional layers, fully connected layer and the diagonal linear layer in the
+afﬁne transformation of Normalization layer, since they’re all linear and the degree of homogeneity
+is increased by 1 after applying them.
+On the other hand, BN and IN has some beneﬁt which GN and LN doesn’t have, namely the bias
+term (per channel) immediately before BN or IN has zero effect on the network output and thus can
+be removed. (See Figure 15)
+
+We also demonstrate the homogeneity of the output of the modules via the following ﬁgures, which
+will be reused to later to deﬁne network architectures.
+
+(a) Input(I)
+
+(b) Linear(L)
+
+(c) Addition(+)
+
+(d) Normalization(N)
+
+(e) Bias(B)
+
+(f) Alternative Deﬁnition of Bias(B)
+
+(g)
+
+Normalization
+Afﬁne(NA)
+Figure 7: Degree of homogeneity of the output of basic modules given degree of homogeneity of the input.
+
+(h) Deﬁnition of Normalization with Afﬁne(NA)
+
+with
+
+24
+
+Theorem C.3. For a network only consisting of modules deﬁned above and ReLU activation, we
+can view it as a Directed acyclic graph and check its scale invariance by the following algorithm.
+
+Input
+
+: DAG G = (V , E ) translated from a neural network; the module type of each node
+
+vi ∈ V .
+
+1 for v in topological order of G do
+Compute the degree of homogeneity of v using Table 1;
+if v is not homogeneous then
+
+2
+3
+4
+
+return False;
+
+5 if vouptut is 0-homogeneous then
+
+6
+
+return True;
+7 else
+return False.
+
+8
+
+C .2 N E TWORK S W I THOUT A FFIN E TRAN S FORMAT ION AND B IA S
+
+We start with the simple cases where all bias term(including that of linear layer and normalization
+layer) and the scaling term of normalization layer are ﬁxed to be 0 and 1 element-wise respectively,
+which means the bias and the scaling could be dropped from the network structure. We empirically
+ﬁnd this doesn’t affect the performance of network in a noticeable way. We will discuss the full case
+in the next subsection.
+
+Plain CNN/FC networks: See Figure 8.
+
+Figure 8: Degree of homogeneity for all modules in vanilla CNNs/FC networks.
+
+Figure 9: An example of the full network structure of ResNet/PreResNet represented by composite modules de-
+ﬁned in Figure 10,11,13,14, where ‘S’ denotes the starting part of the network, ‘Block’ denotes a normal block
+with residual link, ‘D-Block’ denotes the block with downsampling, and ‘N’ denotes the normalization layer
+deﬁned previously. Integer x ∈ {0, 1, 2} depends on the type of network. See details in Figure 10,11,13,14.
+
+ResNet: See Figure 10. To ensure the scaling invariance, we add an additional normalizaiton layer
+in the shortcut after downsampling. This implementation is sometimes used in practice and doesn’t
+affect the performance in a noticeable way.
+
+Preactivation ResNet: See Figure 11. Preactivation means to change the order between convolu-
+tional layer and normalization layer. For similar reason, we add an additional normalizaiton layer in
+the shortcut before downsampling.
+
+25
+
+(a) The starting part of ResNet
+
+(b) A block of ResNet
+
+(c) A block of ResNet with downsampling
+Figure 10: Degree of homogeneity for all modules in ResNet without afﬁne transformation in normalization
+layer. The last normalization layer is omitted.
+
+C .3 N E TWORK S W I TH A FFIN E TRAN S FORMAT ION
+
+Now we discuss the full case where the afﬁne transformation part of normalization layer is trainable.
+Due to the reason that the bias of linear layer (before BN) has 0 gradient as we mentioned in C.2,
+the bias term is usually dropped from network architecture in practice to save memory and accel-
+erate training( even with other normalization methods)(See PyTorch Implementation (Paszke et al.,
+2017)). However, when LN or GN is used, and the bias term of linear layer is trainable, the network
+could be scale variant (See Figure 15).
+
+Plain CNN/FC networks: See Figure 12.
+
+ResNet: See Figure 13. To ensure the scaling invariance, we add an additional normalizaiton layer
+in the shortcut after downsampling. This implementation is sometimes used in practice and doesn’t
+affect the performance in a noticeable way.
+
+Preactivation ResNet: See Figure 14. Preactivation means to change the order between convolu-
+tional layer and normalization layer. For similar reason, we add an additional normalizaiton layer in
+the shortcut before downsampling.
+
+26
+
+(a) The starting part of PreResNet
+
+(b) A block of PreResNet
+
+(c) A block of PreResNet with downsampling
+Figure 11: Degree of homogeneity for all modules in ResNet without afﬁne transformation in normalization
+layer. The last normalization layer is omitted.
+
+Figure 12: Degree of homogeneity for all modules in vanilla CNNs/FC networks.
+
+27
+
+(a) The starting part of ResNet
+
+(b) A block of ResNet
+
+(c) A block of ResNet with downsampling
+Figure 13: Degree of homogeneity for all modules in ResNet with trainable afﬁne transformation. The last
+normalization layer is omitted.
+
+28
+
+(a) The starting part of PreResNet
+
+(b) A block of PreResNet
+
+(c) A block of PreResNet with downsampling
+Figure 14: Degree of homogeneity for all modules in PreResNet with trainable afﬁne transformation. The last
+normalization layer is omitted.
+
+Figure 15: The network can be not scale variant if the GN or IN is used and the bias of linear layer is trainable.
+The red ‘F’ means the Algorithm 1 will return False here.
+
+29
+
+

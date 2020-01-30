@@ -1,0 +1,1522 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+C
+
+D
+
+.
+
+s
+
+c
+
+[
+
+5
+v
+2
+4
+8
+6
+0
+
+.
+
+9
+0
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Benchmarking the Performance and Power of AI Accelerators for
+AI Training
+
+Yuxin Wang, Qiang Wang, Shaohuai Shi, Xin He, Zhenheng Tang, Kaiyong Zhao, and Xiaowen Chu ∗
+
+High Performance Machine Learning Lab
+Department of Computer Science
+Hong Kong Baptist University
+
+AB STRACT
+
+Deep learning has become widely used in complex AI applications. Yet, training a deep neural network
+(DNNs) model requires a huge amount of calculations, taking a long running time and consuming a
+lot of energy. Nowadays, many-core AI accelerators (e.g., GPUs and TPUs) are designed to improve
+the AI training performance. However, different processors from different vendors perform very
+differently in terms of performance and power consumption. To investigate the differences among
+several popular off-the-shelf processors (i.e., Intel CPU, NVIDIA GPU, AMD GPU and Google
+TPU) in training DNNs, we carry out a detailed benchmark study on the performance and power
+(when possible) of these processors when training a representative set of DNNs, including three
+classical convolutional neural networks (CNNs), a recurrent neural network (LSTM), Deep Speech
+2, and Transformer. We try to understand the impact of hardware, vendor’s software library, and
+deep learning framework on the ﬁnal training performance. Our evaluation results make two valuable
+directions for end-users and vendors. For the end-users, the evaluation results provide a guide for
+selecting a proper accelerator for training DNN models. For the vendors, some advantages and
+disadvantages revealed in our evaluation results could be useful for future architecture design and
+software library optimization.
+
+Keywords AI Accelerator, Deep Learning, GPU, TPU, Convolution Neural Networks, Recurrent Neural Networks,
+Transformer, Deep Speech2
+
+1
+
+Introduction
+
+Recent years have witnessed the fast development of deep neural networks (DNNs) [1], which have been widely used in
+many AI applications, such as image recognition [2][3], object detection [4][5], speech to text tasks [6], etc. However,
+training these DNN models requires a considerable amount of computational resources [1][7].
+Graphics Processing Units (GPUs) [8] serve as one of the most popular hardware to accelerate the training speed
+of DNNs. Different from the conventional CPU, a typical GPU is generally equipped with thousands of cores and
+large Gigabytes of memory bandwidth [8], which signiﬁcantly accelerates the training and reasoning speed of DNNs
+compared to the traditional CPU. Since 2016, the new generation of computing device - the TPU [9], has been launched
+by Google, followed by Cloud TPU v2 and Cloud TPU v3 [10]. The difference between different generations of TPUs
+is mainly on performance and memory capacity. Beneﬁted from its extraordinary parallel computing capability, the
+cloud service of TPU greatly fastened the steps of artiﬁcial intelligence and its relating applications. They have achieved
+better performance than many other AI accelerators [9].
+Meanwhile, the development of optimized software keeps in pace with the hardware. On the CPU processors, there exist
+highly optimized high-performance libraries like MKL and MKLDNN [11][12]. On the NVIDIA GPUs, researchers
+
+∗ {yxwang, qiangwang, csshshi, csxinhe, zhtang, kyzhao, chxw}@comp.hkbu.edu.hk
+
+ 
+ 
+ 
+ 
+ 
+ 
+and industry make cuDNN [13], cuBLAS and other CUDA based libraries be able to achieve nearly peak performance
+of GPU cards. On the AMD GPUs, ROCm2 is also actively developed for supporting high performance deep learning.
+Also, for TPUs, TensorFlow [14] is highly optimized under a large development community.
+However, different AI accelerators of various generations and designed by vendors has a large diversity in terms of
+performance, power and energy consumption. For example, the time performance could be different even on similar
+capacity GPUs from NVIDIA and AMD. In terms of performance, there exist some benchmarks including software
+comparison [15][16], hardware comparison [17] and the combination of software and hardware comparison [18] in
+training DNNs. In addition, different vendors provide their own benchmarks to demonstrate the performance with their
+own highly optimized libraries or conﬁgurations, while these results could be unfairly compared.
+For server deployment, power and energy consumption are vital for DNN training since that the long-term electric bill
+can directly beneﬁt from lower energy consumption. By combining the performance and energy, one can scale the
+hardware conﬁguration with dynamic voltage and frequency scaling (DVFS) techniques [19][20] to save energy. Tang
+et al. [21] have evaluated energy with DVFS on GPUs in training DNNs. Wang et al. [22] propose a benchmark suite
+for both performance and energy, while they only focus on traditional algorithms but not on deep learning. Furthermore,
+performance and energy data together are critical to job scheduling algorithms [23] in saving energy while preserving
+the computing efﬁciency of tasks.
+In summary, existing benchmarks consider either only performance, or energy for particular accelerators and algorithms.
+Furthermore, there is little study on AMD GPUs while AMD researchers have also developed a deep learning ecosystem
+ROCm for users. To this end, in this paper, we make wide benchmarks on many popular AI accelerators including
+Intel CPU, NVIDIA GPUs, AMD GPU and Google TPUs in terms of multiple metrics including performance, power
+and energy. On one hand, our evaluation results give a guide for end-users on how to choose proper AI accelerators
+to train their own DNN models for different considerations. For example, end-users can compare the budgets of
+cloud-based GPUs and TPUs for a speciﬁc model, and choose a cheaper one to train the model. On the other hand, the
+problems revealed by the evaluation results could be helpful for hardware or software design for further optimization.
+For example, GPU library engineers can have an insight into the performance why some operations dose not well
+utilize the computing resources. The experimental numbers with performance, power and energy can be used by the job
+scheduling algorithms for energy conservation [23][24], in which one should consider the task should be ﬁnished in
+expected time (related to performance) while it should not consume too much power (related to energy).
+To make the evaluation thorough, we ﬁrst evaluate the performance on low-level operations on the above aforementioned
+accelerators, and then we evaluate the performance, power and energy on end-to-end training of currently popular
+DNNs from different AI areas including CNNs [2][3], LSTM [25], Deep Speech 2 [26] and Transformers[27]. Our
+major ﬁndings are shown in Table 1.
+The rest of this paper is organized as follows. Section 2 introduces some background knowledge related to DNNs, AI
+accelerators and training algorithms. Section 3 describes our experimental designs and setups, including hardware
+conﬁgurations and DNNs. Section 4 demonstrates our experimental results and analysis of AI accelerators with different
+training tasks. Some related work is introduced in Section 5. We ﬁnally conclude the paper in Section 6.
+
+2 Preliminaries
+
+2.1 Deep Models
+
+In different areas of AI applications, there exist various types of deep architectures achieving state-of-the-art results.
+In image classiﬁcation and object detection tasks, convolutional neural networks (CNNs) are the main architectures
+to extract the image features automatically, among which VGG [28], ResNet [3] and Inception [29] architectures are
+widely used. These CNNs also achieved very good results in the popular ImageNet challenge [30] on the tasks of image
+classiﬁcation and object detection. In the area of natural language processing, recurrent neural network (RNN) was one
+of the successful models with a long developing history, especially LSTM [31]. Recent years, Deep Speech 2 [26] was
+proposed with state-of-the-art results on speech recognition tasks, and attention-based models including transformer
+[27] and BERT [32] have achieved very good scores in many machine translation tasks.
+
+2.2 AI Accelerators
+
+There are many newly developed AI accelerators. In this paper, we mainly focus on the widely available processors
+such as CPUs, GPUs and TPUs. We will investigate FPGAs in our future work.
+
+2 https://rocm.github.io/dl.html
+
+2
+
+Tensor size
+
+4.1.2
+
+Mini-batch size
+
+Low-bit precision
+
+PERF
+
+Software for TPU
+
+Software for GPUs
+
+4.2.1
+
+Multi-threading on CPU
+
+Software for NVIDIA GPUs
+
+Table 1: Summary of main ﬁndings about PERF, POW, and NRG(Abbreviations of Performance, Power, and Energy)
+Section
+Key Factor
+Metric
+Main Findings
+Larger tensor sizes have higher workloads for accelerators
+and they generally achieve higher throughput.
+With different input tensors, TPU nearly fully utilizes the
+computing resource under TensorFlow framework.
+CUDA has approximately the same utilization with Tensor-
+Flow on NVIDIA GPUs. Both software are highly optimized.
+Matrix multiplication has been well optimized on GPUs
+while convolution still has space for further optimization.
+In order to fully utilize the beneﬁt of multi-threading,
+some CPU cores should be allocated to data pre-
+processing during training.
+Mini-batch size should be large enough to fully utilize
+the computational resources of accelerators.
+FP16 generally achieves higher throughput than FP32,
+especially on CNNs with Tesla V100 using Tensor Cores.
+However, on NLP models, it has no obvious improvement
+compared to FP32.
+NVIDIA GPUs achieve higher throughput and have wider
+supported software than the AMD GPU.
+TPU V3-8 has about 1.5× higher throughput than TPU
+V2-8.
+TPU V3-8 achieves more than 3× higher throughput than
+Tesla V100 on CNNs, while it has only about 1.5× on
+Transformer.
+Tesla P100 has the lowest power consumption on CNNs,
+while Titan X(Pascal) has the highest power consumption
+on all models among NVIDIA GPUs.
+AMD GPU has the lowest power consumption on LSTM,
+Inception v3, while it consumes much higher power on
+ResNet50 and VGG16 than NVIDIA GPUs.
+Larger mini-batch size consumes more energy on CNNs
+NVIDIA Tesla V100 has the lowest energy consumption
+among evaluated GPUs in Mixed Precision training.
+
+NVIDIA GPU Model
+
+GPU vendor
+
+Latest TPU
+
+GPU vendor
+
+Mini-batch size
+
+GPU Model
+
+4.2.2
+
+4.2.3
+
+4.2.4
+
+4.3.1
+
+4.3.2
+
+POW
+
+NRG
+
+TPU vs GPU
+
+CPU. CPUs are traditional processors that used in computers, while it was not good at doing highly parallel and
+computing-intensive tasks. In the era of deep learning, the main CPU vendor designs its many-core CPUs for these
+kinds of tasks. For example, the Intel Xeon processor [33] is a powerful CPU with high computing FLOPS among
+Intel CPUs. The scalable processor was reported that it outperforms NVIDIA GPU in deep learning inference on the
+ResNet-50 model3 .
+
+NVIDIA and AMD GPUs. GPUs are designed for highly parallel applications in terms of the number of computing
+cores and the memory access speed, and the peak FLOPS has increased rapidly in the last ten years. In Table 2, we
+listed the parameter details of four recent GPUs. The listed GPUs contain three (Tesla V100, P100, and Titan X(Pascal))
+from NVIDIA and one (Radeon VII) from AMD. It can be seen that the peak FP32 computing FLOPS is more than 10
+TFLOPs, which is around 5× higher than CPUs. Especially, the well-known Tesla V100 GPU is built on GPU chip
+GV100 with Volta architecture, which enable the GPU to be qualiﬁed for both GPU universal calculations and speciﬁc
+neural networks calculations.
+
+Google TPUs. Tensor Processing Units (TPUs) are Google’s custom-designed machine learning application-speciﬁc
+integrated circuits (ASICs). Each TPU device has 4 chips and each consists of 2 cores, so a TPU device contains 8
+cores. Each core has scalar, vector and matrix units (MXU) and is connected with the on-chip high bandwidth memory
+(HBM). There are two types of TPUs: TPU v2 and TPU v3. For TPU v2, the amount of HBM of each core is 8 GB.
+Especially, one MXU is allocated to a core. While for TPU v3, each core has two MXUs and is connected with 16 GB
+
+3 https://intel.ly/2k4Bxh2
+
+3
+
+(a) VGG16 [28].
+
+(b) LSTM [25].
+
+(c) Deep Speech 2 [26].
+
+(d) Transformer [27].
+
+Figure 1: Different Architecture of DNNs.
+
+Table 2: The Parameter Details of GPUs
+
+Product Name
+GPU
+GPU Cores
+Tensor Cores
+Core Clock
+Boost Clock
+Memory Clock
+Memory Bus Width
+Memory Bandwidth
+Memory Type
+FP16 Computing
+FP32 Computing
+TDP
+
+Tesla V100
+GV100
+5120
+640
+1245 MHz
+1380MHz
+877 MHz
+4096 bit
+897.0 GB/s
+HBM2
+28.26 TFLOPS
+14.13 TFLOPS
+250w
+
+Tesla P100
+GP100
+3584
+-
+1190 MHz
+1329 MHz
+715 MHz
+4096 bit
+732.2 GB/s
+HBM2
+19.05 TFLOPS
+9.526 TFLOPS
+250w
+
+Titan X(Pascal)
+GP108
+3584
+-
+1417MHz
+1531 MHz
+1251MHz
+384 bit
+480.4 GB/s
+GDDR5X
+-
+10.97 TFLOPS
+250w
+
+Radeon VII
+Vega 20
+3840
+-
+1400 MHz
+1750 MHz
+1000 MHz
+4096 bit
+1 TB/s
+HBM2
+26.88 TFLOPS
+13.44 TFLOPS
+295w
+
+of HBM. TPUs support the bﬂoat16 format which has a wider range of values than ﬂoat16 with the same 16-bit storage.
+TPU v2 with 8 cores (TPU v2-8) and TPU v3 with 8 cores (TPU v3-8) have peak bﬂoat16 computing capacity of 180
+Tera bﬂoat16 per second and 420 Tera bﬂoat16 per second respectively. Additionally, TPU v2 Pod is assembled by 64
+TPU v2 devices, containing 512 TPU v2 cores. TPU v3 Pod provides a maximum of 256 TPU v3 devices and consists
+of a total 2048 TPU v3 cores.
+
+bﬂoat16 and ﬂoat16 The MXU in each TPU core is used to execute 16K multiply-accumulate operations in each
+cycle. Besides, MXU supports mixed precision training, i.e. its input and output are 32-bit ﬂoating point values and it
+can use bﬂoat16 for activation and gradients. Compared with IEEE half-precision ﬂoating point (fp16), bﬂoat16 has a
+wider range of values because it has one sign bit, eight exponent bits, and seven mantissa bits plus one implicit mantissa
+bit, as shown in Fig. 3. Using bﬂoat16 can help reduce the size of data in memory, making larger models available for
+the same size of memory, while ensuring no degradation of converged accuracy.
+
+2.3 Training Algorithms.
+
+Mini-batch SGD. The Stochastic Gradient Descent (SGD) [34] algorithm and its variants are widely used in training
+deep models. Mini-batch SGD [35] is a derivative algorithm of SGD, which divides the entire data set into multiple
+subsets, and iteratively update the model parameters according to the ﬁrst-order gradients at current mini-batch of data.
+The training process during a single iteration can be divided into the following steps. As shown in Fig. 4, a single
+iteration starts with the process of reading data from the computer’s disk to the CPU’s memory, and it ends with updates
+
+4
+
+Figure 2: The structures of TPU v2 (left) and TPU v3 (right).
+
+Figure 3: The comparison between bﬂoat16 and ﬂoat16.
+
+Figure 4: The training process of mini-batch SGD and mixed precision.
+
+of parameters. The training process is to repeat the iteration until some terminating criteria. We generally use the
+average iteration time to measure the performance of training on particular software and hardware.
+
+5
+
+SEEEEEEEEMMMMMMMSEEEEEMMMMMMMMMMbfloat16range:~1e-38 to ~3e38float16range:~5.9e-8 to ~6.5e4signexponent8 bitsfraction7 bits5 bits10 bitsRead a mini-batch of data from the disk into CPU memoryFeed data from CPU’s memory to AI Accelerator’s memoryLaunch kernels for calculationForward Propagation and CalculationBackward Propagation, calculating gradients under the chain rule.Mixed PrecisionLoop with iterationsTransform weights from float2halfGather and send FP16 weights, activations, and activation grads for calculationUpdate the model’s gradients and weightsFP32FP16FP16Mixed Precision Training. The mixed precision [36][37]4 training technique is a very successful training algorithm
+that uses only 16-bit ﬂoating points to do the computation of forward and backward during training such that the
+hardware resource can be better utilized. Typically, in mixed precision, FP32 master weights and loss scaling are
+adopted to avoid the instability that FP16 precision might trigger. The training process is also shown in Fig. 4.
+
+3 Methodology
+
+In this section, we introduce the methodology of our evaluation for demonstrating comparison on performance, power
+and energy among multiple accelerators. We ﬁrst present the selected hardware settings and DNNs from different AI
+areas. Then we illustrate our evaluation methods.
+
+3.1 Hardware Setup
+
+As we would like to evaluate the most commonly used accelerators for training DNNs, we select many-core processors
+from four vendors including Intel, NVIDIA, AMD and Google. For each vendor, we select one to three processors for
+evaluation. The details of the selected accelerators are listed in Table 3, which presents the key parameters that are
+related to the performance of accelerators.
+
+Vendor
+Intel
+
+NVIDIA
+
+AMD
+Google
+
+Accelerator Model Memory
+Xeon Platinum 8163
+48GB
+Titan X(Pascal)
+12GB
+Tesla P100
+16GB
+Tesla V100
+16GB
+Radeon VII
+16GB
+TPU v2-8
+64GB
+TPU v3-8
+128GB
+
+Table 3: Hardware setup
+Theoretical FLOPS Memory Bdw Memory Type
+3.84 T(FP32)
+119.21 GB/s
+DDR4
+11 T(FP32)
+480.4 GB/s
+GDDR5X
+9.5 T(FP32)
+732.2 GB/s
+HBM2
+112 T(Tensor Core)
+897.0 GB/s
+HBM2
+13.44 T(FP32)
+1 TB/s
+HBM2
+180 T (bﬂoat16)
+600 GB/s
+HBM
+420 T (bﬂoat16)
+900 GB/s
+HBM
+
+CPU
+-
+i7-7820X
+i7-6800K
+i7-6800K
+i7-4790
+-
+-
+
+3.2 Evaluated Operations and DNNs
+
+Operators. DNN models are mainly stacked by many layers which generally invoke two main resource-consuming
+operators (ops) including the matrix multiplication (Matmul) and convolution in 2d dimension (Conv2d). DNNs also
+contain some activation layers that are element-wise operators, but these operators are much faster than Matmul and
+Conv2d, so we mainly evaluate the performance of Matmul and Conv2d on the selected accelerators. To evaluate
+the performance of ops, the input data are synthetic tensors of different FLOPs5 . For the Matmul operator, tensor
+dimensions range from 256×256 to 8192×8192; for the Conv2d operator, inputs and ﬁlters are selected based on the
+real-world models under different batch sizes, from 32 to 256. To ensure the utilization of accelerators, we select to
+show results of small, medium and large sizes of input tensors, which are listed in Table 4.
+
+Matmul Shape
+FLOPs
+
+Conv2d Shape
+
+FLOPs
+
+Table 4: Input tensor sizes for ops
+Matmul I
+Matmul II
+Matmul III
+N(2048, 2048)
+N(4096, 4096)
+N(8192, 8192)
+1.72E+10
+1.37E+11
+1.10E+12
+Conv2d I
+Conv2d II
+Conv2d III
+F(256, 224, 224, 3)
+F(128, 112, 112, 64)
+F(256,56,56,128)
+K(7, 7, 3, 64) S(2,2) K(3, 3, 64, 128) S(1,1) K(3, 3, 128, 256) S(1,1)
+5.72E+10
+2.28E+11
+4.40E+11
+
+DNNs. To cover comprehensive AI applications, we choose DNN models from image classiﬁcation with CNNs,
+language models with LSTM, speech recognition with Deep Speech 2 and the recent state-of-the-art language model
+
+4The mixed precision mainly exploits FP16 as computation during the forward and backward passes. Its performance presents
+the performance of Tensor Core on accelerators.
+5 In this paper, FLOPS is a performance metric indicated by FLOating Point Operations per Second, while FLOPs is a workload
+metric that represent the total number of FLOating Point Operations
+
+6
+
+Transformer. For CNNs, we choose ResNet-50 [3], Inception V3 [29], and VGG16[28] on the ImageNet [30] dataset;
+For LSTM, we selected the typical 2-Layer LSTM on the PTB [38] dataset; For the Deep Speech 2 architecture, we
+train the model on the AN4 dataset. For Transformer, we train the model on the WMT14 EN-DE dataset. The details of
+DNN conﬁgurations 6 are shown in Table 5.
+
+Table 5: Model and Dataset Setting
+
+Networks
+VGG16
+Resnet50
+Inception V3
+2-Layer LSTM
+Deep Speech 2
+Transformer
+
+# Params (million)
+138
+26
+27
+66
+27
+65
+
+Theoretical MACs (GFLOPs)
+15.60
+4.14
+2.86
+0.102
+0.122/utterance
+46.08
+
+Datasets
+ImageNet
+ImageNet
+ImageNet
+PTB
+AN4
+WMT14 EN-DE
+
+# Samples
+1.2M
+1.2M
+1.2M
+42K
+948
+36M
+
+Input Size
+224×224×3
+224×224×3
+224×224×3
+seq length: 20
+audio length: 100-400
+seq length: 512
+
+3.3 Evaluation Methods
+
+Evaluation Metrics.
+
+In order to present the readers a comprehensive scope of different tasks and AI accelerators,
+we use performance, power and energy as the evaluation metrics. For the performance measurements, we evaluate
+the average iteration time in 1000 iterations with an input mini-batch size, and then we calculate the accelerators’
+performance in training a particular DNN as the throughput in terms of samples per second (Samples/s). Note that the
+units in pictures of samples are images for CNNs, sentence numbers divided by 10 for LSTM, utterances for Deep
+Speech 2, and token numbers divided by 100 for Transformer in all pictures for exhibition, respectively. For the power
+measurement, we sample the system power (in Watt) in every 50ms during the training process using the built-in
+interfaces provided by NVIDIA Management Library [39] on NVIDIA GPUs and ROCm System Management Library
+[40] on AMD GPU. We use the average Watt as the metric for the power measurement. For energy measurement, it is
+directly derived using the evaluated performance and power. The metric details are deﬁned in Table 6.
+
+Metric
+Performance
+Power
+Energy
+
+Table 6: Deﬁnition of metrics
+Deﬁnition
+Throughput in processing samples during the training process
+The electrical energy cost at a certain mini-batch per second
+The electrical energy cost of the computing device to process a sample
+
+Unit
+Samples per second
+Watt
+J per sample
+
+Ops or DNNs
+
+Ops,
+Transformer
+
+CNNs,
+LSTM,
+Deep Speech 2
+
+Accelerator
+Intel CPU
+NVIDIA GPUs
+Google TPUs
+Intel CPU
+NVIDIA GPUs
+AMD GPU
+Google TPUs
+
+Table 7: Software setup
+Software
+
+OS
+
+Ubuntu
+-
+
+Ubuntu
+
+-
+
+TensorFlow 1.14.0/ CUDA C++
+
+PyTorch 1.1
+
+TensorFlow 1.14.0
+
+Libraries
+MKL-2019.4-243
+CUDA-10.0, cuDNN-v7.4
+-
+MKL-2019.4-243
+CUDA-10.0, cuDNN-v7.6
+ROCm-v2.4
+-
+
+Measurement Software Tools for ops. Regarding the performance of operations, we use TensorFlow 1.14.0 on
+TPUs, Intel CPU, and Tesla V100; CUDA on NVIDIA GPUs for op benchmark especially. The workloads of the two
+ops are shown in Table 4.
+
+CUDA C++ Settings. Developed by NVIDIA, CUDA is a software architecture that combines the advantages of CPU
+in serial computing and GPU in parallel computing, to solve complex computing problems, especially deep learning.
+DeepBench 7 suite is a functional platform developed by Baidu, which provides performance benchmarks in CUDA
+C++ language on different platforms. We adopted the CUDA C++ codes in DeepBench and made two major revisions
+
+6The FLOPs for Deep Speech2 is measured for a single time step.
+7 https://github.com/baidu-research/DeepBench.git
+
+7
+
+to it. Firstly, we erase the unnecessary kernels launched during the 300 training iterations to ensure the best performance
+of cuBLAS. Each op is looped for 300 iterations and averaged with the middle 100 iterations. To make it fair, the
+sample strategy is the same for all operation evaluation experiments. Secondly, we have the forward algorithm ﬁxed at
+IMPLICIT_PRECOMP_GEMM while input Tensor vary, which eliminate the differences in real forwarding FLOPs for
+ops in the experiment.
+
+TensorFlow Settings. TensorFlow has provided users with necessary tools for proﬁling. By printing the timeline of
+training processes, users can easily get the exact time that TensorFlow has called GPU kernel to calculate Conv2D and
+Matmul ops. In this experiment, we only use TensorFlow results as a control group for comparison with the performance
+of TPU, on which only TensorFlow programming is highly optimized. The major meaning of testing ops on the GPU
+with TensorFlow is to ensure the switch between CUDA and TensorFlow on different AI accelerators is a irrelevant
+variable in the experiment. In other words, TensorFlow is efﬁcient enough compared with CUDA with respect to calling
+and using NVIDIA GPU kernels.
+
+Measurement Software Tools for DNNs. For DNNs measurements, we evaluate CPU and GPUs (including NVIDIA
+and AMD) with PyTorch 1.1 in 1000 rounds, and the CPU and GPU related libraries are shown in Table 7. As TPU
+mainly supports TensorFlow, we measure the TPU training performance with TensorFlow for the best performance.
+
+4 Experimental Results
+
+In this section, we present the experimental results and discussions, including the performance of low-level mathematical
+operators (Subsection 4.1), performance of end-to-end training (Subsection 4.2), and power and energy consumption of
+end-to-end training (Subsection 4.3).
+
+4.1 Low-level Operators Performance
+
+We evaluate the AI Accelerators on the two major mathematical operators (i.e., matrix multiplication and 2D convolution)
+that are widely used in DNN training. We test the operators with small, medium, and large FLOPs, which represent
+computation under different workloads for accelerators as shown in Table 4.
+
+4.1.1 CPU Results
+
+Multi-threading and AVX are two main techniques to exploit the many-core and SIMD capability of modern CPUs.
+To evaluate the performance of operators using an Intel Optimization version of TensorFlow with AVX512 enabled,
+we enumerate the number of threads from 1 to 12. The results of Intel Xeon 81638 are shown in Fig. 5. For the
+matrix multiplication, the computing performance is almost linear to the number of threads. However, the number of
+threads should not be larger than the number of physical cores of the CPU. Otherwise, it may sacriﬁce the performance.
+Regarding the Conv2d operator, however, we observe that the highest achieved FLOPS is under 1.25 TFLOPS, which
+is 20% lower than the highest achieved FLOPS of Matmul. The diverse results on Malmul and Conv2d indicate that
+the software optimization on Malmul is better than Conv2d and there may exist further opportunities to improve the
+efﬁciency of Conv2d with multi-core and AVX techniques.
+We also plot the CPU utilization of the performance on these two operators as shown in Fig. 6. The maximum utilization
+is up to 83% and 68% on Matmul and Conv2d respectively.
+
+4.1.2 GPU Results
+
+On NVIDIA Tesla V100 and P100 GPUs, the performance that has been transformed into FLOPS of Matmul and
+Conv2d ops with CUDA C++ implementation is shown in Fig. 7, as well as the utilization. V100 has achieved up 97%
+utilization for Matmul ops and 92% for Conv2d ops with FP32 Precision. The utilization of V100 with Tensor Core is
+relatively low, which indicates that Tensor Core is capable of dealing with more complex calculation, and has room to
+improve calculating capability with less complexity.
+On GPUs and TPUs, the performance of Malmul and Conv2d is shown in Fig. 7’s right part. CUDA C++ and
+TensorFlow’s performances on Tesla V100 with Tensor Core are approximately the same for Matmul ops, whereas
+a bit smaller for TensorFlow’s implementation of Conv2d ops- The gap decays while the workload adds up. For all
+accelerators, higher workloads can better utilize the computing resource to achieve higher throughput. Among GPUs,
+
+8The CPU instance used in our experiments has 24 vCPUs on a rented Alibaba Cloud ECS Compute Type c5, which is in fact a
+package of 12 physical cores, serving only half of peak theoretical FLOPS.
+
+8
+
+(a) matmul.
+
+Figure 5: The results of CPU’s Performance on two operators.
+
+(b) conv2d.
+
+(a) Matmul.
+
+(b) Conv2d.
+
+Figure 6: CPU’s utilization on two operators.
+
+NVIDIA Tesla V100 has the highest performance on both operators. The evaluated Tesla V100 that supports FP16
+indicates that the performance of 16-bit is better than the 32-bit counterpart. In particular, the performance of 16-bit in
+Tesla V100 is nearly 2× higher than its 32-bit version. The performance utilization of different accelerators is also
+shown in Fig. 8. TPU V2 achieves nearly optimal throughput on both the operators. On the Malmul operator, Tesla
+V100 with FP16 also achieves nearly 97% perk performance.It has only about 99% on the Conv2d operator- much
+better than Tesla V100 with Tensor Core. Among GPUs, NVIDIA Volta GPU generally has higher utilization than all
+other GPUs for both operators in FP32 precision. According to the analysis above, we may safely draw the conclusion
+that there remain optimization space for Tesla V100 with Tensor Core enabled.
+
+9
+
+020040060080010001200140016001800Matmul IMatmul IIMatmul IIIPerf(GFLOPS)Thrd=1Thrd=2Thrd=4Thrd=8Thrd=120200400600800100012001400Conv2d IConv2d IIConv2d IIIPerf(GFLOPS)Thrd=1Thrd=2Thrd=4Thrd=8Thrd=120%10%20%30%40%50%60%70%80%90%100%Matmul IIICPU UtilThrd=1Thrd=2Thrd=4Thrd=8Thrd=120%10%20%30%40%50%60%70%80%90%100%Conv2d IIICPU UtilThrd=1Thrd=2Thrd=4Thrd=8Thrd=12(a) Matmul.
+
+Figure 7: The performance (FLOPS) of Matmul and Conv2d operators.
+
+(b) Conv2d.
+
+4.2 End-to-end Training Performance
+
+4.2.1 CPU Results
+
+The evaluated CPU instance contains 12 physical cores and supports up to 8-way multiprocessing. Multi-threading is a
+key technique to utilize multiple cores to do calculations. We ﬁrst evaluate how the number of threads affects training
+performance, which is shown in Fig. 9. It can be seen that on the 12-core CPU, the 2-way multiprocessing (24 threads)
+generally achieve the best performance on CNNs and LSTM. However, the best number of threads on Deep Speech 2 of
+Fig. 9 is 8, which indicates that it should not occupy all the computing resources for some operations. Note that in
+the training process, besides the forward and backward computations, data loading and pre-processing could be also
+computing-intensive. If all CPU cores are occupied by the forward and backward computations, the data pre-processing
+thread could lack CPU resource to do computations such that the overall performance would be even worse.
+Note that with doubled number of threads (not larger than the number of physical cores), it generally achieves
+improvement around 10%-95%, which is much smaller than the expected doubled improvement. The main reason is
+that the parallelism of end-to-end training on the CPU is mainly on the operator level, which means the multi-threading
+is effected on the parallel operators (e.g., Matmul and Conv2d) as well as other serial operators. As we analyzed in
+Section 4.1, the performance improvement of the operator is around 90%-100% with the doubled number of threads,
+which means that other serial operators could have held-up the parallelism of DNNs.
+
+4.2.2 GPU Results
+
+Performance vs Mini-batch Size. As introduced in the GPU architecture, there exist thousands of cores in current
+GPUs. When training DNNs, the GPU workload is linearly increased with respect to the mini-batch size. Therefore,
+we ﬁrst select a representative GPU (i.e., Tesla V100) to demonstrate the performance with respect to the mini-batch
+size, which is displayed in Fig. 10. From the results, we can conclude that small mini-batch sizes may not occupy all
+
+10
+
+020406080100120140160180V100(FP32)V100(FP16)V100(TC)TitanX(Pascal)P100(FP32)V100(TC)TPU v2-8CUDATensorFlowPerf(TFLOPS)TFLOPS Matmul ITFLOPS Matmul IITFLOPS Matmul III020406080100120140160180V100(FP32)V100(FP16)V100(TC)TitanX(Pascal)P100(FP32)V100(TC)TPU v2-8CUDATensorFlowPerf(TFLOPS)TFLOPS Conv2d ITFLOPS Conv2d IITFLOPS Conv2d III(a) Matmul.
+
+Figure 8: The GPU Utilization of Matmul and Conv2d operators.
+
+(b) Conv2d.
+
+Figure 9: Performance of end-to-end training on CPU.
+
+computing resource of accelerators so that the accelerators’ computational power is not fully utilized. One should set a
+proper mini-batch size for particular DNNs and accelerators to achieve maximum performance. For example, on one
+hand, a mini-batch size of 4096 can achieve about 30% higher throughput than that of 2048 with Transformer. On the
+other hand, a mini-batch size of 32 has very close performance with that of 16 with Deep Speech 2. Also, it is obvious
+that Mixed precision gets more beneﬁts when batch size increases for CNNs, however no apparent improvement for
+NLP models. In the latter discussion, we always use a proper mini-batch size that maximizes the performance on a
+particular accelerator.
+
+11
+
+0%20%40%60%80%100%120%V100(FP32)V100(FP16)V100(TC)TitanX(Pascal)P100(FP32)V100(TC)TPU v2-8CUDATensorFlowUtilUTIL Matmul IUTIL Matmul IIUTIL Matmul III0%20%40%60%80%100%120%V100(FP32)V100(FP16)V100(TC)TitanX(Pascal)P100(FP32)V100(TC)TPU v2-8CUDATensorFlowUtilUTIL Conv2d IIUTIL Conv2d IIIUTIL Conv2d I024681012Inception V3Resnet50VGG162-Layer LSTMDeep Speech 2Transformerbs64bs32bs1024Performance(samples/s)CNNs/Batch SizesThrd=1Thrd=2Thrd=4Thrd=8Thrd=16Thrd=24Figure 10: Performance on V100 GPU with different mini-batch sizes using FP32 and Mixed precision.
+
+Figure 11: Performance comparison on GPUs.
+
+The performance of end-to-end training with different DNNs on different GPUs (including NVIDIA and AMD) is
+shown in Fig. 11. We compare their performance in two applications (i.e., CNNs and NLP models).
+
+CNNs. The results of training CNNs on GPUs are shown in Fig. 12. It can be seen that Tesla V100 has the best
+performance with both FP32 and FP16 training among the tested GPUs. With the same numerical precision, NVIDIA
+V100 generally achieves 1.5-2× higher performance than the AMD Radeon VII GPU. Among NVIDIA GPUs, Tesla
+P100 and Titan X(Pascal) have very close performance, which is reasonable as these two GPUs have similar peak
+FLOPS as shown in Table 3. Comparing two desktop-level GPUs between NVIDIA Titan X(Pascal) and AMD Radeon
+VII, we notice that Titan X(Pascal) achieves slightly higher performance and Radeon VII, while the peak FLOPS of
+Radeon VII is about 22% higher than that of Titan X(Pascal). The phenomenon indicates the importance of software
+optimizations for particular hardware, and highly optimized software could achieve nearly optimal FLOPS. Compared
+to highly optimized cuDNN and CUDA libraries on NVIDIA GPUs, AMD software ecosystem recently develops
+ROCm.
+
+NLP Models. Note that Deep Speech 2 cannot be successfully run on the Radeon VII GPU as some operators are not
+supported, so we exclude Radeon VII from the comparison in Deep Speech 2. Similar to the performance of CNNs,
+NVIDIA GPUs achieve higher performance than the AMD GPU. In particular, Titan X(Pascal) is nearly 1.8× faster
+than Radeon VII on 2-layer LSTM. Among NVIDIA GPUs, Tesla V100 always has the best performance. However,
+different from the results on CNNs, Tesla V100 with mixed precision has only slight improvement compared to the
+
+12
+
+01002003004005006007008006412864128641286412825681632102420484096Resnet50Inceptionv3Vgg162-Layer LSTMDeep Speech 2TransformerPerformance(samples/sec)Batch Sizes/ DNNs0100200300400500600700800128128128256324096Resnet50Inception v3Vgg162-LayerLSTMDeepSpeech 2TransformerPerformance(samples/sec)Batch Sizes/ CNNsTitan XRadeon VIIP100V100V100(MP)Figure 12: Performance comparison between GPUs with CNNs.
+
+FP32 counterpart on the NLP models. The margin improvement of Tesla V100 with mixed precision indicates that the
+software library should be further optimized for NLP models.
+
+(a)
+
+(b)
+
+(c)
+
+Figure 13: Performance comparison between GPUs with NLP models.
+
+4.2.3 TPU Results.
+
+We ﬁrst discuss the performance of two versions of TPUs. The performance is shown in Fig. 14. On three evaluated
+DNNs, TPU v3-8 is about 1.5-1.7× faster than TPU v2-8. However, the peak FLOPS of TPU v3-8 is around 2.3×
+than TPU v2-8 as shown in Table 3, which indicates that utilization on TPU v3-8 is much lower than TPU v2-8. The
+experimental results conclude that there still exist software optimization room for performance improvement of TPU
+v3-8.
+
+4.2.4 Comparison Between GPU and TPU
+
+As we have seen that among all evaluated GPUs, NVIDIA Tesla V100 outperforms any other GPUs including the AMD
+GPU, while TPUs also achieve very high throughput in training DNNs in the previous subsection, we here would like
+to compare the performance between NVIDIA Tesla V100 and TPUs in training different models. The performance
+comparison is shown in Fig. 14. It can be seen that TPUs outperform Tesla V100 GPU in the three evaluated models.
+On CNNs (ResNet-50 and Inception v3), TPU V2-8 and TPU V3-8 achieves more than 1.5× and 2× higher throughput
+
+13
+
+0100200300400500600700800128128128Resnet50Inception v3Vgg16Performance(samples/sec)Batch Sizes/ CNNsTitan XRadeon VIIP100V100V100(MP)02004006008001000120014002-Layer LSTM; bs=256Perf(Samples/sec)Titan XRadeon VIIP100V100V100(MP)0102030405060Deep Speech 2; bs=32Perf(Samples/sec) Titan XP100V100V100(MP)050001000015000200002500030000Transformer; bs=4096Perf(Samples/sec)Titan XRadeon VIIP100V100V100(MP)than Tesla V100 with Tensor Cores respectively. However, on the Transformer architecture, TPU V2-8 is very close to
+Tesla V100 GPU, and TPU V3-8 achieves around 1.5× faster than Tesla V100.
+
+Figure 14: Performance comparison between Tesla V100 GPU and TPUs
+
+4.2.5 Analysis of NVIDIA Tensor Core
+
+NVIDIA Tesla V100 known as the best GPU for training Deep Learning models in the world, training DNNs with it in
+mixed precision is the fastest GPU example in our experiments. The high Performance of V100 attributes to the unique
+design of Tensor Core, together with highly optimized CUDA and cuDNN. The key factor of the Volta architecture
+is that it transforms the convolutional parts in a neural network into matrix calculations before Tensor Cores conduct
+highly-optimized parallel calculations. With Tensor Core open, V100 outperforms itself in FP32 training over two
+times, P100 over three times- though the theoretical FLOPS indicates that the number could have been higher. Parts of
+the Mixed Precision training that requires more accuracy as well as the lower utilization of Tensor Core compared with
+FP32/FP16 has led to this mismatching. Nevertheless, Tensor Core has achieved only about 2/3 performance of TPU
+V2-8, which can reach 180 TFLOPS compared with V100(PCIe)’s 112 TFLOPS.
+
+4.3 End-to-end Training Power and Energy
+
+Due to the limitation of power measurements on CPU and TPUs, we only discuss the power and energy consumption
+for training DNNs on GPUs (NVIDIA GPUs and the AMD GPU). We will discuss them separately in the following two
+subsections.
+
+4.3.1 Power Consumption
+
+Figure 15: The measured power on different GPUs
+
+Generally, desktop-level GPUs support an aggressive range of core clock scaling which allows users to achieve boosting
+performance, while server-level GPUs only provide conservative options which takes stability and energy efﬁciency as
+
+14
+
+05001000150020001281284096Resnet50Inception v3TransformerPerformance(samples/sec)Batch Sizes/ DNNsP100V100V100(MP)TPU V2TPU V3050100150200250300350128128128256324096Resnet50Inception V3VGG162-Layer LSTMDeep Speech2TransformerPower(watt)Batch Sizes/DNNsTitan XRadeon VIIP100V100V100(MP)ﬁrst priority. Two desktop-level GPUs, Titan X and Radeon VII, feature over 1400 MHz core clock, higher than two
+server-level GPUs, Tesla V100 and P100. Besides, two server-level GPUs are equipped with HBM of low memory
+clock, which can further improve power efﬁciency. The measured powers on different GPUs are shown in Fig. 15. Most
+measurements of three NVIDIA GPUs (i.e., V100, P100 and Titan X(Pascal)) are around 200-300 watts except Deep
+Speech 2, among which Titan x(Pascal) achieves the highest power over 250 watts. However, AMD GPU (Radeon VII)
+demonstrates diverse power consumption among different deep learning models (i.e., over 250 watts on Resnet50 and
+VGG16, below 200 watts on Inception V3, LSTM and Transformer).
+
+4.3.2 Energy Efﬁciency
+
+Energy efﬁciency of an accelerator is affected by two factors, power consumption and processing throughput. First, as
+discussed in 4.3.1, the power consumption of those tested GPUs is usually stable in different model training tasks, as
+the dominating GPU kernel functions in deep model training are similar. Second, increasing the processed batch size
+generally increases the resource utilization and training throughput, which consequently improve energy efﬁciency. We
+then compare the energy consumption of different GPUs among different DNN models.
+
+(a) CNNs.
+
+(b) LSTM.
+
+(c) Deep Speech 2.
+
+(d) Transformer.
+
+Figure 17: Comparison of energy consumption on GPUs. (The lower the better.)
+
+CNNs. The energy consumption on CNNs with different GPUs is shown in Fig. 17(a). It is reasonable that two
+server-level GPUs, Tesla V100 and P100, are mostly the top-two in energy efﬁciency. Especially V100 has much
+lower energy consumption than other GPUs since it performs a remarkably higher training throughput with negligible
+power sacriﬁce. Another interesting ﬁnding is that the larger batch sizes of those CNNs do not help conserve energy
+consumption and even lead to marginal increments. The reason is that the GPUs achieve similar training throughput of
+three CNN models under two batch sizes, as shown in Fig. 11.
+
+2-Layer LSTM. The energy comparison of LSTM is shown in Fig. 17(b). Three NVIDIA GPUs achieve similar
+energy efﬁciency under different batch sizes, while the AMD GPU beneﬁts from increasing batch sizes. Since those two
+GPU vendors apply different deep learning framework, CUDA and ROCm, the software implementation also results in
+different resource utilization when changing the batch sizes.
+
+Deep Speech 2. As the connectionist temporal classiﬁcation (CTC) loss function of the Deep Speech 2 is not supported
+on the AMD GPU, we exclude the AMD result for this case. Among the three NVIDIA GPUs, Tesla V100 is again the
+winner of energy efﬁciency. However, Tesla V100 does not achieve any energy efﬁciency improvement with increasing
+batch sizes, while P100 and Titan X (Pascal) achieves better energy efﬁciency with larger batch sizes.
+
+15
+
+00.511.522.53641286412864128Resnet50Inception V3VGG16Efficiency(J/sample)Batch Size/CNNsTitan XRadeon VIIP100V100V100(MP)00.20.40.60.8164128256Batch SizesEfficiency(J/sample)Titan XRadeon VIIP100V100V100(MP)012345681632Batch SizesEfficiency(J/sample)Titan XP100V100V100(MP)00.0050.010.0150.020.0250.03102420484096Batch SizesEfficiency(J/sample)Titan XRadeon VIIP100V100V100(MP)Transformer. Fig. 17(d) shows the energy consumption of Transformer on different GPUs. Since Transformer
+includes many GPU kernels that consume less power, the GPU utilization of Transformer is generally lower than other
+models. Larger batch sizes generally help improve the training throughput, which results in better energy efﬁciency for
+all the GPUs.
+For ease of reference to the experimental results, all raw numbers of end-to-end training are shown in Table 8.
+
+Table 8: End-to-end Experimental Results
+
+Model
+
+64
+189.25
+206.45
+202.47
+311.25
+589.39
+1,066.67
+1,280.00
+6.35
+260.15
+275.50
+
+Resnet50
+128
+187.43
+166.23
+207.61
+334.58
+680.45
+1,163.64
+
+DNN
+Batch Size
+Titan X
+Radeon VII
+P100
+PERF
+V100
+(samples/s) V100(MP)
+TPU V2
+TPU V3
+CPU
+Titan X
+Radeon VII
+P100
+V100
+V100(MP)
+Titan X
+Radeon VII
+P100
+V100
+V100(MP)
+Note: ’-’ means the item is currently unsupported.
+
+193.87
+171.56
+1.37
+1.33
+0.84
+0.62
+
+206.61
+188.87
+1.40
+1.72
+0.85
+0.62
+
+NRG
+(J/sample)
+
+11.77
+263.21
+285.50
+
+POW
+(watt)
+
+1,882.35
+
+169.64
+
+176.51
+
+0.29
+
+0.28
+
+Inception V3
+64
+128
+131.25
+OOM
+133.33
+110.34
+147.69
+151.23
+230.53
+243.59
+372.21
+406.88
+800.00
+914.29
+
+1,488.37
+
+1,523.81
+
+6.44
+265.79
+
+141.00
+
+162.38
+191.56
+168.71
+2.03
+1.06
+1.10
+0.83
+
+0.45
+
+12.33
+OOM
+
+142.00
+
+178.03
+198.68
+190.38
+OOM
+1.29
+1.18
+0.82
+
+0.47
+
+VGG16
+64
+128
+132.46
+94.62
+125.49
+126.73
+135.58
+138.12
+213.32
+216.25
+
+385.43
+
+-
+-
+8.84
+266.72
+271.00
+
+166.76
+
+190.71
+183.73
+2.01
+2.16
+1.23
+0.89
+
+0.48
+
+418.59
+
+-
+-
+16.64
+263.15
+260.00
+
+163.45
+
+201.19
+187.41
+2.78
+2.05
+1.18
+0.93
+
+0.45
+
+64
+622.36
+145.45
+591.25
+817.44
+
+889.21
+
+-
+-
+2.69
+276.08
+
+134.00
+
+195.32
+226.61
+186.37
+0.44
+0.92
+0.33
+0.28
+
+0.21
+
+2-Layer LSTM
+128
+669.18
+261.22
+656.29
+898.21
+
+1,019.55
+
+256
+789.21
+419.67
+705.28
+1,055.87
+
+1,096.57
+
+-
+-
+3.22
+275.25
+
+141.00
+
+197.35
+234.32
+199.41
+0.41
+0.54
+0.30
+0.26
+
+0.20
+
+-
+-
+4.72
+278.21
+
+169.50
+
+201.47
+240.21
+215.58
+0.35
+0.40
+0.29
+0.23
+
+0.20
+
+8
+25.81
+-
+27.59
+38.10
+
+42.11
+
+-
+-
+3.41
+128.74
+-
+109.65
+107.54
+
+98.21
+
+4.99
+-
+3.97
+2.82
+
+2.33
+
+Deep Speech 2
+16
+32.00
+-
+32.00
+43.24
+
+32
+35.96
+-
+36.36
+44.44
+
+46.38
+
+-
+-
+11.44
+141.55
+-
+127.87
+131.77
+
+114.77
+
+3.94
+-
+3.52
+2.96
+
+2.47
+
+1024
+9,359.36
+5,521.00
+6,973.44
+9,431.04
+9,236.48
+16,000.00
+
+25,600.00
+
+300.12
+212.64
+126.51
+105.70
+115.67
+
+90.43
+
+0.0227
+0.0229
+0.0152
+0.0123
+
+0.0098
+
+Transformer
+2048
+10,690.56
+7,658.00
+11,632.64
+13,783.04
+14,950.40
+19,033.46
+
+29,383.07
+
+-
+236.35
+149.21
+136.39
+144.61
+
+107.04
+
+0.0221
+0.0195
+0.0117
+0.0105
+
+0.0072
+
+4096
+13,148.16
+8,722.00
+11,796.48
+18,350.08
+20,152.32
+21,333.33
+
+35,772.93
+
+-
+259.23
+172.55
+151.32
+162.26
+
+132.21
+
+0.0197
+0.0198
+0.0128
+0.0088
+
+0.0066
+
+47.06
+
+-
+-
+5.17
+136.58
+-
+119.52
+121.64
+
+115.05
+
+4.27
+-
+3.74
+2.81
+
+2.44
+
+5 Related Work
+
+Benchmarks are key methods to make the hardware and software move forward to better targets (e.g., performance
+and/or energy). In the era of deep learning, training tasks are computationally intensive and resource-consuming. The
+running time performance and energy consumption of AI accelerators are the two major concerns for practitioners.
+Started from 2016, deep learning frameworks are rapidly developed to support many types of processors and accelerators,
+like CPUs, GPUs, and TPUs.
+Researchers [41, 18] started to evaluate the performance among different deep learning frameworks and different
+GPUs. However, these works mainly focused on software-level evaluation in terms of performance. Later, Stanford
+DAWN deep learning benchmark [42] and MLPerf [43] were developed for the evaluation of training and inference
+performance under different software and hardware platforms. These two open benchmark platforms have attracted
+many submissions from vendors, but they mainly focused on the end-to-end training performance without reasoning
+on the results. Shams et al. [44] evaluated deep learning software tools over several hardware platforms including the
+distributed environment. Recently Wang et al. [17] proposed ParaDnn to measure the performance of various hardware
+including Intel CPU, NVIDIA GPU and Google TPU, which was the closest to our work. The energy consumption is of
+great importance to the servers that run resource-intensive tasks, but there is little study measuring the power and energy
+consumption of DNN training tasks. One related work is [21] which studied the impact of GPU dynamic voltage and
+frequency scaling (DVFS) on the training performance and energy.
+
+6 Conclusion
+
+In this paper, we made a comprehensive evaluation of the training performance, power and energy consumption on
+various modern AI accelerators including AMD GPU, NVIDIA GPUs, and Google TPUs, covering a representative set
+of deep neural networks (convolutional neural networks, recurrent neural network, deep speech 2, and transformer). Our
+evaluation results provide several levels of comparison, including hardware performance, software utilization, diversity
+on deep models, power, and energy consumption, for end-users and hardware/software designers. In the future, we
+will extend our evaluation to more AI accelerators such as FPGAs and more training categories such as AutoML [45].
+Another direction is to benchmark the performance and power of deep learning inference tasks on both server devices
+and edge/mobile devices.
+
+16
+
+Acknowledgements
+
+The research was supported by Hong Kong RGC GRF grant HKBU 12200418. We gratefully acknowledge the support
+of NVIDIA Corporation with the donation of the Titan X (Pascal) used for this research. We also gratefully acknowledge
+Google for providing TPUs to support our research in the TensorFlow Research Cloud (TFRC) program.
+
+References
+
+[1] Yann LeCun, Yoshua Bengio, and Geoffrey Hinton. Deep learning. Nature, 521(7553):436–444, 2015.
+[2] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton. ImageNet classiﬁcation with deep convolutional neural
+networks. In Advances in neural information processing systems, pages 1097–1105, 2012.
+[3] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. arXiv
+preprint arXiv:1512.03385, 2015.
+[4] Ross Girshick. Fast R-CNN. In Proceedings of the IEEE international conference on computer vision, pages
+1440–1448, 2015.
+[5] Joseph Redmon, Santosh Divvala, Ross Girshick, and Ali Farhadi. You only look once: Uniﬁed, real-time object
+detection. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 779–788,
+2016.
+[6] Geoffrey Hinton, Li Deng, Dong Yu, George Dahl, Abdel-rahman Mohamed, Navdeep Jaitly, Andrew Senior,
+Vincent Vanhoucke, Patrick Nguyen, Brian Kingsbury, et al. Deep neural networks for acoustic modeling in
+speech recognition. IEEE Signal processing magazine, 29, 2012.
+[7] Jeffrey Dean, Greg Corrado, Rajat Monga, Kai Chen, Matthieu Devin, Mark Mao, Andrew Senior, Paul Tucker,
+Ke Yang, Quoc V Le, et al. Large scale distributed deep networks. In Advances in neural information processing
+systems, pages 1223–1231, 2012.
+[8] David Luebke, Mark Harris, Naga Govindaraju, Aaron Lefohn, Mike Houston, John Owens, Mark Segal, Matthew
+Papakipos, and Ian Buck. GPGPU: general-purpose computation on graphics hardware. In Proceedings of the
+2006 ACM/IEEE conference on Supercomputing, page 208. ACM, 2006.
+[9] Norman P Jouppi, Cliff Young, Nishant Patil, David Patterson, Gaurav Agrawal, Raminder Bajwa, Sarah Bates,
+Suresh Bhatia, Nan Boden, Al Borchers, et al. In-datacenter performance analysis of a tensor processing unit. In
+2017 ACM/IEEE 44th Annual International Symposium on Computer Architecture (ISCA), pages 1–12. IEEE,
+2017.
+[10] Chris Ying, Sameer Kumar, Dehao Chen, Tao Wang, and Youlong Cheng. Image classiﬁcation at supercomputer
+scale. arXiv preprint arXiv:1811.06992, 2018.
+[11] Endong Wang, Qing Zhang, Bo Shen, Guangyong Zhang, Xiaowei Lu, Qing Wu, and Yajuan Wang. Intel math
+kernel library. In High-Performance Computing on the Intel R(cid:13) Xeon PhiTM , pages 167–188. Springer, 2014.
+[12] Scott Cyphers, Arjun K Bansal, Anahita Bhiwandiwalla, Jayaram Bobba, Matthew Brookhart, Avijit Chakraborty,
+Will Constable, Christian Convey, Leona Cook, Omar Kanawi, et al. Intel ngraph: An intermediate representation,
+compiler, and executor for deep learning. arXiv preprint arXiv:1801.08058, 2018.
+[13] Sharan Chetlur, Cliff Woolley, Philippe Vandermersch, Jonathan Cohen, John Tran, Bryan Catanzaro, and Evan
+Shelhamer. cuDNN: Efﬁcient primitives for deep learning. arXiv preprint arXiv:1410.0759, 2014.
+[14] Martın Abadi et al. TensorFlow: Large-scale machine learning on heterogeneous systems, 2015. Software
+available from tensorﬂow. org, 2015.
+[15] Soheil Bahrampour, Naveen Ramakrishnan, Lukas Schott, and Mohak Shah. Comparative study of Caffe, Neon,
+Theano, and Torch for deep learning. 2016.
+[16] Shaohuai Shi, Qiang Wang, and Xiaowen Chu. Performance modeling and evaluation of distributed deep learning
+frameworks on gpus. In 2018 IEEE 16th Intl Conf on Dependable, Autonomic and Secure Computing, 16th Intl
+Conf on Pervasive Intelligence and Computing, 4th Intl Conf on Big Data Intelligence and Computing and Cyber
+Science and Technology Congress (DASC/PiCom/DataCom/CyberSciTech), pages 949–957. IEEE, 2018.
+[17] Yu Emma Wang, Gu-Yeon Wei, David Brooks, et al. Benchmarking TPU, GPU, and CPU platforms for deep
+learning. arXiv preprint arXiv:1907.10701, 2019.
+[18] Shaohuai Shi, Qiang Wang, Pengfei Xu, and Xiaowen Chu. Benchmarking state-of-the-art deep learning software
+tools. In 2016 7th International Conference on Cloud Computing and Big Data (CCBD), pages 99–104. IEEE,
+2016.
+
+17
+
+[19] Xinxin Mei, Qiang Wang, and Xiaowen Chu. A survey and measurement study of GPU DVFS on energy
+conservation. Digital Communications and Networks, 3(2):89–100, 2017.
+[20] Qiang Wang and Xiaowen Chu. GPGPU performance estimation with core and memory frequency scaling. In
+2018 IEEE 24th International Conference on Parallel and Distributed Systems (ICPADS), pages 417–424. IEEE,
+2018.
+[21] Zhenheng Tang, Yuxin Wang, Qiang Wang, and Xiaowen Chu. The impact of GPU DVFS on the energy and
+performance of deep learning: an empirical study. In Proceedings of the Tenth ACM International Conference on
+Future Energy Systems, pages 315–325. ACM, 2019.
+[22] Qiang Wang, Pengfei Xu, Yatao Zhang, and Xiaowen Chu. EPPMiner: An extended benchmark suite for energy,
+power and performance characterization of heterogeneous architecture. In Proceedings of the Eighth International
+Conference on Future Energy Systems, e-Energy ’17. ACM, 2017.
+[23] Vincent Chau, Xiaowen Chu, Hai Liu, and Yiu-Wing Leung. Energy efﬁcient job scheduling with DVFS for
+CPU-GPU heterogeneous systems. In Proceedings of the Eighth International Conference on Future Energy
+Systems, pages 1–11. ACM, 2017.
+[24] Xinxin Mei, Xiaowen Chu, Hai Liu, Yiu-Wing Leung, and Zongpeng Li. Energy efﬁcient real-time task scheduling
+on CPU-GPU hybrid clusters. In IEEE INFOCOM 2017-IEEE Conference on Computer Communications, pages
+1–9. IEEE, 2017.
+[25] Felix A Gers, Jürgen Schmidhuber, and Fred Cummins. Learning to forget: Continual prediction with LSTM.
+1999.
+[26] Dario Amodei, Sundaram Ananthanarayanan, Rishita Anubhai, Jingliang Bai, Eric Battenberg, Carl Case, Jared
+Casper, Bryan Catanzaro, Qiang Cheng, Guoliang Chen, et al. Deep speech 2: End-to-end speech recognition in
+english and mandarin. In International conference on machine learning, pages 173–182, 2016.
+[27] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser,
+and Illia Polosukhin. Attention is all you need. In Advances in neural information processing systems, pages
+5998–6008, 2017.
+[28] Karen Simonyan and Andrew Zisserman. Very deep convolutional networks for large-scale image recognition.
+arXiv preprint arXiv:1409.1556, 2014.
+[29] Christian Szegedy, Vincent Vanhoucke, Sergey Ioffe, Jon Shlens, and Zbigniew Wojna. Rethinking the inception
+architecture for computer vision.
+In Proceedings of the IEEE conference on computer vision and pattern
+recognition, pages 2818–2826, 2016.
+[30] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. ImageNet: A large-scale hierarchical
+image database. In Computer Vision and Pattern Recognition, 2009. CVPR 2009. IEEE Conference on, pages
+248–255. IEEE, 2009.
+[31] Oﬁr Press and Lior Wolf. Using the output embedding to improve language models.
+arXiv:1608.05859, 2016.
+[32] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep bidirectional
+transformers for language understanding. arXiv preprint arXiv:1810.04805, 2018.
+[33] Greg Regnier, Dave Minturn, Gary McAlpine, Vikram A Saletore, and Annie Foong. ETA: Experience with an
+Intel Xeon processor as a packet processing engine. IEEE Micro, 24(1):24–31, 2004.
+[34] Jianmin Chen, Rajat Monga, Samy Bengio, and Rafal Jozefowicz. Revisiting distributed synchronous SGD. arXiv
+preprint arXiv:1604.00981, 2016.
+[35] Mu Li, Tong Zhang, Yuqiang Chen, and Alexander J Smola. Efﬁcient mini-batch training for stochastic opti-
+mization. In Proceedings of the 20th ACM SIGKDD international conference on Knowledge discovery and data
+mining, pages 661–670. ACM, 2014.
+[36] Paulius Micikevicius, Sharan Narang, Jonah Alben, Gregory Diamos, Erich Elsen, David Garcia, Boris Gins-
+burg, Michael Houston, Oleksii Kuchaiev, Ganesh Venkatesh, et al. Mixed precision training. arXiv preprint
+arXiv:1710.03740, 2017.
+[37] Xianyan Jia, Shutao Song, Wei He, Yangzihao Wang, Haidong Rong, Feihu Zhou, Liqiang Xie, Zhenyu Guo,
+Yuanzhou Yang, Liwei Yu, Tiegang Chen, Guangxiao Hu, Shaohuai Shi, and Xiaowen Chu. Highly scalable deep
+learning training system with mixed-precision: Training ImageNet in four minutes. In NIPS Workshop on Systems
+for ML and Open Source Software, 2018.
+
+arXiv preprint
+
+18
+
+[38] Mitchell Marcus, Grace Kim, Mary Ann Marcinkiewicz, Robert MacIntyre, Ann Bies, Mark Ferguson, Karen
+Katz, and Britta Schasberger. The Penn Treebank: annotating predicate argument structure. In Proceedings of the
+workshop on Human Language Technology, pages 114–119. Association for Computational Linguistics, 1994.
+[39] NVIDIA.
+NVIDIA Management Library
+.
+[Online]https://developer.nvidia.com/
+nvidia-management-library-nvml, 2018.
+[40] AMD. ROCm System Management Library . [Online]https://rocm-documentation.readthedocs.io/
+en/latest/ROCm_System_Managment/ROCm-System-Managment.html.
+[41] I. Paul, W. Huang, M. Arora, and S. Yalamanchili. Harmonia: Balancing compute and memory power in high-
+performance gpus. In 2015 ACM/IEEE 42nd Annual International Symposium on Computer Architecture (ISCA),
+pages 54–65, June 2015.
+[42] Cody Coleman, Deepak Narayanan, Daniel Kang, Tian Zhao, Jian Zhang, Luigi Nardi, Peter Bailis, Kunle
+Olukotun, Chris Ré, and Matei Zaharia. Dawnbench: An end-to-end deep learning benchmark and competition.
+Training, 100(101):102, 2017.
+[43] MLPerf. MLPerf. https://mlperf.org, 2019. Accessed: 2019-09.
+[44] S. Shams, R. Platania, K. Lee, and S. Park. Evaluation of deep learning frameworks over different hpc architectures.
+In 2017 IEEE 37th International Conference on Distributed Computing Systems (ICDCS), June 2017.
+[45] Xin He, Kaiyong Zhao, and Xiaowen Chu. Automl: A survey of the state-of-the-art.
+arXiv preprint
+arXiv:1908.00709, 2019.
+
+19
+
+

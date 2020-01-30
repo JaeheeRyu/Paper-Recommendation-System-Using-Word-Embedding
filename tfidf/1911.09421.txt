@@ -1,0 +1,1975 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+S
+
+M
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+1
+2
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+CHRISTOS PSARRAS∗ , HENRIK BARTHELS∗ , AND PAOLO BIENTINESI†
+
+Abstract. We observe a disconnect between the developers and the end users of linear algebra
+libraries. On the one hand, the numerical linear algebra and the high-performance communities invest
+signiﬁcant eﬀort in the development and optimization of highly sophisticated numerical kernels and
+libraries, aiming at the maximum exploitation of both the properties of the input matrices, and
+the architectural features of the target computing platform. On the other hand, end users are
+progressively less likely to go through the error-prone and time consuming process of directly using
+said libraries by writing their code in C or Fortran; instead, languages and libraries such as Matlab,
+Julia, Eigen and Armadillo, which oﬀer a higher level of abstraction, are becoming more and more
+popular. Users are given the opportunity to code matrix computations with a syntax that closely
+resembles the mathematical description; it is then a compiler or an interpreter that internally maps
+the input program to lower level kernels, as provided by libraries such as BLAS and LAPACK.
+Unfortunately, our experience suggests that in terms of performance, this translation is typically
+vastly suboptimal.
+In this paper, we ﬁrst introduce the Linear Algebra Mapping Problem, and then investigate how
+eﬀectively a benchmark of test problems is solved by popular high-level programming languages and
+libraries. Speciﬁcally, we consider Matlab, Octave, Julia, R, C++ with Armadillo, C++ with Eigen,
+and Python with NumPy; the benchmark is meant to test both standard compiler optimizations
+such as common subexpression elimination and loop-invariant code motion, as well as linear algebra
+speciﬁc optimizations such as optimal parenthesization for a matrix product and kernel selection for
+matrices with properties. The aim of this study is to give concrete guidelines for the development of
+languages and libraries that support linear algebra computations.
+
+Key words. linear algebra, domain speciﬁc languages, compilers
+
+AMS sub ject classiﬁcations. 68U01 68Q25 68N15 68N20
+
+1. Introduction. Linear algebra expressions are at the heart of countless appli-
+cations and algorithms in science and engineering, such as linear programming [66],
+signal processing [18], direct and randomized matrix inversion [13, 37], the Kalman
+and the ensemble Kalman ﬁlter [48, 53], image restoration [67], stochastic Newton
+method [16], Tikhonov regularization [33], and minimum mean square error ﬁlter-
+ing [47], just to name a few. The eﬃcient computation of such expressions is a task
+that requires a thorough understanding of both numerical methods and computing
+architectures. To address these requirements, the numerical linear algebra community
+put a signiﬁcant eﬀort into the identiﬁcation and development of a relatively small set
+of kernels to act as building blocks towards the evaluation of said expressions. Such
+kernels are tailored for many diﬀerent targets, including computing platforms, matrix
+properties, and data types, and are often packaged into highly sophisticated and por-
+table libraries, such as OpenBLAS and LAPACK. However, many of the application
+problems encountered in practice are more complex than the operations supported by
+those kernels, making it necessary to break the target problem down into a sequence
+of kernel invocations. The problem we consider in this article is that of computing
+target linear algebra expressions, such as the ones presented in Table 1, from a set of
+available building blocks, such as the kernels oﬀered by the BLAS/LAPACK libraries
+(see Table 2). We refer to this problem as the Linear Algebra Mapping Problem
+(LAMP).
+Solutions to LAMP range from entirely manual to fully automatic. The manual
+
+∗Aachen Institute for Advanced Study in Computational Engineering Science, RWTH Aachen
+University, Aachen, Germany (psarras@aices.rwth-aachen.de, barthels@aices.rwth-aachen.de).
+†Department of Computing Science, Ume˚a Universitet, Ume˚a, Sweden (pauldj@cs.umu.se).
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+2
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+Application
+
+Expression
+
+Standard Least Squares
+
+b := (X T X )−1X T y
+
+Properties
+
+Rand. Matrix Inversion Xk+1 := Xk + W AT S (S T AW AT S )−1S T (In − AXk ) W : SPD
+
+Kk := Pk−1H T (Hk Pk−1H T
+k + Rk )−1
+
+Kalman Filter
+
+Signal Processing
+
+Pk := (I − KkHk ) Pk−1
+xk := xk−1 + Kk (zk − Hkxk−1 )
+x := (cid:0)A−T B T BA−1 + RT LR(cid:1)−1
+
+P : SPD
+R: SPSD
+
+A−T B T BA−1 y
+
+L: DI, R: UT
+
+Table 1: Exemplary target linear algebra expressions. The properties are as follows.
+SP(S)D: Symmetric Positive (Semi-)Deﬁnite, DI: Diagonal, UT: Upper Triangular.
+
+Name Expression
+
+Description
+
+DOT
+
+GER
+
+TRSV
+
+α := xT y
+inner product
+A := αxyT + A
+outer product
+L x := b
+triangular linear system
+C := αAB + βC matrix-matrix product
+Cholesky factorization
+eigen decomposition
+
+GEMM
+POTRF LLT := A
+
+SYEVR QT T Q := A
+
+Table 2: Exemplary linear algebra building blocks.
+
+approach consists in writing a program in a low-level language such as C or Fortran,
+and explicitly invoking library kernels. This process is both time consuming and error
+prone: It requires users to make decisions about which properties to exploit, which
+kernels to use and in which order, and all of this while adhering to rather complex
+APIs. Automated solutions are provided by high-level languages and libraries such
+as Matlab, Julia, and Armadillo, which allow users to write programs that closely
+mirror the target linear algebra expressions. It is then a compiler/interpreter that
+automatically identiﬁes how to map the input program onto the available kernels. The
+quality of the mapping depends on the speciﬁc language1 of choice, but in general, it
+will likely be signiﬁcantly lower than that of a program hand-written by an expert.
+However, such automatic approaches make it possible even for non-experts to quickly
+obtain a working program, thus boosting productivity and enabling experimentation.
+Furthermore, high-level languages give users the opportunity to partially inﬂuence
+how expressions are evaluated, for example by using parenthesization. Some languages
+even allow for a hybrid approach, oﬀering not only a high-level interface, but also more
+or less direct access to the underlying BLAS/LAPACK kernels.
+The ob jective of this article is threefold: First, we introduce LAMP, a term that
+attempts to unify a number of problems related to the eﬃcient computation of linear
+algebra expressions. Second, we assess the capabilities of current state-of-the-art
+languages that solve instances of LAMP. The assessment is carried out by a set of
+minimal tests, each exposing one single optimization. Our intention is not to compare
+tools with one another, but to help users and developers understand the capabilities
+
+1
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+3
+
+of each individual language. Third, we aim to provide guidelines for the development
+and improvement of such languages by introducing a benchmark of high-level linear
+algebra optimizations.
+The organization of the article follows. In Sec. 2, we deﬁne LAMP and discuss its
+computational complexity. In Sec. 3 we survey the landscape of languages, libraries,
+frameworks, and tools that solve diﬀerent instances of LAMP. In Sec. 4, we introduce
+a benchmark of linear algebra expressions, and use it to evaluate the extent to which
+high-level programming languages incorporate optimizations that play a signiﬁcant
+role in the solution of LAMP. Finally, in Sec. 5 we summarize our contributions and
+discuss ways of expanding this study.
+
+2. The Linear Algebra Mapping Problem. In its most general form, LAMP
+is deﬁned as follows. Given a linear algebra expression L, a set of instructions I , and
+a cost function C , LAMP consists in constructing a program P , using the instructions
+from I , that computes L and minimizes the cost C (P ). Depending on the speciﬁc
+choice of L, I , and C , one will recognize that many diﬀerent, seemingly unrelated,
+problems are all instances of LAMP. A few examples follow.
+• When L is the matrix-matrix product C := AB + C with variable operand
+sizes, I is the set of machine instructions, and C is the execution time, the
+problem reduces to the development of the high-performance GEMM kernel.
+This problem is central to many high-performance linear algebra libraries [20],
+and signiﬁcant eﬀort is put both into manual solutions such as GotoBLAS
+[35], OpenBLAS [74] and BLASFEO [29], as well as with auto-tuned libraries
+such as ATLAS [72].
+• When L consists of a matrix product X := M1M2 · · · Mk , the only available
+instruction in I is the matrix product C := AB , and the cost function counts
+the number of ﬂoating point operations, LAMP reduces to the matrix chain
+problem [17]. Several variants of this problem have been studied, including
+ﬁnding solutions for parallel systems [50] and GPUs [54].
+• When L contains small-scale, memory bound problems, and I consists of
+scalar and vectorized instructions, LAMP covers the domain of code genera-
+tors such as BTO BLAS [62], which aims to minimize the number of memory
+accesses, as well as LGen [65] and SLinGen [64], which instead minimize
+execution time.
+• When L consists of BLAS-like operations, such as matrix inversion, least-
+squares problems, and the derivative of matrix factorizations [63, 31], I con-
+tains BLAS/LAPACK kernels, and C is a performance metric, LAMP cap-
+tures problems solved by the FLAME methodology [13, 26].
+• When L is made up of matrix expressions as those shown in Table 1, I
+contains kernels as those shown in Table 2, and the cost is execution time,
+LAMP describes the problem that languages such as Matlab aim to solve.
+This class of LAMP instances is the main focus of this article.
+While execution time is the most commonly used performance metric, all practical
+solutions to LAMP also have to fulﬁll requirements regarding numerical stability. This
+means that in practice the cost function is a multi-level metric, e.g., a tuple in which
+the ﬁrst entry is a measure of numerical stability, and following ones are performance
+metrics such as execution time and data movement.
+
+2.1. Complexity of LAMP. Any variant of LAMP that makes it possible to
+have common subexpressions is at least NP-complete. Our proof hinges on the NP-
+completeness of the Optimal Common Subexpression Elimination problem (OCSE),
+
+4
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+since the optimal solution of LAMP requires the solution of OCSE.
+
+Definition 2.1 (Optimal Common Subexpression Elimination). Let D be a set,
+• : D × D → D be an associative-commutative operator, and A a ﬁnite set of variables
+over D. Consider (i) a col lection of equations xk = a1 • . . . • al , with a1 , . . . , al ∈ A,
+and k = 1, . . . , n, where each variable appears at most once per equation, and (ii) a
+positive integer Ω. Is it possible to ﬁnd a sequence of assignments ui = si • ti , with
+i = 1, . . . , ω and ω ≤ Ω, where si and ti are either an element of A or uj with j < i,
+such that for al l k there exists a ui which equals xk ?
+
+Intuitively, given a set of assignments that contain common subexpressions, the prob-
+lem consists in computing the assignments with as few operations as possible. An
+instance of OCSE (left) and its solution (right) are given below:
+
+A = {a1 , a2 , a3 , a4 }
+
+x1 = a1 • a2
+x2 = a1 • a2 • a3
+
+x3 = a2 • a3 • a4
+
+Ω = 4
+
+u1 = a1 • a2 = x1
+
+u2 = a2 • a3
+u3 = a1 • u2 = x2
+
+u4 = a4 • u2 = x3
+
+This example contains two common subexpressions: a1 • a2 (which appears in x1 and
+x2 ), and a2 • a3 (which appear in x2 and x3 ). Since in x2 they overlap, it is not
+possible to make use of them both. In this case, using either one leads to a solution,
+but in general the diﬃculty of OCSE lies in deciding which common subexpressions
+to use to minimize the number of assignments ui . Since the deﬁnition of OCSE only
+requires one associative-commutative binary operator, the problem arises in many
+areas: The set D can be the set of integers, real or complex numbers, but also vectors
+or matrices. The operator can either be addition or multiplication, with the exception
+of matrix multiplication, as it is not commutative.
+We prove that OCSE is NP-complete by reduction from Ensemble Computation
+(EC) [30], which is known to be NP-complete. By showing that for every instance
+of EC there is an equivalent instance of OCSE, we show that OCSE is at least as
+diﬃcult as EC. The deﬁnition of EC is provided below.
+
+Definition 2.2 (Ensemble Computation). Consider (i) a col lection C = {Ck ⊆
+A | k = 1, . . . , n} of subsets of a ﬁnite set A, and (ii) a positive integer Ω. Is there
+a sequence ui = si ∪ ti for i = 1, . . . , ω , ω ≤ Ω, where si and ti are either {a} for
+some a ∈ A, or uj for some j < i and si
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+5
+
+Reduction. For each instance of EC, an equivalent instance of OCSE is obtained
+as follows. For each Ck , an in input equation is constructed as xk = a1 • . . . • al with all
+a1 , . . . , al ∈ Ck . In the solution, the sets {ai} are substituted with the corresponding
+variables ai , and the unions ui = si ∪ ti with operations ui = si • ti .
+
+We conclude with the EC instance (left) and its solution (right) that correspond
+to the OCSE instance shown above:
+
+A = {a1 , a2 , a3 , a4}
+
+u1 = {a1} ∪ {a2} = C1
+
+C = {{a1 , a2}, {a1 , a2 , a3}, {a2 , a3 , a4}}
+
+u2 = {a2} ∪ {a3}
+
+Ω = 4
+
+u3 = {a1} ∪ u2 = C2
+
+u4 = {a4} ∪ u2 = C3
+
+3. Related Work. A considerable number of languages, libraries, frameworks,
+and tools are available for the solution of diﬀerent instances of LAMP. In this section,
+we highlight those that support a high-level notation for linear algebra expressions
+and provide some degree of automation in the construction of eﬃcient solutions. Fur-
+thermore, we survey a number of kernel libraries, which oﬀer the necessary building
+
+6
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+goal of BTO BLAS [62] is to generate C code for bandwidth bound operations, such
+as fused matrix-vector operations. DxTer [51] uses domain knowledge to optimize
+programs represented as dataﬂow graphs. LGen [65] targets basic linear algebra oper-
+ations for small operand sizes, a regime in which BLAS and LAPACK do not perform
+very well, by directly generating vectorized C code. SLinGen [64] combines Cl1ck
+and LGen to generate code for more complex small-scale problems. The generalized
+matrix chain algorithm [10] is an extension of the standard matrix chain algorithm
+[17]; it ﬁnds the optimal solution (in terms of FLOPs) for matrix chains with operands
+that can be transposed or inverted, and considers matrix properties. LINVIEW [52]
+introduces techniques for incremental view maintenance of linear algebra.
+
+3.4. Kernel Libraries. Kernels are highly optimized routines that perform rel-
+atively simple operations, and that allow more complex algorithms to be structured in
+a layered fashion. In numerical linear algebra, the BLAS speciﬁcation was introduced
+to standardize vector [49], matrix-vector [19] and matrix-matrix [20] operations, and
+to assist the development of highly optimized libraries. Several libraries oﬀer opti-
+mized BLAS implementations, including GotoBLAS [35], OpenBLAS [74], BLIS [69],
+BLASFEO [29], clBLAST [55], and LIBXSMM [41].
+Built on top of BLAS, kernels for more complex operations (e.g., solvers for
+linear systems, least-squares problems, and eigenproblems) are oﬀered in LAPACK
+[8] libﬂame [68], and RELAPACK [59]. Proprietary kernel libraries that implement
+a superset of BLAS and LAPACK include Intel MKL [3], Nvidia cuBLAS [56], IBM
+ESSL [46] and the Apple Accelerate Framework [9].
+Similar libraries exist for sparse computations, including PSBLAS [27], clSparse
+[38], HSL (formerly the Harwell Subroutine Library) [43], and PETSc [6].
+
+4. Evaluation of Programming Languages. Several programming languages
+make it possible for users to input linear algebra expressions almost as if they were
+writing them on a blackboard. For instance, in Matlab/Octave, Armadillo, and Julia,
+the assignment C := AB T + BAT can be written as C = A*B’ + B*A’,
+
+C = A*trans(B) + B*trans(A), and C = A*transpose(B) + B*transpose(A), re-
+
+spectively. When using such a level of abstraction, users relinquish control on the
+actual evaluation of the expressions, eﬀectively relying on the internal mechanisms of
+the language to solve LAMP.
+In this section, we consider seven such languages—Armadillo, Eigen, Julia, Mat-
+lab, NumPy (Python), GNU Octave and R2—and introduce a benchmark to assess
+how eﬃciently they solve a number of test expressions. These expressions were de-
+signed to be as simple as possible, while capturing, in isolation, scenarios that occur
+frequently in practice and for which one speciﬁc optimization is applicable. The re-
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+7
+
+the input programs (expressions) resemble the mathematical representation as closely
+as possible. Consequently, whenever an operation is supported by both a function and
+an operator, the latter is preferred (e.g., for matrix multiplication, NumPy supports
+both the function matmul and the operator @). Furthermore, the input expressions are
+as compact as possible, that is, not broken into multiple assignments and without ex-
+plicit parenthesization. In addition, all matrices (input and output) are preallocated
+and initialized before any timing. Finally, the operands are chosen large enough so
+that the individual timings are less susceptible to noise and ﬂuctuations.
+For each experiment, we report the minimum execution time over 20 repetitions,
+ﬂushing all cache memories in between each repetition. Special measures are taken
+to avoid dead code elimination in both the experiments and cache ﬂushing. For
+those languages that have a garbage collector (Julia and R), we explicitly invoke
+it after cleaning the cache to reduce the chances of interference with our timings.
+Furthermore, we do not concern ourselves with how much time it takes for languages
+to make decisions; rather, we evaluate the quality of those decisions and assess whether
+or not a speciﬁc optimization is implemented.
+The experiments are performed on a Linux machine with an Intel Xeon E5-2680V3
+processor, with Turbo Boost disabled. All languages are linked to the Intel(R) Math
+Kernel Library 19.0, which implements a super-set of BLAS and LAPACK, and com-
+piled with gcc3 . The versions of the languages used are the latest stable releases as of
+October 2019: Armadillo 9.800.x, Eigen 3.3.90, Julia 1.1, Matlab 2019a, GNU Octave
+5.1.0 and R 3.6.1. The source code for the experiments is available online4 .
+
+4.2. Mapping to Kernels. BLAS and LAPACK oﬀer a set of kernels that are
+the de-facto standard building blocks for linear algebra computations. Many opti-
+mized implementations of such operations exist, see Section 3.4. All the aforemen-
+tioned languages have access to optimized kernels via MKL. Here we investigate the
+capabilities of modern linear algebra languages in mapping fundamental operations
+to BLAS kernel calls.
+
+4.2.1. Experiment #1: GEMM.
+Input. In this ﬁrst experiment, we initialize the random matrices A ∈ Rm×k ,
+B ∈ Rk×n , and C ∈ Rm×n , and we input the expression C := AB in each language
+by using the available matrix representations (ob jects) and the operator for matrix
+multiplication. The goal is to determine whether languages compute this expression
+by invoking the optimized BLAS kernel GEMM, or via another (inferior) implemen-
+tation. The GEMM kernel included in the optimized BLAS libraries is an extremely
+sophisticated piece of code [35]; consequently, the diﬀerence in performance between
+a call to GEMM and to any other (suboptimal) implementation is going to be signiﬁcant
+and easily distinguishable by comparing the execution time with that of an explicit
+call to GEMM
+
+8
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+Name Expression
+
+C
+
+Armadillo Eigen
+
+Julia Matlab NumPy Octave
+
+R
+
+GEMM
+
+C := AB
+
+SYRK
+
+C := AAT
+
+SYR2K C := AB T + BAT
+
+0.27
+
+0.14
+
+0.28
+
+0.29
+
+X
+
+0.17
+
+X
+
+0.57
+
+−
+
+0.29
+
+X
+
+0.29
+
+−
+
+0.58
+
+−
+
+0.30
+
+X
+
+0.21
+
+X
+
+0.69
+
+−
+
+0.29
+
+X
+
+0.18
+
+X
+
+0.57
+
+−
+
+0.29
+
+X
+
+0.18
+
+X
+
+0.58
+
+−
+
+0.28
+
+X
+
+0.17
+
+X
+
+0.59
+
+−
+
+0.31
+
+X
+
+0.32
+
+−
+
+0.59
+
+−
+
+Table 3: Experiments #1-3. Timings are in seconds. By comparing the execution
+time of each language with that of hand-written C code, one can deduce whether or
+not a language makes use of the most appropriate BLAS kernel for the evaluation of
+each expression.
+
+4.2.2. Experiment #2: SYRK.
+Input. Since all languages successfully map to GEMM, in this second experiment,
+we initialize the random matrices A ∈ Rn×k , C ∈ Rn×n , and input the expression
+C := AAT , which is a special instance of GEMM in which matrix B is substituted with
+AT . Similarly to Experiment #1, we make use of the high-level abstractions oﬀered by
+each language. Although the output matrix C could be computed with a call to GEMM,
+performing 2n2k
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+Expression
+
+Armadillo Eigen
+
+Julia Matlab NumPy Octave
+
+C := AB
+C := AB + C
+C += AB
+
+C := AAT
+C := AAT + C
+C += AAT
+
+X
+
+−
+X
+
+X
+
+−
+
+−
+
+X
+
+−
+
+−
+
+X
+
+−
+
+−
+
+X
+
+−
+
+−
+
+X
+
+−
+
+n.a.
+
+X
+
+−
+
+n.a.
+
+X
+
+−
+
+−
+
+X
+
+−
+
+−
+
+X
+
+−
+
+−
+
+X
+
+−
+
+−
+
+9
+
+R
+
+X
+
+−
+
+n.a.
+
+Table 4: Experiment #4: Update of C. With the exception of the += operator overload
+in Armadillo for GEMM, no language maps to one single kernel call which includes the
+update to C.
+
+performance and reduces the size of temporary storage; however, the computational
+cost for the addition of two matrices of size Rn×n is O(n2 ), and for mid- and large-
+sized matrices this will be dwarfed by the O(n3 ) cost for the multiplication. On the
+contrary, the smaller the problem size, the more signiﬁcant the contribution of the
+addition to the overall computation time. For completeness, we investigate whether
+or not the languages require a separate matrix addition when given such expressions
+as input.
+Input. We used the expressions in Table 4 as input, where the matrices have the
+same sizes as in the three experiments above. To test if the languages require an extra
+addition, we also measured the time it takes for a similarly sized matrix addition in
+each language.
+Results. Timings (see Table 11) suggest that in all cases the expression is com-
+puted as two steps, a matrix multiplication followed by a matrix addition. The only
+
+10
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+that of the expression
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+11
+
+Name
+
+Armadillo
+Eigen
+Julia
+
+Solve linear system
+
+solve(A, B)
+
+n.a.5
+
+12
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+Experiment
+
+Operation
+
+Property
+
+Arma Eigen
+
+Julia Matlab NumPy Octave R
+
+Multiplication Triangular
+Diagonal
+
+Linear System Symmetric
+SPD
+Triangular
+Diagonal
+
+−
+
+−
+
+−
+X
+
+X
+
+†
+
+−
+
+−
+
+n.a.
+n.a.
+n.a.
+n.a.
+
+−
+
+−
+
+−
+
+−
+X
+
+X
+
+−
+
+−
+
+−
+X
+
+X
+
+†
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+X
+
+X
+
+†
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+Table 8: Experiments #7–8. The † indicates that the solver for triangular linear
+systems is used instead of a more eﬃcient algorithm for diagonal systems.
+
+or in the computation. One could—correctly—argue that in this experiment languages
+are not used to their best potential. The rationale for not specifying properties is
+threefold: First, we aim to capture the scenario in which non-proﬁcient users are not
+aware of properties, or do not know how to exploit them. Second, matrices can have
+many diﬀerent origins, e.g. the explicit construction with a specialized function, or
+the evaluation of an expression, and it is not guaranteed that the resulting matrices
+are always correctly annotated. Finally, there are cases where properties are only
+known at runtime.
+
+4.5.1. Experiment #7: Multiplication.
+Input. For the multiplication of matrices with properties, we examine two cases:
+Triangular and Diagonal. In the Triangular case, we input the expression B := AB ,
+where A and B are a Lower Triangular and a Full matrix, respectively. We compare
+with a C program that explicitly invokes the BLAS kernel TRMM, which performs half
+of the FLOPs of a GEMM (n3 vs. 2n3). For the Diagonal case, we input the expression
+C := AB , where A and B are a Diagonal and a Full matrix, respectively. Since BLAS
+oﬀers no kernel for this operation, as a C language reference, one could use a loop to
+scale each row of B individually, via the kernel SCAL.
+Results. None of the languages examined use specialized kernels or methods to
+perform a multiplication between a Triangular/Diagonal and a Full matrix. It should
+be noted that Julia enables the user to easily annotate matrices with types that en-
+code certain matrix properties such as Lower/Upper Triangular, Symmetric, Diagonal
+and more. Speciﬁcally, Julia uses multiple dispatch [12], a technique with which it
+can separately deﬁne the multiplication operation for the pairs Triangular-Full and
+Diagonal-Full, and achieve high performance for these operations by mapping to the
+most appropriate kernels. Similarly, if a matrix is created with the diag function, Oc-
+tave stores the information that the matrix is Diagonal, and then uses the annotation
+to select an eﬃcient multiplication strategy. However, in both cases, the eﬀectiveness
+of those mechanisms depends heavily on the method used to create or initialize the
+matrices, as well as the ability of those languages to propagate those properties across
+intermediate computations.
+
+4.5.2. Experiment #8: Properties in Linear Systems.
+Input. We created general matrices to satisfy the properties shown in th
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+13
+
+in Table 8, while the execution time results are in Table 12.
+Results. Armadillo performs the optimal Cholesky factorization for the SPD case
+and forward substitution for the Triangular case. However, the Diagonal case is also
+solved using forward substitution, as if A was Triangular. Eigen does not participate
+in this experiment, as it requires the user to explicitly specify the type of factorization
+to perform on the input operand before solving the linear system. Julia recognizes
+the Triangular and Diagonal properties and performs forward substitution and vector
+scaling respectively for those cases. However, it does not make use of the Cholesky
+factorization for SPD matrices nor of the BunchKaufman decomposition for sym-
+metric matrices. Matlab is known7 to have an elaborate decision tree when solving
+a linear system to select the most suitable factorization based on the properties of
+the operands. Those properties are detected during runtime either by examining the
+contents of the matrices or by trial-and-error. Indeed, both Matlab and Octave take
+advantage of the SPD and the Triangular case; the Diagonal case is treated like Tri-
+angular, similar to Armadillo. Finally, timings in Table 12 suggest that Python and
+R use the general purpose LU factorization for all cases.
+
+W T
+
+1 AAT W1 )−1W T
+
+λ1
+
+4.6. Common Subexpression Elimination. A common feature of modern
+compilers, at least when it comes to scalar computations, is Common Subexpression
+Elimination (CSE). Compilers perform data ﬂow analysis to detect subexpressions
+that evaluate to the same value and assess whether or not it is beneﬁcial to com-
+pute them only once and substitute them with a temporary value in all subsequent
+instances. In Sec. 2, we proved that the optimal selection of common subexpressions
+is an NP-complete problem.
+In light of the increased computational cost of matrix operations compared to
+scalar operations, it is mostly beneﬁcial to detect and eliminate common subex-
+pressions within linear algebra expressions. Consider for example the expression
+which occurs in the Stochastic Newton equations [16]: B1 := 1
+1 A), where A ∈ Rm×n and W1 ∈ Rm×l are general matrices. The
+term AT W1 appears a total of four times in its original and transposed form, and
+can be factored out and computed only once, saving 6nml FLOPs. However, when
+dealing with matrix expressions, the elimination of common subexpressions might
+be counter-productive, as the following example illustrates: Consider the expression
+A−T B T BA−1y , where A, B ∈ Rn×n and y ∈ Rn×1 , which appears in signal processing
+[18]. First, the expression has to be changed to the form (BA−1 )T BA−1 for the com-
+mon subexpression to appear. Then, one might be tempted to factor out K := BA−1 ,
+solve it and then proceed to compute K T K y . The cost of this strategy is 8n3
+2 .
+By contrast, the optimal solution is to evaluate the initial expression from right to
+left, for a cost of 4n3
+3 + 7n2 . Furthermore, in addition to the computational cost, the
+decision to eliminate a common subexpression has to take into account the memory
+overhead of temporary matrices, which might represent a hard constraint, especially
+for architectures with limited memory.
+
+(In − AT W1 (λ1 Il +
+
+3 + 7n2
+
+4.6.1. Experiment #9: Common Subexpressions.
+Input. To identify if any of the languages performs CSE, we create the random
+matrices A, B ∈ Rn×n and use the two expressions in Table 9a as input.
+In the
+
+14
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+Naive
+
+Recommended
+
+Naive
+
+Recommended
+
+X := ABAB
+
+M := AB
+X := MM
+
+for i in 1:n
+M := AB
+X[i] := M[i, i]
+
+M := AB
+for i in 1:n
+X[i] := M[i, i]
+
+(a) Common Subexpression Elimination.
+
+(b) Loop-Invariant Code Motion.
+
+Table 9: Input expressions for Experiments #9: Common Subexpression Elimination,
+and #10: Loop-Invariant Code Motion.
+
+Results. By comparing the execution time for the two experiments in Table 13
+in Appendix B, we conclude that no language eliminates the redundant operation.
+Since this experiment is particularly simple in terms of analysis and substitution,
+there is no reason to explore more advanced and frequently occurring scenarios, such
+as the stochastic Newton method mentioned above, or the Kalman ﬁlter and signal
+processing shown in Table 1.
+
+4.7. Loop-Invariant Code Motion. Another common scalar optimization is
+Loop-Invariant Code Motion. For this, the compiler ﬁrst looks for expressions that
+occur within a loop but yield the same result regardless of how many times the loop
+is executed [7, p. 592], and then moves them out of the loop body. Again, when
+dealing with matrix computations this optimization is particularly important due to
+their high computational cost. However, in the case of matrices, memory limitations
+might occur more frequently, compared to scalars, if intermediate storage matrices are
+large. The two code snippets shown in Table 9b extract the diagonal of the matrix
+product AB
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+15
+
+Experiment
+
+Armadillo Eigen
+
+Julia Matlab NumPy Octave R
+
+(A+B)(c, c)
+(A+B)(:, c)
+diag(A+B)
+
+(A*B)(c, c)
+(A*B)(:, c)
+diag(A*B)
+
+n.a.
+n.a.
+
+X
+
+n.a.
+n.a.
+
+−
+
+X
+
+X
+
+X
+
+−
+
+−
+X
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+n.a.
+n.a.
+
+−
+
+n.a.
+n.a.
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+−
+
+Table 10: Experiment #12: Partial Operand Access. Eigen is the only language
+that avoids unnecessary computations when a user requests the diagonal of a matrix
+product.
+
+4.8.1. Experiment #11: Blocked Matrices.
+Input. Equation 4.1 shows the experiment, where a block diagonal matrix con-
+sisting of matrices A1 , A2 ∈ Rn×n is used to solve a linear system. Since all the
+languages considered oﬀer mechanisms to construct matrices out
+
+16
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+5. Conclusions. We consider LAMP, the problem of mapping target linear al-
+gebra expressions onto a set of available instructions while minimizing a cost function.
+We provide a deﬁnition to LAMP that uniﬁes diverse and seemingly distant research
+directions in numerical linear algebra and high-performance computing; from this, we
+prove that in general, LAMP is at least NP-complete. We then focus on matrix expres-
+sions that arise in practical applications, select popular programming languages that
+oﬀer a high-level interface to linear algebra, and set out to investigate how eﬃciently
+they solve LAMP. To this end, we create a benchmark consisting of simple tests, and
+exposing individual optimizations that are necessary to achieve good performance;
+these include both standard compiler optimizations such as common subexpression
+elimination and loop-invariant code motion, as well as linear algebra speciﬁc optimiza-
+tions such as the matrix chain problem, and matrix properties. We discuss the details
+of each optimization and demonstrate its eﬀect on performance. This investigation
+aims not only to showcase the capabilities and limitations of high-level languages for
+matrix computations, but also to serve as a guide for the future development of such
+languages.
+Future Work. The experiments included in our benchmark are meant to expose
+an initial set of optimizations that we deemed essential for programming languages to
+generate solutions that are competitive with those created by human experts. Other
+optimizations were not considered either because they do not arise so frequently, or
+because in our opinion are still out of reach for modern programming languages.
+For instance, with suitable assumptions of storage and dependencies, the loop for i
+in 1:n y[i] = A*b[i] should be turned into Y = A*B, to combine multiple low-
+performance GEMVs into one single high-performance GEMM. Similarly, realizing the
+complexity of the topic, we did not investigate the optimal use of parallelism. Our
+collection of experiments was designed to target performance optimizations for dense
+matrix computations; natural extensions to the present study include sparse compu-
+tations and tensor operations. Additionally, modern applications such as machine
+learning present the need for mixed precision computations. In all our experiments,
+we concerned ourselves only with performance; in practice, numerical stability and
+the proper handling of ill-conditioned matrices are critically important aspects of ma-
+trix computations. Further experiments should be designed to assess how high-level
+languages deal with such issues.
+
+Acknowledgments. Financial support from the Deutsche Forschungsgemein-
+schaft (German Research Foundation) through grants GSC 111 and IRTG 2379 is
+gratefully acknowledged.
+
+REFERENCES
+
+[1] Commons Math: The Apache Commons Mathematics Library. https://commons.apache.org/
+math/.
+[2] Hasem, https://sourceforge.net/p/hasem/wiki/HASEM/.
+[3] Intel R(cid:13)Math Kernel Library
+documentation,
+2017,
+mkl- reference-manual- for- c.
+[4] Maple, Maplesoft. https://www.maplesoft.com, 2018.
+[5] Matlab, The MathWorks, inc., 2018, http://www.mathworks.com/.
+[6] S. Abhyankar, J. Brown, E. M. Constantinescu, D. Ghosh, B. F. Smith, and H. Zhang,
+Petsc/ts: A modern scalable ode/dae solver library, arXiv preprint arXiv:1806.01437,
+(2018).
+[7] A. Aho, M. Lam, R. Sethi, and J. Ullman, Compilers: Principles, Techniques and Tools,
+2nd Edition, Pearson Addison Wesley, 2007.
+[8] E. Anderson, Z. Bai, J. Dongarra, A. Greenbaum, A. McKenney, J. Du Croz, S. Ham-
+
+https://software.intel.com/en- us/
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+17
+
+marling, J. Demmel, C. Bischof, and D. Sorensen, Lapack: A portable linear algebra
+library for high-performance computers, in Proceedings of the 1990 ACM/IEEE conference
+on Supercomputing, IEEE Computer Society Press, 1990, pp. 2–11.
+[9] Apple Inc., Accelerate framework, https://developer.apple.com/documentation/accelerate.
+[10] H. Barthels, M. Copik, and P. Bientinesi, The Generalized Matrix Chain Algorithm, in
+Proceedings of 2018 IEEE/ACM International Symposium on Code Generation and Opti-
+mization, Vienna, Austria, Feb. 2018, pp. 138–148, https://doi.org/10.1145/3168804.
+[11] H. Barthels, C. Psarras, and P. Bientinesi, Automatic generation of eﬃcient linear algebra
+programs, arXiv preprint arXiv:1907.02778, (2019).
+[12] J. Bezanson, A. Edelman, S. Karpinski, and V. Shah, Julia: A fresh approach to
+numerical computing, SIAM Review, 59 (2017), pp. 65–98, https://doi.org/10.1137/
+141000671, https://doi.org/10.1137/141000671, https://arxiv.org/abs/https://doi.org/10.
+1137/141000671.
+[13] P. Bientinesi, B. Gunter, and R. A. v. d. Geijn, Families of Algorithms Related to
+the Inversion of a Symmetric Positive Deﬁnite Matrix, ACM Trans. Math. Softw.,
+35 (2008), pp. 3:1–3:22, https://doi.org/10.1145/1377603.1377606, http://doi.acm.org/10.
+1145/1377603.1377606.
+[14] P. Bientinesi, E. S. Quintana-Ort´ı, and R. A. van de Geijn, Representing linear algebra
+algorithms in code:
+the FLAME application program interfaces, ACM Transactions on
+Mathematical Software, 31 (2005), pp. 27–59.
+[15] M. Blatt, A paral lel algebraic multigrid method for el liptic problems with highly discontinuous
+coeﬃcients, (2010).
+[16] J. Chung, M. Chung, J. T. Slagel, and L. Tenorio, Stochastic Newton and Quasi-Newton
+Methods for Large Linear Least-squares Problems., CoRR, math.NA (2017).
+[17] T. H. Cormen, R. L. Rivest, and C. E. Leiserson, Introduction to Algorithms, McGraw-Hill,
+Inc., 1990.
+[18] Y. Ding and I. W. Selesnick, Sparsity-Based Correction of Exponential Artifacts, Signal
+Processing, 120 (2016), pp. 236–248.
+[19] J. Dongarra, J. Croz, S. Hammarling, and R. Hanson, An extended set of fortran basic
+linear algebra subprograms, ACM Transactions on Mathematical Software - TOMS, 14
+(1988), pp. 1–17, https://doi.org/10.1145/42288.42291.
+[20] J. J. Dongarra, J. Du Croz, S. Hammarling, and I. S. Duff, A set of level 3 basic linear
+algebra subprograms, ACM Trans. Math. Softw., 16 (1990), pp. 1–17, https://doi.org/10.
+1145/77626.79170, http://doi.acm.org/10.1145/77626.79170.
+[21] J. W. Eaton, D. Bateman, S. Hauberg, and R. Wehbring, GNU Octave version 5.1.0
+manual: a high-level interactive language for numerical computations, 2019, https://www.
+gnu.org/software/octave/doc/v5.1.0/.
+[22] Eclipse Deeplearning4j Development Team, ND4J: Fast, Scientiﬁc and Numerical Com-
+puting for the JVM, (2016), https://github.com/eclipse/deeplearning4j.
+[23] D. Fabregat-Traver and P. Bientinesi, Automatic Generation of Loop-Invariants for Matrix
+Operations., ICCSA Workshops, (2011), pp. 82–92.
+[24] D. Fabregat-Traver and P. Bientinesi, Know ledge-Based Automatic Generation of Parti-
+tioned Matrix Expressions., CASC, 6885 (2011), pp. 144–157.
+[25] D. Fabregat-Traver and P. Bientinesi, A Domain-Speciﬁc Compiler for Linear Algebra
+Operations, in High Performance Computing for Computational Science – VECPAR 2010,
+O. M. M. Dayde and K. Naka jima, eds., vol. 7851 of Lecture Notes in Computer Science,
+Heidelberg, 2013, Springer, pp. 346–361.
+[26] D. Fabregat-Traver and P. Bientinesi, Computing petaﬂops over terabytes of data: The
+case of genome-wide association studies, ACM Transactions on Mathematical Software
+(TOMS), 40 (2014), pp. 27:1–27:22, https://arxiv.org/abs/1210.7683v1.
+[27] S. Filippone and M. Colajanni, PSBLAS: A Library for Paral lel Linear Algebra Computation
+on Sparse Matrices., ACM Trans. Math. Softw., 26 (2000), pp. 527–550.
+[28] J. Foote, Automatic audio segmentation using a measure of audio novelty, in 2000 IEEE
+International Conference on Multimedia and Expo. ICME2000. Proceedings. Latest Ad-
+vances in the Fast Changing World of Multimedia (Cat. No.00TH8532), vol. 1, July 2000,
+pp. 452–455 vol.1, https://doi.org/10.1109/ICME.2000.869637.
+[29] G. Frison, D. Kouzoupis, A. Zanelli, and M. Diehl, BLASFEO - Basic Linear Algebra
+Subroutines for Embedded Optimization., CoRR, cs.MS (2017).
+[30] M. R. Garey and D. S. Johnson, Computers and Intractability, vol. 29, W. H. Freeman, 2002.
+[31] M. B. Giles, Col lected matrix derivative results for forward and reverse mode algorithmic
+diﬀerentiation, in Advances in Automatic Diﬀerentiation, C. H. Bischof, H. M. B¨ucker,
+P. Hovland, U. Naumann, and J. Utke, eds., Berlin, Heidelberg, 2008, Springer Berlin
+
+18
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+Heidelberg, pp. 35–44.
+[32] S. S. Godbole, On Eﬃcient Computation of Matrix Chain Products, IEEE Transactions on
+Computers, C-22 (1973), pp. 864–866, https://doi.org/10.1109/TC.1973.5009182.
+[33] G. H. Golub, P. C. Hansen, and D. P. O’Leary, Tikhonov Regularization and Total Least
+Squares, SIAM Journal on Matrix Analysis and Applications, 21 (2006), pp. 185–194.
+[34] C. Gomez and T. Scott, Maple Programs for Generating Eﬃcient FORTRAN Code for Serial
+and Vectorised Machines, Computer Physics Communications, 115 (1998), pp. 548–562.
+[35] K. Goto and R. A. v. d. Geijn, Anatomy of high-performance matrix multiplication, ACM
+Trans. Math. Softw., 34 (2008), pp. 12:1–12:25, https://doi.org/10.1145/1356052.1356053,
+http://doi.acm.org/10.1145/1356052.1356053.
+[36] P. Gottschling, D. S. Wise, and M. D. Adams, Representation-transparent matrix algo-
+rithms with scalable performance, in Proceedings of the 21st Annual International Confer-
+ence on Supercomputing, ICS ’07, New York, NY, USA, 2007, ACM, pp. 116–125, https://
+doi.org/10.1145/1274971.1274989, http://doi.acm.org/10.1145/1274971.1274989.
+[37] R. M. Gower and P. Richt´arik, Randomized Quasi-Newton Updates Are Linearly Con-
+vergent Matrix Inversion Algorithms., SIAM J. Matrix Analysis Applications, 38 (2017),
+pp. 1380–1409.
+[38] J. L. Greathouse, K. Knox, J. Pola, K. Varaganti, and M. Daga, clsparse: A vendor-
+optimized open-source sparse blas library, in Proceedings of the 4th International Workshop
+on OpenCL, IWOCL ’16, New York, NY, USA, 2016, ACM, pp. 7:1–7:4, https://doi.org/
+10.1145/2909437.2909442, http://doi.acm.org/10.1145/2909437.2909442.
+[39] G. Guennebaud, B. Jacob, et al., Eigen v3. http://eigen.tuxfamily.org, 2010.
+[40] J. A. Gunnels, F. G. Gustavson, G. M. Henry, and R. A. van de Geijn, FLAME: Formal
+Linear Algebra Methods Environment, ACM Transactions on Mathematical Software, 27
+(2001), pp. 422–455.
+[41] A. Heinecke, G. Henry, M. Hutchinson, and H. Pabst, Libxsmm: Accelerating smal l matrix
+multiplications by runtime code generation, in Proceedings of the International Conference
+for High Performance Computing, Networking, Storage and Analysis, SC ’16, Piscataway,
+NJ, USA, 2016, IEEE Press, pp. 84:1–84:11, http://dl.acm.org/citation.cfm?id=3014904.
+3015017.
+[42] N. J. Higham, Accuracy and Stability of Numerical Algorithms, SIAM, 2002.
+[43] M. J. Hopper, Harwel l Subroutine Library. A Catalogue of Subroutines (1973),, tech. report,
+Theoretical Physics Division, U.K.A.E.A. Research Group, Atomic Energy Research Es-
+tablishment, July 1973.
+[44] T. Hu and M. Shing, Computation of Matrix Chain Products. Part I, SIAM Journal on
+Computing, 11 (1982), pp. 362–373.
+[45] K. Iglberger, G. Hager, J. Treibig, and U. R¨ude, Expression Templates Revisited: A
+Performance Analysis of the Current ET Methodologies, SIAM Journal on Scientiﬁc Com-
+puting, 34 (2012), pp. C42–C69.
+[46] International Business Machines Corporation (IBM), Engineering and Scientiﬁc Subrou-
+tine Library (ESSL), https://www.ibm.com/support/knowledgecenter/en/SSFHY8/essl
+welcome.html.
+[47] P. Kabal, Minimum Mean-Square Error Filtering: Autocorrelation/Covariance, General De-
+lays, and Multirate Systems, (2011).
+[48] R. E. Kalman, A New Approach to Linear Filtering and Prediction Problems, Journal of basic
+Engineering, 82 (1960), pp. 35–45.
+[49] C. Lawson, R. Hanson, D. Kincaid, and F. Krogh, Basic linear algebra subprograms for
+fortran usage, ACM Trans. Math. Softw., 5 (1979), pp. 308–323, https://doi.org/10.1145/
+355841.355847.
+[50] H. Lee, J. Kim, S. J. Hong, and S. Lee, Processor Al location and Task Scheduling of Matrix
+Chain Products on Paral lel Systems, Parallel and Distributed Systems, IEEE Transactions
+on, 14 (2003), pp. 394–407.
+[51] B. Marker, D. Batory, and R. van de Geijn, A case study in mechanical ly
+deriving dense linear algebra code, The International Journal of High Perfor-
+mance Computing Applications, 27 (2013), pp. 440–453, https://doi.org/10.1177/
+1094342013492178, https://doi.org/10.1177/1094342013492178, https://arxiv.org/abs/
+https://doi.org/10.1177/1094342013492178.
+[52] M. Nikolic, M. ElSeidy, and C. Koch, Linview: Incremental view maintenance for complex
+analytical queries, in Proceedings of the 2014 ACM SIGMOD International Conference
+on Management of Data, SIGMOD ’14, New York, NY, USA, 2014, ACM, pp. 253–264,
+https://doi.org/10.1145/2588555.2610519, http://doi.acm.org/10.1145/2588555.2610519.
+[53] E. D. Ni˜no, A. Sandu, and X. Deng, A Paral lel Implementation of the Ensemble Kalman
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+19
+
+Filter Based on Modiﬁed Cholesky Decomposition, CoRR, abs/1606.00807 (2016), http://
+arxiv.org/abs/1606.00807.
+[54] K. Nishida, Y. Ito, and K. Nakano, Accelerating the Dynamic Programming for the Matrix
+Chain Product on the GPU, in Networking and Computing (ICNC), 2011 Second Interna-
+tional Conference on, IEEE, 2011, pp. 320–326.
+[55] C. Nugteren, Clblast: A tuned opencl blas library, in Proceedings of the International Work-
+shop on OpenCL, IWOCL ’18, New York, NY, USA, 2018, ACM, pp. 5:1–5:10, https://
+doi.org/10.1145/3204919.3204924, http://doi.acm.org/10.1145/3204919.3204924.
+[56] NVIDIA Corporation, cublas, https://developer.nvidia.com/cublas.
+[57] T. E. Oliphant, A Guide to NumPy, vol. 1, Trelgol Publishing USA, 2006.
+[58] J. Y. Park, H. L. Yap, C. J. Rozell, and M. B. Wakin, Concentration of measure for block
+diagonal matrices with applications to compressive signal processing, IEEE Transactions on
+Signal Processing, 59 (2011), pp. 5859–5875, https://doi.org/10.1109/TSP.2011.2166546.
+[59] E. Peise and P. Bientinesi, Recursive algorithms for dense linear algebra: The relapack
+col lection, CoRR, abs/1602.06763 (2016), http://arxiv.org/abs/1602.06763.
+[60] R Development Core Team, R: A Language and Environment for Statistical Computing, R
+Foundation for Statistical Computing, Vienna, Austria, 2008, http://www.R- pro ject.org.
+[61] C. Sanderson, Armadil lo: An Open Source C++ Linear Algebra Library for Fast Prototyping
+and Computational ly Intensive Experiments, (2010).
+[62] J. G. Siek, I. Karlin, and E. R. Jessup, Build to Order Linear Algebra Kernels, in Distributed
+Processing Symposium (IPDPS), IEEE, 2008, pp. 1–8.
+[63] S. P. Smith, Diﬀerentiation of the Cholesky algorithm, Journal of Computational and Graph-
+ical Statistics, 4 (1995), pp. 134–147.
+[64] D. G. Spampinato, D. Fabregat-Traver, P. Bientinesi, and M. P¨uschel, Program Gener-
+ation for Smal l-Scale Linear Algebra Applications., in International Symposium on Code
+Generation and Optimization (CGO), Vienna, Austria, 2018, ACM Press, pp. 327–339.
+[65] D. G. Spampinato and M. P¨uschel, A Basic Linear Algebra Compiler for Structured Matrices,
+in International Symposium on Code Generation and Optimization (CGO), 2016, pp. 117–
+127.
+[66] D. Straszak and N. K. Vishnoi, On a Natural Dynamics for Linear Programming, CoRR,
+abs/1511.07020 (2015), http://arxiv.org/abs/1511.07020.
+[67] T. Tirer and R. Giryes, Image Restoration by Iterative Denoising and Backward Projections,
+arXiv.org, (2017), pp. 138–142, https://arxiv.org/abs/1710.06647v1.
+[68] F. G. Van Zee, E. Chan, and R. A. van de Geijn, libﬂame, Springer US, Boston, MA,
+2011, pp. 1010–1014, https://doi.org/10.1007/978- 0- 387- 09766- 4 91, https://doi.org/10.
+1007/978- 0- 387- 09766- 4 91.
+[69] F. G. Van Zee and R. A. van de Geijn, BLIS - A Framework for Rapid ly Instantiating BLAS
+Functionality., ACM Trans. Math. Softw., 41 (2015), pp. 1–33.
+[70] T. L. Veldhuizen, Arrays in blitz++, in International Symposium on Computing in Ob ject-
+Oriented Parallel Environments, Springer, 1998, pp. 223–230.
+[71] J. Walter, M. Koch, et al., ublas, Boost C++ software library available from
+http://www.boost.org/doc/libs, (2006).
+[72] R. C. Whaley and J. J. Dongarra, Automatical ly tuned linear algebra software, in Proceed-
+ings of the 1998 ACM/IEEE Conference on Supercomputing, SC ’98, Washington, DC,
+USA, 1998, IEEE Computer Society, pp. 1–27, http://dl.acm.org/citation.cfm?id=509058.
+509096.
+[73] Wolfram Research,
+Inc., Mathematica, Version 12.0,
+mathematica. Champaign, IL, 2019.
+[74] Z. Xianyi, W. Qian, and Y. Zhang, Model-driven level 3 blas performance optimization on
+loongson 3a processor, 12 2012, pp. 684–691, https://doi.org/10.1109/ICPADS.2012.97.
+
+https://www.wolfram.com/
+
+Appendix A. Example Problems.
+1. Standard Least Squares
+
+b := (X T X )−1X T y
+
+X ∈ Rn×m ; y ∈ Rn×1 ; n > m
+
+2. Generalized Least Squares
+
+b := (X T M −1X )−1X T M −1y
+
+20
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+3. Optimization [66]
+
+M ∈ Rn×n , SPD; X ∈ Rn×m ; y ∈ Rn×1 ; n > m
+
+x := W (AT (AW AT )−1 b − c)
+
+A ∈ Rm×n ; W ∈ Rn×n , DI, SPD; b ∈ Rm×1 ; c ∈ Rn×1 ; n > m
+
+4. Optimization [66]
+
+xf := W AT (AW AT )−1 (b − Ax)
+xo := W (AT (AW AT )−1Ax − c)
+
+A ∈ Rm×n ; W ∈ Rn×n , DI, SPD; b ∈ Rm×1 ; c ∈ Rn×1 ; n > m
+
+5. Signal Processing [18]
+
+x := (A−T B T BA−1 + RT LR)−1A−T B T BA−1 y
+
+A ∈ Rn×n ; B ∈ Rn×n ; R ∈ Rn−1×n , UT; L ∈ Rn−1×n−1 , DI; y ∈ Rn×1
+
+6. Triangular Matrix Inversion [13]
+
+X10 := L10L−1
+
+00
+
+22 L21L−1
+11 L10
+
+11
+
+X20 := L20 + L−1
+X11 := L−1
+X21 := −L−1
+
+22 L21
+
+L00 ∈ Rn×n , LT; L11 ∈ Rm×m , LT; L22 ∈ Rk×k , LT; L10 ∈ Rm×n ;
+L20 ∈ Rk×n ; L21 ∈ Rk×m
+
+7. Ensemble Kalman Filter [53]
+
+X a := X b + (B−1 + H T R−1H )−1 (Y − H X b )
+
+B ∈ RN ×N , SPSD; H ∈ Rm×N ; R ∈ Rm×m , SPSD; Y ∈ Rm×N ; X b ∈ Rn×N
+
+8. Ensemble Kalman Filter [53]
+
+δX := (cid:0)B−1 + H T R−1H (cid:1)−1
+
+H T R−1 (cid:0)Y − H X b (cid:1)
+
+see 7
+
+9. Ensemble Kalman Filter [53]
+
+δX := X V T (cid:0)R + H X (H X )T (cid:1)−1 (cid:0)Y − H X b(cid:1)X ∈ Rm×N ; see 7
+
+10. Image Restoration [67]
+
+xk := (H T H + λσ2 In )−1 (H T y + λσ2 (vk−1 − uk−1 ))
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+21
+
+H ∈ Rm×n ; y ∈ Rm×1 ; vk−1 ∈ Rn×1 ; uk−1 ∈ Rn×1 ; λ > 0; σ > 0; n > m
+
+11. Image Restoration [67]
+
+H † := H T (H H T )−1
+yk := H †y + (In − H †H )xk
+
+H † ∈ Rn×m ; see 10
+
+12. Randomized Matrix Inversion [37]
+
+Xk+1 := Xk + W AT S (S T AW AT S )−1S T (In − AXk )
+
+W ∈ Rn×n , SPD; S ∈ Rn×q ; A ∈ Rn×n ; Xk ∈ Rn×n ; q ≪ n
+
+13. Randomized Matrix Inversion [37]
+
+Λ := S (S T AT W AS )−1S T
+Xk+1 := Xk + (In − XkAT )ΛAT W
+
+14. Randomized Matrix Inversion [37]
+
+see 12
+
+Λ := S (S T AW AS )−1S T
+
+Θ := ΛAW
+
+Mk := XkA − I
+Xk+1 := Xk − MkΘ − (MkΘ)T + ΘT (AXkA − A)Θ
+
+A ∈ Rn×n , SYM; Xk ∈ Rn×n , SYM; Λ ∈ Rn×n , SYM; Θ ∈ Rn×n ;
+Mk ∈ Rn×n ; see 12
+
+15. Randomized Matrix Inversion [37]
+
+Xk+1 := S (S T AS )−1S T + (In − S (S T AS )−1S T A)Xk (In − AS (S T AS )−1S T )
+
+A ∈ Rn×n , SPD; W ∈ Rn×n , SPD; S ∈ Rn×q ; Xk ∈ Rn×n ; q ≪ n
+
+16. Stochastic Newton [16]
+
+Bk :=
+
+k
+
+k − 1
+
+Bk−1 (In − AT Wk ((k − 1)Il + W T
+
+k ABk−1AT Wk )−1W T
+k ABk−1 )
+
+Wk ∈ Rm×l ; A ∈ Rm×n ; Bk ∈ Rn×n , SPD; l < n ≪ m
+
+17. Stochastic Newton [16]
+
+B1 :=
+
+1
+
+λ1
+
+(In − AT W1 (λ1 Il + W T
+
+1 AAT W1 )−1W T
+
+1 A)
+
+see 16
+
+22
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+18. Tikhonov regularization [33]
+
+x := (AT A + ΓT Γ)−1AT b
+
+A ∈ Rn×m ; Γ ∈ Rm×m ; b ∈ Rn×1
+
+19. Tikhonov regularization [33]
+
+x := (AT A + α2 I )−1AT b
+
+20. Generalized Tikhonov regularization
+
+x := (AT P A + Q)−1 (AT P b + Qx0 )
+
+P ∈ Rn×n , SPSD; Q ∈ Rm×m , SPSD; x0 ∈ Rm×1 ; A ∈ Rn×m ; Γ ∈ Rm×m ;
+
+α > 0; see 18
+
+21. Generalized Tikhonov regularization
+
+x := x0 + (AT P A + Q)−1 (AT P (b − Ax0 ))
+
+b ∈ Rn×1
+
+see 20
+
+22. LMMSE estimator [47]
+
+xout = CX AT (ACX AT + CZ )−1 (y − Ax) + x
+
+A ∈ Rm×n ; CX ∈ Rn×n , SPSD; CZ ∈ Rm×m , SPSD; x ∈ Rn×1 ; y ∈ Rm×1
+
+23. LMMSE estimator [47]
+
+xout := (AT C −1
+Z A + C −1
+
+X )−1AT C −1
+
+Z (y − Ax) + x
+
+24. LMMSE estimator [47]
+
+see 22
+
+Kt+1 := CtAT (ACtAT + Cz )−1
+xt+1 := xt + Kt+1 (y − Axt )
+Ct+1 := (I − Kt+1A)Ct
+
+A ∈ Rm×n ; Kt+1 ∈ Rm×m ; Ct ∈ Rn×n , SPSD; CZ ∈ Rm×m , SPSD;
+
+xt ∈ Rn×1 ; y ∈ Rm×1
+
+25. Kalman Filter [48]
+
+Kk := Pk−1H T (Hk Pk−1H T
+k + Rk )−1
+
+Pk := (I − KkHk ) Pk−1
+xk := xk−1 + Kk (zk − Hk xk−1 )
+
+THE LINEAR ALGEBRA MAPPING PROBLEM
+
+23
+
+Kk ∈ Rn×m ; Pk ∈ Rn×n , SPD; Hk ∈ Rm×n , SPD; Rk ∈ Rm×m , SPSD;
+
+xk ∈ Rn×1 ; zk ∈ Rm×1
+
+Appendix B. Timings.
+
+Expression
+
+C
+
+Armadillo Eigen
+
+Julia Matlab NumPy Octave
+
+R
+
+C2 := C1 + C2
+
+C := AB
+C := AB + C
+C += AB
+
+C := AAT
+C := AAT + C
+C += AAT
+
+0.27
+0.27
+n.a.
+
+0.14
+0.14
+n.a.
+
+0.01
+
+0.26
+0.29
+0.26
+
+0.15
+0.17
+0.17
+
+0.01
+
+0.29
+0.29
+0.29
+
+0.03
+
+0.28
+0.30
+0.3
+
+0.16
+0.21
+0.21
+
+0.03
+
+0.28
+0.29
+n.a.
+
+0.17
+0.18
+n.a.
+
+0.03
+
+0.28
+0.31
+n.a.
+
+0.03
+
+0.28
+0.29
+0.29
+
+0.17
+0.18
+0.18
+
+0.03
+
+0.28
+0.31
+0.31
+
+0.17
+0.2
+0.2
+
+Table 11: Experiment #4: Update of C.
+
+Experiment
+
+Operation
+
+Property
+
+C
+
+Arma Eigen
+
+Julia Matlab Numpy Octave
+
+R
+
+Multiplication General
+Triangular
+Diagonal
+
+Linear System General
+Symmetric
+SPD
+Triangular
+Diagonal
+
+1.46
+0.75
+0.06
+
+0.61
+0.466
+0.318
+0.030
+0.001
+
+1.43
+1.44
+1.43
+
+0.62
+0.624
+0.365
+0.060
+0.038
+
+1.46
+1.46
+1.46
+
+n.a.
+n.a.
+n.a.
+n.a.
+n.a.
+
+1.44
+1.44
+1.44
+
+0.62
+0.625
+0.600
+0.036
+0.013
+
+1.44
+1.44
+1.44
+
+0.71
+0.714
+0.408
+0.037
+0.036
+
+1.45
+1.45
+1.45
+
+0.65
+0.654
+0.628
+0.654
+0.628
+
+1.48
+1.48
+1.48
+
+0.74
+0.737
+0.416
+0.044
+0.051
+
+1.47
+1.47
+1.47
+
+0.68
+0.681
+0.654
+0.647
+0.639
+
+Table 12: Experiments #7–8 Properties in Multiplication and Linear Systems.
+
+Experiment
+
+C
+
+Armadillo Eigen
+
+Julia Matlab NumPy Octave
+
+R
+
+naive
+recommended
+
+0.55
+0.28
+
+0.57
+0.27
+
+0.56
+0.3
+
+0.64
+0.31
+
+0.57
+0.28
+
+0.57
+0.3
+
+0.6
+0.31
+
+0.57
+0.31
+
+Table 13: Experiment #9: Common Subexpression Elimination.
+
+Experiment
+
+Armadillo
+
+Eigen
+
+Julia
+
+Matlab NumPy Octave
+
+R
+
+naive
+recommended
+
+0.00269
+0.00007
+
+0.00311
+0.00007
+
+0.00279
+0.00007
+
+0.00282
+0.00009
+
+0.00321
+0.00012
+
+0.00498
+0.00112
+
+0.00457
+0.00012
+
+Table 14: Experiment #10: Loop Invariant Code Motion.
+
+24
+
+C. PSARRAS, H. BARTHELS AND P. BIENTINESI
+
+Experiment
+
+Armadillo Eigen
+
+Julia Matlab NumPy Octave
+
+R
+
+compact
+blocked (manually)
+
+2.06
+0.97
+
+2.13
+0.98
+
+2.14
+0.99
+
+2.17
+1.00
+
+2.48
+1.23
+
+2.22
+1.05
+
+2.17
+1.11
+
+Table 15: Experiment #11: Partitioned Operands.
+
+Experiment
+
+Armadillo
+
+Eigen
+
+Julia
+
+Matlab Numpy
+
+Octave
+
+R
+
+(A+B)(c,c)
+A(c,c)+B(c,c)
+
+(A+B)(:,c)
+A(:,c)+B(:,c)
+
+n.a.
+
+n.a.
+
+0.00000002
+0.00000002
+
+0.028977
+0.00000004
+
+0.000016
+0.000016
+
+0.028990
+0.000019
+
+n.a.
+
+n.a.
+
+0.029564
+0.000006
+
+0.028867
+0.000043
+
+0.029029
+0.000011
+
+0.029237
+0.000103
+
+0.028868
+0.000064
+
+0.029067
+0.000087
+
+diag(A+B)
+diag(A)+diag(B)
+
+0.0001
+0.0001
+
+0.0003
+0.0003
+
+0.0289
+0.0001
+
+0.0299
+0.0001
+
+0.0291
+0.0005
+
+0.0295
+0.0001
+
+0.0291
+0.0003
+
+A*B
+(A*B)(c,c)
+(A*B)(:,c)
+diag(A*B)
+
+1.43
+n.a.
+n.a.
+1.44
+
+1.46
+1.45
+1.45
+0.03
+
+1.44
+1.44
+1.44
+1.44
+
+1.44
+n.a.
+n.a.
+1.44
+
+1.45
+1.45
+1.45
+1.45
+
+1.48
+1.48
+1.48
+1.48
+
+1.47
+1.47
+1.47
+1.47
+
+Table 16: Experiment #12: Partial Operand Access.
+
+

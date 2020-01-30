@@ -1,0 +1,2775 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+E
+
+S
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+5
+2
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+1
+
+SolidityCheck : Quickly Detecting Smar t
+Contract Problems Through Regular
+Expressions
+
+Pengcheng Zhang, Member, IEEE, Feng Xiao, Xiapu Luo
+
+Abstract—As a blockchain platform that has developed vigorously in recent years, Ethereum is different from Bitcoin in that it
+introduces smar t contracts into blockchain. Solidity is one of the most mature and widely used smar t contract programming language,
+which is used to write smar t contracts and deploy them on blockchain. However, once the data in the blockchain is written, it cannot be
+modiﬁed. Ethereum smar t contract is stored in the block chain, which makes the smar t contract can no longer repair the code problems
+such as re-entrancy vulnerabilities or integer overﬂow problems. Currently, there still lacks of an efﬁcient and effective approach for
+detecting these problems in Solidity. In this paper, we ﬁrst classify all the possible problems in Solidity, then propose a smar t contract
+problem detection approach for Solidity, namely SolidityCheck. The approach uses regular expressions to deﬁne the characteristics of
+problematic statements and uses regular matching and program instrumentation to prevent or detect problems. Finally, a large number
+of experiments is performed to show that SolidityCheck is superior to existing approaches.
+
+Index Terms—Ethereum; Smar t Contract; Solidity Language; Regular Expressions
+
+!
+
+1 IN TRODUC T ION
+
+Ethereum is the largest blockchain that supports smart
+contracts with a market capital of 18 billion [1]. Smart
+contracts [2] are autonomous programs running on the
+blockchain platform. They are usually developed in several
+high-level languages and then compiled into bytecode. Once
+the bytecode of smart contract is deployed to blockchain, its
+functions can be invoked by others but the bytecode cannot
+be changed. Unfortunately, it is inevitable that many smart
+contracts contain bugs but they cannot be patched because
+of the data immutability of blockchain [3], [4]. Consequently,
+it is particularly important to have automated tools that
+can help developers thoroughly check their smart contracts
+before deploying their bytecode to the blockchain.
+A number of recent studies report the possible issues in
+smart contracts [5]–[10]. Base on existing work, we classify
+them into three categories as listed in Table 1.
+Security problems. Vulnerabilities in smart contract codes
+cause developers to suffer losses. For example, DAO, the
+largest crowdsourcing project in Ethereum, was found to
+have a re-entrancy vulnerability in its code, resulting in the
+loss of $12 million worth of ethers in 2016 [11].
+Performance problems. This kind of problems increases
+gas consumption for running contracts. Chen et al. [12]
+analyzed the deployed smart contracts and found that more
+than 80% of the smart contracts have performance related
+
+• P. Zhang and F.Xiao are with the College of Computer and Information,
+Hohai University, Nanjing, P.R.China
+E-mail: pchzhang@hhu.edu.cn; harleyxiao@foxmail.com
+• X.Luo is with the Department of Computing, the Hong Kong Polytechnic
+University, HongKong, China
+E-mail:csxluo@comp.polyu.edu.hk
+Manuscript received XXXX XXXX; revised XXXX, XXXX.
+
+TABLE 1
+Classiﬁcation deﬁnition of smar t contract problems
+
+Types of problems
+Security problem
+
+Performance
+problem
+
+Hidden threats of
+coding problems
+
+Problem Description
+Vulnerabilities in contract code
+cause developers to suffer losses
+Smart contract execution costs too
+much or performs poorly due to
+the use of certain statements
+Statements that may cause
+security problems in speciﬁc
+situations or reduce code
+readability
+
+Severity
+High
+
+Medium
+
+Low
+
+problems, even though the codes have been optimized by
+the recommended compiler.
+Hidden threats of coding problems. Statements that may
+cause penitential security problems in speciﬁc situations or
+reduce code readability are deﬁned hidden threats of coding
+problems. In general, these problems do not necessarily
+cause serious problems. However, paying attention to these
+problems and solving them can make smart contracts safer
+and easier to maintain.
+Some tools have been proposed to check the problems
+aforementioned in smart contracts [2], [4], [7], [13]–[18].
+However, most of them can only handle the bytecode of
+smart contracts. Although processing bytecode directly em-
+powers the tools to analyze all deployed smart contracts,
+they cannot leverage the useful information in source codes
+(e.g., naming functions and events) and consequently a
+tool that can quickly and accurately locate the issues in
+the source codes of smart contracts would be more useful
+for the smart contract developers who have the source
+codes at hand. Moreover, our experiments in Section 5.5.2
+
+ 
+ 
+ 
+ 
+ 
+ 
+2)
+
+and other studies [2], [4], [7], [16] show that the bytecode
+based tools are less efﬁcient than tools for handling source
+codes. Although a recent work [3] designed a tool (named
+SmartCheck) for ﬁnding problems from the source codes of
+smart contracts, existing work has the following limitations:
+1) Existing vulnerability detection criteria is confusing.
+They do not accurately characterize some problems.
+For example, an external function call followed by
+an internal function call is identiﬁed as having a re-
+entrancy vulnerability, which could not accurately
+capture the characteristics of re-entrancy vulnera-
+bility and would cause a large number of misjudg-
+ments and omissions.
+SmartCheck cannot detect some important security
+problems, such as integer overﬂow. Missing this
+problem may lead to serious consequences. For
+example, the integer overﬂow problem led to the
+big loss of the BEC project.
+3) The detection efﬁciency of the existing work is very
+low. SmartCheck runs lexical and grammatical anal-
+ysis on the Solidity source codes and then generates
+the corresponding XML parse tree for the source
+codes. Based on the parse tree, it uses XPath to re-
+trieve the problematic statement [3]. Lexical analysis
+and grammatical analysis reduce the efﬁciency of
+SmartCheck analysis.
+To address these limitations, in this paper, we propose,
+SolidityCheck, a novel approach using regular expressions
+to quickly and accurately locate 20 kinds of problems in
+the source codes of smart contracts. In particular, we can
+prevent two particularly dangerous security problems: (re-
+entrancy and integer overﬂow). We also conduct exten-
+sive experiments to evaluate the usability, efﬁciency and
+effectiveness. In summary, we make the following novel
+contributions:
+• We propose a new classiﬁcation criterion, which
+identiﬁes 20 kinds of code problems that have ad-
+verse effects on smart contracts, including several
+previously undetected ones, covering the vast ma-
+jority of smart contract problems currently.
+• We detect problematic statements through regular
+expressions. Most kinds of problematic statements
+can be accurately detected by regular expressions,
+and then the test results can be reported to the user
+for easy modiﬁcation. Furthermore, two important
+problems which are difﬁcult to detect and have a
+signiﬁcant impact on the security of smart contracts
+are retrieved by regular expressions, and then these
+problems are prevented by program instrumenta-
+tion.
+• We particularly designed a set of experiments to
+validate SolidityCheck. The experimental results show
+that our tool is superior to the existing static code
+analysis tools in recall, precision, and other indexes.
+The rest of this paper is organized as follows. Section 2
+provides the basic concepts used in this paper. Section 3
+proposes a novel classiﬁcation criterion for smart contract
+problems and discusses the characteristics of each problem.
+We detail the design and the implementation of SolidityCheck
+
+2
+
+in Section 4. Section 5 reports our extensive evaluation
+results of SolidityCheck. We discuss the limitations of Solid-
+ityCheck in Section 6. After discussing the related work in
+Section 7, we conclude the paper and point out the future
+work in Section 8.
+
+2 PREL IM INAR IES
+
+2.1 Smart contract
+Smart contracts are computer programs that can automati-
+cally execute contract terms [19]. Smart contracts are auto-
+matically executed when their execution conditions are sat-
+isﬁed, and the execution results are generated according to
+the behaviors in the contracts. Using a smart contract to sign
+a contract can effectively avoid disputes. Blockchain is well
+suitable for the operating environment of smart contracts
+because of its decentralization and network-wide consensus.
+Ethereum smart contract accounts share the same address
+space with the external accounts, and the smart contract can
+be invoked by sending transactions to the contract address.
+To prevent the unwarranted waste of Ethereum’s calculating
+power, Ethereum collects gas from each executed smart
+contract statement, which is converted from ethers.
+
+2.2 Solidity
+Solidity is the most mainstream, mature and widely used
+Ethereum smart contract programming language [20]. Un-
+like the lower-level language, Solidity is a Turing-complete
+high-level programming language, which is capable of
+expressing arbitrary complex logic. Smart contracts pro-
+grammed in Solidity language are compiled into the
+Ethereum virtual machine bytecodes and running in each
+Ethereum node. Soliditylanguage is specially developed
+for the compilation of Ethereum smart contracts. It con-
+tains built-in functions to complete various functions of
+Ethereum. For example, transfer and send functions are used
+to execute transfer ethers, and keywords such as require
+and assert are designed for checking status. Solidity is a fast
+iterative language. The same keyword may have different
+semantics in different language versions. To improve this
+situation, when smart contracts in Solidity are written, it is
+necessary to specify the versions of the compiler that the
+contract can accept.
+
+3 C LASS I FICAT ION O F EX IST ING PROBLEMS IN
+SMART CON TRACTS
+
+Based on existing studies [3]–[10], we give a classiﬁcation
+criterion for smart contract problematic statements (see
+Fig. 1 for detail), which summarizes 20 kinds of common
+problems that need to be detected. Furthermore, we also
+describe the consequences of each problem and the corre-
+sponding detection approach we propose. The correspond-
+ing regular expressions we designed for these detection
+approaches are shown in appendix A.
+
+3.1 Security Problems
+Balance equality [3]. An adversary can forcibly send ethers to
+the attacked contract by mining or via selfdestruct, so that
+the conditional judgment part in Listing 1 is always false.
+
+3
+
+Fig. 1. A classiﬁcation criterion for smar t contract problems
+
+( t h i s . b a l a n c e == 1 9 9 7 e t h e r ) {
+//do s om e t h i n g
+
+i f
+
+}
+
+Listing 1: balance equality
+
+Mishandled exception [2]. In Ethereum, contracts can call
+other contracts in several ways (eg., via send, delegatecall or
+call [6]). If an exception occurs in the callee contract, the call
+terminates, rolls back the status of the callee contract and
+returns false. Therefore, the return value of an external call
+should be checked to properly handle the exception [2], [5].
+Listing 2 shows a possible loss scenario in which the contract
+reduces addr’s holding of tokens when addr fails to receive
+the transfer for some reasons.
+
+add r . c a l l . v a l u e ( 1 w e i ) ; // t r a n s f e r 1 w e i
+t o add r
+b a l a n c e [ add r ] −= 1 ;
+// r e d u c e add r ’ s t o k e n s
+Listing 2: mishandled exceptions
+
+DoS by external contract [3]. External contracts may be mali-
+ciously controlled or killed, which may result in the invali-
+dation of some or all functions of this contract. As shown
+in Listing 3, when the dependent external contract self-
+destructs, the function getService fails. It is particularly note-
+worthy that when contracts depend on external libraries, the
+security of libraries should be carefully reviewed.
+
+f u n c t i o n g e t S e r v i c e ( a d d r e s s
+c u s t om e r ) p u b l i c {
+
+p r o v i d e r , a d d r e s s
+
+P r o v i d e r p r o v i d e r = P r o v i d e r ( p r o v i d e r ) ;
+// i f
+c u s t om e r
+i s a u s e r o f
+t h e s e r v i c e ,
+// t h e
+i f ( p r o v i d e r . i s C u s t om e r ( c u s t om e r ) ) {
+c u s t om e r c a n g e t
+s e r v i c e o f
+t h e
+// p r o v i d i n g s e r v i c e
+
+}
+
+p r o v i d e r
+
+}
+
+Listing 3: dos by external contract
+
+Re-entrancy vulnerability [16]. The re-entrancy vulnerability
+leads to the dissolution of The DAO and the division of the
+Ethereum community. Source based code analysis cannot
+accurately determine whether a statement or a piece of
+codes introduces re-entrancy vulnerabilities. Listing 4 shows
+a contract with a re-entrancy vulnerability (hereinafter re-
+ferred to as an attacked contract). An attacker can write
+a speciﬁc attack contract. He can ﬁrst deposit ethers into
+the attacked contract through the attack contract, and then
+retrieve his deposit by calling withdrawBalance function in
+the attacked contract. The fallback function of the attacking
+contract calls again the withdrawBalance function of the
+attacked contract, but now the balance of the attacking
+contract has not deductions, consequently it can withdraw
+many times.
+
+pragma s o l i d i t y ˆ 0 . 4 . 1 5 ;
+c o n t r a c t R e e n t r a n c e {
+mapping ( a d d r e s s => u i n t ) u s e r B a l a n c e ;
+
+f u n c t i o n w i t h d r aw B a l a n c e ( ) {
+// s e nd u s e r B a l a n c e [ msg . s e n d e r ] e t h e r s t o msg
+. s e n d e r
+// i f msg . s e n d e r
+i s a c o n t r a c t ,
+w i t h t h e f a l l b a c k f u n c t i o n .
+( msg . s e n d e r . c a l l . v a l u e ( u s e r B a l a n c e [ msg .
+s e n d e r ] ) ( ) ) {
+th row ;
+
+r e s p o n d s
+
+i f
+
+i t
+
+u s e r B a l a n c e [ msg . s e n d e r ] = 0 ;
+
+}
+
+}
+
+}
+
+Listing 4: an smar t contract with re-entrancy vulnerability
+
+Using tx.origin for authentication [3]. tx.origin is different
+from msg.sender (both keywords are provided in Solidity).
+tx.origin points to the initiator of the transaction, while
+msg.sender is the sender of the message. tx.origin always
+points to the external account controlled by the user. As
+shown in Fig. 2, for Contract C , Contract B is the msg.sender
+of this call, and User A is the tx.origin of this call. Us-
+
+Fig. 2. Differences between tx.origin and msg.sender
+
+ing tx.origin for authentication, malicious users can easily
+bypass authentication and steal ethers from the attacked
+contract after cheating your trust. The contract in Listing
+5 is authenticated using tx.origin. If the attacker induces
+the victim to transfer ethers to the attack contract shown
+in Listing 6 by various means, the attack contract can steal
+all deposits of the contract in Listing 5.
+
+c o n t r a c t A t t a c k e d {
+a d d r e s s p u b l i c owner ;
+
+c o n s t r u c t o r
+( a d d r e s s
+owner = owner ;
+
+}
+
+owner ) {
+
+r e c i p i e n t ) p u b l i c {
+f u n c t i o n w i t h d r awA l l ( a d d r e s s
+r e q u i r e ( t x . o r i g i n == owner ) ;
+r e c i p i e n t . t r a n s f e r ( t h i s . b a l a n c e )
+
+}
+
+}
+
+Listing 5: victim contract
+
+im p o r t ” A t t a c k . s o l ” ;
+c o n t r a c t A t t a c k e r {
+A t t a c k e d a t t a c k e d ;
+a d d r e s s a t t a c k e r ;
+
+c o n s t r u c t o r ( A t t a c k e d
+a t t a c k e r ) {
+a t t a c k e d =
+a t t a c k e r =
+
+a t t a c k e d ;
+a t t a c k e r ;
+
+}
+
+a t t a c k e d , a d d r e s s
+
+f u n c t i o n ( ) p u b l i c p a y a b l e {
+a t t a c k e d . w i t h d r awA l l ( a t t a c k e r ) ;
+
+4
+
+}
+
+}
+
+Listing 6: attack contract
+
+Missing constructor. If the developer does not intend to write
+constructor function, the harm of this problem is very lim-
+ited (eg., incomplete contract structure). But if the developer
+intends to write a constructor but write the wrong function
+name, then any user can call the function (eg., contract
+in Listing 7), which can cause serious security risks [8],
+[10]. This paper recommends using constructor keyword to
+declare constructors, which can effectively avoid the loss
+caused by the misspelling of constructor names. We check
+whether there is a constructor in each contract body.
+
+pragma s o l i d i t y 0 . 5 . 0 ;
+c o n t r a c t Foo {
+a d d r e s s p u b l i c owner ;
+t h e c o n t r a c t
+//Anyone c a l now b e t h e owner o f
+b e c a u s e t h e
+// f u n c t i o n name i s m i s s p e l l e d .
+f u n c t i o n f o o ( ) p u b l i c {
+owner = msg . s e n d e r ;
+
+}
+
+}
+
+//owner i s
+
+t h e owner o f
+
+t h e c o n t r a c t
+
+Listing 7: harm of misspelling constructor name
+
+Locked money. If a contract needs to receive ethers, at least
+any function in the contract should be declared as payable.
+At the same time, at least one statement should be included
+in the contract to enable the transfer ethers. Otherwise, all
+ethers in the contract account will be locked and can never
+be transferred.
+Integer overﬂow. The integer overﬂow problem exists widely
+in computer science. Because source based code analysis
+cannot accurately determine which statement may cause
+integer overﬂow, we adopt program instrumentation tech-
+nique to prevent integer overﬂow through code insertion.
+Unsafe type inference [3]. The keyword var is provided in
+Solidity language, which automatically assigns types to vari-
+ables. In Solidity, the type of variable is inferred to be the
+smallest type of storage space that can accommodate the
+initial value. As shown in Listing 8, the type of i is matched
+to uint8, which is the type that can store an initial value
+of 0 and require the smallest storage space. Using var as
+a variable matching type can have security risks. The loop
+shown in Listing 8 is an inﬁnite loop, because uint8 can
+represent a maximum value of 255, and more than 255 will
+return to zero. In Ethereum, calls containing inﬁnite loops
+are not packaged into blocks.
+
+( v a r
+i = 0 ;
+i <= 2 5 6 ;
+//do s om e t h i n g
+
+f o r
+
+}
+
+i + + ) {
+
+Listing 8: inﬁnite loop caused by unsafe type inference
+
+3.2 Performance Problems
+byte[ ]. byte[ ] can play the role of the byte array, but this is
+a very wasteful storage space, which may lead to much gas
+consumption [21]. The recommendation approach is to use
+the bytes type.
+Costly loop. The user of calling a contract can specify the
+number of gases that this call carries before making the call.
+
+If gases are sufﬁcient, the remaining gases will be returned
+by Ethereum after the call is completed. If gases are insuf-
+ﬁcient, the call will fail and Ethereum will not return the
+consumed gases. Loops that execute too many statements
+can lead to excessive costs for a call, and transactions with
+excessive costs may not be packaged into blocks, which
+means that transactions will never succeed.
+
+3.3 Hidden threats of coding problems
+Timestamp dependence [22]. Miners can control the mining
+time, thus gaining an unequal competitive advantage (eg.,
+codes in Listing 9). Avoiding contract execution results
+depends on environmental variables. If necessary, environ-
+mental variables are costly to miners (eg., use block.difﬁculty).
+Consequently,
+it is especially noteworthy that now and
+block.timestamp should not be used as parameters of cryp-
+tographic functions, so that the random number generated
+will be controlled by miners.
+
+i f
+
+( now % 2 == 0 )
+w i n n e r = a d d r 1 ;
+e l s e
+w i n n e r = a d d r 2 ;
+Listing 9: guessing contract affected by miners
+
+Token API violation [3]. Ethereum allows the distribution of
+tokens. Before May 7, 2019, Ethereum had more than 100,000
+token contracts. The ERC20, ERC721, and ERC165 [23]–
+[25] token standards are currently popular token standards
+that specify the most basic state variables, events, functions,
+and function return types in token contracts. Throwing an
+exception in some functions that return a Boolean value is
+not recommended because throwing an exception prevents
+the caller from getting a return value, which can lead to
+dysfunction for the caller. When a function fails, it can tell
+execution failure by returning a Boolean value.
+Using ﬁxed point number type. Solidity supports declaring
+variables of ﬁxed point number type, but it cannot assign
+these variables or assign them to other variables [21], so
+there is no need to use ﬁxed point number type at all.
+Private modiﬁer [3]. The private keyword is provided in
+Ethereum to indicate that the external visibility of a state
+variable or function is private. But unlike other program-
+ming languages, the use of private does not make state vari-
+ables and functions invisible to the outside world. Miners
+can view all the codes of the contract and the values of
+state variables, consequently the password in Listing 10 is
+available to the miner.
+
+pragma s o l i d i t y ˆ 0 . 4 . 1 8 ;
+c o n t r a c t V a u l t {
+b y t e s 3 2 p r i v a t e p a s swo rd ;
+
+f u n c t i o n V a u l t ( b y t e s 3 2
+
+p a s sw o rd ) p u b l i c p a y a b l e
+
+p a s swo rd = p a s sw o rd ;
+
+{
+
+}
+
+}
+
+}
+
+//M i n e r s c a n t a k e a l l
+t h e money o f
+t h e c o n t r a c t
+f u n c t i o n u n l o c k ( a d d r e s s
+p a s sw o rd ) p u b l i c {
+owner , b y t e s 3 2
+i f ( p a s swo rd == p a s sw o rd ) {
+owner . t r a n s f e r ( t h i s . b a l a n c e ) ;
+
+5
+
+}
+
+Listing 10: visible password
+
+Redundant refusal of payment [3]. Starting from Solidity 0.4.0,
+contracts without the fallback function will reject payment
+by default. This makes the function in Listing 11 redundant.
+
+f u n c t i o n ( ) e x t e r n a l p a y a b l e {
+r e v e r t ( ) ;
+
+}
+
+Listing 11: redundant refusal of payment
+
+Compiler version problem [3]. The ∧ operator is provided in
+Solidity to specify that this contract accepts compilation of
+the speciﬁed version number and its subsequent version
+compiler. However, the future development trend of Solidity
+is unpredictable and may lead to semantic changes of some
+statements in future versions. In this way, we using the ∧
+symbol should be avoided . Several methods for declaring
+the compiler version are shown in Listing 12. The recom-
+mended approach is to use the second or third.
+
+pragma s o l i d i t y ˆ 0 . 5 . 0 ; //bad : 0 . 5 . 0 and a b o v e
+pragma s o l i d i t y 0 . 5 . 0 ;
+//good : o n l y 0 . 5 . 0
+pragma s o l i d i t y > = 0 . 5 . 0 < 0 . 6 . 0 ; // b e s t : 0 . 5 . 0 t o
+0 . 6 . 0
+Listing 12: three ways to declare compiler versions
+
+Style guide violation [3]. In the ofﬁcial development docu-
+ment for Solidity, the declaration and deﬁnition of functions,
+events, and arrays are standardized [21]. We think that the
+function name shown in the second line of code in Listing 13
+is inappropriate because the two function names in Listing
+13 do not allow one to understand the difference between
+their uses. It is recommended that function names begin
+with lowercase letters, event names begin with uppercase
+letters, and there is no space between type and left brackets
+when array declarations are made.
+
+// t h e name ing o f
+twn f u n c t i o n s
+i s c o n f u s i n g
+f u n c t i o n t r a n s f e r ( ) p u b l i c { /∗do s om e t h i n g ∗/ }
+t r a n s f e r ( ) p u b l i c { /∗do s om e t h i n g ∗/ }
+f u n c t i o n
+Listing 13: confusing function naming
+
+Integer division. The support for ﬂoating-point and decimal
+types in Ethereum is not perfect. All the results of integer
+division are rounded down, the use of integer division to
+calculate the number of ethers may cause economic losses,
+so it is try to avoid integer division.
+Implicit visibility level [3]. Although Solidity provides default
+visibility for each type of variable and function, explicitly
+specifying the visibility of each state variable and function
+improves the readability of the code.
+
+4 SO L ID I TYCHECK
+
+4.1 Overview of SolidityCheck
+It is non-trivial to develop a tool that leverages regular
+expressions to locate the problems described in Section 3
+because of the following three reasons.
+First, the format of the source codes may not be suitable
+for the regular expressions, which usually handle code state-
+ments written in one line, and different programming habits
+make the source codes format different. The input source
+codes needs to be formatted to facilitate regular expression
+
+6
+
+Fig. 3. Overview of SolidityCheck
+
+retrieval and matching. Consequently, we need implement
+the appropriate formatting method.
+Second, regular matching of every line of codes will
+bring huge performance burden and make the retrieval
+efﬁciency extremely poor. Because regular expressions are
+usually based on the NFA (non-deterministic ﬁnite automa-
+ton) engine and are implemented by the “matching back-
+tracking” algorithm. However, NFA backtracking allows
+it to access the same state multiple times (if it arrives at
+that state through different paths). Therefore, in the worst
+case, it may be very slow to execute and spend a lot of
+CPU resources. To avoid the problem, we need to reduce
+the number of code statements that need regular match-
+ing without missing the problematic statements. We use
+keyword ﬁltering to reduce unnecessary regular matching
+(statements with different kinds of problems always contain
+different speciﬁc characters).
+Third, regular expressions are only suitable for detecting
+problems that exist within a single line of statements, but
+they are powerless for problems that span multiple lines
+of codes, such as costly loop. Some programming tricks are
+needed to make the detection ability of regular expressions
+span multiple lines. For example, we use bracket matching
+to get the start and end positions of a loop statement.
+The main process of SolidityCheck is divided into four
+steps, shown in Fig. 3. The ﬁrst step is formatting codes,
+which enables regular expressions to easily detect the sen-
+tence characteristics of each code, and improves detection
+efﬁciency. The second step is keyword ﬁltering, SolidityCheck
+extracts statements that may contain problems according
+to different keywords. Then, according to the functions
+selected by users, the ﬁltered codes are processed in the
+third step, detection and prevention. In this step, problems are
+
+detected or prevented according to the functions selected by
+users. The ﬁnal step is detection report and preventive contract,
+in this step problems detection report or preventive contract
+is output. The details of these steps are described in the
+following four subsections.
+
+4.2 Formatting Codes
+The source code format of the smart contract is closely re-
+lated to the programming habits of the developers, making
+the source codes in a variety of formats. The format in
+Listing 14 is Solidity’s ofﬁcial recommendation for function
+header and its parameters declaration style. However, such
+kind of source codes is extremely unfriendly for regular
+expression matching because a complete statement has been
+written in several
+lines. Consequently, before retrieving
+the problematic statements, SolidityCheck pre-processes the
+format of the source codes to write a sentence expressing
+complete semantics in one line. In general, the criteria for
+code formatting are described as follows:
+1) All comments and blank lines in the original con-
+tract are ﬁltered. The extra spaces in the state-
+ment are also eliminated. SoliditCheck ﬁrst stores the
+source codes in a string array by line, and then
+checks each item in the array sequentially. If there is
+a ”//” sub-string in one line, all comment characters
+in that line are replaced by ” ” (including ”//”); if
+there is a ”/*” sub-string in one line, all characters
+are replaced by ” ” before the next ”*/” sub-string
+appears, and then ”/*” and ”*/” substrings are also
+be replaced by ” ”. After that, all comments in the
+source codes are ﬁltered out, and then SolidityCheck
+discards all blank lines and transfers the processed
+source codes to another string array.
+
+2) Each formatted line of codes ends with a semicolon
+(;) or a left bracket ({) or a right bracket (}). In Solid-
+ity, the deﬁnitions of any contract header, function
+header and function modiﬁer header are marked
+by left curly brackets ({) to end the statement, the
+terminations of contract body, function body, and
+function modiﬁer body are marked by right curly
+brackets (}), while any other statement ends with
+semicolon (;). SolidityCheck gets the source codes
+into a string, replaces all line breaks with ” ”,. Then
+it scans the string sequentially, and adds a line break
+characters after encountering left brackets ({), right
+brackets (}) or semicolons (;). After this processing,
+all statements except for-statement are written in
+one line.
+3) After the second step, a for-statement spans three
+lines, which is not conducive to regular expression
+matching. so the semicolon (;) in the for-statement
+is specially handled. SolidityCheck retrieves the for-
+statements, and then replaces the ﬁrst two line
+breaks characters in the for statement with ” ” so
+that the for-statement is written in one line.
+
+Listing 14 shows the codes before preprocessing, and
+Listing 15 shows the codes after the same contract is pre-
+processed. It is obvious that the number of lines of the
+codes to be detected is signiﬁcantly reduced, and the format
+of the codes becomes easy for feature matching of regular
+expressions.
+
+f u n c t i o n d e p o s i t (
+a d d r e s s t o ,
+u i n t 2 5 6 amount
+
+) {
+
+// R e c e i v i n g a d d r e s s :
+t o , Number : amount
+u s e r B a l a n c e [ t o ] += amount ;
+
+}
+
+Listing 14: codes before contract preprocessing keywordstyle
+
+f u n c t i o n d e p o s i t ( a d d r e s s t o , u i n t 2 5 6 amount ) {
+u s e r B a l a n c e [ t o ] += amount ;
+
+}
+
+Listing 15: codes after contract preprocessing
+
+4.3 Keyword ﬁltering
+Soliditycheck does not regular match every line of codes,
+which greatly reduces the detection efﬁciency. We use key-
+word ﬁltering to improve detection efﬁciency. There are spe-
+ciﬁc sub-strings in regular expressions that we used to de-
+scribe the characteristics of various problematic statements.
+A code statement that contains a certain type of string may
+have a type of problem. Through keyword ﬁltering, we
+can effectively reduce the number of statements that need
+regular matching without increasing missed judgment. We
+illustrate keyword ﬁltering with an example. The criteria
+for costly loop problems is described as follows:
+• The conditional part of
+for-statement or while-
+statement contains function calls or identiﬁers.
+for-statement or while-statement with a maximum
+number of statements executed exceeding 23 (The
+reason is described in Appendix B) .
+
+•
+
+7
+
+From the above criteria, we can conclude that for-
+statements and while-statements may be costly loops and
+statements that do not include “for” or “while” must not
+be costly loops. Therefore, only the statements containing
+the keywords ”for” and ”while” can be matched with the
+features of costly loop problems.
+
+4.4 Detection and Prevention
+This step includes two sub-steps: detection and prevention.
+For the detection step, we detect 18 kinds of problems
+besides re-entrancy vulnerability and integer overﬂow. For
+the prevention step, we use program instrumentation to
+prevent the re-entrancy vulnerability and integer overﬂow
+problem. The reason is that we cannot accurately detect
+these two problems through regular expression matching,
+but reporting all suspicious statements reduces the guidance
+of the detection results. Consequently, SolidityCheck com-
+bines regular expressions and program instrumentation to
+achieve the purpose of prevention.
+
+4.4.1 Detection
+During the detection step, SolidityCheck matches problem-
+atic statements using regular expressions. Soliditycheck dis-
+tributes formatted codes to 18 problem detection classes,
+each of which detects only one type of problems. In each
+problem detection class, the formatting codes are stored
+in an array of strings, and the program traverses line by
+line. The program ﬁrst ﬁlters the code statements to be
+regularly matched by keywords ﬁltering, and then matches
+the ﬁltered statements according to the different regular
+expressions and corresponding detection rules we deﬁned
+for each problem. If there is a problem, the line number of
+the codes is recorded, and the detection results of the 18
+problem detection classes are summarized into a text ﬁle,
+which is the detect report.
+
+4.4.2 Prevention
+Prevention is further divided into re-entrancy vulnerability
+and integer overﬂow problems.
+A. Re-entrancy vulnerability prevention.
+During the re-entrancy vulnerability prevention step, So-
+lidityCheck matches and inserts the codes using regular
+expressions. Re-entrancy vulnerabilities are very special and
+dangerous. According to the harm of re-entrancy vulnera-
+bility, we divide re-entrancy vulnerability into the following
+two categories:
+
+1) Re-entrancy vulnerability with no ether transfer.
+This kind of re-entrancy vulnerabilities is called
+by a call to the fallback function of the contract,
+carrying more than 2300 gas but not sending ether.
+Such vulnerabilities can cause the attack contract to
+repeatedly enter the attacked contract to perform
+operations, which may cause the state variable to
+be changed multiple times.
+2) Re-entrancy vulnerability with ether transfer. This
+kind of re-entrancy vulnerabilities are the most dan-
+gerous, usually resulting in a total loss of contract
+balance, and it has the following four characteristics:
+a) Using call to transfer ethers.
+
+b) Unrestricted gas.
+c) Deducing the balance after the transfer is
+completed
+d) Call does not specify which function of the
+receiver will be called. Consequently, the
+contract uses the fallback function to respond
+to the transfer.
+
+Detecting a line or a piece of codes does not mean accu-
+rately detecting re-entrancy vulnerabilities. Current smart
+contract detection tools cannot fully cover every re-entrancy
+vulnerability in every contract. Unfortunately, missing any
+re-entrancy vulnerability can cause a devastating blow to
+the contract. At present, the main way to detect re-entrancy
+vulnerabilities is to report every sentence that may intro-
+duce re-entrancy vulnerabilities, but this may lead to a lot
+of false positives and make the test results not instructive.
+Our approach aims at the re-entrancy vulnerability with
+ether transfer. First, we deﬁne the dangerous statement, which
+is the source of the re-entrancy vulnerability. A statement
+that contains the following three characteristics is called a
+dangerous statement:
+
+1) Using call to transfer ether.
+2) Unrestricted gas.
+3) Call does not specify which function of the receiver
+will be called.
+
+Dangerous statements are the source of re-entrancy vul-
+nerabilities, but this does not mean that using dangerous
+statements necessarily includes re-entrancy vulnerabilities.
+Deducting the balance before the transfer can effectively
+avoid re-entrancy attacks. Codes in Listing 16 can prevent
+re-entrancy attacks.
+
+f u n c t i o n w i t h d r a w B a l a n c e f i x e d ( ) {
+// t o p r o t e c t a g a i n s t
+r e−e n t r a n c y ,
+v a r i a b l e
+// h a s t o b e ch ang ed b e f o r e t h e c a l l
+u i n t amount = u s e r B a l a n c e [ msg . s e n d e r ] ;
+
+t h e s t a t e
+
+u s e r B a l a n c e [ msg . s e n d e r ] = 0 ;
+d e d u c t i o n
+i f ( ! ( msg . s e n d e r . c a l l . v a l u e ( amount ) ( ) ) ) {
+th row ;
+// A f t e r , t r a n s f e r
+
+// F i r s t ,
+
+}
+
+}
+
+Listing 16: codes that effectively prevents re-entrancy keywordstyle
+
+We use regular expressions to deﬁne dangerous state-
+ments: statements that match feature 4.1 or feature 4.2.
+
+(.) + (\.)(call)(\.)(value)(\()(.) + (\))(\()(\))
+
+(4.1)
+
+(.) + (\.)(call)(\.)(value)(\()(.) + (\))(\()(\(cid:48)(cid:48) )(\(cid:48)(cid:48) )(\))
+
+(4.2)
+Now we can match all the dangerous statements with
+regular expressions. To prevent re-entrancy vulnerability,
+we need to insert specially constructed statements at some
+locations in the contract. The purpose of the insert state-
+ments is to terminate the operation before the transfer if
+there is transfer before deduction. The insertion statement
+will not interfere with the normal operation of the contract
+without the feature of ﬁrst transfer and then deduction.
+
+1
+2
+
+3
+4
+5
+6
+
+7
+8
+9
+10
+11
+
+8
+
+Second, for the convenience of describing the locations
+of the insertion statements, the concept of the function call
+chain is introduced. In Listing 17, function C contains re-
+entrancy vulnerabilities, but it is an internal function and
+cannot be invoked by an external contract. This does not
+mean that the contract can be protected from re-entrancy
+attacks, because an attacker can invoke function C by calling
+function A, and can also launch re-entrancy attacks.
+
+c o n t r a c t e x am p l e 1 {
+mapping ( a d d r e s s => u i n t 2 5 6 ) u s e r B a l a n c e ;
+f u n c t i o n A ( ) p u b l i c {
+B ( ) ;
+
+}
+
+i n t e r n a l {
+
+f u n c t i o n B ( )
+C ( ) ;
+
+}
+
+i n t e r n a l {
+f u n c t i o n C ( )
+msg . s e n d e r . c a l l . v a l u e ( 1 ) ( ) ;
+u s e r B a l a n c e [ msg . s e n d e r ] −= 1 ;
+
+}
+
+}
+
+Listing 17: call chain schematic code
+
+Calls between functions constitute a call chain, and as long
+as any function in the chain has re-entrancy vulnerabilities,
+an attacker can achieve the effect of launching re-entrancy
+attacks by calling the preﬁx function in the chain of the
+function.
+In our approach, function A is called chain-head function,
+and function C is called chain-tail function. All chain-tail
+functions are functions which contain dangerous statement.
+Chain-tail functions are called direct call function, and other
+functions in the chain are called indirect call function except
+chain-tail functions.
+By deﬁning the call chain, we can accurately describe
+where the prevention statements (we call the prevention
+statements vaccines) are inserted.
+Then, we deﬁne the ledger: the variable used to record
+the correspondence between the address and the number of
+tokens the address holds is called the ledger. There are many
+variables in a contract that can act as a ledger, and due to
+the lack of available tools to determine which variable is the
+ledger. Therefore, we set the ledger as the mapping (address
+=> uint256) variable of the ﬁrst declaration in the contract,
+which is based on our own experience.
+Now, we describe the structure of 4 vaccines and the in-
+sertion positions of different vaccines in table 2. The original
+codes move backwards after insertion.
+Table 3 explains the purpose of inserting four types of
+code.
+By inserting four vaccines, vaccines are able to abort and
+roll back the operation on time if the contract used danger-
+ous statements and contained the feature balance deducted
+after transfer.
+Because the re-entrancy vulnerability prevention func-
+tion does not apply to all contracts (e.g., those contracts that
+do not declare ledger), to facilitate use, we list the switch of
+this function separately. In this way, developers can use it
+according to their circumstances.
+Besides, SolidityCheck inserts functions (named de-
+posit test) into the contract. Calling the function in a private
+
+TABLE 2
+Inser tion code composition and inser tion location
+
+Code type
+A
+
+Composition structure
+if(Bexe == 0) { Bexe =
+ledger[etherReceiver];}
+
+B
+
+C
+
+D
+
+Aexe = ledger[etherReceiver];
+require(Aexe<Bexe);
+
+Aexe = 0; Bexe = 0;
+
+uint256 Aexe = 0; uint256 Bexe
+= 0;
+
+Insertion position
+ﬁrst line of direct
+call functions and
+ﬁrst line of chain-
+head functions
+The front line of
+a dangerous state-
+ment of direct call
+functions
+The next
+line of
+a dangerous state-
+ment of direct call
+functions
+First
+line of
+contract
+
+the
+
+TABLE 3
+Inser tion purpose of 4 kinds of codes
+
+Code type
+A
+
+B
+
+C
+D
+
+Insertion purpose
+Number of tokens held at the ethers receiving
+address at the beginning of the transfer business
+Using to obtain the number of tokens held at the
+address of receiving ethers before the transfer
+is initiated. If the number of tokens does not
+decrease at this time, execution will be aborted
+Resetting Aexe, Bexe
+Declaring Aexe, Bexe
+
+chain environment and sending enough ethers can achieve
+the effect of detecting re-entrancy vulnerabilities (by observ-
+ing the results of function execution).
+B. Integer overﬂow problem prevention.
+During the integer overﬂow problem prevention step, So-
+lidityCheck matches and inserts the codes using regular
+expressions.
+The BEC project was ofﬁcially launched on February
+23, 2018, with a maximum market value of more than $28
+billion. However, two months after its launch, the attacker
+found that there was an integer overﬂow problem in the
+BEC contract, and launched an attack against the problem,
+leading to an unlimited issue of BEC tokens, which eventu-
+ally triggered a wave of selling. The ﬁnal result was that the
+market value of BEC token was almost zero.
+Listing 18 shows the BEC source codes [26] with an
+integer overﬂow problem, and in line 3 there is an integer
+overﬂow problem.
+
+1 f u n c t i o n b a t c h T r a n s f e r ( a d d r e s s [ ]
+r e c e i v e r s ,
+b o o l ) {
+u i n t 2 5 6
+v a l u e ) p u b l i c whenNotPaused r e t u r n s
+u i n t c n t =
+r e c e i v e r s . l e n g t h ;
+u i n t 2 5 6 amount = u i n t 2 5 6 ( c n t ) ∗
+r e q u i r e ( c n t > 0 && c n t <= 2 0 ) ;
+r e q u i r e ( v a l u e > 0 && b a l a n c e s [ msg . s e n d e r ] >=
+amount ) ;
+
+v a l u e ;
+
+2
+3
+4
+5
+
+(
+
+6
+7
+
+8
+9
+
+b a l a n c e s [ msg . s e n d e r ] = b a l a n c e s [ msg . s e n d e r ] . sub (
+amount ) ;
+( u i n t
+i = 0 ;
+i < c n t ;
+i + + ) {
+b a l a n c e s [
+r e c e i v e r s [ i ] ] = b a l a n c e s [
+
+f o r
+
+2
+3
+4
+5
+6
+
+r e c e i v e r s [ i ] ] . add ( v a l u e ) ;
+T r a n s f e r ( msg . s e n d e r ,
+r e c e i v e r s [ i ] ,
+
+}
+
+10
+11
+12
+13 }
+Listing 18: BEC source code
+
+r e t u r n t r u e ;
+
+9
+
+v a l u e ) ;
+
+Detection of integer overﬂow depends on logic analysis
+and semantics understanding of codes. It is difﬁcult to
+determine that any integer operation statement has the risk
+of integer overﬂow.
+At present, the common method to prevent integer over-
+ﬂow in the Ethereum is to use SafeMath library 1 for integer
+operation. In Listing 18, lines 7 to 9 use SafeMath library
+functions for addition and subtraction. The SafeMath library
+has several versions of implementations, and part codes
+of the most popular implementation are shown in Listing
+19 [27].
+
+1 f u n c t i o n add ( u i n t 2 5 6 a , u i n t 2 5 6 b )
+( u i n t 2 5 6 ) {
+r e t u r n s
+u i n t 2 5 6 c = a + b ;
+r e q u i r e ( c >= a , ” S a f eM a t h : a d d i t i o n o v e r f l o w ” ) ;
+
+i n t e r n a l p u r e
+
+r e t u r n c ;
+
+}
+
+Listing 19: the par t codes of SafeMath
+
+The integer overﬂow prevention draws on the idea of Safe-
+Math library. For each integer operation statement, different
+veriﬁcation codes are inserted before and after the statement
+to verify whether the results of this integer operation is
+correct, and the veriﬁcation code can terminate in time after
+the overﬂow occurs. It is equivalent to actively implement
+the function of SafeMath library. When the program is imple-
+mented, the program will not add the veriﬁcation codes in
+the SafeMash library to avoid unnecessary gas consumption.
+First, SolidityCheck captures statements with the charac-
+teristics of 4.3 or 4.4:
+
+∧ (\s) ∗ (\w) ∗ (\s) + ((\w)|(\()|(\))|(\[)|(\])|(\.))
++ (\s) ∗ (\ =)(\s) ∗ ((\w)|(\()|(\))|(\[)|(\])|(\.))+
+(\s) ∗ ((\+)|(\−)|(\∗)|(\/)|(\%))(\s) ∗ ((\w)|(\()|
+(\))|(\[)|(\])|(\.)) + (\s) ∗ (; )$
+∧ (\s) ∗ (\w) ∗ (\s) + ((\w)|(\()|(\))|(\[)|(\])|(\.))
++ (\s) ∗ (((\+)(\ =))|((\−)(\ =))|((\∗)(\ =))|((\
+/)(\ =))|((\%)(\ =)))(\s) ∗ ((\w)|(\()|(\))|(\[)|(\]
+)|(\.)) + (\s) ∗ (; )$
+
+(4.3)
+
+(4.4)
+
+The sentence structure deﬁned in Formula 4.3 is as follows:
+
+ope1 = ope2(+| − | ∗ |/|%)ope3
+
+(4.5)
+
+The sentence structure deﬁned in Formula 4.4 is as follows:
+
+ope1((+ =)|(− =)|(∗ =)|(/ =)|(% =))ope2
+
+(4.6)
+
+For statements with different operations, the composi-
+tion of the preventive codes inserted after the statement is
+shown in Table 4.
+Table 5 shows the two statement types and the code
+inserted before the statement. Among them, the count part
+of variable naming is an integer that grows by 1 for each
+
+1. https://ethereumdev.io/safemath-protect-overﬂows/
+
+TABLE 4
+The Corresponding Relation between Integer Operational Code and
+Preventive Code(after)
+
+Statement type
+
+ope1 = ope2 + ope3;
+ope1 = ope2 − ope3;
+ope1 = ope2 ∗ ope3;
+
+Preventive code (after) composition
+architecture
+
+require(ope1 >= ope2);
+
+require(ope1 <= ope2);
+require(ope2 == 0||ope1/ope2 ==
+ope3);
+
+ope1 = ope2/ope3;
+
+require(ope3 > 0);
+
+ope1 = ope2%ope3;
+
+require(ope3! = 0);
+
+ope1+ = ope2;
+ope1− = ope2;
+
+ope1∗ = ope2;
+
+ope1/ = ope2;
+
+ope1% = ope2;
+
+require(ope1 >= ope2);
+
+require(anti overf low temp count >=
+ope2);
+require(ope2 == 0||ope1/ope2 ==
+anti overf low temp count);
+
+require(ope2 > 0);
+
+require(ope2! = 0);
+
+TABLE 5
+The Corresponding Relation between Integer Operational Code and
+Preventive Code(before)
+
+Statement type
+
+ope1∗ = ope2;
+
+ope1− = ope2;
+
+Preventive code (before) composition
+architecture
+
+uint256 anti overf low temp count =
+ope1;
+
+uint256 anti overf low temp count =
+ope1;
+
+insertion of code into a particular statement, starting from
+1, to prevent repeated declarations of variables. If the code
+is inserted before and after the integer operation code, the
+variable names before and after the code correspond.
+As with the function of preventing re-entrancy vul-
+nerability, it is not appropriate to insert codes into each
+tested contract (increasing gas consumption). Consequently,
+we also list the functions of preventing integer overﬂow
+separately, and users can choose according to their situation.
+
+4.5 Detection Report and Preventive Contract
+SolidityCheck outputs two different ﬁles depending on the
+functionality selected by the user.
+1) Detection report. That is the detection report of 18
+kinds of problems besides re-entrancy vulnerability
+and integer overﬂow problem.
+2) Preventive contracts. A contract that prevents prob-
+lems after inserting code.
+
+A preventive contract is a contract after inserting codes base
+on the original contract. SolidityCheck prints out the number
+of lines of inserted codes to help users to know the location.
+Listing 20 shows the speciﬁc format of the test report.
+
+<D e t e c t R e p o r t>
+<R e p o r t i n g i n f o r m a t i o n>
+<Sm a r t c o n t r a c t
+f i l e p a t h />
+<Number o f
+l i n e s o f o r i g i n a l c o n t r a c t c o d e />
+<D e t e c t i o n t im e />
+
+10
+
+s t a t e m e n t s />
+
+<T o t a l number o f p r o b l e m a t i c
+</ R e p o r t i n g i n f o r m a t i o n>
+<D e t a i l s o f
+t h e
+p r o b l em>
+< P r o b l em number/>
+< P r o b l em name/>
+< P r o b l em c o d e l i n e number/>
+< P r o b l em d e s c r i p t i o n />
+<S u g g e s t e d m o d i f i c a t i o n s />
+</ D e t a i l s o f
+t h e
+p r o b l em>
+< !−− E l i m i n a t e t h e d e t a i l s o f
+p r o b l em s −−>
+</ D e t e c t R e p o r t>
+Listing 20: detection repor t format
+
+t h e n e x t 1 7
+
+Listing 21 shows a prevention contract (the original
+contract: Reentrancy.sol from not-so-smart-contracts [28]). As
+shown in listing 21, SolidityCheck does not insert codes in
+function withdrawBalanc ﬁxed2, the inserted codes prevent
+the re-entrancy vulnerability in function withdrawBalance
+and the inserted codes do not affect the execution of function
+withdrawBalanc ﬁxed, while the inserted function deposit test
+detects the re-entrany vulnerability.
+
+pragma s o l i d i t y ˆ 0 . 4 . 1 5 ;
+c o n t r a c t R e e n t r a n c e {
+u i n t 2 5 6 p u b l i c Aexe = 0 ;
+u i n t 2 5 6 p u b l i c B e x e = 0 ;
+mapping ( a d d r e s s => u i n t ) u s e r B a l a n c e ;
+f u n c t i o n g e t B a l a n c e ( a d d r e s s u ) c o n s t a n t
+r e t u r n s ( u i n t ) {
+r e t u r n u s e r B a l a n c e [ u ] ;
+f u n c t i o n a d d T o B a l a n c e ( ) p a y a b l e {
+u s e r B a l a n c e [ msg . s e n d e r ] += msg . v a l u e ;
+f u n c t i o n w i t h d r aw B a l a n c e ( ) {
+i f ( B e x e = = 0 ) {
+B e x e= u s e r B a l a n c e [ msg . s e n d e r ] ;
+
+}
+
+}
+
+Aexe= u s e r B a l a n c e [ msg . s e n d e r ] ;
+r e q u i r e ( Aexe<B e x e ) ;
+i f ( ! ( msg . s e n d e r . c a l l . v a l u e ( u s e r B a l a n c e [ msg .
+s e n d e r ] ) ( ) ) ) {
+Aexe = 0 ;
+B e x e = 0 ;
+th row ;
+
+}
+
+u s e r B a l a n c e [ msg . s e n d e r ] = 0 ;
+f u n c t i o n w i t h d r a w B a l a n c e f i x e d ( ) {
+i f ( B e x e = = 0 ) {
+B e x e= u s e r B a l a n c e [ msg . s e n d e r ] ;
+
+u i n t amount = u s e r B a l a n c e [ msg . s e n d e r ] ;
+u s e r B a l a n c e [ msg . s e n d e r ] = 0 ;
+Aexe= u s e r B a l a n c e [ msg . s e n d e r ] ;
+r e q u i r e ( Aexe<B e x e ) ;
+i f ( ! ( msg . s e n d e r . c a l l . v a l u e ( amount ) ( ) ) ) {
+Aexe = 0 ;
+B e x e = 0 ;
+th row ;
+
+}
+
+}
+
+f u n c t i o n w i t h d r a w B a l a n c e f i x e d 2 ( ) {
+msg . s e n d e r . t r a n s f e r ( u s e r B a l a n c e [ msg . s e n d e r ] ) ;
+u s e r B a l a n c e [ msg . s e n d e r ] = 0 ;
+f u n c t i o n d e p o s i t
+t e s t ( ) p u b l i c p a y a b l e {
+u s e r B a l a n c e [ msg . s e n d e r ] + =msg . v a l u e ;
+w i t h d r aw B a l a n c e ( ) ;
+w i t h d r a w B a l a n c e f i x e d ( ) ;
+
+}
+
+}
+
+}
+
+}
+
+}
+
+}
+
+Listing 21: A contract to prevent re-entrancy vulnerability
+
+5 EXPER IMENTA L DES IGN
+
+5.1 Research Questions
+In this section, a series of experiments is conducted to
+validate SolidityCheck based on a large amount of data sets
+collected by us. The purpose of the experiments is to explore
+the following four research questions:
+• RQ1: Can SolidityCheck detect any smart contract
+written in Solidity language and correctly output
+detection reports?
+• RQ2: Is SolidityCheck more efﬁcient
+tools?
+• RQ3: Is the detection quality of SolidityCheck better
+than that of similar tools?
+• RQ4: Can SolidityCheck prevents important vulnera-
+bilities such as re-entrancy vulnerabilities and inte-
+ger overﬂow problems?
+We designed RQ1 to validate the usability of SolidityCheck.
+RQ2 is used to investigate whether the detection efﬁciency
+of SolidityCheck is higher than that of similar tools. RQ3 is
+used to verify the detection quality of SolidityCheck. We use
+recall and precision to judge the detection quality. RQ4 is
+used to validate the effectiveness of our problem prevention
+ability.
+
+than similar
+
+5.2 Experimental Data Set
+Using Web crawler technology, we collected 1363 smart
+contracts written in Solidity from the etherscan.io [29], to-
+taling 1,239,927 lines of codes. To understand the size of the
+contract in the data set, we counted the number of code lines
+of each contract, and the results are shown in Table 6.
+
+TABLE 6
+Distribution of contract code lines
+
+Size
+0-500
+500-1000
+1000+
+
+Number
+699
+334
+329
+
+Proportion
+51.3%
+24.5%
+24.2%
+
+5.3 Contrast Tools
+Based on the theory described in Section 4, we implemented
+a tool named SolidityCheck for Solidity language, which is
+now open source 2 . Appendix C provides the implementa-
+tion details of the tool.
+To measure SolidityCheck’s capability, we select several
+state-of-the-art tools for comparison. Because the software
+and security engineering research community has relied
+on free and open source software [10] for a long time,
+we choose comparison tools from open source projects on
+github [30]. According to their popularity, We select the
+following eight tools:
+1) Remix [31]. The Solidityintegrated development en-
+vironment ofﬁcially recommended by Ethereum. We
+use the Solidity static analysis function of Remix.
+
+2. https://github.com/xf97/SolidityCheck
+
+11
+
+2) Mythx [32]. Security analysis tool for EVM bytecode.
+Supporting smart contracts built
+for Ethereum.
+MythX uses Mythril and other non open source tools
+like a static analysis tool - Maru and a greybox
+fuzzer - Harvey, so it detects a wide range of vulner-
+abilities. There are many implementations available
+for Mythx, and we use Pythx (a library for the MythX
+smart contract security analysis platform.).
+3) Oyente [33]. The commonly used static code analysis
+tool for Ethereum smart contracts was put forward
+earlier in the same kind of tools [2].
+Solhint [34]. Solhint is an open source project for lint-
+ing Solidity code. This project provides both security
+and style Guide validations.
+Securify [35]. The project sponsored by the Ethereum
+Foundation is a security scanner for Ethereum smart
+contracts [16].
+SmartCheck [36], Static code analysis
+Ethereum smart contracts [3].
+7) ContractFuzzer [37]. The Ethereum smart contract
+fuzzer for security vulnerability detection [22].
+8) Osiris [38]. A tool to detect integer bugs in Ethereum
+smart contracts [7].
+
+tool
+
+for
+
+4)
+
+5)
+
+6)
+
+5.4 Experimental Environment
+Our experimental environment
+is a computer running
+Ubuntu (Ubuntu 16.04) system. The memory is 32GB, the
+CPU is Inter Xeon Silver 4108, and the GPU is NVIDIA
+Quadro P4000. In the quality experiment, we installed differ-
+ent versions of solc through docker and obtained the bytecode
+ﬁle of each contract.
+
+5.5 Experimental Results
+5.5.1 Usability
+To answer RQ1, we used the problem detection function of
+SolidityCheck to test 1363 smart contracts and verify whether
+SolidityCheck correctly outputs the detection report of each
+smart contract. The experimental results show that Solidity-
+Check correctly outputs the detection report of each smart
+contract. Furthermore, we use the following indicators to
+measure the proportion of problems in the experimental
+data set. ContractsNumberthis problem is the number of con-
+tracts containing one problem, and NumberOfTestContracts is
+the number of contracts being tested.
+
+P roportion =C ontractsN umberthis problem/
+N umberOf T estC ontracts
+
+(5.1)
+
+According to our experiments, most of the contracts have
+problems, 61% of them have reported 10 or more problems.
+Because the number of different problems varies greatly in
+the data set, we present some maximal or minimal values
+as follows: Compiler version problem–99.8%, Implicit visibility
+level–82.1%, Using ﬁxed point number type–0.1%, byte[ ]–0%,
+Balance equality–0%, Unsafe type infefrence–0%. The propor-
+tion of the remaining 11 problems in the data set is shown in
+Fig. 4. Since most contracts do not introduce a new version
+of the security speciﬁcation statement into the contract, most
+contracts are reported to contain this problem. The number
+of the hidden threats of coding problems is also high.
+
+12
+
+The experimental result shows that SmartCheck takes 2491.33
+seconds to test the whole experimental data set, while Solidi-
+tyCheck takes 318.02 seconds. The rps values of the two tools
+are shown in Fig. 5. The detection efﬁciency of SolidityCheck
+is 683.4% higher than that of SmartCheck.
+
+Fig. 5. Performance performance of Smar tCheck and SolidityCheck
+
+5.5.3 Quality
+To answer RQ3, we design a series of experiments to
+measure recall and precision of SolidityCheck. We randomly
+selected 10 contracts from the entire experimental data set
+as test cases to accurately measure the quality of each tool.
+We determine the number of actual problems in each con-
+tract by manual review. To ensure the accuracy of manual
+review, we invite trained researchers to assist in identifying
+problems in the contract.
+First, several experimental
+indicators are deﬁned, as
+shown in Table 8. These indicators refer to:
+• TP (True Positive) means the problem actually exists
+and the tool report exists.
+FN (Fasle Negative) means the problem does not
+exist but the tool report exists.
+FP (False Positive) means the problem actually exists
+but the tool report does not exist.
+For Ethereum smart contracts, missed judgment is much
+more serious than misjudgment. Because smart contracts
+are mostly hundreds of lines of codes, it is not difﬁcult to
+manually review each reported problem, but missing any
+one of them could be a fatal blow to smart contracts.
+Formulas 5.3 and 5.4 give the deﬁnition of recall and
+precision of a single contract.
+
+•
+
+•
+
+Recall rate = (T P )/(T P + F P )
+
+P recision rate = (T P )/(T P + F N )
+
+(5.3)
+
+(5.4)
+
+The recall and precision for each tool are presented in
+Table 9. In Table 9, the error means an error occurred when
+the tool detected the contract so that it could not output
+the analysis result, and the N/A represents the numerator is
+zero.
+We analyze the experimental results, SolidityCheck per-
+forms best in recall, followed by SmartCheck. SmartCheck
+and SolidityCheck are essentially static analysis approaches
+based on source codes. The reason for the difference in
+
+Fig. 4. The propor tion of 12 problems in experimental data sets
+
+Compared with security problems, the external visibility
+of state variables and functions is trivial and less valued,
+consequently, it is common in smart contracts. The last few
+problems are about statements that are used less frequently,
+or that most people know are wrong, and the number of
+occurrences is very small. This is also in line with our
+expectations before the test, and to some extent reﬂects the
+credibility of SolidityCheck.
+More importantly, SolidityCheck found two contracts
+with re-entrancy vulnerabilities, 18 contracts with miner-
+controlled random numbers and 10 contracts with locked
+money. After our manual veriﬁcation, all problems are true
+and have not been reported before.
+
+5.5.2 Efﬁciency
+To answer RQ2, we design a series of experiments to record
+the time consumed and also compare with other tools.
+For bytecode-based tools such as Oyente, the measure of
+detection efﬁciency is the average detection time of each
+contract. For source-based tools such as SmartCheck, the
+measure of detection efﬁciency is the number of lines of
+codes detected per second. In this way, we design two
+groups of experiments. In the ﬁrst group, we used all
+the tools to test the 50 contracts we randomly selected to
+measure the average time each tool spent per contract. In the
+second group, we used SolidityCheck and SmartCheck to test
+the whole experimental data set and measure the number of
+lines of codes per second for each tool.
+Experiment 1. Because some of the tools have exceptions
+when contracts are analyzed, and these exceptions can cause
+analysis interruptions. Consequently, we use the quotient
+of the total time and the number of contracts successful
+analyzed as the average time. Table 7 shows the average
+detection time for each tool to detect a contract. 3 4
+Experiment 2. We deﬁne the following indicator to
+measure the detection efﬁciency of different tools. The rps
+value is a quotient of the total number of lines of codes for
+all tested contracts and the total time consumed to test all
+contracts.
+
+(cid:88)
+(cid:88)
+
+rps =
+
+N umberOf LineseachC ontract/
+
+timeC onsumingeachC ontract
+
+(5.2)
+
+3. Remix: we count the run time of compilation and solidity static
+analysis
+4. Mythx: we use Pythx and only count runTime
+
+TABLE 7
+Average detecting time for a contract
+
+13
+
+ContractFuzzer Mythx Osiris Oyente
+135.5
+86.7
+80.90
+56.27
+
+Securify
+52.14
+
+Remix
+7.63
+
+SmartCheck
+1.83
+
+Solhint
+0.57
+
+SolidityCheck
+0.23
+
+time(s)
+
+TABLE 8
+Deﬁnitions of accurate detection, misjudgement and misjudgement
+
+Detect problem
+Not detected
+
+Actual existence
+TP
+FP
+
+Non-existence
+FN
+TN
+
+recall rate is that SolidityCheck’s problem detection crite-
+ria are more accurate and reasonable, and consequently
+SmartCheck may miss some statements that SolidityCheck
+think are problematic. In terms of precision, SmartCheck is
+the best (ContractFuzzer reports too few problems), followed
+by SolidityCheck. The reason for the low accuracy of Solid-
+ityCheck is that SolidityCheck’s checking strategy is biased
+towards recall. SolidityCheck reports some statements with
+vague characteristics of the problems, so there are relatively
+more misjudgements. In general, we think that the higher
+recall rate brings more beneﬁts than the lower precision rate,
+and the gap between SolidityCheck and SmartCheck is not
+obvious (6.6%). Consequently, we think that the overall
+detection quality of SolidityCheck is better.
+
+5.5.4 Impor tant Vulnerabilities
+To answer RQ4, we design a set of experiments to detect
+some important vulnerabilities, such as re-entrancy vulner-
+ability and integer overﬂow problems. Because SolidityCheck
+uses program instrumentation to detect these two problems
+while the other contrast tools only scan codes, to unify
+evaluation indicator, we use the following criteria for the
+“effectiveness” of different tools:
+•
+
+For SolidityCheck, inserted codes effectively prevent
+problems from occurring.
+For other tools, the correct location of the problem
+was reported.
+
+•
+
+The ﬁrst experiment is performed for the re-entrancy
+vulnerability problem. We used Reentrancy.sol of not-so-
+smart-contracts [28] and Reentrance.sol of Ethernaut [39] as
+test cases, both of which are representative and problematic
+smart contracts. Y represents the effective response of the
+tool, and N represents not, and we use N/A to ﬂag a tool
+to analyze the contract failure. The experimental results are
+shown in Table 10.
+It is noteworthy that Securify reports that all statements
+that use call instruction to send ethers may introduce re-
+entrancy problems. Remix reports that all transfer statements
+that do not comply with the CEI (Checks-Effects-Interaction)
+mode may introduce re-entrancy vulnerabilities, even if the
+statement uses transfer instructions to send ethers.
+In the
+second experiment, we use
+the
+inte-
+ger overﬂow 1.sol (Abbreviation:Interger.sol) contract of
+not-so-smart-contracts project [28], Token.sol of Ethernaut [39]
+
+and the BEC contract
+(Abbreviation:BEC.sol)
+source
+code [26] as test cases. BEC contract is the smart contract
+that has lost the most because of the integer overﬂow
+problem so far. The experimental results are shown in
+Table 11. Y represents the effective response of the tool,
+while N represents not, and we use N/A to indicate that a
+tool occurs a failure when the contract is analyzed.
+It can be seen from the experimental results. For re-
+entrancy vulnerabilities problem, Securify, Remix, and So-
+lidityCheck have responded effectively. For integer overﬂow
+problems, only SolidityCheck effectively handles all integer
+overﬂows and Mythx misses one. Listing 22 shows the codes
+inserted into the BEC contract by SolidityCheck. The codes in
+line 3 inserted by SolidityCheck effectively prevents the inte-
+ger overﬂow problem in line 2, which is the exact problem
+statement that causes the attack of the BEC contract.
+
+1
+2
+3
+
+u i n t c n t =
+r e c e i v e r s . l e n g t h ;
+u i n t 2 5 6 amount = u i n t 2 5 6 ( c n t ) ∗
+r e q u i r e ( u i n t 2 5 6 ( c n t ) ==0 | | amount/ u i n t 2 5 6 ( c n t ) ==
+v a l u e ;
+v a l u e ) ;
+Listing 22: the par t of codes after inser ting code into the BEC contract
+
+5.5.5 Answers to Research Questions
+We designed a set of experiments to obtain the answers for
+the four research questions raised in Section 5.1. Now, based
+on our experimental results, we give corresponding answers
+to these questions.
+• Answer1: SolidityCheck can generate detection results
+for any smart contract developed in Solidity language
+without restricting the programming style and lines
+of codes of the contract under test.
+• Answer2: SolidityCheck spends the least time among
+all tools. In comparison with SmartCheck, the detec-
+tion efﬁciency of SolidityCheck is also signiﬁcantly
+better than that of SmartCheck.
+• Answer3: According to the problematic statement
+standard deﬁned by us, SolidityCheck is signiﬁcantly
+better than the contrast tools in recall rate, while
+SolidityCheck lags behind SmartCheck in precision rate
+only a little. But for smart contracts, recall is far
+more important than precision, and we think that
+the overall detection quality of SolidityCheck is better
+than similar tools.
+• Answer4: In our experiments, SolidityCheck is the only
+tool that can resist both re-entrancy vulnerabilities
+and integer overﬂow problems.
+
+6 D ISCUSS ION
+
+Source code analysis pursues detection efﬁciency and prob-
+lem recall rate. Our desire is to bring better user experience
+and more complete security for smart contract developers.
+However, SolidityCheck still has its own shortcoming in its
+
+Test
+case
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+Overall
+
+TP/FP/FN
+recall(%)
+precision(%)
+TP/FP/FN
+recall(%)
+precision(%)
+TP/FP/FN
+recall(%)
+precision(%)
+TP/FP/FN
+recall(%)
+precision(%)
+TP/FP/FN
+recall(%)
+precision(%)
+TP/FP/FN
+recall(%)
+precision(%)
+TP/FP/FN
+recall(%)
+precision(%)
+TP/FP/FN
+recall(%)
+precision(%)
+TP/FP/FN
+recall(%)
+precision(%)
+TP/FP/FN
+recall(%)
+precision(%)
+TP/FP/FN
+recall(%)
+precision(%)
+
+TABLE 9
+Comparative results of recall and precision for different tools
+
+14
+
+ContractFuzzer
+
+Mythx
+
+Osiris
+
+Oyente
+
+Securify
+
+Remix
+
+SmartCheck
+
+Solhint
+
+SolidityCheck
+
+0/37/0
+0
+N/A
+0/4/0
+0
+N/A
+0/5/0
+0
+N/A
+0/79/0
+0
+N/A
+0/28/0
+0
+N/A
+0/4/0
+0
+N/A
+0/8/0
+0
+N/A
+1/19/0
+5
+100
+0/45/0
+0
+N/A
+0/2/0
+0
+N/A
+1/231/0
+0.43
+100
+
+1/36/1
+2.7
+50
+1/3/2
+25
+33.3
+0/5/10
+0
+N/A
+0/79/1
+0
+0
+1/27/0
+3.6
+100
+1/3/1
+25
+50
+1/7/2
+12.5
+33.3
+3/17/0
+15
+100
+0/45/0
+0
+N/A
+1/1/0
+50
+100
+9/223/7
+3.9
+56.25
+
+error
+N/A
+N/A
+error
+N/A
+N/A
+error
+N/A
+N/A
+error
+N/A
+N/A
+0/28/0
+0
+N/A
+error
+N/A
+N/A
+error
+N/A
+N/A
+error
+N/A
+N/A
+error
+N/A
+N/A
+error
+N/A
+N/A
+0/232/0
+0
+N/A
+
+error
+N/A
+N/A
+error
+N/A
+N/A
+error
+N/A
+N/A
+error
+N/A
+N/A
+0/28/3
+0
+0
+error
+N/A
+N/A
+error
+N/A
+N/A
+error
+N/A
+N/A
+error
+N/A
+N/A
+error
+N/A
+N/A
+0/232/3
+0
+0
+
+0/37/4
+0
+0
+0/4/1
+0
+0
+0/5/1
+0
+0
+0/79/2
+0
+0
+0/28/0
+0
+N/A
+error
+N/A
+N/A
+0/8/2
+0
+0
+0/20/1
+0
+0
+0/45/1
+0
+0
+0/2/1
+0
+0
+0/232/13
+0
+0
+
+19/18/2
+51.4
+90.47
+0/4/2
+0
+0
+0/5/0
+0
+N/A
+1/78/1
+1.3
+50
+0/28/0
+0
+0
+2/2/2
+50
+50
+1/7/1
+12.5
+50
+0/20/2
+0
+0
+0/45/0
+0
+N/A
+0/2/0
+0
+N/A
+23/209/10
+9.9
+69.7
+
+21/16/0
+56.8
+100
+4/0/0
+100
+100
+1/4/1
+20
+100
+42/37/4
+53.2
+91.3
+19/9/0
+67.9
+100
+2/2/2
+50
+50
+4/4/0
+50
+100
+6/14/0
+30
+100
+18/27/2
+40
+90
+1/1/0
+50
+100
+118/114/9
+50.9
+92.9
+
+0/37/0
+0
+N/A
+0/4/0
+0
+N/A
+0/5/0
+0
+N/A
+0/79/0
+0
+N/A
+0/28/0
+0
+N/A
+0/4/0
+0
+N/A
+0/8/0
+0
+N/A
+0/20/0
+0
+N/A
+0/45/0
+0
+N/A
+0/2/0
+0
+N/A
+0/232/0
+0
+N/A
+
+37/0/1
+100
+97.4
+4/0/4
+100
+50
+3/2/0
+60
+97.4
+79/0/8
+100
+90.8
+27/1/1
+96.4
+96.4
+4/0/8
+100
+33.3
+7/1/2
+87.5
+77.8
+17/3/1
+85
+94.4
+45/0/0
+100
+100
+2/0/2
+100
+50
+225/7/27
+97.0
+86.3
+
+TABLE 10
+Experiment results of re-entrancy vulnerability
+
+Reentrancy.sol
+Reentrance.sol
+
+Solhint
+N
+N
+
+SmartCheck Mythx Oyente Osiris
+N
+N
+Y
+Y
+N
+N
+N/A
+N/A
+
+Securify
+Y
+N/A
+
+ContractFuzzer
+Y
+Y
+
+Remix
+Y
+Y
+
+SolidityCheck
+Y
+Y
+
+current state. We summarize the existing problems and the
+corresponding solutions in the following:
+
+1)
+
+SolidityCheck cannot feedback detection information,
+which makes developers have to use the editor
+again to modify the problematic statement after the
+detect results are gotten, which brings bad user
+experience. We plan to make the feedback of So-
+lidityCheck’s detect results timely and in a more
+convenient way in the future.
+2) The rapid development of smart contract ﬁeld has
+brought endless security accidents and a large num-
+ber of related literature. Many smart contract prob-
+lems that we do not ﬁnd at the beginning are dis-
+covered now. Based on our capabilities, we cannot
+always keep updating our target problems set while
+
+3)
+
+studying SolidityCheck, which makes it impossible
+for SolidityCheck to detect some smart contract prob-
+lems. We plan to continue updating SolidityCheck
+in the future so that it can detect more types of
+problems.
+Source code based analysis can bring a good prob-
+lem recall rate, which is very important for smart
+contracts. However, this does not mean that accuracy
+rate should be ignored, the low accuracy rate may
+make the results of SolidityCheck not instructive. In
+the following study, we will provide more accurate
+regular expressions, more technical means to con-
+tinuously enhance the accuracy of SolidityCheck.
+4) Our re-entrancy vulnerability prevention approach
+can address the most dangerous type of re-entrany
+
+TABLE 11
+Experimental results of integer overﬂow problem
+
+15
+
+BEC.sol
+Integer.sol
+Token.sol
+
+Solhint
+N
+N
+N
+
+ContractFuzzer
+N
+N
+N
+
+Securify
+N
+N
+N
+
+Remix
+N
+N
+N
+
+SmartCheck Mythx Oyente
+N
+N
+N
+N
+Y
+Y
+N
+Y
+Y
+
+SolidityCheck Osiris
+Y
+Y
+Y
+Y
+Y
+Y
+
+vulnerability (re-entrancy vulnerability with ether
+transfer), but it does not mean that another type of
+re-entrancy vulnerability (re-entrancy vulnerability
+with no ether transfer) can be ignored. We plan to
+further study new approach to detect or prevent this
+type of re-entrancy vulnerability in the future.
+
+7 RE LATED WORK
+
+7.1 Safety status of smart contracts in Ethereum
+Some researchers focus on investigating on the security
+status of Ethereum smart contracts. According to their
+study, we can understand the worrying security status of
+Ethereum smart contracts. Destefanis et al. [40] investi-
+gated the freezing accident of parity wallet in Ethereum,
+put forward the smart contract programming mode which
+should be avoided centrally, and ﬁnally put forward the
+necessity of building block chain software engineering.
+Atzei et al. [20] analyzed the academic literature, blogs and
+forums in the ﬁeld of smart contract security in Ethereum,
+combined with their programming experience, expounded
+the vulnerabilities of Ethereum and its mainstream smart
+contract programming language (Solidity), and proposed
+the classiﬁcation of common programming vulnerabilities
+that may lead to vulnerabilities. Nikoli ´c et al. [4] described
+vulnerabilities in smart contracts as traceable attributes, and
+tried to ﬁnd greedy (locked money), prodigal (which may
+leak ethers to any user) and suicidal (which can be killed
+by anyone) smart contracts through cross-contract symbolic
+analysis and veriﬁcation. They implemented MAIAN, and
+with this tool, they succeeded in ﬁnding vulnerabilities in
+parity wallet. Wang et al. [41] proposed a research frame-
+work for smart contracts based on a six-layer architecture
+and described the problems existing in smart contracts in
+terms of contract vulnerability, limitations of the blockchain,
+privacy, and law. Through interviews with smart contract
+developers, Zou et al. [42] revealed that smart contract
+developers still face many challenges when developing con-
+tracts, such as rudimentary development tools, limited pro-
+gramming languages and Ethereum virtual machines, and
+difﬁculties in dealing with performance issues. However,
+in our opinion, these studies do not propose an effective
+classiﬁcation criterion for smart contract problems, a general
+classiﬁcation criterion for Solidity language is still lacking.
+
+7.2 Ethereum virtual machine bytecodes
+Analyzing the security of smart contracts based on the byte-
+codes of the EVM (Ethereum virtual machine) is the main-
+stream methods at present. Grishchenko et al. [13] proposed
+the ﬁrst small semantics of EVM by formalizing bytecodes,
+obtained executable codes, and successfully veriﬁed the
+
+ofﬁcial EVM test suite. Luu et al. [2] used attribute analysis
+to verify the security of smart contracts and developed
+Oyente to detect security vulnerabilities in smart contracts.
+Albert et al. [14] introduced the advanced validation engine
+used to validate the C language program into the security
+validation of smart contracts, validated the security of con-
+tracts through the C language program validation engine,
+and ﬁnally output a report with validation results. Their
+work bridges the gap between today’s advanced C-program
+veriﬁcation technology and the security of Ethereum smart
+contracts. Tann et al. [15] used machine learning technology
+to detect security vulnerabilities in smart contracts. The
+approach uses LSTM (Long Short-Term Memory) network
+to learn the behavior pattern of smart contract bytecodes,
+and thus obtains better detection accuracy than the MAIAN
+tool developed by Nikoli’c et al. [4]. Torres et al. [7] realized
+the integer defect detection tool Osiris of Ethereum smart
+contract through symbol execution and pollution analysis.
+The tool can detect arithmetic errors, truncation errors, and
+signature errors. As far as we know, this tool is one of the
+few Ethereum smart contract analysis tools that can handle
+integer errors. Tsankov et al. [16] analyzed the bytecodes of
+Ethereum virtual machine, obtained the exact semantics of
+the statement, and judged the security of smart contracts.
+Based on semantics, a tool called Securify is realized, which
+can scan the security of Ethereum smart contract. Chen et
+al. [17] focused on the execution cost of Ethereum smart
+contracts. Through investigation and analysis, they found
+that many recommended smart contract compilers generate
+bytecodes that contain expensive patterns, even though
+these bytecodes have been optimized. To this end, they pro-
+posed and developed Gasper, a symbol-based execution tool
+for detecting expensive patterns in bytecodes. Bragagnolo
+et al. [18] realized SmartInspect, a smart contract debugging
+tool, by analyzing the bytecode distribution in the Ethereum
+virtual machine memory.
+Various analysis methods based on the bytecodes of
+the Ethereum virtual machine can accurately detect se-
+curity vulnerabilities in contracts. However, the detection
+efﬁciency of them is relatively low, and they do not adapt
+quickly to Ethereum updates. Furthermore, these methods
+cannot accurately locate the possible issues in the source
+codes of smart contracts.
+
+7.3 Smart contract static code analysis
+Static code analysis based on contract source codes has
+high problem coverage and detection efﬁciency, and can
+also detect problems that affect the readability of the codes.
+It is a useful supplement to the methods based on EVM
+bytecode. To the best of our knowledge, only Tikhomirov
+et al. [3] have done some research on static code analysis
+
+based on the source codes of the Ethereum smart contract.
+They classify and summarize the existing Ethereum smart
+contract problems, and use lexical analysis, grammar analy-
+sis and other technologies to achieve static code analysis of
+smart contracts. However, their problem detection criteria
+are not very accurate, and cannot detect important secu-
+rity problems such as integer overﬂow problems and re-
+entrancy vulnerabilities which have a signiﬁcant impact on
+the security of smart contracts.
+
+8 CONCLUS ION AND FU TURE WORK
+
+With the vigorous development of blockchain technology,
+the Ethereum smart contract has been paid more and more
+attention. In this paper, we propose a novel approach,
+namely SolidityCheck to detect Ethereum smart contract
+problems based on regular expressions and program in-
+strumentation. A series of experiments show that the tool
+corresponding to SolidityCheck has more advantages than
+existing ones in terms of detection quality and efﬁciency,
+and SolidityCheck is can deal with important issues of smart
+contracts such as re-entrancy vulnerabilities and integer
+overﬂow problems.
+For future work, we have the following plans:
+• Determining a comprehensive, reasonable, accurate
+and up-to-date code problem criterion for Ethereum
+smart contract.
+• According to the criterion of Ethereum smart con-
+tract problems, the problems that cannot be detected
+by SolidityCheck can be added to SolidityCheck in the
+future.
+• Continuously optimizing SolidityCheck to further im-
+prove detection quality, performance, and stability.
+
+9 ACKNOW LEDGEMEN TS
+
+The work is supported by the National Natural Science
+Foundation of China under Grant No. 61572171, the Natural
+Science Foundation of Jiangsu Province under Grant No.
+BK20191297, and the Fundamental Research Funds for the
+Central Universities under Grant No. 2019B15414.
+
+RE FERENCES
+
+[3]
+
+[1] G. Wood et al., “Ethereum: A secure decentralised generalised
+transaction ledger,” Ethereum project yellow paper, vol. 151, no. 2014,
+pp. 1–32, 2014.
+[2] L. Luu, D.-H. Chu, H. Olickel, P. Saxena, and A. Hobor, “Making
+smart contracts smarter,” in Proceedings of the 2016 ACM SIGSAC
+conference on computer and communications security. ACM, 2016,
+pp. 254–269.
+S. Tikhomirov, E. Voskresenskaya, I. Ivanitskiy, R. Takhaviev,
+E. Marchenko, and Y. Alexandrov, “Smartcheck: Static analysis
+of ethereum smart contracts,” in 2018 IEEE/ACM 1st International
+Workshop on Emerging Trends in Software Engineering for Blockchain
+(WETSEB).
+IEEE, 2018, pp. 9–16.
+I. Nikoli ´c, A. Kolluri, I. Sergey, P. Saxena, and A. Hobor, “Finding
+the greedy, prodigal, and suicidal contracts at scale,” in Proceedings
+of the 34th Annual Computer Security Applications Conference. ACM,
+2018, pp. 653–663.
+S. Kalra, S. Goel, M. Dhawan, and S. Sharma, “Zeus: Analyzing
+safety of smart contracts.” in NDSS, 2018.
+J. Krupp and C. Rossow, “teether: Gnawing at ethereum to au-
+tomatically exploit smart contracts,” in 27th {USENIX} Security
+Symposium ({USENIX} Security 18), 2018, pp. 1317–1333.
+
+[4]
+
+[5]
+
+[6]
+
+16
+
+[9]
+
+[7] C. F. Torres, J. Sch ¨utte et al., “Osiris: Hunting for integer bugs
+in ethereum smart contracts,” in Proceedings of the 34th Annual
+Computer Security Applications Conference. ACM, 2018, pp. 664–
+676.
+[8] R. Fontein, “Comparison of static analysis tooling for smart con-
+tracts on the evm,” in 28th Twente Student conference on IT, 2018.
+I. Grishchenko, M. Maffei, and C. Schneidewind, “Foundations
+and tools for the static analysis of ethereum smart contracts,” in
+International Conference on Computer Aided Veriﬁcation.
+Springer,
+2018, pp. 51–78.
+[10] R. M. Parizi, A. Dehghantanha, K.-K. R. Choo, and A. Singh,
+“Empirical vulnerability analysis of automated smart contracts
+security testing on blockchains,” in Proceedings of the 28th Annual
+International Conference on Computer Science and Software Engineer-
+ing.
+IBM Corp., 2018, pp. 103–113.
+[11] M. I. Mehar, C. L. Shier, A. Giambattista, E. Gong, G. Fletcher,
+R. Sanayhie, H. M. Kim, and M. Laskowski, “Understanding a
+revolutionary and ﬂawed grand experiment in blockchain: the dao
+attack,” Journal of Cases on Information Technology (JCIT), vol. 21,
+no. 1, pp. 19–32, 2019.
+[12] T. Chen, Y. Zhu, Z. Li, J. Chen, X. Li, X. Luo, X. Lin, and X. Zhange,
+“Understanding ethereum via graph analysis,” in IEEE INFOCOM
+2018-IEEE Conference on Computer Communications. IEEE, 2018, pp.
+1484–1492.
+[13] I. Grishchenko, M. Maffei, and C. Schneidewind, “A semantic
+framework for the security analysis of ethereum smart con-
+tracts,” in International Conference on Principles of Security and Trust.
+Springer, 2018, pp. 243–269.
+[14] E. Albert, J. Correas, P. Gordillo, G. Rom ´an-D´ıez, and A. Rubio,
+“Safevm: A safety veriﬁer for ethereum smart contracts,” arXiv
+preprint arXiv:1906.04984, 2019.
+[15] A. Tann, X. J. Han, S. S. Gupta, and Y.-S. Ong, “Towards safer
+smart contracts: A sequence learning approach to detecting vul-
+nerabilities,” arXiv preprint arXiv:1811.06632, 2018.
+[16] P. Tsankov, A. Dan, D. Drachsler-Cohen, A. Gervais, F. Buenzli,
+and M. Vechev, “Securify: Practical security analysis of smart
+contracts,” in Proceedings of the 2018 ACM SIGSAC Conference on
+Computer and Communications Security. ACM, 2018, pp. 67–82.
+[17] T. Chen, X. Li, X. Luo, and X. Zhang, “Under-optimized smart
+contracts devour your money,” in 2017 IEEE 24th International Con-
+ference on Software Analysis, Evolution and Reengineering (SANER).
+IEEE, 2017, pp. 442–446.
+[18] S. Bragagnolo, H. Rocha, M. Denker, and S. Ducasse, “Smartin-
+spect: solidity smart contract inspector,” in 2018 International Work-
+shop on Blockchain Oriented Software Engineering (IWBOSE).
+IEEE,
+2018, pp. 9–18.
+[19] P. He, G. Yu, Y. Zhang, and Y. Bao, “Survey on blockchain technol-
+ogy and its application prospect,” Computer Science, vol. 44, no. 4,
+pp. 1–7, 2017.
+[20] N. Atzei, M. Bartoletti, and T. Cimoli, “A survey of attacks on
+ethereum smart contracts (sok),” in International Conference on
+Principles of Security and Trust. Springer, 2017, pp. 164–186.
+[21] Ethereum,
+“Solidity
+ofﬁcial documents,”
+https://solidity.
+readthedocs.io/en/v0.5.10/, accessed June 27,2019.
+[22] B. Jiang, Y. Liu, and W. Chan, “Contractfuzzer: Fuzzing smart
+contracts for vulnerability detection,” in Proceedings of the 33rd
+ACM/IEEE International Conference on Automated Software Engineer-
+ing. ACM, 2018, pp. 259–269.
+[23] V. B. Fabian Vogelsteller, “Eip 20: Erc-20 token standard,” https:
+//eips.ethereum.org/EIPS/eip- 20/, accessed Oct 4,2019.
+[24] J. E. William Entriken, Dieter Shirley, “Eip 721: Erc-721 token stan-
+dard,” https://github.com/ethereum/EIPs/blob/master/EIPS/
+eip- 721.md, accessed Oct 9,2019.
+[25] F. V. Christian Reitwiener, Nick Johnson, “Eip 165: Erc-
+165 token standard,” https://github.com/ethereum/EIPs/blob/
+master/EIPS/eip- 165.md, accessed Oct 9,2019.
+[26] B. chain, “Bec token contract source code,” https://etherscan.
+io/address/0xc5d105e63711398af9bbff092d4b6769c82f793d#
+contracts, accessed June 27,2019.
+[27] Zeppelin,
+“Safemath,”
+https://github.com/OpenZeppelin/
+openzeppelin- solidity/blob/master/contracts/math/SafeMath.
+sol, accessed May 20,2019.
+[28] T. of Bits, “Vulnerable smart contracts,” https://github.com/
+crytic/not- so- smart- contracts, accessed June 27,2019.
+[29] ETHERSCANERS,
+“Market value of
+ethereum,” https://
+etherscan.io/, accessed May 20,2019.
+
+17
+
+https://github.com/
+
+[30] G. Inc, “Github, build sotware better, together,” https://github.
+com/, accessed Oct 10,2019.
+[31] Ethereum,
+“Remix-ethereum ide,”
+ethereum/remix- ide, accessed June 27,2019.
+[32] ConsenSys, “Security analysis tool for evm bytecode. supports
+smart contracts built for ethereum, quorum, vechain, roostock,
+tron and other evm-compatible blockchains.” https://mythx.io,
+accessed AUG 30,2019.
+[33] melonproject, “An analysis tool for smart contracts.” https://
+github.com/melonproject/oyente, accessed AUG 30,2019.
+[34] protoﬁle, “This is an open source project for linting solidity code,”
+https://github.com/protoﬁre/solhint, accessed Oct 17,2019.
+[35] C. A. ICE center, “Securify:security scanner for ethereum smart
+contracts,” https://securify.chainsecurity.com/, accessed June
+27,2019.
+[36] smartdec, “Smartcheck,a static analysis tool that detects vulner-
+abilities and bugs in solidity programs (ethereum-based smart
+contracts),” https://tool.smartdec.net/, accessed May 20,2019.
+[37] g. Anqi7721, FrankLinliu, “The ethereum smart contract fuzzer for
+security vulnerability detection,” https://github.com/gongbell/
+ContractFuzzer, accessed Oct 10,2019.
+[38] christoftorres, “A tool
+to detect
+integer bugs in ethereum
+smart contracts,” https://github.com/christoftorres/Osiris, ac-
+cessed Oct 10,2019.
+[39] Openzeppelin, “Representative, problematic smart contracts,”
+https://ethernaut.openzeppelin.com, accessed Oct 14,2019.
+[40] G. Destefanis, M. Marchesi, M. Ortu, R. Tonelli, A. Bracciali, and
+R. Hierons, “Smart contracts vulnerabilities: a call for blockchain
+software engineering?” in 2018 International Workshop on Blockchain
+Oriented Software Engineering (IWBOSE).
+IEEE, 2018, pp. 19–25.
+[41] S. Wang, L. Ouyang, Y. Yuan, X. Ni, X. Han, and F.-Y. Wang,
+“Blockchain-enabled smart contracts: Architecture, applications,
+and future trends,” IEEE Transactions on Systems, Man, and Cyber-
+netics: Systems, 2019.
+[42] W. Zou, D. Lo, P. S. Kochhar, X. D. Le, X. Xia, Y. Feng, Z. Chen,
+and B. Xu, “Smart contract development: Challenges and oppor-
+tunities,” IEEE Transactions on Software Engineering, pp. 1–1, 2019.
+
+Pengcheng Zhang received the Ph.D. degree
+in computer science from Southeast University
+in 2010. He is currently an associate professor
+in College of Computer and Information, Hohai
+University, Nanjing, China, and was a visiting
+scholar at San Jose State University, USA. His
+research interests include software engineering,
+service computing and data mining. He has pub-
+lished in premiere or famous computer science
+journals. He was the co-chair of IEEE AI Testing
+2019 conference. He served as technical pro-
+gram committee member on various international conferences. He is
+a memeber of the IEEE.
+
+Feng Xiao received the bachelor’s degree in
+computer science and technology from Hohai
+university in 2019. He is currently working to-
+ward the M.S. degree with the College of Com-
+puter and Information, Hohai University, Nanjing,
+China. His current research interests include
+smar t contract security and software engineer-
+ing.
+
+Xiapu Luo is an assistant professor with the
+Depar tment of Computing and an Associate Re-
+searcher with the Shenzhen Research Institute,
+The Hong Kong Polytechnic University. He re-
+ceived the Ph.D. degree in Computer Science
+from The Hong Kong Polytechnic University, and
+was a Post-Doctoral Research Fellow with the
+Georgia Institute of Technology. His research fo-
+cuses on smar tphone security and privacy, net-
+work security and privacy, and Internet measure-
+ment.
+
+

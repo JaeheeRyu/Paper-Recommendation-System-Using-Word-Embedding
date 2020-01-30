@@ -1,0 +1,3001 @@
+GRASS: GRAph Spectral Sparsiﬁcation Leveraging
+Scalable Spectral Perturbation Analysis
+
+Zhuo Feng, Senior Member, IEEE
+
+1
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+S
+
+D
+
+.
+
+s
+
+c
+
+[
+
+2
+v
+2
+8
+3
+4
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract—Spectral graph sparsiﬁcation aims to ﬁnd ultra-
+sparse subgraphs whose Laplacian matrix can well approximate
+the original Laplacian eigenvalues and eigenvectors. In recent
+years, spectral sparsiﬁcation techniques have been extensively
+studied for accelerating various numerical and graph-related ap-
+plications. Prior nearly-linear-time spectral sparsiﬁcation meth-
+ods ﬁrst extract low-stretch spanning tree from the original graph
+to form the backbone of the sparsiﬁer, and then recover small
+portions of spectrally-critical off-tree edges to the spanning tree to
+signiﬁcantly improve the approximation quality. However, it is not
+clear how many off-tree edges should be recovered for achieving
+a desired spectral similarity level within the sparsiﬁer. Motivated
+by recent graph signal processing techniques, this paper proposes
+a similarity-aware spectral graph sparsiﬁcation framework that
+leverages efﬁcient spectral off-tree edge embedding and ﬁltering
+schemes to construct spectral sparsiﬁers with guaranteed spectral
+similarity (relative condition number) level. An iterative graph
+densiﬁcation scheme is also introduced to facilitate efﬁcient
+and effective ﬁltering of off-tree edges for highly ill-conditioned
+problems. The proposed method has been validated using various
+kinds of graphs obtained from public domain sparse matrix
+collections relevant to VLSI CAD, ﬁnite element analysis, as well
+as social and data networks frequently studied in many machine
+learning and data mining applications. For instance, a sparse
+SDD matrix with 40 million unknowns and 180 million nonzeros
+can be solved (1E-3 accuracy level) within two minutes using a
+single CPU core and about 6GB memory.
+Index Terms—Spectral graph theory, iterative matrix solver,
+graph partitioning, circuit analysis, perturbation analysis
+
+I . IN TRODUC T ION
+
+Spectral methods are playing increasingly important roles in
+many graph and numerical applications [30], such as scientiﬁc
+computing [28], numerical optimization [5], data mining [22],
+graph analytics [16], machine learning [9], graph signal pro-
+cessing [24], and VLSI computer-aided design [11], [35]. For
+example, classical spectral graph partitioning (data clustering)
+algorithms embed original graphs into low-dimensional space
+using the ﬁrst few nontrivial eigenvectors of graph Laplacians
+and subsequently perform graph partitioning (data clustering)
+on the low-dimensional graphs to obtain high-quality solu-
+tion [22]. To further push the limit of spectral methods for
+large graphs, mathematics and theoretical computer science
+researchers have extensively studied many theoretically-sound
+research problems related to spectral graph theory. Recent
+spectral graph sparsiﬁcation research [2], [6], [18], [22], [25],
+[27] allows computing nearly-linear-sized subgraphs (sparsi-
+ﬁers) that can robustly preserve the spectrum (i.e., eigenvalues
+and eigenvectors) of the original graph’s Laplacian, which
+
+The author is with the Department of ECE, Stevens Institute of Technology,
+Hoboken, NJ, 07030. Email: zfeng12@stevens.edu.
+
+immediately leads to a series of theoretically nearly-linear-
+time numerical and graph algorithms for solving sparse ma-
+trices, graph-based semi-supervised learning (SSL), spectral
+graph partitioning (data clustering), and max-ﬂow problems
+[5], [17], [27], [28]. For example, sparsiﬁed circuit networks
+allow for developing more scalable computer-aided (CAD)
+design algorithms for designing large VLSI systems [11], [35];
+sparsiﬁed social (data) networks enable to more efﬁciently
+understand and analyze large social (data) networks [30];
+sparsiﬁed matrices can be immediately leveraged to accelerate
+the solution computation of large linear system of equations
+[37]. To this end, a spectral sparsiﬁcation algorithm leveraging
+an edge sampling scheme that sets sampling probabilities pro-
+portional to edge effective resistances (of the original graph)
+has been proposed in [25]. However, it becomes a chicken-and-
+egg problem since calculating effective resistances (leverage
+scores for edge sampling) requires solving the original graph
+Laplacian matrix multiple times (even when using JohnsonLin-
+denstrauss lemma [25]) and thus can be extremely expensive
+for very large graphs.
+This paper aims to address the standing question whether
+there exists a practically-efﬁcient, nearly-linear time spectral
+graph sparsiﬁcation algorithm that can immediately enable the
+development of nearly-linear time sparse SDD matrix solvers
+and other graph-based algorithms for large-scale, real-world
+problems. Our work is built upon the recent spectral per-
+turbation analysis framework that allows for highly-scalable
+spectral sparsiﬁcation of large (weighted) undirected graphs
+[11], [12].
+Our method starts by extracting a spectrally-critical span-
+ning tree subgraph as a backbone of the sparsiﬁer, and
+subsequently recovers a small portion spectrally-critical off-
+tree edges to the spanning tree. In many scientiﬁc computing
+and graph-related applications, it can be quite desired to con-
+struct spectral graph sparsiﬁers according to a given spectral
+similarity level: introducing too few edges may lead to poor
+approximation of the original graph, whereas too many edges
+can result in high computational complexity. For example,
+when using a preconditioned conjugate gradient (PCG) solver
+to solve a symmetric diagonally dominant (SDD) matrix for
+multiple right-hand-side (RHS) vectors, it is hoped the PCG
+solver would converge to a good solution as quickly as
+possible, which usually requires the sparsiﬁer (preconditioner)
+to be highly spectrally-similar to the original problem; on the
+other hand, in many graph partitioning tasks, only the Fiedler
+vector (the ﬁrst nontrivial eigenvector) of graph Laplacian is
+needed [26], so even a sparsiﬁer with much lower spectral
+
+ 
+ 
+ 
+ 
+ 
+ 
+similarity will sufﬁce. To this end, this work introduces a
+similarity-aware spectral graph sparsiﬁcation framework that
+leverages efﬁcient spectral off-tree edge embedding and ﬁlter-
+ing schemes to construct spectral sparsiﬁers with guaranteed
+spectral similarity.
+The contribution of this work has been summarized as
+follows:
+1) We present a nearly-linear time yet practically-efﬁcient
+framework for constructing ultra-sparsiﬁer subgraph
+from a spanning tree subgraph via efﬁcient spectral
+perturbation analysis of generalized eigenvalue problem.
+The proposed algorithm allows effectively ﬁxing the
+largest generalized eigenvalues, by recovering the most
+spectrally-critical off-tree edges to the original spanning-
+tree subgraph.
+2) We present a similarity-aware spectral graph sparsiﬁca-
+tion framework by leveraging spectral off-tree edge em-
+bedding and ﬁltering schemes that have been motivated
+by recent graph signal processing techniques [24].
+3) For highly ill-conditioned problems, we introduce an
+iterative-and-incremental spectral graph sparsiﬁcation
+scheme that allows to more effectively ﬁx the most
+problematic eigenvalues by progressively improving the
+ultra-sparsiﬁer subgraphs. Such a scheme enables to
+ﬂexibly trade off the complexity and spectral similarity
+of the sparsiﬁed graph. Compared to the single-pass
+sparsiﬁcation scheme, the iterative scheme can always
+achieve greater reduction of the relative condition num-
+ber and thus more effective spectral approximation of
+the original graph Laplacian matrices.
+4) Extensive experiments have been conducted to vali-
+date the proposed method in various numerical and
+graph-related applications, such as solving sparse SDD
+matrices, and spectral graph partitioning, as well as
+simpliﬁcation of large social and data networks. Very
+promising preliminary results for even extremely ill-
+conditioned VLSI, thermal and ﬁnite element analysis
+problems have been obtained.
+The rest of this paper is organized as follows. Section II
+provides a brief introduction to graph Laplacians and the state
+of the art in spectral sparsiﬁcation of graphs. In Sections
+III and IV, a scalable similarity-aware spectral sparsiﬁcation
+method based on spectral perturbation analysis is described in
+detail. Section V demonstrates extensive experimental results
+for a variety of real-world, large-scale sparse Laplacian matrix
+and graph problems, which is followed by the conclusion of
+this work in Section VI.
+
+I I . BACKGROUND
+
+A. Graph Laplacian Matrices and Quadratic Forms
+
+Consider a weighted, undirected graph G = (V , E , ω),
+where V denotes a set of vertices, E denotes a set of edges,
+and ω denotes a weight function that assigns a positive weight
+
+2
+
+Fig. 1. A resistor network (conductance value of each element is shown) and
+its graph Laplacian matrix.
+
+Fig. 2. Cut sparsiﬁer preserves cuts of a graph.
+
+to each edge. As shown in Fig. 1, the Laplacian matrix of
+graph G can be deﬁned as follows:
+
+
+
+(cid:80)
+
+−ω(p, q)
+ω(p, t)
+
+(p,t)∈E
+
+0
+
+if (p, q) ∈ E
+if (p = q)
+
+if otherwise.
+
+(1)
+
+LG (p, q) =
+
+It can be shown that every graph Laplacian matrix is an SDD
+matrix, which also can be considered as an admittance matrix
+of a resistor circuit network. For any real vector x ∈ RV , the
+Laplacian quadratic form of graph G is deﬁned as:
+
+x(cid:62)LGx =
+
+ωp,q (x (p) − x (q))2 .
+
+(2)
+
+(cid:88)
+
+(p,q)∈E
+
+B. Graph Sparsiﬁcation and Its Applications
+Classic graph sparsiﬁcation problem can be described as
+follows: given a graph G = (V , E , ω) and its graph Laplacian
+matrix LG , graph sparsiﬁcation aims to ﬁnd a subgraph (a.k.a
+graph sparsiﬁer) P = (V , Es , ωs ) and its graph Laplacian
+matrix LP so that this sparse subgraph can preserve all vertices
+but signiﬁcantly less number of edges than the original graph.
+
+Graph sparsiﬁers typically fall into the following two cate-
+gories: the cut sparsiﬁer [4] and spectral sparsiﬁer [27]. The
+cut sparsiﬁer preserves the values of cuts in a graph as shown
+in Fig. 2, whereas spectral sparsiﬁer preserves eigenvalues
+and eigenvectors of the original graph. It has been shown
+that a good cut sparsiﬁer may not always be a good spectral
+sparsiﬁer, while the spectral sparsiﬁer is always a stronger
+notion than the cut sparsiﬁer [27].
+To illustrate the importance of graph sparsiﬁcation tech-
+niques in numerical computation applications, consider the
+following example of the standard preconditioned conjugate
+gradient (PCG) algorithm for solving SDD matrices. The
+
+3.51.521.5420.52310.5131.521.53.5(cid:16)(cid:16)(cid:170)(cid:186)(cid:171)(cid:187)(cid:16)(cid:16)(cid:16)(cid:171)(cid:187)(cid:171)(cid:187)(cid:16)(cid:16)(cid:171)(cid:187)(cid:16)(cid:16)(cid:16)(cid:171)(cid:187)(cid:171)(cid:187)(cid:16)(cid:16)(cid:172)(cid:188)124351.5221.510.53
+
+λmin
+
+κ(LG , LP ) = λmax
+
+ﬁrst few Laplacian eigenvalues and eigenvectors. Recent ap-
+proaches for constructing nearly-linear-sized spectral sparsi-
+ﬁers aim to reduce relative condition number and typically
+include the following two key steps (as shown in Fig. 3) [15],
+[17], [25], [28]:
+1) Extract an initial spanning tree from the original graph
+as a backbone of the sparsiﬁer;
+2) Recover a small number of spectrally-critical off-tree
+edges to the spanning tree to form an ultra-sparsiﬁer
+subgraph.
+It can be shown that, the smallest non-zero generalized eigen-
+value λmin of a spanning tree subgraph (without scaling)
+is always greater than 1, so the relative condition number
+is always bounded by λmax .
+For step 1), recent theoretical computer science research
+results suggest
+that
+low-stretch spanning trees should be
+constructed since they will result
+in an upper bound of
+λmax < O(m log n(log log n)2 ) that can immediately lead to
+the development of nearly-linear time algorithms for solving
+SDD matrices [17], where m denotes the number of nonzeros
+and n the number of equations in the matrix. Towards this
+goal, nearly-linear time low-stretch spanning tree algorithms
+based on star- and petal-decomposition methods have been
+proposed [1], [10].
+For step 2),
+it requires to recover the most spectrally-
+critical off-tree edges to the spanning tree for constructing the
+ultra-sparsiﬁer, so that it can drastically improve the spectral
+approximation of the previous spanning tree subgraph. To this
+end, effective-resistance based edge sampling scheme has been
+proposed for recovering these off-tree edges [25]. However,
+calculating effective resistances (leverage scores for edge
+sampling) requires solving the original graph Laplacian matrix
+multiple times (even when using the Johnson-Lindenstrauss
+lemma [25]) and thus can be extremely expensive for very
+large graphs. It is also suggested to use stretch to replace
+effective resistance for edge sampling, which is more com-
+putationally efﬁcient but will increase the number of edges
+sampled [15].
+
+D. Overview of Our Approach
+The overview of the proposed method for similarity-aware
+spectral sparsiﬁcation of undirected graphs has been sum-
+marized as follows. For a given input graph, the following
+key procedures are involved in the proposed algorithm ﬂow:
+(a) low-stretch spanning tree [1], [10] extraction based on
+its original graph Laplacian; (b) spectral (generalized eigen-
+value) embedding and ﬁltering of off-tree edges by leveraging
+the recent spectral perturbation analysis framework [11]; (c)
+incremental sparsiﬁer improvement (graph densiﬁcation) by
+gradually adding small portions of dissimilar off-tree edges to
+the spanning tree.
+Fig. 4 shows the spectral drawings [16] of an airfoil graph
+[8] as well as its spectrally-similar subgraph computed by
+the proposed similarity-aware spectral sparsiﬁcation algorithm.
+Since recovering too many off-tree edges will result in high
+computational costs, whereas recovering insufﬁcient amount of
+
+Fig. 3. A spanning tree and its ultra-sparsiﬁer subgraph.
+
+PCG algorithm can ﬁnd an -accurate solution in at most
+O(κ(LG , LP )1/2 log −1 ) iterations, where the relative con-
+dition number κ(LG , LP ) is deﬁned as follows:
+
+κ(LG , LP ) =
+
+λmax
+λmin
+
+,
+
+(3)
+
+where λmin and λmax denote the smallest and largest nonzero
+generalized eigenvalues1 that satisfy:
+
+LGu = λLPu,
+
+(4)
+
+with u denoting the eigenvector corresponding to the gen-
+eralized eigenvalue λ. It is desired that the preconditioner
+LP matrix should lead to a much smaller relative condition
+number while maintaining a much sparser structure than the
+original LG matrix so that the cost of the preconditioned
+iterations can be much lower than directly solving the original
+LG matrix. It can be shown that a graph sparsiﬁer with
+good spectral approximation of the original matrix can be
+immediately leveraged as a preconditioner for solving SDD
+or SDD-like matrix problems [13], [14], [17], [28], [32]–[34].
+
+C. Spectral Graph Sparsiﬁcation
+Graphs G and P are said to be σ−spectrally similar if for
+all real vectors x ∈ RV the following holds [3]:
+
+x(cid:62)LPx
+σ
+
+≤ x(cid:62)LGx ≤ σx(cid:62)LPx.
+
+(5)
+
+It
+can be
+shown that
+the
+relative
+condition number
+κ(LG , LP ) ≤ σ2 . It is obvious that a graph sparsiﬁer that
+can result in a smaller relative condition number indicates it
+is more spectrally similar to the original graph and can lead
+to faster convergence of iterative methods, such as Krylov-
+subspace iterative methods. For complete graphs, it has been
+shown that Ramanujan graphs are the best spectral graph
+sparsiﬁers [2]. For arbitrary graphs on the other hand, the
+linear-sized Twice-Ramanujan graphs can achieve the same
+spectral similarity with subgraphs that have twice as many
+as the edges in Ramanujan graphs [2], [18]. However, it still
+remains unclear if there is a practically-efﬁcient algorithm for
+constructing linear-sized spectral sparsiﬁers.
+Deﬁne spectrally-critical edges to be the ones that can
+mostly perturb the spectral graph properties, such as the
+
+1 The smallest eigenvalue of a Laplacian matrix is always 0 with the
+corresponding all-1s eigenvector. For a disconnected graph, the number of
+zero eigenvalues equal to the number of disconnected components, which is
+equal to the algebraic multiplicity of 0 in the Laplacian.
+
+Spanning tree subgraphEdges of spanning tree graphExtra edgesUltra-sparsifier subgraph4
+
+Fig. 6. The stretch of an off-tree edge (p, q) is computed by stP (p, q) = 7
+for a weighted graph with equal edge weight.
+
+where stP (p, q) is the stretch of an edge (p, q) ∈ E that
+belongs to the original graph, which is further deﬁned as:
+
+stP (p, q) = ωp,q
+
+(7)
+
+(cid:88)
+
+f ∈S
+
+ ,
+
+1
+ωf
+
+where S denotes the set of edges in the path in the spanning
+tree P from p to q . A nearly-worst case distribution of
+eigenvalues with λi ≤ stP (G)/i has been illustrated in Fig.
+5.
+Deﬁne ep ∈ RV to be a vector with only the p-th element
+being 1 and others being 0. Also deﬁne ep,q = ep − eq . Then
+the trace of L+
+PLG becomes [29]:
+
+Tr (cid:0)L+
+
+PLG
+
+(cid:1) =
+
+(cid:1)
+
+Pep,qe(cid:62)
+p,q
+
+i=1
+
+(p,q)∈E
+
+(cid:88)
+
+n(cid:88)
+(cid:88)
+(cid:88)
+
+ωp,q Tr (cid:0)L+
+λi =
+ωp,q Tr (cid:0)e(cid:62)
+ωp,q e(cid:62)
+= stP (G) ≥ λ1 .
+
+p,qL+
+Pep,q
+
+p,qL+
+Pep,q
+
+(p,q)∈E
+
+(p,q)∈E
+
+=
+
+=
+
+(cid:1)
+
+(8)
+
+As a result, it is suggested that a spanning tree with low stretch
+should be constructed so that the preconditioned system will
+have a small relative condition number. It has been shown
+that if each of the largest eigenvalues can be ﬁxed by adding
+a small number of extra off-tree edges to the spanning tree, an
+ultra-sparsiﬁer with totally n + o(n) edges can be created to
+provide a good spectral approximation of G [15], [17], [28].
+For instance, it has been shown that an ultra-sparsiﬁer with a
+relative condition number αk2 can be built by adding at most
+n/k extra off-tree edges to the spanning tree subgraph [28].
+
+B. Perturbation Analysis of Generalized Eigenvalue Problems
+Consider the following ﬁrst-order eigenvalue perturbation
+problem:
+
+LG (ui + δui ) = (λi + δλi ) (LP + δLP ) (ui + δui ) ,
+
+(9)
+
+Fig. 4. Two spectrally-similar airfoil graphs.
+
+Fig. 5. A nearly worst-case distribution of generalized eigenvalues for a
+spanning-tree preconditioned system.
+
+edges can lead to poor or misleading approximation results,
+in this work we propose an incremental graph densiﬁcation
+procedure leveraging an efﬁcient off-edge ﬁltering scheme.
+In the rest of this paper, we assume that G = (V , E , w) is
+a weighted, undirected and connected graph, whereas P =
+(V , Es , ws ) is its sparsiﬁer. To simplify the our analysis,
+we assume the edge weights in the sparsiﬁer remain the
+same as the original ones, though the latest iterative edge
+re-scaling schemes [36] can be applied to further improve
+the approximation. The descending eigenvalues of L+
+PLG are
+denoted by λmax = λ1 ≥ λ2 ≥ · · · ≥ λn ≥ 1, where L+
+denotes the Moore-Penrose pseudoinverse of LP .
+
+P
+
+I I I . S P EC TRA L GRA PH S PAR S I FICAT ION V IA E FFIC I EN T
+S PEC TRA L P ERTURBAT ION ANA LY S I S
+
+In this paper, we introduce a practically-efﬁcient, nearly-
+linear time spectral graph sparsiﬁcation algorithm that can
+be efﬁciently applied to sparsify large-scale real-world graphs
+(Laplacian matrices). We show that for an initial spectrally-
+critical spanning-tree subgraph, such as a low-stretch spanning
+tree, the proposed algorithm can always efﬁciently identify
+the most spectrally-critical off-tree edges to be added to
+the spanning tree, thereby drastically reducing the relative
+condition number of the preconditioned system. As a result, an
+ultra-sparse yet spectrally-similar subgraph can be constructed
+and leveraged for solving sparse SDD matrices as well as other
+graph related problems in nearly-linear time.
+
+L+
+
+A. Spanning Tree as A Spectral Sparsiﬁer
+Recent research work proves that when using a spanning
+tree subgraph as a spectral graph sparsiﬁer or preconditioner,
+PLG will not have many large eigenvalues [29]:
+it has
+at most k eigenvalues greater than stP (G)
+, where stP (G)
+denotes the stretch of the original graph G with respect to the
+spanning tree subgraph P deﬁned as [29]:
+
+k
+
+stP (G) =
+
+stP (p, q),
+
+(6)
+
+(cid:88)
+
+(p,q)∈E
+
+-0.02-0.03-0.01000.010.020.030.040.040.02(cid:11)(cid:12)st1PG(cid:11)(cid:12)st2PG(cid:11)(cid:12)stPGk1(cid:79)2(cid:79)3(cid:79)k(cid:79)(cid:11)(cid:12)st3PG…7pq5
+
+where perturbation δLP is applied to LP , leading to pertur-
+bations in generalized eigenvalues and eigenvectors λi + δλi
+and ui + δui for i = 1, ..., n, respectively. After keeping only
+the ﬁrst-order terms, (9) becomes:
+
+LG δui = λiLP δui + δλiLPui + λi δLPui .
+
+(10)
+
+Write δui in terms of the original eigenvectors uj for j =
+
+1, ..., n:
+
+δui =
+
+n(cid:88)
+
+j=1
+
+ζijuj ,
+(cid:26) 1, i = j
+0, i (cid:54)= j.
+
+(11)
+
+where uj can always be constructed to satisfy:
+u(cid:62)
+
+i LPuj =
+
+(12)
+
+Substituting (11) into (10) leads to:
+
+n(cid:80)
+
+j=1
+
+ζijλjLPuj
+
+= λiLP
+
+(cid:32) n(cid:80)
+
+j=1
+
+ζijuj
+
+(cid:33)
+
++ δλiLPui + λi δLPui .
+
+(13)
+
+Multiplying u(cid:62)
+
+i
+
+to both sides of (13) results in:
+
+u(cid:62)
+
+i
+
+(cid:32) n(cid:80)
+
+j=1
+
+ζijλjLPuj
+
+(cid:33)
+(cid:33)
+
+=
+
+λiu(cid:62)
+
+i LP
+
+(cid:32) n(cid:80)
+
+j=1
+
+ζijuj
+
++ δλiu(cid:62)
+i LPui + λiu(cid:62)
+i δLPui ,
+
+(14)
+
+which immediately leads to:
+u(cid:62)
+u(cid:62)
+Expanding δLP that includes multiple extra off-tree edges
+(p, q) leads to:
+
+δλi = −λi
+
+i δLPui
+
+i LPui
+
+= −λiu(cid:62)
+i δLPui .
+
+(15)
+
+δLP =
+
+(cid:88)
+(cid:88)
+
+(p,q)∈E\Es
+
+ωp,qep,qe(cid:62)
+p,q .
+
+(16)
+
+The above leads to the following based on (15):
+
+δλi = −λi
+
+(p,q)∈E\Es
+
+wp,qu(cid:62)
+
+i ep,qe(cid:62)
+p,qui .
+
+(17)
+
+It is obvious from (17) that the reduction of λi is propor-
+tional to the Joule heat produced by the extra off-tree edges
+when its unperturbed eigenvector ui is applied as a node-
+voltage vector. For instance, the voltage difference between
+nodes p and q is computed by
+
+vp,q = u(cid:62)
+
+i ep,q ,
+
+(18)
+
+which results in the following Joule heat for the off-tree edge
+
+(p, q):
+
+hp,q = ωp,q v2
+p,q .
+
+(19)
+
+Therefore, the perturbation of eigenvalue λi becomes:
+
+δλi = −λi
+
+(cid:88)
+
+(p,q)∈E\Es
+
+hp,q .
+
+(20)
+
+Consequently, it becomes clear that adding the off-tree edges
+with the largest Joule heat values computed using the dominant
+generalized eigenvector (u1 ) that corresponds to the largest
+eigenvalue (λ1 ) will dramatically reduce the relative condition
+number and thus improve the spectral approximation of the
+subgraph. By repeating the above procedures for all large
+eigenvalues, very good spectral graph sparsiﬁers can be ob-
+tained.
+
+C. Why Dominant Generalized Eigenvectors?
+As shown in the previous perturbation analysis, dominant
+generalized eigenvectors can help identify the most spectrally-
+critical off-tree edges. Alternatively, we can consider the
+following Courant-Fischer theorem for understanding why
+using generalized eigenvectors would work so well for spectral
+sparsiﬁcation purpose. By assigning each node in the graph
+with an integer value either 0 or 1, the corresponding Laplacian
+quadratic form measures the boundary size (cut) of a node set.
+For example, if a node set Q is deﬁned as
+
+Q def= {q ∈ V : x(q) = 1} ,
+
+(21)
+
+then the number of edges going out of Q equals to:
+
+x(cid:62)LGx = cut(Q, Q) = |∂G (Q)|,
+
+(22)
+
+where the boundary of Q in G is deﬁned as
+
+∂G (Q) def= {(p, q) ∈ E : p /∈ Q, q ∈ Q} .
+
+(23)
+
+The Courant-Fischer theorem for generalized eigenvalue prob-
+lems allows ﬁnding dominant eigenvalues and eigenvectors by
+solving the following optimization task:
+
+λmax = max
+
+|x|(cid:54)=0
+
+x(cid:62) 1=0
+
+x(cid:62)LGx
+x(cid:62)LP x
+
+≥ max
+
+|x|(cid:54)=0
+
+x(p)∈{0,1}
+
+x(cid:62)LGx
+x(cid:62)LP x
+
+= max
+
+|∂G (Q)|
+|∂P (Q)| ,
+
+(24)
+
+where 1 ∈ RV is the all-one vector, and
+
+x(cid:62)LGx = |∂G (Q)|, x(cid:62)LP x = |∂P (Q)|.
+
+(25)
+
+Then (24) indicates that ﬁnding the dominant generalized
+eigenvector would be quite similar to ﬁnding Q such that
+|∂P (Q)| or the ratio of the boundary sizes in the original graph
+G and subgraph P is maximized. As a result, λmax = λ1
+becomes the upper bound of the largest mismatch in boundary
+(cut) size between G and P . Fig. 7 shows the connection
+between the dominant generalized eigenvalue/eigenvector and
+the largest subgraph mismatch.
+
+|∂G (Q)|
+
+D. Problem Formulation
+Consequently, once Q or ∂G (Q) is found using dominant
+generalized eigenvectors, we can recover a small number of
+edges from ∂G (Q) to P in order to dramatically reduce
+the maximum mismatch (λ1 ), and thus improve the spectral
+approximation of P . To this end, we propose the following
+problem formulation for spectral graph sparsiﬁcation:
+
+min
+
+LP
+
+(cid:40)
+
+max
+
+x
+
+(cid:18) x(cid:62)LGx
+x(cid:62)LP x
+
+(cid:19)
+
++ β (cid:107)LP (cid:107)1
+
+(cid:41)
+
+,
+
+(26)
+
+6
+
+Fig. 7. An alternative view based on Courant-Fischer theorem.
+
+where LP denotes Laplacian matrix of the subgraph P ,
+x(cid:62)1 = 0 and |x|
+(cid:54)= 0. The above formulation aims to
+minimize the largest generalized eigenvalue by adding the
+minimum amount of edges into the subgraph P , which can
+be solved iteratively by repeating the following two steps:
+1) computing the generalized eigenvector corresponding to
+the largest (dominant) eigenvalue, and 2) identify the most
+spectrally-critical off-tree edges that can mostly decrease the
+dominant eigenvalue(s) and add them into the subgraph P .
+Once the dominant eigenvalue is small enough (e.g., λ = 10),
+P will be very spectrally similar to the original graph G.
+However, computing the largest eigenvalue and its eigenvec-
+tor can sometimes be too costly for large-scale graph Laplacian
+matrices, even when state-of-the-art eigenvalue decomposition
+methods are adopted [23]. Additionally, there can still be too
+many eigenvalues to be ﬁxed in order to achieve a desired
+spectral similarity level (relative condition number).
+
+E. Edge Embedding with Approximate Dominant Eigenvector
+
+To more efﬁciently identify critical off-tree edges, approx-
+imate dominant generalized eigenvectors and eigenvalues of
+(4) can be exploited. To this end, a generalized power iteration
+procedure that can be computed in nearly-linear time has been
+proposed in [11]. In the rest of this paper, we assume that a
+very small positive diagonal element is added to a randomly
+selected row of the graph Laplacian matrix to convert the
+Laplacian matrix into a full-rank matrix. We express an initial
+random vector h0 that is orthogonal to the all-one vector using
+generalized eigenvectors ui as follows:
+
+h0 =
+
+n(cid:88)
+
+i=1
+
+αiui ,
+
+(27)
+
+where 1(cid:62)h0 = 0. Applying t-step power iterations to the
+generalized eigenvalue problem, we have
+
+ht = (cid:0)L−1
+
+P LG
+
+(cid:1)t
+
+h0 =
+
+n(cid:88)
+
+i=1
+
+αiλt
+i ui .
+
+(28)
+
+Given the vector ht computed by (28), the Laplacian quadratic
+(cid:62)
+form function QδLP (ht ) = ht
+δLPht can be expanded as:
+
+QδLP (ht ) = h(cid:62)
+(cid:0)αiλt
+t δLPht =
+
+(cid:18) n(cid:80)
+n(cid:80)
+
+i=1
+
+αiλt
+
+i ui
+
+(cid:19)(cid:62)
+
+δLP
+j u(cid:62)
+j δLPui .
+
+(cid:32) n(cid:80)
+
+j=1
+
+αj λt
+
+j uj
+
+(cid:33)
+
+=
+
+n(cid:80)
+
+i=1
+
+i
+
+(cid:1)2
+
+u(cid:62)
+
+i δLPui +
+
+i=1
+
+n(cid:80)
+(cid:32) n(cid:88)
+
+j=1,j(cid:54)=i
+
+αiαjλt
+
+i λt
+
+(29)
+
+Substituting (16) into (29), QδLP (ht ) becomes:
+
+QδLP (ht ) =
+
+(cid:88)
+(cid:88)
+
+(p,q)∈E\Es
+
+ωp,q
+
+i=1
+
+i u(cid:62)
+αiλt
+
+i ep,q
+
+(cid:33)2
+
+=
+
+(p,q)∈E\Es
+
+ωp,q v2
+p,q ,
+
+(30)
+
+which indicates that an off-tree edge with greater |vp,q | or
+Joule heat for t > 0 will be a more spectrally-critical off-
+tree edge that is more likely to signiﬁcantly inﬂuence large
+generalized eigenvalues. Expanding (30) leads to:
+(cid:0)u(cid:62)
+
+QδLP (ht ) =
+
+n(cid:80)
+
+i=1
+
+α2
+
+i λ2t
+i
+
+(cid:80)
+
+(p,q)∈E\Es
+ωp,q ui
+
+ωp,q
+
+i ep,q
+
+(cid:1)2
+
++
+
+n(cid:80)
+
+i=1
+
+n(cid:80)
+
+j=1,j (cid:54)=i
+
+αiαj λt
+
+i λt
+j
+
+(cid:80)
+
+(p,q)∈E\Es
+
+(cid:62)ep,qu(cid:62)
+
+j ep,q .
+
+(31)
+
+If we further deﬁne:
+
+δLP,max = LG − LP ,
+
+(32)
+
+which can be considered as an extreme-case Laplacian matrix
+that includes all off-tree edges that belong to the original graph
+G but not the subgraph P , then the following equation holds:
+
+n(cid:80)
+n(cid:80)
+
+i=1
+
+n(cid:80)
+n(cid:80)
+
+j=1,j (cid:54)=i
+
+αiαj λt
+
+i λt
+j
+
+(cid:80)
+
+(p,q)∈E\Es
+
+wp,q u(cid:62)
+j u(cid:62)
+i (LG − LP )uj = 0,
+
+i ep,qu(cid:62)
+j ep,q =
+
+i=1
+
+j=1,j (cid:54)=i
+
+αiαj λt
+
+i λt
+
+(33)
+which leads to the edge-based expansion of the quadratic form
+for δLP,max as follows:
+(cid:0)u(cid:62)
+(34)
+It is obvious that (30), or (34) will allow ranking each off-
+tree edge according to its “spectral-criticality” level. (34) also
+indicates that adding all off-tree edges with nonzero Joule
+heat values back to P will immediately bring all generalized
+eigenvalues to 1. It should be noted that the required number
+of generalized power iterations can be rather small (e.g. t = 2)
+in practice to observe good result.
+
+QδLP,max (xt ) = x(cid:62)
+t δLP,maxxt =
+
+n(cid:80)
+(cid:1)2
+
+i=1
+i ep,q
+
+(cid:0)αiλt
+.
+
+i
+
+(cid:1)2
+
+(λi − 1)
+
+= (cid:80)
+
+(p,q)∈E\Es
+
+wp,q
+
+n(cid:80)
+
+i=1
+
+α2
+
+i λ2t
+i
+
+F. Spectrally-unique Off-tree Edges
+Deﬁne a spectrally-unique off-tree edge (pi , qi ) to be the
+off-tree edge that can completely and only impact one large
+(dominant) generalized eigenvalue λi , though each edge will
+usually inﬂuence more than one eigenvalues and eigenvectors
+
+max1cuts in GmaCxourantFischer tmismatch iheorem for generalized eigenvaluesmaxmaxmin Pcuts nin PTGTxPxLxxLx(cid:79)(cid:32)(cid:159)(cid:159)(cid:16)(cid:32)Graph GSubgraph P7
+
+according to (34). Then the following truncated expansion of
+the Laplacian quadratic form can be obtained when consid-
+ering the top k most dominant yet spectrally-unique off-tree
+(cid:0)u(cid:62)
+edges for ﬁxing the top k largest eigenvalues:
+
+QδLP,max (xt ) ≈ k(cid:80)
+i=1
+
+wpi ,qi α2
+i λ2t
+i
+
+i epi ,qi
+
+(cid:1)2
+
+=
+
+k(cid:80)
+
+i=1
+
+α2
+
+i λ2t
+
+i (λi − 1),
+
+(35)
+
+where we should be able to ﬁnd γi (cid:54)= 0 such that:
+
+epi ,qi = γiLPui ,
+
+(36)
+
+while the following will also be satisﬁed:
+u(cid:62)
+
+j epi ,qi =
+QδLP,max (xt ) ≈ k(cid:88)
+i=1
+
+(cid:26) γi , i = j,
+0, i (cid:54)= j.
+
+(37)
+
+Since each of the top k off-tree edges can only ﬁx one large
+eigenvalue, the following can be obtained based on (35):
+
+wpi ,qi α2
+i λ2t
+i γ 2
+
+i =
+
+k(cid:88)
+
+i=1
+
+α2
+
+i λ2t
+
+i (λi − 1).
+
+(38)
+Obviously, for random coefﬁcients αi , the following must be
+satisﬁed for a spectrally-unique off-tree edge:
+
+wpi ,qi γ 2
+
+i = λi − 1.
+
+(39)
+Consequently, if there is an off-tree edge (pi , qi ) with weight
+wpi ,qi that satisﬁes:
+
+epi − eqi = ±
+
+(cid:115)
+
+λi − 1
+
+wpi ,qi
+
+LPui ,
+
+(40)
+
+adding this off-tree edge back to the spanning tree will
+completely ﬁx the corresponding eigenvalue λi . Then the
+effective resistance of edge (pi , qi ) in P becomes:
+
+Reﬀ
+ei
+pi ,qi
+QδLP,max (ht ) ≈ k(cid:88)
+i=1
+
+= e(cid:62)
+
+L+
+
+Pepi ,qi
+
+i u(cid:62)
+= γ 2
+i LPui = γ 2
+i ,
+
+(41)
+
+which immediately leads to:
+
+α2
+
+i λ2t
+i wpi ,qi Reﬀ
+ei
+
+≈ k(cid:88)
+
+i=1
+
+α2
+
+i λ2t+1
+i
+
+.
+
+(42)
+
+Since the stretch of off-tree edge (pi , qi ) is computed by
+ei , (42) also indicates that stP (ei ) ≈
+λi holds for spectrally-unique off-tree edges. Consequently,
+the key off-tree edges identiﬁed by (34) or (42) will have the
+largest stretch values and therefore most signiﬁcantly impact
+the largest eigenvalues of L+
+PLG . (42) also can be considered
+as a randomized version of Trace(L+
+PLG ) that is further
+scaled up by a factor of λ2t
+i .
+
+stP (pi , qi ) = wpi ,qi Reﬀ
+
+G. Rank-One Update with A Spectrally-Unique Edge
+The updated generalized eigenvalue λ(cid:48)
+i after adding one
+spectrally-unique off-tree edge (pi , qi ) with weight wpi ,qi
+back to the spanning tree for ﬁxing eigenvalue λi can be
+derived based on the Sherman-Morrison Formula and Matrix
+Determinant Lemma. Deﬁne matrix AP to be:
+
+GL−1
+AP = L
+P L
+G ,
+
+1
+2
+
+1
+2
+
+(43)
+
+which has the same set of eigenvalues of matrix L−1
+P LG . After
+adding the off-tree edge (pi , qi ), the updated AP is denoted
+(cid:62) (cid:1)−1
+by A(cid:48)
+P that is expressed as:
+A(cid:48)
+
+P = L
+
+1
+2
+
+(cid:0)LP + wpi ,qi epi ,qi epi ,qi
+G
+= AP − wpi ,qi L
+G L
+L
+P L
+1+wpi ,qi e(cid:62)
+L
+
+L
+
+1
+2
+
+G
+
+1
+2
+
+−1
+
+P epi ,qi e(cid:62)
+1
+2
+pi ,qi
+G
+P epi ,qi =AP−vP v(cid:62)
+pi ,qi
+P
+
+−1
+
+−1
+
+.
+
+(44)
+
+where vector vP is deﬁned as:
+
+vP =
+
+√
+
+wpi ,qi L
+
+1
+2
+
+GL−1
+1 + wpi ,qi e(cid:62)
+L−1
+
+P epi ,qi
+
+(cid:113)
+
+pi ,qi
+
+P epi ,qi
+
+=
+
+γi
+
+√
+
+(cid:112)1 + wpi ,qi γ 2
+wpi ,qi L
+Gui
+i
+
+1
+2
+
+.
+
+(45)
+P can be
+
+The characteristic polynomial of A(cid:48)
+computed as follows:
+
+P = AP − vPv(cid:62)
+= det(xI − AP ) det (cid:0)I + (xI − AP )−1vPv(cid:62)
+(x) = pAP−vP v(cid:62)
+(x) = det(xI − AP + vPv(cid:62)
+P )
+(x) = pAP (x) (cid:0)1 + v(cid:62)
+P (xI − AP )−1vP
+
+pA(cid:48)
+
+P
+
+P
+
+P
+
+(cid:1) .
+(cid:1) .
+
+(46)
+
+According to Matrix Determinant Lemma, we have:
+
+pA(cid:48)
+
+P
+
+(47)
+
+Denoting zi for i = 1, ..., n the unit-length orthonormalized
+eigenvectors of matrix AP that correspond to eigenvalues λi
+(cid:33)−1
+respectively, we have:
+
+(xI − AP )−1 =
+
+(cid:32) n(cid:88)
+
+i=1
+
+(x − λi )ziz(cid:62)
+
+i
+
+=
+
+n(cid:88)
+(cid:33)
+
+i=1
+
+ziz(cid:62)
+x − λi
+
+i
+
+,
+
+(48)
+
+which leads to:
+
+pA(cid:48)
+
+P
+
+(x) = pAP (x)
+
+(cid:32)
+
+1 +
+
+n(cid:88)
+
+i=1
+
+(v(cid:62)
+x − λi
+
+P zi )2
+
+.
+
+(49)
+
+It has been shown in [2] that (49) indicates: 1) the latest
+eigenvalues after rank-one update will always be reduced if
+P zi )2 > 0; 2) the greater value of (v(cid:62)
+P zi )2 will result in
+greater reduction in λi . Therefore, if an off-tree edge satisﬁes
+P zi )2 >> 0 for multiple eigenvectors zi , adding this edge
+back to the spanning tree subgraph will substantially reduce
+multiple eigenvalues at the same time; on the other hand, a
+spectrally-unique off-tree edge will substantially reduce only
+one eigenvalue. It can be shown that:
+
+(v(cid:62)
+(v(cid:62)
+
+GL−1
+L
+P L
+
+1
+2
+
+1
+2
+
+G
+
+(cid:32)
+
+L
+Gui (cid:107)
+
+1
+2
+
+Gui
+
+(cid:107)L
+
+1
+2
+
+(cid:33)
+
+= λi
+
+(cid:32)
+
+L
+Gui(cid:107)
+
+1
+2
+
+Gui
+
+(cid:107)L
+
+1
+2
+
+(cid:33)
+
+= λizi ,
+
+(50)
+
+which indicates that vP is an eigenvector of matrix AP corre-
+sponding to the eigenvalue λi . Consequently, the characteristic
+polynomial of A(cid:48)
+P can be further simpliﬁed
+into the following form:
+
+P = AP − vPv(cid:62)
+
+pA(cid:48)
+
+P
+
+(x) = pAP (x)
+
+(cid:18)
+
+1 +
+
+(v(cid:62)
+x − λi
+
+P zi )2
+
+(cid:19)
+
+= pAP (x)
+
+(cid:18)
+
+1 +
+
+v(cid:62)
+
+P vP
+
+x − λi
+
+(cid:19)
+
+.
+
+(51)
+Therefore, the updated eigenvalue λ(cid:48)
+i after adding the off-tree
+edge can be computed by solving pA(cid:48)
+(x) = 0, which leads
+to:
+
+P
+
+λ(cid:48)
+
+i = λi − v(cid:62)
+P vP =
+
+λi
+
+1 + wpi ,qi γ 2
+i
+
+.
+
+(52)
+
+8
+
+λi − λ(cid:48)
+
+i
+
+.
+
+iγ 2
+i
+
+(53)
+
+For achieving the desired λ(cid:48)
+i after adding the off-tree edge, the
+edge weight should be set as:
+
+wpi ,qi =
+
+wpi ,qi = λi−1
+γ 2
+
+λ(cid:48)
+It can be shown that when the desired λ(cid:48)
+i = 1, we have
+, which is equivalent to (39). As a result,
+considering the nearly-worst case eigenvalue distribution λi ≤
+stP (G)/i shown in Fig. 5, a σ -similar spectral sparsiﬁer with
+) edges can be obtained in O(m)
+time using the proposed method when an initial low-stretch
+spanning tree is given.
+
+n − 1 + O( m log n log log n
+σ2
+
+i
+
+H. Algorithm Flow and Complexity
+The detailed algorithm ﬂow of the proposed spectral graph
+sparsiﬁcation approach has been summarized as follows:
+1) Extract a spanning tree subgraph (e.g. a scaled low-
+stretch spanning tree [1], [10]) from the original graph;
+2) Perform t-step generalized power iterations to compute
+xt with an initial random vector;
+3) Compute the spectral criticality of each edge based on
+the Laplacian quadratic form of δLP,max using (34);
+4) Rank each edge using its spectral criticality levels;
+5) Add a small portion of dissimilar off-tree edges back to
+the spanning tree to form the ultra-sparse spectral graph
+sparsiﬁer.
+It should be noted that the proposed spectral graph sparsiﬁ-
+cation approach allows to rank all off-tree edges according
+to their “spectral criticality” levels in a very efﬁcient and
+effective way. Compared to the state-of-the-art sampling-
+based approaches that rely on effective resistance calculations,
+the proposed method can achieve the very similar goal of
+ranking “spectrally critical” off-tree edges while the overall
+computational complexity has been dramatically reduced.
+The complexity of the proposed spectral perturbation based
+approach can be analyzed by considering two key steps: (a)
+spanning tree construction based on the original graph, and (b)
+ultra-sparsiﬁer construction based on the spanning tree. Recent
+research has shown that low-stretch spanning trees in (a) can
+be constructed in nearly-linear time [1], [10]. For instance, the
+petal-decomposition algorithm requires O(m log n log log n)
+time to generate a low-stretch spanning tree with a total
+the t-step generalized
+power iterations in (b) can be achieved in linear time for a
+ﬁxed t since factorization of a tree-graph Laplacian matrix
+can be accomplished within linear O(m) time. Consequently,
+the overall complexity of the proposed spectral perturbation
+based sparsiﬁcation algorithm is almost linear.
+
+stretch of O(m log n log log n) [1];
+
+IV. S IM I LAR I TY-AWARE S PEC TRA L S PAR S I FICAT ION BY
+EDGE F I LT ER ING
+
+Although (34) and (42) provide a spectral ranking for each
+off-tree edge, it is not clear how many off-tree edges should
+be recovered to the spanning tree for achieving a desired
+spectral similarity level. To this end, we introduce a simple
+yet effective spectral off-tree edge ﬁltering scheme motivated
+by recent graph signal processing techniques [24].
+
+Fig. 8. The eigenvectors (vi ) of increasing eigenvalues (τi ) for a path graph.
+
+A. Spectral Sparsiﬁcation: A Low-Pass Filter on Graphs
+
+To more efﬁciently analyze signals on general undirected
+graphs, graph signal processing techniques have been exten-
+sively studied recently [24]. There is a clear analogy between
+traditional signal processing based on classical Fourier anal-
+ysis and graph signal processing: 1) the signals at different
+time points in classical Fourier analysis correspond to the
+signals at different nodes in an undirected graph; 2) the more
+slowly oscillating functions in time domain correspond to the
+graph Laplacian eigenvectors associated with lower eigenval-
+ues and more slowly varying (smoother) components across
+the graph. For example, the ﬁrst few nontrivial eigenvectors
+associated with the smallest non-zero eigenvalues of a path
+graph Laplacian have been illustrated in Fig. 8, where the
+increasing eigenvalues correspond to increasing oscillation
+frequencies in the line graph. A comprehensive review of
+fundamental signal processing operations, such as ﬁltering,
+translation, modulation, dilation, and down-sampling to the
+graph setting has been provided in [24].
+Spectral sparsiﬁcation aims to maintain a simplest sub-
+graph sufﬁcient for preserving the slowly-varying or “low-
+frequency” signals on graphs, which therefore can be regarded
+as a “low-pass” graph ﬁlter. In other words, such spectrally
+sparsiﬁed graphs will be able to preserve the eigenvectors
+associated with low eigenvalues more accurately than high
+eigenvalues, and thus will retain “low-frequency” graph signals
+sufﬁciently well, but not so well for highly-oscillating (signal)
+components due to the missing edges.
+In practice, preserving the spectral (structural) properties of
+the original graph within the spectral sparsiﬁer is key to design
+of many fast numerical and graph-related algorithms [5], [17],
+[25], [28]. For example, when using spectral sparsiﬁer as
+a preconditioner in preconditioned conjugate gradient (PCG)
+iterations, the convergence rate only depends on the spectral
+similarity (or relative condition number) for achieving a de-
+sired accuracy level, while in spectral graph partitioning and
+data clustering tasks only the ﬁrst few eigenvectors associated
+with the smallest nontrivial eigenvalues of graph Laplacian are
+needed [22], [26].
+
+“Resonant Frequency”v110(cid:87)(cid:32)v221(cid:87)(cid:87)(cid:33)v332(cid:87)(cid:87)(cid:33)v443(cid:87)(cid:87)(cid:33)B. Off-Tree Edge Filtering with Joule Heat
+
+To only recover the off-tree edges that are most critical
+for achieving the desired spectral similarity level, we propose
+the following scheme for truncating spectrally-unique off-tree
+edges based on each edge’s Joule heat. For a spanning-tree
+preconditioner, since there will be at most k generalized eigen-
+values that are greater than stP (G)/k , the following simple
+yet nearly worst-case generalized eigenvalue distribution can
+be assumed:
+
+λi =
+
+2λmax
+
+i + 1
+
+=
+
+stP (G)
+i + 1
+
+, i ≥ 1.
+
+(54)
+
+To most economically select the top-k spectrally-unique off-
+tree edges that will dominantly impact
+the top-k largest
+generalized eigenvalues, the following sum of quadratic forms
+(Joule heat levels) can be computed based on (42) by perform-
+ing t-step generalized power iterations with r multiple random
+
+vectors ht,1 , ..., ht,r :
+
+QδLP,max (ht,1 , ..., ht,r ) ≈ r(cid:88)
+j=1
+
+k(cid:88)
+
+(αi,j )2
+
+i=1
+
+(cid:18) 2λmax
+i + 1
+
+(cid:19)2t+1
+
+.
+
+(55)
+The goal is to select top k spectrally-unique off-tree edges
+for ﬁxing the top k largest generalized eigenvalues such that
+the resulting upper bound of the relative condition number
+will become σ2 =
+, where ˜λmax and ˜λmin denote the
+largest and smallest eigenvalues of L+
+PLG after adding top-k
+spectrally-unique off-tree edges. Then we have:
+
+˜λmax
+˜λmin
+
+k = 2λmax /˜λmax − 1.
+
+(56)
+
+k,j ≈ r(cid:80)
+j=1
+
+When using multiple random vectors for computing (55), it is
+expected that
+1,j , which allows us to deﬁne
+the normalized edge Joule heat θk for the k-th spectrally-
+unique off-tree edge through the following simpliﬁcations:
+
+α2
+
+α2
+
+j=1
+
+r(cid:80)
+ r(cid:80)
+r(cid:80)
+
+j=1
+
+j=1
+
+
+
+(cid:32) ˜λmax
+
+λmax
+
+α2
+
+k,j
+
+α2
+
+1,j
+
+(cid:33)2t+1
+
+(cid:32)
+
+(cid:33)2t+1
+
+≈
+
+σ2 ˜λmin
+λmax
+
+θk =
+
+heatλk
+heatλ1
+
+=
+
+(57)
+The key idea of the proposed similarity-aware spectral sparsiﬁ-
+cation is to leverage the normalized Joule heat (57) as a thresh-
+old for ﬁltering off-tree edges: only the off-tree edges with
+normalized Joule heat values greater than θk will be selected
+for inclusion into the spanning tree for achieving the desired
+spectral similarity (σ ) level. Although the above scheme is
+derived for ﬁltering spectrally-unique off-tree edges, general
+off-tree edges also can be ﬁltered using similar strategies.
+Since adding the off-tree edges with largest Joule heat to the
+subgraph will mainly impact the largest generalized eigenval-
+ues but not the smallest ones, we will assume ˜λmin ≈ λmin ,
+and use the following edge truncation scheme for ﬁltering
+general off-tree edges: the off-tree edge (p, q) will be included
+
+9
+
+(cid:19)2t+1
+
+(cid:18) σ2λmin
+λmax
+
+into the sparsiﬁer if its normalized Joule heat value is greater
+than the threshold determined by:
+
+heat(p,q)
+
+≥ θσ ≈
+
+θ(p,q) =
+
+heatmax
+
+(58)
+where θσ denotes the threshold for achieving the σ−spectral
+similarity in the sparsiﬁer, and heatmax denotes the maximum
+Joule heat of all off-tree edges computed by (34) with multiple
+initial random vectors.
+
+,
+
+PLG .
+
+C. Estimation of Extreme Eigenvalues
+To achieve the above spectral off-tree edge ﬁltering scheme,
+we need to compute θσ in (58) that further requires to
+estimate the extreme eigenvalues λmax and λmin of L+
+In this work, we propose the following efﬁcient methods for
+computing these extreme generalized eigenvalues.
+1) Estimating λmax via Power Iterations : Since general-
+ized power iterations converge at a geometric rate determined
+by the separation of the two largest generalized eigenvalues
+λmax = λ1 > λ2 , the error of the estimated eigenvalue will
+decrease quickly when |λ2/λ1 | is small. It has been shown
+that the largest eigenvalues of L+
+PLG are well separated from
+each other [29], which thus leads to very fast convergence
+of generalized power iterations for estimating λ1 . To achieve
+scalable performance of power iterations, we can adopt re-
+cent graph-theoretic algebraic multigrid (AMG) methods for
+solving the sparsiﬁed Laplacian matrix LP [19], [37].
+2) Estimating λmin via Node Coloring: Since the small-
+est eigenvalues of L+
+PLG are crowded together [29], using
+(shifted) inverse power iterations may not be efﬁcient due
+to the extremely slow convergence rate. To the extent of
+our knowledge, none of existing eigenvalue decomposition
+methods can efﬁciently compute λmin .
+This work exploits the following Courant-Fischer theorem
+for generalized eigenvalue problems:
+
+λmin = min|x|(cid:54)=0
+
+x(cid:62)LGx
+x(cid:62)LPx
+
+,
+
+(59)
+
+.
+
+where x is also required to be orthogonal to the all-one vector.
+(59) indicates that if we can ﬁnd a vector x that minimizes
+the ratio between the quadratic forms of the original and
+sparsiﬁed Laplacians, λmin can be subsequently computed.
+By restricting the values in x to be only 1 or 0, which can be
+considered as assigning one of the two colors to each node in
+graphs G and P , the following simpliﬁcations can be made:
+
+x(p) (cid:54)=x(q),(p,q)∈E
+
+λmin ≤ min|x|(cid:54)=0
+
+x(i)∈{0,1}
+
+x(cid:62)LGx
+x(cid:62)LPx
+
+= min|x|(cid:54)=0
+
+x(i)∈{0,1}
+
+x(p)(cid:54)=x(q),(p,q)∈Es
+
+(60)
+which will always allow estimating an upper bound for λmin .
+To this end, we ﬁrst initialize all nodes with 0 value and
+subsequently try to ﬁnd a node p such that the ratio between
+quadratic forms can be minimized:
+
+wpq
+
+,
+
+wpq
+
+(cid:80)
+(cid:80)
+
+λmin ≤ min
+
+p∈V
+
+LG (p, p)
+LP (p, p)
+
+.
+
+(61)
+
+The above procedure for estimating λmin only requires ﬁnding
+the node with the smallest node degree ratio and thus can be
+easily implemented and efﬁciently performed for even very
+large graph problems. Our results for real-world graphs show
+that the proposed method is highly efﬁcient and can very well
+estimate the smallest generalized eigenvalues when compared
+with existing generalized eigenvalue methods [23].
+
+D. Iterative Sparsiﬁcation for Ill-Conditioned Problems
+To achieve more effective edge ﬁltering for similarity-aware
+spectral graph sparsiﬁcation, we propose to iteratively recover
+off-tree edges to the sparsiﬁer through an incremental graph
+densiﬁcation procedure. Each densiﬁcation iteration adds a
+small portion of “ﬁltered” off-tree edges to the latest spec-
+tral sparsiﬁer, while the spectral similarity is estimated to
+determine if more off-tree edges are needed. The i-th graph
+densiﬁcation iteration includes the following steps:
+1) Update the subgraph Laplacian matrix LP as well as
+its solver by leveraging recent graph-theoretic algebraic
+multigrid methods [19], [37];
+2) Estimate the spectral similarity by computing λmax and
+λmin using the methods described in Section IV-C;
+3) If the spectral similarity is not satisfactory, continue with
+the following steps; otherwise, terminate the subgraph
+densiﬁcation procedure.
+4) Perform t-step generalized power
+iterations with
+O(log |V |) random vectors to compute the sum of
+Laplacian quadratic forms (55);
+5) Rank and ﬁlter each off-tree edge according to its
+normalized Joule heat value using the threshold θσ in
+(58);
+6) Check the similarity of each selected off-tree edge and
+only add dissimilar edges to the latest sparsiﬁer.
+
+V. EX PER IM EN TA L RE SU LT S
+
+The proposed spectral perturbation based spectral graph
+sparsiﬁcation method (GRASS) has been implemented in
+C ++ and available for download 2 . The proposed spectral
+graph sparsiﬁcation algorithm allows developing nearly-linear
+time algorithms for tackling SDD or SDD-like sparse matrix
+problems, spectral graph partitioning problems, as well as
+graph-based regression problems [13], [17], [28], [33], [38].
+In this paper, a sparse SDD matrix algorithm has been im-
+plemented and compared to the state-of-the-art sparse matrix
+solver, Cholmod [7]. Test cases demonstrated in this paper
+cover a great variety of sparse SDD matrix problems obtained
+from realistic VLSI power grid problems [20], [31], and
+the sparse matrix collection from the University of Florida
+that includes integrated circuit simulation problems, three-
+dimensional thermal analysis problems, ﬁnite-element analy-
+sis, etc [8]. Additionally, a spectral graph partitioning engine
+is also implemented, which has been dramatically accelerated
+by taking advantage of the proposed spectral sparsiﬁcation
+approach. All experiments are performed using a single CPU
+
+2 https://sites.google.com/mtu.edu/zhuofeng-graphspar
+
+10
+
+R E SU LT S O F S PAR S E SDD MATR IX SOLVER ( S P EC TRA L S PAR S I FICAT ION
+W I TH 5% TO 10%|V | EX TRA O FF - TR E E EDG E S ) FOR TE ST CA S E S IN [20 ] .
+
+TABLE I
+
+CKTs
+ibmpg3
+ibmpg4
+ibmpg5
+ibmpg6
+ibmpg7
+ibmpg8
+
+|V |
+
+0.9E6
+1.0E6
+1.1E6
+1.7E6
+1.5E6
+1.5E6
+
+NNZ
+3.7E6
+4.1E6
+4.3E6
+6.6E6
+6.2E6
+6.2E6
+
+TD (MD )
+
+TI (MI ) NI
+
+15.0s (0.8G)
+18.3s (1.0G)
+12.7s (0.6G)
+18.3s (0.9G)
+27.2s (1.3G)
+18.7s (1.3G)
+
+1.2s (0.2G)
+1.3s (0.2G)
+1.3s (0.2G)
+2.5s (0.3G)
+2.3s (0.3G)
+2.3s (0.3G)
+
+13
+12
+12
+13
+13
+13
+
+λ1
+λ1,f in
+
+37X
+18X
+2,826X
+173X
+177X
+120X
+
+N ST
+I
+NI
+
+6X
+4X
+50X
+13X
+13X
+11X
+
+R E SU LT S O F S PAR S E SDD MATR IX SOLVER ( S P EC TRA L S PAR S I FICAT ION
+W I TH 1% TO 2%|V | EX TRA O FF - TR E E EDG E S ) FOR TE S T CA S E S IN [31 ] .
+
+TABLE II
+
+|V |
+
+CKTs
+thupg1 5.0E6
+thupg2 8.9E6
+thupg3 1.2E7
+thupg4 1.5E7
+thupg5 1.9E7
+thupg6 2.4E7
+thupg7 2.8E7
+thupg8 4.0E7
+
+NNZ
+2.1E7
+3.9E7
+5.1E7
+6.6E7
+8.5E7
+1.1E8
+1.2E8
+1.8E8
+
+TD (MD )
+
+TI (MI ) NI
+
+75s (4.0G)
+158s (7.6G)
+250s (10.0G)
+N/A
+N/A
+N/A
+N/A
+N/A
+
+10s (0.8G)
+21s (1.5G)
+25s (1.9G)
+36s (2.5G)
+47s (3.1G)
+62s (3.8G)
+70s (4.6G)
+110s (6.5G)
+
+27
+32
+32
+32
+33
+34
+34
+34
+
+λ1
+λ1,f in
+
+N ST
+I
+NI
+
+34,047X
+185X
+39,426X
+199X
+101,052X 318X
+97,550X
+312X
+136,678X 370X
+108,898X 330X
+87,463X
+296X
+368,898X 607X
+
+core of a computing platform running 64-bit RHEW 6.0 with
+a 2.67GHz 12-core CPU.
+
+A. A Scalable Iterative Solver For Power Grid Analysis
+The spectral sparsiﬁer obtained by the proposed algorithm
+(without weight re-scaling for the spanning tree and off-tree
+edges) is leveraged as a preconditioner in a PCG solver.
+The preconditioner is factorized by the same Cholmod solver
+[7]. The right-hand-side (RHS) input vector b is generated
+randomly and the solver is set to converge to an accuracy
+level ||Ax − b|| < 10−3 ||b|| for all test cases. “|V |” denotes
+the number of nodes, “NNZ” denotes the number of nonzero
+elements in the original matrix, “ TD ” (“ TI ”) denotes the
+total solution time including both the matrix factorization and
+resolving steps of the direct (iterative) solver, “ MD ” (“ MI ”)
+denotes the memory cost for sparse matrix factorizations,
+“NI ” denotes the number of iterations for the PCG solver
+to converge to the required accuracy level,
+calculates
+the reduction rate of the largest eigenvalue using the proposed
+spectral sparsiﬁcation approach when compared to the initial
+spanning tree preconditioner, and N ST
+is the ratio of required
+iteration numbers using the initial spanning-tree precondition-
+ers and the new subgraph preconditioners.
+Accurate analysis of on-chip power grids is indispens-
+able for designing modern VLSI chips since it can help
+reveal critical design issues related to power supply noise,
+electromigration, etc. However, modern power grid designs
+can integrate billions of components, which results in super-
+linear runtime/memory cost when using direct solution meth-
+ods. The proposed spectral sparsiﬁcation technique allows to
+develop nearly-linear time iterative solvers for power grid
+analysis problems. Additionally, even more general transistor-
+level SPICE-accurate circuit simulations can potentially ben-
+eﬁt from the proposed spectral graph sparsiﬁcation algorithm
+
+λ1,f in
+
+λ1
+
+I
+
+NI
+
+R E SU LT S O F S PAR S E SDD MATR IX SOLVER ( S P EC TRA L S PAR S I FICAT ION
+W I TH 5% TO 10%|V | EX TRA O FF - TR E E EDG E S ) FOR TE ST CA S E S IN [8 ] .
+
+TABLE III
+
+11
+
+|V |
+
+Test Cases
+G3 circuit
+1.6E6
+thermal2
+1.2E6
+ecology2
+1.0E6
+tmt sym
+0.7E6
+paraboli fem 0.5E6
+
+NNZ
+7.7E6
+8.6E6
+5.0E6
+5.1E6
+3.7E6
+
+TD (MD )
+
+TI (MI ) NI
+
+45.1s (2.2G) 5.2s (0.3G)
+16.0s (0.9G) 4.4s (0.2G)
+12.5s (0.7G) 3.6s (0.2G)
+11.8s (0.6G) 2.2s (0.1G)
+6.3s (0.5G)
+1.2s (0.1G)
+
+37
+34
+47
+30
+25
+
+λ1
+λ1,f in
+
+N ST
+I
+NI
+
+45,897X 214X
+1,582X
+40X
+1,728X
+42X
+796X
+28X
+120X
+11X
+
+R E SU LT S O F EXTR EM E E IGENVA LUE E ST IMAT ION S .
+
+TABLE IV
+
+Test Cases λmin ˜λmin λmin λmax ˜λmax λmax
+
+fe rotor
+pdb1HYS
+bcsstk36
+brack2
+raefsky3
+
+1.34
+1.71
+1.18
+1.15
+1.13
+
+1.40
+1.89
+1.27
+1.20
+1.25
+
+4.4% 120.9 116.7
+10.5% 120.6 113.2
+7.6% 96.0
+92.4
+4.3% 92.6
+90.3
+10.5% 84.4
+82.7
+
+3.5%
+6.1%
+3.8%
+2.5%
+2.0%
+
+[13], [32], [33]. Table I and Table II demonstrate the DC
+analysis results of IBM and THU power grid design bench-
+marks [20], [31], showing nearly-linear runtime/memory cost.
+Similar runtime scalability is observed from Table III for
+solving sparse matrices from [8]. In all test cases, the proposed
+spectral graph sparsiﬁcation algorithm can ﬁnd tree-like ultra-
+sparsiﬁers with high spectral similarity. For example, we
+achieve κ(LG , LP ) ≈ 16 (σ ≈ 4), for all IBM power grid
+test cases, which allows to solve the sparse matrices within
+just a small number of PCG iterations (e.g. NI < 14).
+Our results show that the proposed method can extract the
+whole spectral sparsiﬁer (spanning tree and ultra-sparsiﬁer) in
+nearly-linear time, as shown in Fig. 13. It should be noted that
+each spectral sparsiﬁer needs to be extracted once and can be
+reused or incrementally updated many times [14], [34].
+
+B. Estimation of Extreme Eigenvalues
+In Table IV, the extreme generalized eigenvalues (˜λmin and
+˜λmax ) estimated by the proposed methods (Section IV-C) are
+compared with the ones (λmin and λmax ) computed by the
+“eigs” function in Matlab for sparse matrices in [8], while
+the relative errors (λmin and λmax ) are also shown. ˜λmax is
+estimated using less than ten generalized power iterations.
+
+C. Spectral Ranking of Off-tree Edges
+We illustrate the results of spectral edge ranking and ﬁl-
+tering according to Joule heat levels computed by one-step
+generalized power iteration using (34) in Fig. 9 for two sparse
+matrices in [8]. The thresholds of normalized edge Joule heat
+values required for spectral edge ﬁltering are labeled using
+red dash lines. It is observed in Fig. 9 there is a sharp change
+of the top normalized edge Joule heat values, which indicates
+that there are not many large eigenvalues of L+
+PLG in both
+cases and agrees well with the prior theoretical analysis [29].
+
+We also demonstrate the results of Joule heat levels (spectral
+criticality) of off-tree edges computed by (34) for a random
+
+Fig. 9. Spectral edge ranking and ﬁltering by normalized Joule heat of off-
+tree edges for G2 circuit (left) and T hermal1 (right) test cases [8] with
+top off-tree edges highlighted in red rectangles.
+
+√
+
+√
+
+n × √
+
+vector using one-step generalized power iteration (t = 1) for a
+“hair-comb” spanning tree shown in Fig. 10. It is not difﬁcult
+to show that such a spanning tree can not well match the top
+part of the original 2D grid, so the Joule heat levels of off-
+tree edges at the top should be much greater than the ones
+at the bottom part. In fact, it has been shown that the “hair-
+comb” spanning tree for a
+n 2D mesh will have a total
+stretch of Θ(n
+n) that is mainly contributed by the off-tree
+edges with largest stretch values near the top part of the mesh
+grid [21]. Using the proposed similarity-aware spectral graph
+sparsiﬁcation framework, we are able to efﬁciently identify
+and recover the most spectrally-critical off-tree edges, thereby
+dramatically reducing the largest generalized eigenvalues. For
+example,
+the “hair-comb” spanning tree of a 200 × 200
+mesh grid can be dramatically improved in terms of spectral
+similarity by recovering top 400 spectrally-critical off-tree
+edges: σ2 is reduced from about 64, 000 to about 100 (640×
+reduction), which can also be indicated by the Joule heat
+distributions before and after adding these off-tree edges as
+illustrated in Fig. 10.
+
+D. Preservation of Long-Range Effects in the Sparsiﬁer
+The similarity-aware spectral sparsiﬁer extracted using the
+proposed framework will effectively preserve low-frequency
+graph signals or long-range effects due to the good preserva-
+tion of graph spectral (structural or global) properties. As an
+example shown in Fig. 11, the responses of the original on-
+chip power grid and its spectrally sparsiﬁed grid (σ2 = 50) are
+obtained by solving Ax = b and ˜A˜x = b respectively, where
+A ( ˜A) denotes the original (sparsiﬁed) conductance matrix and
+b denotes a unit excitation right-hand-side (RHS) vector with
+only a single element being 1 and others being 0. Note that we
+applied a global edge scaling procedure [36] to the sparsiﬁed
+power grid network in order to match the original node-wise
+effective resistances in ˜A. If we consider the RHS vector b as
+the original input graph signal, and the voltage response vector
+x as the output after graph signal processing, the power grid
+system can be naturally regarded as a low-pass ﬁlter for graph
+signals. Consequently, the solutions obtained by solving the
+original and sparsiﬁed power grid problems using a unit exci-
+tation source can be understood as the impulse responses of
+low-pass ﬁlters commonly studied in classic Fourier analysis.
+
+G2_matrixThermal12500(cid:86)(cid:124)2100(cid:86)(cid:124)2500(cid:86)(cid:124)2100(cid:86)(cid:124)12
+
+Fig. 10. Joule heat distributions before (middle) and after (rightmost) adding off-tree edges to the “hair comb” spanning tree (leftmost).
+
+R E SU LT S O F I T ERAT IV E SDD MATR IX SOLVER .
+
+TABLE V
+
+|V |
+
+|E |
+
+Graphs
+G3 circuit
+1.6E6 3.0E6
+thermal2
+1.2E6 3.7E6
+ecology2
+1.0E6 2.0E6
+tmt sym
+0.7E6 2.2E6
+paraboli fem 0.5E6 1.6E6
+
+1.11
+1.14
+1.14
+1.21
+1.22
+
+21
+20
+20
+19
+18
+
+20s
+23s
+16s
+16s
+16s
+
+|E50 |
+|V | N50 T50
+
+|E200 |
+|V | N200 T200
+
+1.05
+1.06
+1.06
+1.14
+1.09
+
+37
+36
+40
+38
+38
+
+8s
+9s
+5s
+4s
+3s
+
+Fig. 11. Preservation of long range effects in the sparsiﬁer.
+
+Fig. 11 obviously indicates the good preservation of long range
+effects or low-frequency components on the spectral sparsiﬁer
+obtained using the proposed method.
+
+E. An SDD Matrix Solver with Similarity-Aware Sparsiﬁcation
+The spectral sparsiﬁer obtained by the proposed similarity-
+aware algorithm is also leveraged as a preconditioner in
+a PCG solver. The RHS input vector b is generated ran-
+domly and the solver is set to converge to an accuracy level
+||Ax − b|| < 10−3 ||b|| for all test cases. “|V |” and “|E |”
+denote the numbers of nodes and edges in the original graph,
+whereas “|Eσ2 |”, “Nσ2 ” and “Tσ2 ” denote the number of
+edges in the sparsiﬁer, the number of PCG iterations required
+for converging to the desired accuracy level, and the total time
+of graph sparsiﬁcation for achieving the spectral similarity of
+σ2 , respectively. As observed in all test cases, there are very
+clear trade-offs between the graph density, computation time,
+and spectral similarity for all spectral sparsiﬁers extracted
+using the proposed method: sparsiﬁers with higher spectral
+similarities (smaller σ2 ) allow converging to the required
+solution accuracy level in much fewer PCG iterations, but need
+to retain more edges in the subgraphs and thus require longer
+time to compute (sparsify).
+Similar runtime scalability is observed from Table V for
+solving sparse matrices from [8]. In all test cases, the proposed
+spectral graph sparsiﬁcation algorithm can ﬁnd tree-like ultra-
+sparsiﬁers with high spectral similarity.
+
+F. A Scalable Spectral Graph Partitioner
+It has been shown that by applying only a few inverse power
+iterations,
+the approximate Fiedler vector (uf ) that corre-
+
+sponds to the smallest nonzero eigenvalue of the (normalized)
+graph Laplacian matrix can be obtained for obtaining high-
+quality graph partitioning solution [28]. Therefore, using the
+spectral sparsiﬁers computed by the proposed spectral sparsi-
+ﬁcation algorithm can immediately accelerate the PCG solver
+for inverse power iterations, leading to scalable performance
+for graph partitioning problems [28]. In fact, if the spectral
+sparsiﬁer is already a good approximation of the original
+graph, its Fiedler vector can be directly used for partitioning
+the original graph.
+We implement the accelerated spectral graph partitioning
+algorithm, and test it with sparse matrices in [8] and several
+2D mesh graphs synthesized with random edge weights. As
+shown in Table VI, the graphs associated with sparse matrices
+have been partitioned into two pieces using sign cut method
+[26] according to the approximate Fiedler vectors computed
+by a few steps of inverse power iterations. The direct solver [7]
+and the preconditioned iterative solver are invoked within each
+inverse power iteration for updating the approximate Fiedler
+vectors uf and ˜uf , respectively. |V+ |
+|V− | denotes the ratio of nodes
+assigned with positive and negative signs according to the
+approximate Fiedler vector, and “Rel.Err.” denotes the relative
+error of the proposed solver compared to the direct solver
+computed by |Vdif |
+, where |Vdif | denotes the number of nodes
+|V |
+with different signs in uf and ˜uf . “ TD ” (“ TI ”) and “MD ” (“
+MI ”) denote the total solution time (excluding sparsiﬁcation
+time) and memory cost of the direct (iterative) method. We
+extract sparsiﬁers with σ2 ≤ 200 for all test cases.
+It can be observed that the proposed preconditioned spectral
+graph partitioner only results in a very small portion of
+nodes (0.07% to 4%) assigned with different signs when
+comparing with the original spectral graph partitioner, while
+
+(cid:55)(cid:82)(cid:87)(cid:68)(cid:79)(cid:3)(cid:54)(cid:87)(cid:85)(cid:72)(cid:87)(cid:70)(cid:75)(cid:29)(cid:3)(cid:3)(cid:11)(cid:12)(cid:50)(cid:81)(cid:81)(cid:81)(cid:81)(cid:117)(cid:21)(cid:39)(cid:3)(cid:80)(cid:72)(cid:86)(cid:75)(cid:91)(cid:92)2001000010000.5120020010000100×10-3246020010601234500.20.40.60.811.2SolutionErrordue to unit excitationNode Index1052468101214-0.15-0.1-0.0500.050.10.150.2Large errors only occur near the excitation point13
+
+Fig. 13. Runtime scalability of the proposed similarity-aware spectral
+sparsiﬁcation approach.
+
+with 50GB memory, while it only takes a few minutes using
+the sparsiﬁed one.
+
+H. Nearly-linear Runtime Scalability
+Our results show that
+the proposed method can extract
+the similarity-aware spectral sparsiﬁer in nearly-linear time
+as shown in Fig. 13. It should be noted that each spectral
+sparsiﬁer needs to be extracted once and can be reused or
+incrementally updated many times [14], [34].
+
+V I . CONCLU S ION S
+
+This paper introduces a nearly-linear time yet practically
+efﬁcient spectral graph sparsiﬁcation algorithm that can be
+immediately leveraged to develop nearly-linear time sparse
+matrix solvers and spectral graph (data) partitioning (cluster-
+ing) algorithms. A novel spectral perturbation based approach
+is proposed for constructing an ultra-sparse spectral graph
+sparsiﬁer by adding the most spectrally-critical off-tree edges
+back to the initial spanning tree subgraph, so that key spectral
+properties of the original graph can be very well approximated.
+Additionally, we also propose a similarity-aware spectral graph
+sparsiﬁcation framework that leverages efﬁcient spectral off-
+tree edge embedding and ﬁltering schemes to construct spec-
+tral sparsiﬁers with guaranteed spectral similarity (relative con-
+dition number) level. An iterative graph densiﬁcation scheme
+is introduced to facilitate efﬁcient and effective ﬁltering of
+off-tree edges for highly ill-conditioned problems. Extensive
+experimental results show the runtime of the SDD solver and
+the spectral graph partitioner scales nearly-linearly with the
+graph size for a variety of large-scale, real-world problems,
+such as VLSI power grid analysis, circuit simulation, ﬁnite
+element problems, transportation and social networks, etc. For
+instance, a sparse matrix with 40 million unknowns and 180
+million nonzeros can be solved within two minutes using a
+single CPU core and about 6GB memory.
+
+V I I . ACKNOW LEDGM ENT S
+
+This work is supported in part by the National Science
+Foundation under Grants CCF-1350206 (CAREER), CCF-
+
+Fig. 12. The approximate Fiedler vector (left) and its magnitude error (right)
+for “mesh 1M”.
+
+R E SU LT S O F S PECTRAL GRA PH PART I T ION ING .
+
+TABLE VI
+
+|V |
+
+Test Cases
+G3 circuit
+1.6E6
+thermal2
+1.2E6
+ecology2
+1.0E6
+tmt sym
+0.7E6
+paraboli fem 0.5E6
+mesh 1M
+1.0E6
+mesh 4M
+4.5E6
+mesh 9M
+9.0E6
+
+|V+ |
+|V− |
+
+1.35
+1.00
+1.03
+0.99
+0.98
+1.01
+0.99
+0.99
+
+TD (MD )
+
+52.3s (2.3G)
+13.0s (0.9G)
+12.1s (0.7G)
+10.2s (0.6G)
+8.8s (0.4G)
+10.2s (0.7G)
+49.6s (3.0G)
+138.5s (6.9G)
+
+TI (MI )
+
+7.6s (0.3G)
+3.0s (0.2G)
+3.4s (0.2G)
+1.9s (0.1G)
+2.4s (0.1G)
+1.7s (0.2G)
+8.2s (0.7G)
+13.3s (1.5G)
+
+Rel.Err.
+2.2E-2
+6.8E-4
+8.9E-3
+2.1E-2
+3.9E-2
+3.3E-3
+7.5E-3
+7.8E-4
+
+achieving signiﬁcant runtime and memory savings (4-10×).
+The approximate Fiedler vector computed by our fast solver
+for the test case “mesh 1M” is also illustrated in Fig. 12,
+showing rather good agreement with the true solution.
+
+G. Sparsiﬁcation of Other Complex networks
+
+˜λ1
+
+T o
+
+eig (T s
+
+As shown in Table VII, a few ﬁnite element, protein, data
+and social networks have been spectrally sparsiﬁed to achieve
+σ2 ≈ 100 using the proposed similarity-aware method. “Ttot ”
+is the total time for extracting the sparsiﬁer, “ λ1
+” denotes the
+ratio of the largest generalized eigenvalues before and after
+adding off-tree edges into the spanning tree sparsiﬁer, and
+eig ) denotes the time for computing the ﬁrst ten eigen-
+vectors of the original (sparsiﬁed) graph Laplacians using the
+“eigs” function in Matlab. Since spectral sparsiﬁers can well
+approximate the spectral (structural) properties of the original
+graph, the sparsiﬁed graphs can be leveraged for accelerating
+many numerical and graph-related tasks. For example, spectral
+clustering (partitioning) using the original “RCV-80NN” (80-
+nearest-neighbor) graph can not be performed on our server
+
+R E SU LT S O F COM PL EX NE TWORK S PAR S I FICAT ION .
+
+TABLE VII
+
+Test Cases
+fe tooth
+appu
+coAuthorsDBLP
+auto
+RCV-80NN
+
+|V |
+
+7.8E4
+1.4E4
+3.0E5
+4.5E5
+1.9E5
+
+|E |
+
+4.5E5
+9.2E5
+1.0E6
+3.3E6
+1.2E7
+
+Ttot
+
+3.0s
+5.4s
+7.2s
+29.0s
+46.5s
+
+|E |
+|Es|
+
+λ1
+˜λ1
+
+5×
+3×
+5×
+
+8E 3
+25× 1E 4
+1E 3
+36× 3E 4
+5E 4
+
+T o
+
+eig (T s
+eig )
+
+14.5s (2.7s)
+2,400s (15s)
+2,047s (36s)
+N/A (54s)
+N/A (170s)
+
+Number of Nonzeros (millions)0246810Total Time (seconds)01020301318694 (SHF), CCF-1909105 (SHF), CCF-1618364 (SHF),
+and a gift money from Keysight Technologies.
+
+R E FERENC E S
+
+[1] I. Abraham and O. Neiman. Using petal-decompositions to build a low
+stretch spanning tree. In Proceedings of the forty-fourth annual ACM
+symposium on Theory of computing (STOC), pages 395–406. ACM,
+2012.
+[2] J. Batson, D. Spielman, and N. Srivastava. Twice-Ramanujan Sparsiﬁers.
+SIAM Journal on Computing, 41(6):1704–1721, 2012.
+[3] J. Batson, D. A. Spielman, N. Srivastava, and S.-H. Teng. Spectral
+sparsiﬁcation of graphs: theory and algorithms. Communications of the
+ACM, 56(8):87–94, 2013.
+[4] A. Bencz ´ur and D. Karger. Approximating st minimum cuts in ˜o (n2)
+time. In Proc. ACM STOC, pages 47–55, 1996.
+[5] P. Christiano, J. Kelner, A. Madry, D. Spielman, and S. Teng. Electrical
+ﬂows, laplacian systems, and faster approximation of maximum ﬂow in
+undirected graphs. In Proc. ACM STOC, pages 273–282, 2011.
+[6] M. B. Cohen, J. Kelner, J. Peebles, R. Peng, A. B. Rao, A. Sidford,
+and A. Vladu. Almost-linear-time algorithms for Markov chains and
+new spectral primitives for directed graphs. In Proceedings of the 49th
+Annual ACM SIGACT Symposium on Theory of Computing, pages 410–
+419. ACM, 2017.
+[7] T.
+Davis.
+CHOLMOD:
+sparse
+supernodal
+Cholesky
+factorization
+and
+update/downdate.
+[Online]. Available:
+http://www.cise.uﬂ.edu/research/sparse/cholmod/, 2008.
+[8] T. Davis and Y. Hu. The University of Florida sparse matrix collection.
+ACM Trans. on Math. Soft. (TOMS), 38(1):1, 2011.
+[9] M. Defferrard, X. Bresson, and P. Vandergheynst. Convolutional neural
+networks on graphs with fast localized spectral ﬁltering. In Advances
+in Neural Information Processing Systems, pages 3844–3852, 2016.
+[10] M. Elkin, Y. Emek, D. Spielman, and S. Teng. Lower-stretch spanning
+trees. SIAM Journal on Computing, 38(2):608–628, 2008.
+[11] Z. Feng. Spectral graph sparsiﬁcation in nearly-linear time leveraging
+efﬁcient spectral perturbation analysis. In Design Automation Confer-
+ence (DAC), 2016 53nd ACM/EDAC/IEEE, pages 1–6. IEEE, 2016.
+[12] Z. Feng. Similarity-aware spectral sparsiﬁcation by edge ﬁltering.
+In
+Design Automation Conference (DAC), 2018 55nd ACM/EDAC/IEEE,
+pages 1–6. IEEE, 2018.
+[13] L. Han, X. Zhao, and Z. Feng. An efﬁcient graph sparsiﬁcation approach
+to scalable harmonic balance (HB) analysis of strongly nonlinear RF
+circuits. In Proc. IEEE/ACM ICCAD, pages 494–499, 2013.
+[14] L. Han, X. Zhao, and Z. Feng. An Adaptive Graph Sparsiﬁcation
+Approach to Scalable Harmonic Balance Analysis of Strongly Nonlinear
+Post-Layout RF Circuits. Computer-Aided Design of Integrated Circuits
+and Systems, IEEE Transactions on, 34(2):173–185, 2015.
+[15] A. Kolla, Y. Makarychev, A. Saberi, and S. Teng. Subgraph sparsiﬁcation
+and nearly optimal ultrasparsiﬁers. In Proc. ACM STOC, pages 57–66,
+2010.
+[16] Y. Koren. On spectral graph drawing. In International Computing and
+Combinatorics Conference, pages 496–508. Springer, 2003.
+[17] I. Koutis, G. Miller, and R. Peng. Approaching Optimality for Solving
+SDD Linear Systems. In Proc. IEEE FOCS, pages 235–244, 2010.
+[18] Y. T. Lee and H. Sun. An SDP-based Algorithm for Linear-sized
+Spectral Sparsiﬁcation. In Proceedings of the 49th Annual ACM SIGACT
+Symposium on Theory of Computing, STOC 2017, pages 678–687, New
+York, NY, USA, 2017. ACM.
+[19] O. Livne and A. Brandt. Lean algebraic multigrid (LAMG): Fast
+graph Laplacian linear solver. SIAM Journal on Scientiﬁc Computing,
+34(4):B499–B522, 2012.
+[20] S. R. Nassif.
+IBM power grid benchmarks.
+http://dropzone.tamu.edu/ pli/PGBench/, 2008.
+[21] R. Peng. Algorithm Design Using Spectral Graph Theory. PhD thesis,
+Carnegie Mellon University, 2013.
+[22] R. Peng, H. Sun, and L. Zanetti. Partitioning well-clustered graphs:
+Spectral clustering works. In Proceedings of The 28th Conference on
+Learning Theory (COLT), pages 1423–1455, 2015.
+[23] Y. Saad. Numerical Methods for Large Eigenvalue Problems: Revised
+Edition, volume 66. Siam, 2011.
+[24] D. I. Shuman, S. K. Narang, P. Frossard, A. Ortega, and P. Van-
+dergheynst. The emerging ﬁeld of signal processing on graphs: Ex-
+tending high-dimensional data analysis to networks and other irregular
+domains. IEEE Signal Processing Magazine, 30(3):83–98, 2013.
+
+[Online]. Available:
+
+14
+
+[25] D. Spielman and N. Srivastava. Graph sparsiﬁcation by effective
+resistances. SIAM Journal on Computing, 40(6):1913–1926, 2011.
+[26] D. Spielman and S. Teng. Spectral partitioning works: Planar graphs
+and ﬁnite element meshes. In Foundations of Computer Science (FOCS),
+1996. Proceedings., 37th Annual Symposium on, pages 96–105. IEEE,
+1996.
+[27] D. Spielman and S. Teng. Spectral sparsiﬁcation of graphs. SIAM
+Journal on Computing, 40(4):981–1025, 2011.
+[28] D. Spielman and S. Teng. Nearly linear time algorithms for precondition-
+ing and solving symmetric, diagonally dominant linear systems. SIAM
+Journal on Matrix Analysis and Applications, 35(3):835–885, 2014.
+[29] D. Spielman and J. Woo. A note on preconditioning by low-stretch
+spanning trees. arXiv preprint arXiv:0903.2816, 2009.
+[30] S.-H. Teng. Scalable algorithms for data and network analysis. Foun-
+dations and Trends® in Theoretical Computer Science, 12(1–2):1–274,
+2016.
+[31] J. Yang and Z. Li. THU power grid benchmarks. [Online]. Available:
+http://tiger.cs.tsinghua.edu.cn/PGBench/.
+[32] X. Zhao and Z. Feng. GPSCP: a general-purpose support-circuit
+preconditioning approach to large-scale SPICE-accurate nonlinear circuit
+simulations. In Proc. IEEE/ACM ICCAD, pages 429–435, 2012.
+[33] X. Zhao and Z. Feng. Towards efﬁcient SPICE-accurate nonlinear
+circuit simulation with on-the-ﬂy support-circuit preconditioners.
+In
+Proc. IEEE/ACM DAC, pages 1119–1124, 2012.
+[34] X. Zhao, L. Han, and Z. Feng. A Performance-Guided Graph Sparsi-
+ﬁcation Approach to Scalable and Robust SPICE-Accurate Integrated
+Circuit Simulations. Computer-Aided Design of Integrated Circuits and
+Systems, IEEE Transactions on, 34(10):1639–1651, 2015.
+[35] Z. Zhao and Z. Feng. A spectral graph sparsiﬁcation approach to scalable
+vectorless power grid integrity veriﬁcation. In Proceedings of the 54th
+Annual Design Automation Conference 2017, page 68. ACM, 2017.
+[36] Z. Zhao and Z. Feng. Effective-resistance preserving spectral reduction
+of graphs.
+In Proceedings of the 56th Annual Design Automation
+Conference (DAC) 2019, page 109. ACM, 2019.
+[37] Z. Zhao, Y. Wang, and Z. Feng. SAMG: Sparsiﬁed Graph Theoretic
+Algebraic Multigrid for Solving Large Symmetric Diagonally Dominant
+(SDD) Matrices. In Proceedings of the 36th International Conference
+on Computer-Aided Design (ICCAD). ACM, 2017.
+[38] X. Zhu, Z. Ghahramani, and J. Lafferty. Semi-supervised learning using
+gaussian ﬁelds and harmonic functions. In Proc. of ICML, volume 3,
+pages 912–919, 2003.
+
+PLACE
+PHOTO
+HERE
+
+Zhuo Feng (S’03-M’10-SM’13) received the B.Eng.
+degree in information engineering from Xi’an Jiao-
+tong University, Xi’an, China, in 2003, the M.Eng.
+degree in electrical engineering from National Uni-
+versity of Singapore, Singapore, in 2005, and the
+Ph.D. degree in electrical and computer engineering
+from Texas A&M University, College Station, TX,
+in 2009. He is currently an associate professor at
+Stevens Institute of Technology. His research in-
+terests include high-performance spectral methods,
+very large scale integration (VLSI) and computer-aided design (CAD),
+scalable hardware and software systems, as well as heterogeneous parallel
+computing.
+He received a Faculty Early Career Development (CAREER) Award from
+the National Science Foundation (NSF) in 2014, a Best Paper Award from
+ACM/IEEE Design Automation Conference (DAC) in 2013, and two Best
+Paper Award Nominations from IEEE/ACM International Conference on
+Computer-Aided Design (ICCAD) in 2006 and 2008. He is the principle
+investigator of the CUDA Research Center at Michigan Technological Univer-
+sity named by Nvidia Corporation. He has served on the technical program
+committees of major international conferences related to electronic design
+automation (EDA), including DAC, ASP-DAC, ISQED, and VLSI-DAT, and
+has been a technical referee for many leading IEEE/ACM journals in VLSI and
+parallel computing. In 2016, he became a co-founder of LeapLinear Solutions
+to provide highly scalable software solutions for solving sparse matrices and
+analyzing graphs (networks) with billions of elements, based on the latest
+breakthroughs in spectral graph theory.
+
+

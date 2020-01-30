@@ -1,0 +1,2672 @@
+Safe Linear Stochastic Bandits
+
+School of Electrical and Computer Engineering, Cornell University, Ithaca, NY, USA
+
+Kia Khezeli and Eilyan Bitar
+
+{kk839,eyb5}@cornell.edu
+
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+L
+
+M
+
+.
+
+t
+
+a
+
+t
+
+s
+
+[
+
+1
+v
+1
+0
+5
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+Abstract
+
+We introduce the safe linear stochastic bandit framework—
+a generalization of linear stochastic bandits—where, in each
+stage, the learner is required to select an arm with an expected
+reward that is no less than a predetermined (safe) threshold
+with high probability. We assume that the learner initially has
+knowledge of an arm that is known to be safe, but not neces-
+sarily optimal. Leveraging on this assumption, we introduce a
+learning algorithm that systematically combines known safe
+arms with exploratory arms to safely expand the set of safe
+arms over time, while facilitating safe greedy exploitation in
+subsequent stages. In addition to ensuring the satisfaction of
+the safety constraint at every stage of play, the proposed algo-
+rithm is shown to exhibit an expected regret that is no more
+than O(
+T log(T )) after T stages of play.
+
+√
+
+1
+
+Introduction
+
+We investigate the role of safety in constraining the de-
+sign of learning algorithms within the classical framework
+of linear stochastic bandits (Dani, Hayes, and Kakade 2008;
+Rusmevichientong and Tsitsiklis 2010; Abbasi-Yadkori, P ´al,
+and Szepesv ´ari 2011). Speciﬁcally, we introduce a family
+of safe linear stochastic bandit problems where—in addi-
+tion to the typical goal of designing learning algorithms that
+minimize regret—we impose a constraint requiring that an
+algorithm’s stagewise expected reward remains above a pre-
+determined safety threshold with high probability at every
+stage of play. In the proposed framework, we assume that a
+“safe” baseline arm is initially known, and consider a class
+of safety thresholds that are deﬁned as ﬁxed cutbacks on the
+expected reward of the known baseline arm. Accordingly,
+an algorithm that is deemed to be safe cannot induce stage-
+wise rewards that dip below the baseline reward by more
+than a ﬁxed amount. Critically, the assumption of a known
+baseline arm—and the limited capacity for exploration im-
+plied by the class of safety thresholds considered—can be
+leveraged on to initially guide the exploration of allowable
+arms by playing combinations of the baseline arm and ex-
+ploratory arms in a manner that expands the set of safe arms
+over time, while simultaneously preserving safety at every
+stage of play.
+
+Copyright c(cid:13) 2020, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+
+There are a variety of real-world applications that might
+beneﬁt from the design of stagewise-safe online learning al-
+gorithms (Khezeli and Bitar 2017; Li et al. 2019; Sui et
+al. 2015). Most prominently, clinical trials have long been
+used as a motivating application for the multi-armed bandit
+(Berry and Pearson 1985) and linear bandit (Dani, Hayes,
+and Kakade 2008) frameworks. However, as pointed out by
+(Villar, Bowden, and Wason 2015): “Despite this apparent
+near-perfect ﬁt between a real-world problem and a mathe-
+matical theory, the MABP has yet to be applied to an actual
+clinical trial.” One could argue that the ability to provide a
+learning algorithm that is guaranteed to be stagewise safe
+has the potential to facilitate the utilization of bandit mod-
+els and algorithms in clinical trials. More concretely, con-
+sider the possibility of using the linear bandit framework to
+model the problem of optimizing a combination of d can-
+didate treatments for a speciﬁc health issue. In this context,
+an “arm” represents a mixture of treatments, the “unknown
+reward vector” encodes the effectiveness of each treatment,
+and the “reward” represents a patient’s response to a chosen
+mixture of treatments. In terms of the safety threshold, it is
+natural to select the “baseline arm” to be the (possibly sub-
+optimal) combination of treatments possessing the largest
+reward known to date. As it is clearly unethical to prescribe a
+treatment that may degrade a patient’s health, the stagewise
+safety constraint studied in this paper can be interpreted as a
+requirement that a patient’s response to a chosen treatment
+must be arbitrarily close to that of the baseline treatment, if
+not better.
+
+1.1 Contributions
+
+In this paper, we propose a new learning algorithm that is
+tailored to the safe linear bandit framework. The proposed
+algorithm, which we call the Safe Exploration and Greedy
+Exploitation (SEGE) algorithm, is shown to exhibit near-
+optimal expected regret, while guaranteeing the satisfaction
+of the proposed safety constraint at every stage of play.
+Initially, the SEGE algorithm performs safe exploration by
+combining the baseline arm with a random exploratory arm
+that is constrained by an “exploration budget” implied by
+the stagewise safety constraint. Over time, the proposed al-
+gorithm systematically expands the family of safe arms in
+this manner to include new safe arms with expected rewards
+that exceed the baseline reward level. Exploitation under
+
+ 
+ 
+ 
+ 
+ 
+ 
+the SEGE algorithm is based on the certainty equivalence
+principle. That is, the algorithm constructs an “estimate” of
+the unknown reward parameter, and selects an arm that is
+optimal for the given parameter estimate. The SEGE algo-
+rithm only plays the certainty equivalent (i.e., greedy) arm
+when it is safe—a condition that is determined according to
+a lower conﬁdence bound on its expected reward. Moreover,
+the proposed algorithm balances the trade-off between ex-
+ploration and exploitation by controlling the rate at which
+information is accumulated over time, as measured by the
+growth rate of the minimum eigenvalue of the so-called in-
+formation matrix.1 More speciﬁcally, the SEGE algorithm
+guarantees that the minimum eigenvalue of the informa-
+tion matrix grows at a rate ensuring that the expected regret
+of the algorithm is no greater than O(
+stages of play. This regret rate that is near optimal in light
+of Ω(
+T ) lower bounds previously established in the linear
+stochastic bandit literature (Dani, Hayes, and Kakade 2008;
+Rusmevichientong and Tsitsiklis 2010).
+
+T log(T )) after T
+
+√
+
+√
+
+1.2 Related Literature
+
+There is an extensive literature on linear stochastic bandits.
+For this setting, several algorithms based on the principle of
+Optimism in the Face of Uncertainty (OFU) (Dani, Hayes,
+and Kakade 2008; Rusmevichientong and Tsitsiklis 2010;
+Abbasi-Yadkori, P ´al, and Szepesv ´ari 2011) or Thompson
+Sampling (Agrawal and Goyal 2013) have been proposed.
+Although such algorithms are known to be near-optimal un-
+der various measures of regret, they may fail in the safe lin-
+ear bandit framework, as their (unconstrained) approach to
+exploration may result in a violation of the stagewise safety
+constraints considered in this paper.
+In the context of multi-armed bandits, there is a related
+stream of literature that focuses on the design of “risk-
+sensitive” learning algorithms by encoding risk in the per-
+formance objectives according to which regret is measured
+(Cassel, Mannor, and Zeevi 2018; David et al. 2018). Typi-
+cal risk measures that have been studied in the multi-armed
+bandit literature include Mean-Variance (Sani, Lazaric, and
+Munos 2012; Vakili and Zhao 2016), Value-at-Risk (Vakili
+and Zhao 2015), and Conditional Value-at-Risk (Galichet,
+Sebag, and Teytaud 2013). Although such risk-sensitive al-
+gorithms are inclined to exhibit reduced volatility in the cu-
+mulative reward that is received over time, they are not con-
+strained in a manner that explicitly limits the stagewise risk
+of the reward processes that they induce.
+Closer to the setting studied in this paper is the conser-
+vative bandit framework (Wu et al. 2016; Kazerouni et al.
+2017), which incorporates explicit safety constraints on the
+reward process induced by the learning algorithm. However,
+in contrast to the stagewise safety constraints considered in
+this paper, conservative bandits encode their safety require-
+ments in the form of constraints on the cumulative rewards
+
+1We note that a closely related class of learning algorithms,
+which explicitly control the rate of information gain in this man-
+ner, have been previously studied in the context of dynamic pricing
+algorithms for revenue maximization (den Boer and Zwart 2013;
+Keskin and Zeevi 2014).
+
+received by the algorithm. Along a similar line of research,
+(Sun, Dey, and Kapoor 2017) investigate the design of learn-
+ing algorithms for risk-constrained contextual bandits that
+balance a tradeoff between cumulative constraint violation
+and regret. Given the cumulative nature of the safety con-
+straints considered by the aforementioned algorithms, they
+cannot be directly applied to the stagewise safe linear ban-
+dit problem considered in this paper. In Section 6.3, we
+provide a simulation-based comparison between the SEGE
+algorithm and the Conservative Linear Upper Conﬁdence
+Bound (CLUCB) algorithm (Kazerouni et al. 2017) to more
+clearly illustrate the potential weaknesses and strengths of
+each approach.
+We close this section by mentioing another closely related
+body of work in the online learning literature that inves-
+tigates the design of stagewise-safe algorithms for a more
+general class of smooth reward functions (Sui et al. 2015;
+2018; Usmanova, Krause, and Kamgarpour 2019). Although
+the proposed algorithms are shown to respect stagewise
+safety constraints that are similar in spirit to the class of
+safety constraints considered in this paper, they lack formal
+upper bounds on their cumulative regret.
+
+1.3 Organization
+
+The remainder of the paper is organized as follows. We in-
+troduce pertinent notation in Section 2. In Section 3, we de-
+ﬁne the safe linear stochastic bandit problem. In Section 4,
+we introduce the Safe Exploration and Greedy Exploitation
+(SEGE) algorithm. We present our main theoretical ﬁndings
+in Section 5, and close the paper with a simulation study of
+the SEGE algorithm in Section 6. All mathematical proofs
+are presented in the Appendix to the paper.
+
+2 Notation
+
+√
+
+We denote the standard Euclidean norm of a vector x ∈ Rd
+by (cid:107)x(cid:107) and deﬁne its weighted Euclidean norm as (cid:107)x(cid:107)S =
+x(cid:62)S x where S ∈ Rd×d is a given symmetric positive
+semideﬁnite matrix. We denote the inner product of two
+vectors x, y ∈ Rd by (cid:104)x, y(cid:105) = x(cid:62) y . For a square matrix
+A ∈ Rd×d , we denote its minimum and maximum eigenval-
+ues by λmin (A) and λmax (A), respectively.
+
+3 Problem Formulation
+
+In this section, we introduce the safe linear stochastic bandit
+model considered in this paper. Before doing so, we review
+the standard model for linear stochastic bandits on which our
+formulation is based.
+
+3.1 Linear Bandit Model
+
+Linear stochastic bandits belong to a class of sequential
+decision-making problems in which a learner (i.e., decision-
+maker) seeks to maximize an unknown linear function using
+noisy observations of its function values that it collects over
+multiple stages. More precisely, at each stage t = 1, 2, . . . ,
+a compact set X ⊂ Rd of allowable arms, which is assumed
+the learner is required to select an arm (i.e., action) Xt from
+to be an ellipsoid of the form
+
+X = (cid:8)x ∈ Rd | (x − ¯x)(cid:62)H −1 (x − ¯x) ≤ 1(cid:9) ,
+
+(1)
+
+where ¯x ∈ Rd and H ∈ Rd×d is a symmetric and positive
+deﬁnite matrix. In response to the particular arm played at
+each stage t, the learner observes a reward Yt that is induced
+by the stochastic linear relationship:
+
+Yt = (cid:104)Xt , θ∗ (cid:105) + ηt .
+
+(2)
+
+Here, the noise process {ηt}∞
+t=1 is assumed be a sequence
+of independent and zero-mean random variables, and, criti-
+cally, the reward parameter θ∗ ∈ Rd is assumed to be ﬁxed
+and unknown. This a priori uncertainty in the reward pa-
+rameter gives rise to the need to balance the exploration-
+exploitation trade-off in adaptively guiding the sequence of
+arms played in order to maximize the expected reward accu-
+mulated over time.
+
+Admissible Policies and Regret. We restrict the learner’s
+
+π = {πt}∞
+
+decisions to those which are non-anticipating in nature. That
+is to say, at each stage t, the learner is required to se-
+lect an arm based only on the history of past observations
+Ht = (X1 , Y1 , . . . , Xt−1 , Yt−1 ), and on an external source
+dom process {Ut}∞
+of randomness encoded by a random variable Ut . The ran-
+t=1 is assumed to be independent across
+time, and independent of the random noise process {ηt}∞
+Formally, an admissible policy is a sequence of functions
+t=1 , where each function πt maps the informa-
+tion available to the learner at each stage t to a feasible arm
+Xt ∈ X according to Xt = πt (Ht , Ut ).
+The performance of an admissible policy after T stages
+of play is measured according to its expected regret,2 which
+equals the difference between the expected reward accumu-
+lated by the optimal arm and the expected reward accumu-
+lated by the given policy after T stages of play. Formally, the
+expected regret of an admissible policy is deﬁned as
+
+t=1 .
+
+RT =
+
+(cid:104)X ∗ , θ∗ (cid:105) − E
+
+(cid:104)Xt , θ∗ (cid:105)
+
+,
+
+(3)
+
+t=1
+
+t=1
+
+where expectation is taken with respect to the distribution in-
+duced by the underling policy, and X ∗ ∈ X denotes the op-
+timal arm that maximizes the expected reward at each stage
+of play given knowledge of the reward parameter θ∗ , i.e.,
+X ∗ = argmaxx∈X (cid:104)x, θ∗ (cid:105).
+(4)
+At a minimum, we seek policies exhibiting an expected re-
+gret that is sublinear in the number of stages played T .
+Such policies are said to have no-regret in the sense that
+limT →∞ RT /T = 0. To facilitate the design and theoreti-
+cal analysis of such policies, we adopt a number of technical
+assumptions, which are standard in the literature on linear
+stochastic bandits, and are assumed to hold throughout the
+paper.
+Assumption 1 The unknown reward parameter is bounded
+according to (cid:107)θ∗ (cid:107) ≤ S , where S > 0 is a known constant.
+
+2 It is worth noting, that in the context of linear stochastic ban-
+dits, expected regret is equivalent to expected pseudo-regret due to
+the additive nature of the noise process (Abbasi-Yadkori, P ´al, and
+Szepesv ´ari 2011).
+
+T(cid:88)
+
+(cid:34) T(cid:88)
+
+(cid:35)
+
+Assumption 1 will prove essential to the design of policies
+that safely explore the parameter space in a manner ensuring
+that the expected reward stays above a predetermined (safe)
+threshold with high probability at each stage of play. We re-
+fer the reader to Deﬁnition 1 for a formal deﬁnition of the
+particular safety notion considered in this paper.
+Assumption 2 Each element of {ηt}∞
+t=1 is assumed to be
+ση -sub-Gaussian, where ση ≥ 0 is a ﬁxed constant. That is,
+
+E [exp(γ ηt )] ≤ exp (cid:0)γ 2σ2
+η /2(cid:1)
+
+for all γ ∈ R and t ≥ 1.
+Assumptions 1 and 2, together with the class of admissi-
+ble policies considered in this paper, enable the utilization
+of existing results that provide an explicit characterization
+of conﬁdence ellipsoids for the unknown reward parameter
+based on a (cid:96)2 -regularized least-squares estimator (Abbasi-
+Yadkori, P ´al, and Szepesv ´ari 2011). Such conﬁdence regions
+play a central role in the design of no-regret algorithms for
+the linear stochastic bandits (Dani, Hayes, and Kakade 2008;
+Rusmevichientong and Tsitsiklis 2010; Abbasi-Yadkori, P ´al,
+and Szepesv ´ari 2011).
+
+3.2 Safe Linear Bandit Model
+
+P ((cid:104)Xt , θ∗ (cid:105) ≥ b) ≥ 1 − δ,
+
+Deﬁnition 1 (Stagewise Safety Constraint) Let b ∈ R and
+
+In what follows, we introduce the framework of safe linear
+stochastic bandits studied in this paper. Loosely speaking,
+an admissible policy is said to be safe if the expected re-
+ward E [Yt | Xt ] = (cid:104)Xt , θ∗ (cid:105) that it induces at each stage t is
+guaranteed to stay above a given reward threshold with high
+probability.3 More formally, we have the following deﬁni-
+tion.
+δ ∈ [0, 1]. An admissible policy π—or equivalently the arm
+Xt that it induces—is deﬁned to be (δ, b)-safe at stage t if
+(5)
+where the probability is calculated according to the distri-
+bution induced by the policy π .
+The stagewise safety constraint requires that the expected
+reward at stage t exceed the safety threshold b ∈ R with
+probability no less than 1 − δ , where δ ∈ [0, 1] encodes
+the maximum allowable risk that the learner is willing to
+tolerate.
+Clearly, without making additional assumptions, it is not
+possible to design policies that are guaranteed to be safe ac-
+cording to (5) given arbitrary safety speciﬁcations. We cir-
+cumvent this obvious limitation by giving the learner access
+to a baseline arm with a known lower bound on its expected
+reward. We formalize this assumption as follows.
+knows a deterministic baseline arm X0 ∈ X satisfying
+
+Assumption 3 (Baseline Arm) We assume that the learner
+
+(cid:104)X0 , θ∗ (cid:105) ≥ b0 ,
+
+where b0 ∈ R is a known lower bound on its expected re-
+ward.
+
+3To simplify the exposition, we will frequently refer to
+E [Yt | Xt ]—the expected reward conditioned on the arm Xt—as
+the expected reward, unless it is otherwise unclear from the context.
+
+We note that it is straightforward to construct a baseline
+arm satisfying Assumption 3 by leveraging on the assumed
+boundedness of the unknown reward parameter as speci-
+ﬁed by Assumption 1. In particular, any arm X0 ∈ X
+and its corresponding “worst-case” reward given by b0 =
+min(cid:107)θ(cid:107)≤S (cid:104)X0 , θ(cid:105) = −S (cid:107)X0 (cid:107) are guaranteed to satisfy As-
+sumption 3.
+With Assumption 3 in hand, the learner can leverage on
+the baseline arm to initially guide its exploration of allow-
+able arms by playing combinations of the baseline arm and
+carefully designed exploratory arms in a manner that safely
+expands the set of safe arms over time. Plainly, the ability
+to safely explore in the vicinity of the baseline arm is only
+possible under stagewise safety constraints deﬁned in terms
+of safety thresholds satisfying b < b0 . Under such stagewise
+safety constraints, the difference in rewards levels b0 − b can
+be interpreted as a stagewise “exploration budget” of sorts,
+as it reﬂects the maximum relative loss in expected reward
+that the learner is willing to tolerate when playing arms that
+deviate from the baseline arm. Naturally, the larger the ex-
+ploration budget, the more aggressively can the learner ex-
+plore. With the aim of designing safe learning algorithms
+that leverage on this simple idea, we will restrict our atten-
+tion to stagewise safety constraints that are speciﬁed in terms
+of safety thresholds satisfying b < b0 .
+Before proceeding, we brieﬂy summarize the framework
+of safe linear stochastic bandits considered in this paper.
+Given a baseline arm satisfying Assumption 3, the learner
+is initially required to ﬁx a safety threshold that satisﬁes
+b < b0 . At each subsequent stage t = 1, 2, . . . , the learner
+must select a risk level δt ∈ [0, 1] and a corresponding arm
+Xt ∈ X that is (δt , b)-safe. The learner aims to design an ad-
+missible policy that minimizes its expected regret, while si-
+multaneously ensuring that all arms played satisfy the stage-
+wise safety constraints. In the following section, we propose
+a policy that is guaranteed to both exhibit no-regret and sat-
+isfy the safety constraint at every stage of play.
+
+Relationship to Conservative Bandits. We brieﬂy dis-
+
+cuss the relationship between the safety constraints consid-
+ered in this paper and the conservative bandit framework
+orginally studied by (Wu et al. 2016) in the context of multi-
+armed bandits, and subsequently extended to the setting of
+linear bandits by (Kazerouni et al. 2017). In contrast to the
+stagewise safety constraints considered in this paper, conser-
+vative bandits encode their safety requirements in the form
+of constraints on the cumulative expected rewards received
+by a policy. Speciﬁcally, given a baseline arm satisfying As-
+sumption 3, an admissible policy is said to respect the safety
+constraint deﬁned in (Kazerouni et al. 2017) if
+
+(cid:33)
+
+(cid:104)Xk , θ∗ (cid:105) ≥ (1 − α)
+
+b0 , ∀ t ≥ 1
+
+≥ 1 − δ,
+
+(6)
+where δ ∈ [0, 1] and α ∈ (0, 1). Here, the parameter α en-
+codes the maximum fraction of the cumulative baseline re-
+wards that the learner is willing to forgo over time. In this
+context, smaller values of α imply greater levels of conser-
+vatism (safety). It is straightforward to show that conserva-
+
+(cid:32) t(cid:88)
+
+k=1
+
+P
+
+t(cid:88)
+
+k=1
+
+tive performance constraints of the form (6) are a special
+case of the class of stagewise safety constraints considered
+in Deﬁnition 1. In particular, if we set the safety threshold
+sequence of risk levels satisfying (cid:80)∞
+according to b = (1−α)b0 , and let {δt}∞
+t=1 δt ≤ δ , then any ad-
+t=1 be any summable
+missible policy that is (δt , b)-safe for each stage t ≥ 1 also
+satisﬁes the conservative performance constraint (6).
+
+4 A Safe Linear Bandit Algorithm
+
+In this section, we propose a new algorithm, which we call
+the Safe Exploration and Greedy Exploitation (SEGE) algo-
+rithm, that is guaranteed to be safe in every stage of play,
+while exhibiting a near-optimal expected regret. Before pro-
+ceeding with a detailed description of the proposed algo-
+rithm, we brieﬂy summarize the basic elements underpin-
+ning its design. Initially, the SEGE algorithm performs safe
+exploration by playing convex combinations of the baseline
+arm and random exploratory arms in a manner that satisﬁes
+Deﬁnition 1. Through this process of exploration, the SEGE
+algorithm is able to expand the family of safe arms to incor-
+porate new arms that are guaranteed to outperform the base-
+line arm with high probability. Among all safe arms avail-
+able to the algorithm at any given stage of play, the arm with
+the largest lower conﬁdence bound on its expected reward
+is used as the basis for safe exploration. The SEGE algo-
+rithm performs exploitation by playing the certainty equiv-
+alent (greedy) arm based on a (cid:96)2 -regularized least-squares
+estimate of the unknown reward parameter. The SEGE algo-
+rithm only plays the greedy arm when it is safe, i.e., when
+a lower conﬁdence bound on its expected reward exceeds
+the given safety threshold. Critically, the proposed algorithm
+balances the trade-off between exploration and exploitation
+by explicitly controlling the growth rate of the so-called in-
+formation matrix (cf. Eq. (8)) in a manner that ensures that
+the expected regret of the SEGE algorithm is no greater than
+T log(T )) after T stages of play. The pseudocode for
+the SEGE algorithm is presented in Algorithm 1.
+In the following section, we introduce a regularized least-
+squares estimator that will serve as the foundation for the
+proposed learning algorithm.
+
+√
+
+O(
+
+4.1 Regularized Least Squares Estimator
+
+(cid:40) t(cid:88)
+
+The (cid:96)2 -regularized least-squares estimate of the unknown re-
+ward parameter θ∗ based on the information available to the
+algorithm up until and including stage t is deﬁned as
+(cid:98)θt = argmin
+Here, λ > 0 denotes a user-speciﬁed regularization parame-
+ter. It is straightforward to show that
+
+(Yk − (cid:104)Xk , θ(cid:105))2 + λ(cid:107)θ(cid:107)2
+
+(cid:41)
+
+θ∈Rd
+
+k=1
+
+.
+
+(cid:98)θt = V −1
+
+t
+
+t(cid:88)
+t(cid:88)
+
+k=1
+
+k=1
+
+where
+
+Vt = λI +
+
+Xk Yk ,
+
+XkX (cid:62)
+k .
+
+(7)
+
+(8)
+
+(cid:111)
+
+.
+
+(9)
+
+Figure 1: The ﬁgure illustrates the effect of the safety con-
+straint on the learner’s decision making ability. The shaded
+blue ellipse X SE
+depicts the set of all safe exploration arms
+constructed using the safe arm X S
+t under the SEGE algo-
+rithm, i.e., X SE
+The red shaded area depicts the set of unsafe arms. The black
+ellipse (and its interior) depicts the set of feasible arms.
+
+t = {(1 − ρ)X S
+t + ρx | ρ ∈ (0, ¯ρ), x ∈ ∂X }.
+
+t
+
+rt (δ) = ση
+
+λS,
+
+(10)
+
+Lemma 1 Let ρ ∈ (0, ¯ρ) where ¯ρ > 0 is deﬁned as
+
+Throughout the paper, we will frequently refer to the matrix
+Vt as the information matrix at each stage t.
+The following result taken from (Abbasi-Yadkori, P ´al,
+and Szepesv ´ari 2011, Theorem 2) provides an ellipsoidal
+characterization of a conﬁdence region for the unknown re-
+ward parameter based on the regularized least-squares esti-
+mator (7). It is straightforward to verify that the conditions
+of (Abbasi-Yadkori, P ´al, and Szepesv ´ari 2011, Theorem 2)
+are satisﬁed under the standing assumptions of this paper.
+Theorem 1 For any admissible policy and δ ∈ (0, 1), it
+holds that
+
+where the conﬁdence set Ct (δ) is deﬁned as
+
+Ct (δ) =
+
+(cid:110)
+
+P (θ∗ ∈ Ct (δ), ∀t ≥ 1) ≥ 1 − δ,
+θ ∈ Rd : (cid:107)(cid:98)θt − θ(cid:107)Vt ≤ rt (δ)
+(cid:18) 1 + tL2 /λ
+δ
+
+(cid:115)
+
+(cid:19)
+
+d log
+
+√
+
++
+
+Here, rt (δ) is deﬁned as
+
+where L = maxx∈X (cid:107)x(cid:107).
+In the following section, we propose a method for safe
+exploration using the characterization of the conﬁdence el-
+lipsoids introduced in Theorem 1.
+
+4.2 Safe Exploration
+
+We now describe the approach to “safe exploration” that is
+employed by the proposed algorithm. At each stage t ≥ 1,
+given a risk level δt , the SEGE algorithm constructs a safe
+exploration arm (X SE
+) as a convex combination of a (δt , b0 )-
+safe arm (X S
+t ) and a random exploratory arm (Ut ), i.e.,
+
+t
+
+X SE
+
+t = (1 − ρ)X S
+t + ρUt .
+
+(11)
+Qualitatively, the user-speciﬁed parameter ρ ∈ (0, 1) con-
+trols the balance between safety and exploration. Figure 1
+provides a graphical illustration of the set of all safe explo-
+ration arms induced by a given safe arm X S
+t according to
+(11).
+The random exploratory arm process {Ut}∞
+t=1 is gener-
+ated according to
+
+Ut = ¯x + H 1/2 ζt ,
+
+(12)
+
+where the random process {ζt}∞
+t=1 is assumed to be a se-
+quence of independent, zero-mean, and symmetric random
+vectors. For each element of the sequence, we require that
+(cid:107)ζt(cid:107) = 1 almost surely and σ2
+ditionally, we deﬁne σ2 = λmin (Cov (Ut )). The parameters
+σ and ρ both determine how aggressively the algorithm can
+explore the set of allowable arms. However, exploration that
+is too aggressive may result in a violation of the stagewise
+upper bound on ρ such that for all choices of ρ ∈ (0, ¯ρ), the
+safety constraint. In the following Lemma, we establish an
+is guaranteed to be safe for any σ ≥ 0.
+arm X SE
+
+ζ = λmin (Cov (ζt )) > 0. Ad-
+
+t
+
+(cid:40)
+
+(cid:41)
+
+2S(cid:112)λmax (H )
+b0 − b
+
+¯ρ = min
+
+1,
+
+.
+
+(13)
+
+t
+
+Then, for every stage t ≥ 1, the safe exploration arm X SE
+deﬁned in Equation (11) is (δ, b)-safe for any δ ∈ [0, 1].
+As the SEGE algorithm expands its set of safe arms over
+time, it attempts to increase the stagewise efﬁciency with
+which it safely explores by exploring in the vicinity of the
+safe arm with the largest lower conﬁdence bound on its ex-
+pected reward. More speciﬁcally, at each stage t, the SEGE
+algorithm constructs a conﬁdence set Ct−1 (δt ) according to
+Equation (9). With this conﬁdence set in hand, the proposed
+algorithm calculates a lower conﬁdence bound (LCB) on the
+expected reward LCBt (x) of each arm x ∈ X according to
+
+It is straightforward to show that the lower conﬁdence bound
+deﬁned above can be simpliﬁed to:
+
+θ∈Ct−1 (δt )
+
+LCBt (x) = min
+(cid:104)x, θ(cid:105).
+LCBt (x) = (cid:104)x, (cid:98)θt−1 (cid:105) − rt (δt )(cid:107)x(cid:107)V
+
+.
+
+−1
+
+t−1
+
+t
+
+X LCB
+
+We deﬁne the LCB arm (X LCB
+) to be the arm with the largest
+lower conﬁdence bound on its expected reward among all
+allowable arms. It is given by:
+t = argmaxx∈X LCBt (x).
+(14)
+Clearly, the LCB arm is guaranteed to be (δt , b0 )-safe if
+) ≥ b0 . In this case, the SEGE algorithm re-
+lies on the LCB arm for safe exploration, as its expected
+reward is potentially superior to the baseline arm’s expected
+reward.4 Putting everything together, the SEGE algorithm
+
+LCBt (X LCB
+
+t
+
+4 It is important to note that the condition LCBt (X LCB
+does not guarantee superiority of the LCB arm to the baseline arm,
+as b0 is only assumed to be a lower bound on the baseline arm’s
+expected reward.
+
+t
+
+) ≥ b0
+
+sets the safe arm (X S
+t ) at each stage t according to:
+
+(cid:26)X LCB
+t
+
+X0 ,
+
+X S
+t =
+
+,
+
+if LCBt (X LCB
+
+t
+
+otherwise.
+
+) ≥ b0 ,
+
+(15)
+
+Before closing this section, it is important to note that the
+LCB arm (14) can be calculated in polynomial time by solv-
+ing a second-order cone program. This is in stark contrast to
+the non-convex optimization problem that needs to be solved
+when computing the UCB arm (i.e., the arm with the largest
+upper conﬁdence bound on the expected reward)—a prob-
+lem that has been shown to be NP-hard in general (Dani,
+Hayes, and Kakade 2008).
+
+4.3 Safe Greedy Exploitation
+
+We now describe the method for exploitation employed by
+the SEGE algorithm. Exploitation under the SEGE algo-
+rithm relies on the certainty equivalence principle. That is,
+the algorithm ﬁrst estimates the unknown reward parameter
+according to Equation (7). Then, the algorithm chooses an
+arm that is optimal for the given parameter estimate. Given
+the ellipsoidal structure of the set of allowable arms, the op-
+timal arm X ∗ can be calculated as
+
+H θ∗
+
+X ∗ = ¯x +
+
+(16)
+
+X CE
+
+t = ¯x +
+
+.
+H (cid:98)θt−1
+
+(cid:107)θ∗ (cid:107)H
+Similarly, the certainty equivalent (greedy) arm can be cal-
+culated as
+(cid:107)(cid:98)θt−1 (cid:107)H
+(17)
+where (cid:98)θt−1 is the regularized least-squares estimate of the
+unknown reward parameter, as deﬁned in Equation (7).
+It is important to note that the SEGE algorithm only plays
+the greedy arm (17) when the lower conﬁdence bound on its
+expected reward is greater than or equal to the safety thresh-
+old b. This ensures that the greedy arm is only played when
+it is safe.
+
+,
+
+Algorithm 1 SEGE Algorithm
+
+1: Input: X0 , b0 , X , S > 0, c > 0, λ > 0, b < b0 ,
+ρ ∈ (0, ¯ρ), δt ∈ [0, 1] ∀t ≥ 1
+2: for t = 1, 2, 3, . . . do
+
+Set (cid:98)θt−1 according to Eq. (7)
+{Parameter Estimation}
+Set Ct−1 (δt ) according to Eq. (9)
+{Safe Greedy Exploitation}
+if LCBt (X CE
+{Safe Exploration}
+
+t ) ≥ b and λmin (Vt ) ≥ c
+Set Xt = X CE
+
+t
+
+according to Eq. (17)
+
+√
+
+t
+
+else
+
+end if
+
+Set Xt = X SE
+
+according to Eq. (11)
+Observe Yt = (cid:104)Xt , θ∗ (cid:105) + ηt
+
+t
+
+3:
+4:
+
+5:
+6:
+
+7:
+8:
+9:
+10:
+
+11: end for
+
+5 Theoretical Results
+
+We now present our main theoretical results showing that the
+SEGE algorithm exhibits near optimal regret for a large class
+of risk levels (cf. Theorem 3), in addition to being safe at
+every stage of play (cf. Theorem 2). As an immediate corol-
+lary to Theorem 3, we establish sufﬁcient conditions under
+which the SEGE algorithm is also guaranteed to satisfy the
+conservative bandit constraint (6), while preserving the up-
+per bound on regret in Theorem 3 (cf. Corollary 1).
+
+Theorem 2 (Stagewise Safety Guarantee) The SEGE al-
+
+gorithm is (δt , b)-safe at each stage, i.e.,
+
+P ((cid:104)Xt , θ∗ (cid:105) ≥ b) ≥ 1 − δt
+
+for all t ≥ 1.
+The ability to enforce safety in the sequence of arms
+played is not surprising given the assumption of a known
+baseline arm that is guaranteed to be safe at the outset. How-
+ever, given the potential suboptimality of the baseline arm,
+a na¨ıve policy that plays the baseline arm at every stage will
+likely incur an expected regret that grows linearly with the
+number of stages played T . In constrast, we show, in The-
+orem 3, that the SEGE algorithm exhibits an expected re-
+gret that is no greater than O(
+T log(T )) after T stages—
+a regret rate that is near optimal given existing Ω(
+lower bounds on regret (Dani, Hayes, and Kakade 2008;
+Rusmevichientong and Tsitsiklis 2010).
+
+√
+
+√
+
+T )
+
+Theorem 3 (Upper Bound on Expected Regret) Fix δ ∈
+
+(0, 1] and K ≥ 0. Let {δt}∞
+t=1 be any sequence of risk levels
+satisfying
+
+√
+
+δt ≥ δe−K
+
+(18)
+for all t ≥ 1. Then, there exists ﬁnite positive constant C
+such that the expected regret of the SEGE algorithm is upper
+bounded as
+
+t
+
+T log(T )
+
+(19)
+
+√
+
+for all T ≥ 1.
+In what follows, we provide a high-level sketch of the proof
+of Theorem 3. The complete proof is presented in Appendix
+A.3. We bound the expected regret incurred during the safe
+exploration and the greedy exploitation stages separately.
+First, we show that the stagewise expected regret incurred
+when playing the greedy arm is proportional to the mean
+squared parameter estimation error. We then employ Theo-
+rem 1 to show that, conditioned on the event {λmin (Vt ) ≥
+t}, the mean squared parameter estimation error at each
+stage t is no greater than O(log(t)/
+t). It follows that the
+cumulative expected regret incurred during the exploitation
+stages is no more than O(
+T log(T )) after T stages of play.
+Now, in order to upper bound the expected regret accumu-
+lated during the safe exploration stages, it sufﬁces to upper
+bound the expected number of safe exploration stages, since
+the stagewise regret can be upper bounded by a ﬁnite con-
+stant under any admissible policy. We show that the expected
+number of safe exploration stages is no more than O(
+
+√
+
+√
+
+√
+
+T )
+
+c
+
+√
+
+RT ≤ C
+
+after T stages of play for any sequence of risk levels that
+does not decay faster than the rate speciﬁed in (18).
+We close this section with a result establishing sufﬁcient
+conditions under which the SEGE algorithm is guaranteed to
+satisfy the conservative performance constraint (6), in addi-
+tion to being stagewise safe, while satisfying an upper bound
+on its expected regret that matches that of the CLUCB al-
+gorithm (Kazerouni et al. 2017)[Theorem 5]. Corollary 1 is
+stated without proof, as it is an immediate consequence of
+Theorems 2 and 3.
+fying (cid:80)∞
+δ ∈ (0, 1). Assume, in addition to the standing assumptions
+of Theorem 3, that {δt}∞
+t=1 δt ≤ δ . Then, the SEGE algorithm satisﬁes the
+t=1 is a summable sequence satis-
+conservative performance constraint (6), and exhibits an
+expected regret that is upper bounded by O(
+all T ≥ 1.
+
+Corollary 1 (Conservative Performance Guarantee) Let
+
+√
+
+T log(T )) for
+
+6 Simulation Results
+
+In this section, we conduct a simple numerical study to il-
+lustrate the qualitative features of the SEGE algorithm and
+compare it with the CLUCB algorithm introduced by (Kaze-
+rouni et al. 2017).
+
+6.1 Simulation Setup
+
+Model Parameters. We consider a linear bandit with a
+two-dimensional input space (d = 2), and restrict the set
+of allowable arms X to be closed disk of radius r = 1 cen-
+tered at ¯x = (1, 1). The true reward parameter is taken to
+be θ∗ = (0.6, 0.8), and the upper bound on its norm is set
+to S = 1. We select a baseline arm at random from the set
+of allowable arms as X0 = (1.2, 1.9), and set the baseline
+expected reward to b0 = (cid:104)X0 , θ∗ (cid:105) = 2.24. We set the safety
+threshold to b = 0.8 × b0 . The observation noise process
+{ηt}∞
+t=1 is assumed to be an IID sequence of zero-mean Nor-
+mal random variables with standard deviation ση = 1.
+SEGE Algorithm. We set the parameters of the SEGE al-
+gorithm to c = 0.5, λ = 0.1, and ρ = ¯ρ = 0.224. We gener-
+ate the random exploration process according to Ut = ¯x+ζt ,
+where {ζt}∞
+t=1 is a sequence of IID random variables that are
+uniformly distributed on the unit circle. To enable a direct
+comparison between the SEGE and CLUCB algorithms, we
+restrict our attention to a summable sequence of risk levels
+that satisfy the conditions of Corollary 1. Speciﬁcally, we set
+the sequence of risk levels to δt = 6δ/(π2 t2 ) for all stages
+t ≥ 1, where δ = 0.1.
+CLUCB Algorithm. We note that the implementation of
+the CLUCB algorithm requires the repeated solution of a
+imate the continuous set of arms X by a ﬁnite set of arms (cid:98)X
+non-convex optimization problem in order to compute UCB
+arms. To circumvent this intractable calculation, we approx-
+that correspond to a uniform discretization of the boundary
+of X . The error induced by this approximation is negligible,
+as maxx∈X (cid:104)x, θ∗ (cid:105) − maxx∈ (cid:98)X (cid:104)x, θ∗ (cid:105) ≤ 3 × 10−3 .
+
+6.2 Performance of the SEGE Algorithm
+
+We ﬁrst discuss the transient behavior and performance of
+the SEGE algorithm. As one might expect, the SEGE algo-
+rithm initially relies on the baseline arm for safe exploration
+as depicted in Figure 2(a). Over time, as the algorithm accu-
+mulates information, it is able to gradually expand the set of
+safe arms as shown in Figure 3. This expansion enables the
+algorithm to increase the stagewise efﬁciency with which it
+safely explores by selecting arms in the vicinity of the safe
+arm with the largest lower conﬁdence bounds on their ex-
+pected rewards. In turn, the SEGE algorithm is able to ex-
+ploit the information gained to play the greedy with increas-
+ing frequency over time. As a result, the growth rate of regret
+diminishes over time as depicted in Figure 2(c). Critically,
+Figure 2(a) also shows that the SEGE algorithm maintains
+stagewise safety throughout each of the 250 independent ex-
+periments.
+
+6.3 Comparison with the CLUCB Algorithm
+
+Unlike the SEGE algorithm, the CLUCB algorithm is shown
+to violate the stagewise safety constraint at an early stage in
+the learning process as depicted in Figure 2(b). The viola-
+tion of the stagewise safety constraint by the CLUCB al-
+gorithm is not surprising as it is only guaranteed to respect
+the conservative performance constraint (6). The SEGE al-
+gorithm, on the other hand, is guaranteed to satisfy the con-
+servative performance constraint, in addition to being stage-
+wise safe (cf. Corollary 1). However, as one might expect,
+the more stringent safety guarantee of the SEGE algorithm
+comes at a cost. Speciﬁcally, the regret under the SEGE al-
+gorithm initially grows more rapidly than the regret incurred
+by the CLUCB algorithm, as shown in Figure 2(c). However,
+over time the growth rate of regret of the SEGE algorithm
+slows down as information accumulates and the need for
+safe exploration diminishes enabling the algorithm to play
+the greedy arm more frequently.
+
+Acknowledgments
+
+This material is based upon work supported by the Holland
+Sustainability Project Trust, and the National Science Foun-
+dation under grant no. ECCS-135162 and IIP-1632124.
+
+References
+
+Abbasi-Yadkori, Y.; P ´al, D.; and Szepesv ´ari, C. 2011. Improved
+algorithms for linear stochastic bandits.
+In Advances in Neural
+Information Processing Systems, 2312–2320.
+Agrawal, S., and Goyal, N. 2013. Thompson sampling for con-
+textual bandits with linear payoffs. In International Conference on
+Machine Learning, 127–135.
+Berry, D. A., and Pearson, L. M. 1985. Optimal designs for clinical
+trials with dichotomous responses. Statistics in Medicine 4(4):497–
+508.
+Cassel, A.; Mannor, S.; and Zeevi, A. 2018. A general approach to
+multi-armed bandits under risk criteria. In Conference On Learning
+Theory, 1295–1306.
+Dani, V.; Hayes, T. P.; and Kakade, S. M. 2008. Stochastic linear
+optimization under bandit feedback.
+In Conference on Learning
+Theory, 355–366.
+
+(a) Stagewise expected reward under the
+SEGE algorithm.
+
+(b) Stagewise expected reward under the
+CLUCB algorithm.
+
+(c) Cumulative regret of the SEGE algorithm
+(blue) and the CLUCB algorithm (green).
+
+Figure 2: These ﬁgures illustrate the empirical performance of the SEGE and CLUCB algorithms. The solid lines depict empir-
+ical means and the shaded regions depict empirical ranges computed from 250 independent simulations.
+
+Szepesv ´ari, C.; and Zoghi, M. 2019. Bubblerank: Safe online
+learning to re-rank via implicit click feedback. In The Conference
+on Uncertainty in Artiﬁcial Intelligence.
+Rusmevichientong, P., and Tsitsiklis, J. N. 2010. Linearly param-
+eterized bandits. Mathematics of Operations Research 35(2):395–
+411.
+Sani, A.; Lazaric, A.; and Munos, R. 2012. Risk-aversion in multi-
+armed bandits. In Advances in Neural Information Processing Sys-
+tems, 3275–3283.
+Sui, Y.; Gotovos, A.; Burdick, J.; and Krause, A. 2015. Safe explo-
+ration for optimization with gaussian processes. In International
+Conference on Machine Learning, 997–1005.
+Sui, Y.; Burdick, J.; Yue, Y.; et al. 2018. Stagewise safe bayesian
+optimization with gaussian processes. In International Conference
+on Machine Learning, 4788–4796.
+Sun, W.; Dey, D.; and Kapoor, A. 2017. Safety-aware algorithms
+for adversarial contextual bandit. In Proceedings of the 34th Inter-
+national Conference on Machine Learning-Volume 70, 3280–3288.
+JMLR. org.
+Tropp, J. A. 2012. User-friendly tail bounds for sums of random
+matrices. Foundations of computational mathematics 12(4):389–
+434.
+Usmanova, I.; Krause, A.; and Kamgarpour, M. 2019. Safe convex
+learning under uncertain constraints.
+In The 22nd International
+Conference on Artiﬁcial Intelligence and Statistics, 2106–2114.
+Vakili, S., and Zhao, Q. 2015. Mean-variance and value at risk
+in multi-armed bandit problems.
+In 2015 53rd Annual Allerton
+Conference on Communication, Control, and Computing (Aller-
+ton), 1330–1335. IEEE.
+Vakili, S., and Zhao, Q. 2016. Risk-averse multi-armed bandit
+problems under mean-variance measure. IEEE Journal of Selected
+Topics in Signal Processing 10(6):1093–1111.
+Villar, S. S.; Bowden, J.; and Wason, J. 2015. Multi-armed ban-
+dit models for the optimal design of clinical trials: beneﬁts and
+challenges. Statistical science: a review journal of the Institute of
+Mathematical Statistics 30(2):199.
+Wu, Y.; Shariff, R.; Lattimore, T.; and Szepesv ´ari, C. 2016. Conser-
+vative bandits. In International Conference on Machine Learning,
+1254–1262.
+
+Figure 3: The blue curves depict the gradual expansion of
+the set of safe arms {x ∈ X | LCBt (x) ≥ b} over time
+under the SEGE algorithm for t = 250, 500, 1000, 2000,
+5000, 10000, and 50000. The blue dot depicts the baseline
+arm X0 , the black star depicts the optimal arm X ∗ , and the
+red shaded area depicts the set of unsafe arms.
+
+David, Y.; Sz ¨or ´enyi, B.; Ghavamzadeh, M.; Mannor, S.; and
+Shimkin, N. 2018. PAC bandits with risk constraints. In ISAIM.
+den Boer, A. V., and Zwart, B. 2013. Simultaneously learning and
+optimizing using controlled variance pricing. Management science
+60(3):770–783.
+Galichet, N.; Sebag, M.; and Teytaud, O. 2013. Exploration vs
+exploitation vs safety: Risk-aware multi-armed bandits. In Asian
+Conference on Machine Learning, 245–260.
+Kazerouni, A.; Ghavamzadeh, M.; Abbasi, Y.; and Van Roy, B.
+2017. Conservative contextual linear bandits. In Advances in Neu-
+ral Information Processing Systems, 3910–3919.
+Keskin, N. B., and Zeevi, A. 2014. Dynamic pricing with an un-
+known demand model: Asymptotically optimal semi-myopic poli-
+cies. Operations Research 62(5):1142–1167.
+Khezeli, K., and Bitar, E.
+2017. Risk-sensitive learning and
+pricing for demand response.
+IEEE Transactions on Smart Grid
+9(6):6000–6007.
+Li, C.; Kveton, B.; Lattimore, T.; Markov, I.; de Rijke, M.;
+
+00.511.5200.511.52In this Section, we provide a detailed proof of the theoretical results including Lemma 1, and Theorems 2 and 3.
+t that P (cid:0)(cid:104)X S
+(cid:1) ≥ 1 − δt . Thus, with probability 1 − δt , it holds that,
+Recall from the deﬁnition of X S
+
+A.1 Proof of Lemma 1
+
+Appendices
+
+where the inequality follows from the Cauchy-Schwarz inequality and the fact that (cid:107)ζt(cid:107) = 1. For any x ∈ X , it holds that
+
+(20)
+
+(cid:104)X SE
+
+t
+
+t , θ∗ (cid:105) ≥ b0
+, θ∗ (cid:105) = (cid:104)(1 − ρ)X S
+t + ρUt , θ∗ (cid:105)
+= (cid:104)(1 − ρ)X S
+t − ¯x(cid:107)(cid:107)θ∗ (cid:107) − ρ(cid:112)λmax (H )(cid:107)θ∗ (cid:107),
+t + ρ ¯x + ρH 1/2 ζt , θ∗ (cid:105)
+= (cid:104)X S
+t , θ∗ (cid:105) − ρ(cid:104)X S
+t − ¯x, θ∗ (cid:105) + ρ(cid:104)H 1/2 ζt , θ∗ (cid:105)
+≥ b0 − ρ(cid:107)X S
+(cid:112)λmax (H )
+(cid:107)x − ¯x(cid:107) ≤ (cid:107)x − ¯x(cid:107)H−1
+≤ (cid:112)λmax (H ),
+, θ∗ (cid:105) ≥ b0 − 2ρ(cid:112)λmax (H )(cid:107)θ∗ (cid:107).
+2S(cid:112)λmax (H )
+b0 − b
+
+(cid:104)X SE
+
+.
+
+t
+
+(21)
+where the inequality follows from the deﬁnition of X in Equation (1). By applying Inequality (21) to Inequality (20), with
+probability 1 − δt , it holds that
+Recall Assumption 1 that (cid:107)θ∗ (cid:107) ≤ S . Thus, in order to guarantee that P (cid:0)(cid:104)X SE
+, θ∗ (cid:105) ≥ b(cid:1) ≥ 1 − δt it sufﬁces to choose ρ such
+that
+(22)
+
+ρ ≤
+
+t
+
+A.2 Proof of Theorem 2
+
+From Lemma 1, it follows that the safe exploration arm X SE
+is (δt , b)-safe by construction. Moreover, under the SEGE algo-
+t ) ≥ b, which, in turn, implies
+rithm the greedy arm X CE
+is only played if LCBt (X CE
+
+t
+
+P (cid:0)(cid:104)X CE
+
+t
+
+t
+
+, θ∗ (cid:105) ≥ b(cid:1) ≥ 1 − δt .
+
+Thus, the greedy arm X CE
+
+t
+
+if played is (δt , b)-safe.
+
+A.3 Proof of Theorem 3
+
+As mentioned in the Theoretical Results section, in order to establish an upper bound on the expected regret, we rely on
+intermediary results. More precisely, to upper bound the expected regret during the greedy exploitation stages, we establish a
+bound on the stagewise regret under the greedy arm in terms of the mean squared estimation error in Lemma 2.
+Lemma 2 (Stagewise Regret) The stagewise expected reward under the greedy (certainty equivalent) arm X CE
+(cid:13)(cid:13)(cid:13)θ∗ − (cid:98)θt−1
+surely lower bounded as
+
+, θ∗ (cid:105) ≥ (cid:104)X ∗ , θ∗ (cid:105) − k1
+
+(cid:13)(cid:13)(cid:13)2
+
+is almost
+
+(cid:104)X CE
+
+(23)
+
+,
+
+t
+
+t
+
+for all t ≥ 1, where the constant k1 is given by
+
+(cid:112)λmin (H )
+2(cid:107)X0 (cid:107)λmax (H )
+b0
+
+.
+
+k1 =
+
+The proof of Lemma 2 is postponed to Appendix A.5.
+Moreover, to upper bound the expected regret during the safe exploitation stages, we establish an upper bound on the expected
+number of safe exploration stages in Theorem 4. More precisely, let Nt be the number of stages in which a safe exploration arm
+is played among the ﬁrst t stages. Then, Theorem 4 establishes an upper bound on E [Nt ] under the SEGE algorithm.
+t=1 be any sequence of risk levels satisfying Inequality (18) for all t ≥ 1.
+There exists a ﬁnite positive constant C0 such that under the SEGE Algorithm 1, it holds that
+
+Theorem 4 (Safe Exploration Stages) Let {δt}∞
+
+for all t ≥ 1.
+
+E [Nt ] ≤ C0
+
+√
+
+t,
+
+The proof of Lemma 4 is postponed to Appendix A.4.
+Recall the deﬁnition of expected regret RT
+
+RT = E
+
+(cid:35)
+
+(cid:104)X ∗ − Xt , θ∗ (cid:105)
+
+.
+
+(cid:34) T(cid:88)
+
+t=1
+
+ (cid:88)
+
+t∈N SE
+
+T
+
+(cid:88)
+
+t∈N SE
+
+T
+
+We bound the expected regret in the exploration and exploitation stages separately. Let N SE
+T ) be the stages in which a
+safe exploration arm (greedy arm) is played in the ﬁrst T stages. The expected regret can be decomposed into two parts,
+
+T (N CE
+
+RT = E
+
+(cid:104)X ∗ − X SE
+
+t
+
+, θ∗ (cid:105)
+
+(cid:104)X ∗ − X CE
+
+t
+
+, θ∗ (cid:105)
+
+(24)
+
+ + E
+
+ (cid:88)
+
+t∈N CE
+
+T
+
+ .
+
+The regret in safe exploration stages: From the fact that (cid:107)x(cid:107) ≤ L for all x ∈ X , (cid:107)θ∗ (cid:107) ≤ S , and the Cauchy-Schwarz
+inequality it almost surely holds that
+
+From Theorem 4, it follows that
+
+E
+
+ (cid:88)
+
+t∈N SE
+
+T
+
+t
+
+(cid:104)X ∗ − X SE
+, θ∗ (cid:105) ≤ 2LSNT .
+ ≤ 2LSE [NT ] ≤ 2LSC0
+
+, θ∗ (cid:105)
+
+t
+
+√
+
+T .
+
+(cid:104)X ∗ − X SE
+
+Notice that it almost surely holds that (cid:104)x, θ∗ (cid:105) ≤ LS for all x ∈ X . Then, for all t ∈ N CE
+The regret in greedy exploitation stages: Recall that the greedy arm is only played if LCBt (X CE
+E (cid:2)(cid:104)X ∗ − X CE
+, θ∗ (cid:105)(cid:3) =
+, θ∗ (cid:105) ≥ γ(cid:9)
+T , it holds that
+
+P (cid:16)(cid:8)(cid:104)X ∗ − X CE
+
+t
+
+t
+
+(cid:90) 2LS
+0
+
+t ) ≥ b and λmin (Vt ) ≥ c
+
+√
+
+t.
+
+In order to apply Inequality (28) to (25), we set δ such that r2
+
+t (δ) = c
+
+√
+
+tγ /k1 , i.e.,
+
+δ = (1 + tL2/λ) exp
+
+− 1
+
+dσ2
+(cid:18) 2λS 2
+δ ≤ (1 + tL2/λ) exp
+dσ2
+, θ∗ (cid:105)(cid:3) ≤ γt−1 + (1 + tL2 /λ) exp
+≤ γt−1 + (1 + tL2 /λ) exp
+
+η
+
+(cid:115)
+(cid:19)
+
+c
+
+√
+
+tγ
+k1
+
+−
+
+√
+
+λS
+
+2 .
+(cid:19)
+(cid:18)
+
+Using the fact that for any two real numbers x, y > 0, we have that (
+
+√
+
+x − √
+
+y)2 ≥ x/2 − y , we get
+
+η
+
+− cγ
+exp
+2k1dσ2
+(cid:18) 2λS 2
+(cid:18) 2λS 2
+dσ2
+dσ2
+
+(cid:18)
+
+(cid:19) (cid:90) 2LS
+η
+γt−1
+
+√
+
+t
+
+.
+
+(29)
+
+Then, by applying Inequality (28) and (29) to Inequality (25), we get
+E (cid:2)(cid:104)X ∗ − X CE
+
+t
+
+η
+
+exp
+
+− cγ
+(cid:19) 2k1dσ2
+t
+dγ
+2k1dσ2
+cγ
+t
+
+η
+
+√
+
+(cid:19)
+
+η
+(cid:16) 2λS 2
+dσ2
+
+(cid:19)
+
+exp
+
+(cid:18)
+
+− cγt−1
+2k1dσ2
+
+η
+
+√
+
+t
+
+η
+
+√
+
+≤ γt−1 +
+
+2k1dσ2
+c
+t
+
+η
+
+√
+
+,
+
+(30)
+
+where the last inequality follows from the fact that (1 + tL2/λ) exp
+
+η
+
+(cid:17)
+
+exp
+
+(cid:16)− cγt−1
+2k1 dσ2
+
+η
+
+√
+
+t
+
+(cid:17) ≤ 1 by deﬁnition, i.e.,
+
+(1 + tL2 /λ) exp
+
+(cid:18) 2λS 2
+dσ2
+
+η
+
+(cid:19)
+
+exp
+
+(cid:18)
+
+− cγt−1
+2k1dσ2
+
+η
+
+√
+
+t
+
+(cid:19)
+
+(cid:18) 2λS 2
+(cid:18) 2λS 2
+≤ t(1 + L2/λ) exp
+dσ2
+dσ2
+
+η
+
+(cid:19)
+(cid:19)
+
+exp
+
+(cid:18)
+(cid:18)
+
+− ck7 log(t)
+2k1dσ2
+− ck7
+2k1dσ2
+
+η
+
+(cid:19)
+
+= (1 + L2/λ) exp
+
+η
+
+exp
+
+η
+
+(cid:19)
+
+= 1,
+
+where the last inequality follows from the deﬁnition of k7 in inequality (27). Thus, using Inequality (30) and the deﬁnition of
+γt−1 in (26), we get
+
+E
+
+ (cid:88)
+
+t∈N CE
+
+T
+
+(cid:104)X ∗ − X CE
+
+t
+
+, θ∗ (cid:105)
+
+ ≤ T(cid:88)
+(cid:32)
+
+t=2
+
+(cid:32)
+(cid:32)
+
+k7
+
+log (t)√
+t
+
++
+
+2k1dσ2
+c
+t
+
+η
+
+√
+
+(cid:33)
+(cid:33)
+(cid:33) (cid:90) T
+
+≤ T(cid:88)
+≤
+
+t=2
+
+k7
+
+log(T )√
+t
+
++
+
+2k1dσ2
+c
+t
+
+η
+
+√
+
+k7 log(T ) +
+≤ C0
+
+2k1dσ2
+c
+
+η
+
+t=1
+
+1√
+
+t
+
+dt
+
+√
+
+T + C1
+
+√
+
+T log(T ),
+
+where C2 and C3 are deﬁned as
+
+C2 =
+
+4k1dσ2
+c
+C3 = 2k7 .
+
+η
+
+,
+
+Thus, by deﬁning C = 2LSC0 + C2 + C3 , we get the desired upper bound on regret.
+
+A.4 Proof of Theorem 4
+
+From the deﬁnition of Nt , it follows that N0 = 0 and for all t ≥ 0,
+
+Nt+1 =
+
+(cid:26)Nt ,
+
+λmin (Vt ) ≥ c
+
+√
+
+t and LCBt (X CE
+
+t ) ≥ b,
+
+Nt + 1, otherwise.
+
+(31)
+
+Fix µ ∈ (0, 1). Deﬁne the random process {Z }∞
+t=1 as follows. For any t ≥ 0, Zt is deﬁned as
+
+(cid:18)
+
+(cid:25)(cid:19)
+
+(cid:24) c
+
+√
+
+t
+µρ2σ2
+
+Zt = 0 ∨
+
+Nt −
+
+.
+
+(32)
+
+(cid:109)
+
+(cid:108) c
+
+√
+
+t
+µρ2 σ2
+
+Notice that if Nt <
+
+then Zt+1 = 0. Thus,
+
+(cid:20)
+
+(cid:26)(cid:26)
+
+(cid:25)(cid:27)
+
+(cid:24) c
+
+√
+
+t
+µρ2σ2
+
+E [Zt+1 ] = E [Zt ] + E
+
+1
+
+Nt ≥
+
+where c1 is deﬁned as
+
+Lemma 4 (Random Exploration) Under the SEGE Algorithm, for any µ ∈ (0, 1) it holds that
+
+P (cid:0)λmin (Vt ) ≤ µρ2σ2Nt | Nt = n(cid:1) ≤ de−k4 (1−µ)2 n ,
+k3 = 2ρ((1 − ρ)L + ρ(cid:107) ¯x(cid:107))(cid:112)λmax (H ) + ρ2λmax (H ) − ρ2σ2d.
+ρ4σ4
+k4 =
+2k2
+,
+
+3
+
+By applying Inequality (35) to Inequality (34), we
+
+(cid:32)(cid:40)
+
+P
+
+Nk ≥
+
+(cid:39)(cid:41)
+
+(cid:38)
+
+√
+
+c
+k
+µρ2σ2
+
+(35)
+
+A.5 Proof of Lemma 2
+
+t
+
+t
+
+t
+
+(cid:104)X CE
+
+, (cid:98)θt−1 (cid:105)
+
+, θ∗ − (cid:98)θt−1 (cid:105),
+
+For each t ≥ 1, the expected reward under the greedy arm is lower bounded as
+, θ∗ (cid:105) = (cid:104)X ∗ , θ∗ (cid:105) − (cid:104)X ∗ − X CE
+, θ∗ (cid:105)
+, θ∗ − (cid:98)θt−1 (cid:105) − (cid:104)X ∗ − X CE
+= (cid:104)X ∗ , θ∗ (cid:105) − (cid:104)X ∗ − X CE
+≥ (cid:104)X ∗ , θ∗ (cid:105) − (cid:104)X ∗ − X CE
+, (cid:98)θt−1 (cid:105) ≥ (cid:104)x, (cid:98)θt−1 (cid:105) for all x ∈ X as the greedy arm is the optimal arm for
+the reward parameter (cid:98)θt−1 . Using the Cauchy-Schwarz inequality, we get
+where the inequality follows from the fact that (cid:104)X CE
+t (cid:107)(cid:107)θ∗ − (cid:98)θt−1 (cid:107)
+, θ∗ (cid:105) ≥ (cid:104)X ∗ , θ∗ (cid:105) − (cid:107)X ∗ − X CE
+(cid:107)(cid:98)θt−1(cid:107)H
+= (cid:104)X ∗ , θ∗ (cid:105) −
+(cid:107)θ∗ − (cid:98)θt−1(cid:107).
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) (cid:107)θ∗ − (cid:98)θt−1 (cid:107).
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) H θ∗
+
+We now show that
+
+(cid:107)θ∗ (cid:107)H
+
+(cid:104)X CE
+
+(36)
+
+(37)
+
+t
+
+t
+
+t
+
+t
+
+(cid:107)θ∗ (cid:107)H
+Using the triangle inequality, we get
+(cid:107)(cid:98)θt−1 (cid:107)H
+
+− H (cid:98)θt−1
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) H θ∗
+
+(cid:107)θ∗ (cid:107)H
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) H θ∗
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) =
+
+(cid:107)(cid:98)θt−1(cid:107)H
+
+− H (cid:98)θt−1
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) ≤ 2(cid:107)X0(cid:107)λmax (H )
+− H (cid:98)θt−1
+(cid:112)λmin (H )
+− H (cid:98)θt−1
+b0
+H (cid:98)θt−1
+− H (cid:98)θt−1
+− H (cid:98)θt−1
+− H (cid:98)θt−1
+(cid:107)H (θ∗ − (cid:98)θt−1 )(cid:107) +
+(cid:107)H (θ∗ − (cid:98)θt−1 )(cid:107) +
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) H θ∗
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) H θ∗
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) H (cid:98)θt−1
+
+(cid:107)θ∗ (cid:107)H
+
+(cid:107)θ∗ (cid:107)H
+
+(cid:107)θ∗ (cid:107)H
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)
+
++
+
+1
+
+=
+
+≤
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)
+
+(cid:107)θ∗ (cid:107)H
+
+(cid:107)θ∗ (cid:107)H
+
+(cid:107)θ∗ (cid:107)H
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) +
+
+(cid:12)(cid:12)(cid:12)(cid:107)θ∗ (cid:107)H − (cid:107)(cid:98)θt−1(cid:107)H
+
+(cid:107)(cid:98)θt−1(cid:107)H
+(cid:107)(cid:98)θt−1(cid:107)H
+(cid:107)θ∗ (cid:107)H
+(cid:107)H (cid:98)θt−1 (cid:107)
+(cid:107)θ∗ (cid:107)H (cid:107)(cid:98)θt−1 (cid:107)H
+(cid:107)H (cid:98)θt−1 (cid:107)
+(cid:107)θ∗ (cid:107)H (cid:107)(cid:98)θt−1 (cid:107)H
+(cid:107)θ∗ − (cid:98)θt−1 (cid:107)H ,
+(cid:107)θ∗ (cid:107)H
+where the last inequality follows from the reverse triangle inequality. Using the Cauchy-Schwarz inequality and the fact that
+(cid:107)H (cid:98)θt−1(cid:107)
+(cid:107)θ∗ − (cid:98)θt−1(cid:107)H
+(cid:107)θ∗ (cid:107)H (cid:107)(cid:98)θt−1 (cid:107)H
+(cid:107)θ∗ − (cid:98)θt−1(cid:107) +
+(cid:107)θ∗ (cid:107)H (cid:107)(cid:98)θt−1 (cid:107)H
+(cid:107)θ∗ (cid:107)H
+(cid:107)θ∗ − (cid:98)θt−1(cid:107),
+where the inequality follows from the fact that (cid:107)H (cid:98)θt−1(cid:107) ≤ (cid:107)H 1/2(cid:107)(cid:107)H 1/2 (cid:98)θt−1 (cid:107) = (cid:112)λmax (H )(cid:107)(cid:98)θt−1(cid:107)H . Recall from Assump-
+(cid:107)θ∗ (cid:107)H
+(38)
+tion 3 that (cid:104)X0 , θ∗ (cid:105) ≥ b0 . So, (cid:107)X0(cid:107)(cid:107)θ∗ (cid:107) ≥ b0
+
+(cid:107)H (θ∗ − (cid:98)θt−1 )(cid:107) +
+≤ λmax (H )
+
+(cid:112)λmax (H )(cid:107)θ∗ − (cid:98)θt−1(cid:107)
+
+(cid:112)λmax (H )(cid:107)(cid:98)θt−1(cid:107)H
+
+(cid:107)H (cid:107) = λmax (H ), we get
+
+≤ 1
+
+(cid:107)θ∗ (cid:107)H
+
+2λmax (H )
+
+(cid:12)(cid:12)(cid:12)
+
+=
+
+1
+
+(cid:112)λmin (H )b0
+
+(cid:107)X0(cid:107)
+
+(cid:107)θ∗ (cid:107)H ≥
+
+.
+
+(39)
+
+Thus, by applying Inequality (39) to (38), we get Inequality (37). Finally, combining Inequalities (36) and (37) yields the desired
+lower bound on the expected reward of the greedy arm.
+For x ∈ X , let (cid:100)LCBt (x) be the lower conﬁdence bound on the reward of arm x computed using the conﬁdence set Ct−1 ((cid:98)δt ),
+i.e.,
+
+A.6 Proof of Lemma 3
+
+(cid:100)LCBt (x) = (cid:104)x, (cid:98)θt−1 (cid:105) − rt ((cid:98)δt )(cid:107)x(cid:107)V
+
+.
+
+−1
+
+t−1
+
+c
+
+√
+
+(cid:100)LCBt (X CE
+t ) = (cid:104)X CE
+≥ (cid:104)X CE
+
+Notice that for any δ, (cid:98)δ ∈ (0, 1) the condition (cid:98)δ ≤ δ implies that rt ((cid:98)δ) ≥ rt (δ). Thus, if (cid:98)δt ≤ δt then (cid:100)LCBt (x) ≤ LCBt (x).
+t and θ∗ ∈ Ct−1 ((cid:98)δt ) , we have that (cid:100)LCBt (X CE
+Recall that θ∗ ∈ Ct−1 (δt ) implies that LCBt (X CE
+t ) ≥ b. It holds that
+t ) ≥ b. Thus, to prove the Lemma it sufﬁces to show that given λmin (Vt ) ≥
+(cid:13)(cid:13)(cid:13)θ∗ − (cid:98)θt−1
+where the ﬁrst inequality follows from the fact that (cid:107)θ∗ − (cid:98)θt−1(cid:107)Vt−1 ≤ rt ((cid:98)δt ) and the second inequality follows from Lemma
+≥ (cid:104)X ∗ , θ∗ (cid:105) − k1
+2. Then, using the fact that (cid:104)X ∗ , θ∗ (cid:105) ≥ b0 we get
+(cid:13)(cid:13)(cid:13)θ∗ − (cid:98)θt−1
+(cid:13)(cid:13)(cid:13)θ∗ − (cid:98)θt−1
+
+(cid:100)LCBt (X CE
+t ) ≥ b0 − k1
+
+≥ b0 −
+
+(cid:13)(cid:13)(cid:13)2
+
+(cid:13)(cid:13)V
+
+(cid:13)(cid:13)V
+
+t−1
+
+t−1
+
+t−1
+
+t−1
+
+−1
+
+−1
+
+−1
+
+−1
+
+−1
+
+,
+
+t
+
+t
+
+t
+
+t
+
+t−1
+
+t
+
+t
+
+(cid:13)(cid:13)V
+
+(cid:13)(cid:13)V
+(cid:13)(cid:13)V
+
+, (cid:98)θt−1 (cid:105) − rt ((cid:98)δt ) (cid:13)(cid:13)X CE
+, θ∗ (cid:105) − 2rt ((cid:98)δt ) (cid:13)(cid:13)X CE
+(cid:13)(cid:13)(cid:13)2 − 2rt ((cid:98)δt ) (cid:13)(cid:13)X CE
+(cid:13)(cid:13)(cid:13)2 − 2rt ((cid:98)δt ) (cid:13)(cid:13)X CE
+− 2rt ((cid:98)δt ) (cid:13)(cid:13)X CE
+k1
+rt ((cid:98)δt )2
+rt ((cid:98)δt )
+λmin (Vt−1 )
+(cid:112)λmin (Vt−1 )
+≥ b0 − k1
+λmin (Vt−1 )
+rt ((cid:98)δt )2
+(cid:112)λmin (Vt−1 )
+rt ((cid:98)δt )
+− 2L
+rt ((cid:98)δt )
+λmin (Vt−1 )
+(cid:112)λmin (Vt−1 )
+L
+rt ((cid:98)δt )(cid:112)
++
+k1
++
+L
+c
+t
+k1
+rt ((cid:98)δt )(cid:112)
+c
+t
+
+≥ b0 − k1
+
+(cid:32)
+(cid:32)
+
+≥ b0 +
+
+(cid:33)2
+
+(cid:33)2
+
+(cid:33)2
+
+− 2L
+
+− k1
+
+− k1
+
+− k1
+
+= b0 +
+
+≥ b,
+
+(cid:32)
+
+L2
+k1
+
+L2
+k1
+
+L
+k1
+
+√
+
+√
+
+Vt−1
+
++
+
+.
+
+t
+
+b0 +
+
+L2
+k1
+rt ((cid:98)δt )2 ≤
+
+(cid:32)(cid:115)
+
+(cid:33)2
+
+√
+
+c
+
+t.
+
++ 2λS 2 .
+
+− L
+
+1
+
+b0 − b
+L2
++
+k1
+k2
+(cid:18) 1 + tL2 /λ
+δ
+
+k1
+
+(cid:19)
+
+In order to show that (cid:100)LCBt (X CE
+t ) ≥ b, it sufﬁces to show that
+
+or equivalently
+
+It holds that
+From the deﬁnition of (cid:98)δt it immediately follows that
+
+Thus, if (cid:98)δt ≤ δt then LCBt (X CE
+
+t ) ≥ b.
+
+2σ2
+η d log
+
+rt (δ)2 ≤ 2σ2
+η d log
+(cid:18) 1 + tL2/λ
+(cid:98)δt
+
+(cid:19)
+
++ 2λS 2 =
+
+(cid:32)(cid:115)
+
+(cid:33)2
+
+√
+
+c
+
+t.
+
+b0 − b
+k1
+
++
+
+L2
+k2
+
+1
+
+− L
+
+k1
+
+A.7 Proof of Lemma 4
+
+Let N SE
+a lower bound on the minimum eigenvalue of Vt in terms on Nt . As yy(cid:62) is a positive semideﬁnite matrix for any y ∈ Rd , it
+be the set of stages in which a safe exploration arm is played up to and including stage t. Our objective is to establish
+
+t
+
+holds that
+
+t(cid:88)
+
+XtX (cid:62)
+
+t
+
+k=1
+X SE
+k X SE
+k
+
+(cid:62)
+
+Vt = λI +
+
+k∈N SE
+
+k∈N SE
+
+t
+
+=
+
+(cid:23) (cid:88)
+(cid:88)
+(cid:23) (cid:88)
+(cid:88)
+(cid:23) (cid:88)
+
+=
+
+t
+
+t
+
+k∈N SE
+
+t
+
+k∈N SE
+
+k∈N SE
+
+t
+
+(cid:18)
+(cid:18)
+(cid:16)
+(cid:16)
+
+k + ρ ¯x + ρH 1/2 ζk )(cid:62)(cid:19)
+((1 − ρ)X S
+k + ρ ¯x + ρH 1/2 ζk )((1 − ρ)X S
+((1 − ρ)X S
+k + ρ ¯x)(ρH 1/2 ζk )(cid:62) + ρH 1/2 ζk ((1 − ρ)X S
+k + ρ ¯x)(cid:62) + ρ2H 1/2 ζk ζ (cid:62)
+ρ2H 1/2E (cid:2)ζk ζ (cid:62)
+(cid:3) H 1/2 + Wk
+(cid:3) H 1/2(cid:17)
+H 1/2E (cid:2)ζk ζ (cid:62)
+
+ρ2λmin
+
++ Wk
+
+(cid:17)
+
+(cid:16)
+
+(cid:17)
+
+k
+
+,
+
+k
+
+(cid:19)
+
+k H 1/2
+
+k − E (cid:2)ζk ζ (cid:62)
+
+k
+
+(cid:3))H 1/2 .
+
+(40)
+
+where Wk is deﬁned as
+
+Recall that σ2 is deﬁned as the minimum eigenvalue of the covariance matrix of Uk , i.e.,
+
+Wk =((1 − ρ)X S
+k + ρ ¯x)(ρH 1/2 ζk )(cid:62) + ρH 1/2 ζk ((1 − ρ)X S
+k + ρ ¯x)(cid:62) + ρ2H 1/2 (ζk ζ (cid:62)
+H 1/2E (cid:2)ζk ζ (cid:62)
+(Uk − E [Uk ]) (Uk − E [Uk ])
+(cid:3) H 1/2(cid:17)
+
+(cid:16)E (cid:104)
+(cid:16)
+
+(cid:62) (cid:105)(cid:17)
+
+σ2 = λmin
+
+= λmin
+
+.
+
+k
+
+Thus, using the fact that |N SE
+
+t
+
+| = Nt , we get
+
+Vt (cid:23) ρ2σ2Nt I +
+
+Using Weyl’s inequality, it immediately follows that
+
+k∈N SE
+
+Wk .
+
+(cid:88)
+ (cid:88)
+
+t
+
+ .
+
+λmin (Vt ) ≥ ρ2σ2Nt − λmax
+
+We rely on the Matrix Azuma Inequality (42) to establish an upper bound on λmax ((cid:80)
+k∈Nt
+Wk ), which holds with high
+probability.
+Theorem 5 (Matrix Azuma Inequality) (Tropp 2012, Theorem 7.1. and Remark 7.8.) Let {Fk }∞
+k=0 be a ﬁltration. Consider
+the random process {Yk }∞
+k=1 adapted to the ﬁltration {Fk }∞
+k=1 . Each Yk is a self-adjoint matrix with dimension d such that
+
+k∈N SE
+
+t
+
+Wk
+
+(41)
+
+E [Yk | Fk−1 ] = 0 for k = 1, 2, 3, . . . .,
+
+and
+
+k almost surely for k = 1, 2, 3, . . . ,
+where {Ak }∞
+k=1 is a sequence of deterministic matrices. Moreover, the sequence {Yk }∞
+k=1 is conditionally symmetric, i.e.,
+Yk ∼ −Yk conditional on Fk−1 . Then, for all δ ≥ 0 and t ≥ 1, it holds that
+
+(cid:32)
+
+k (cid:22) A2
+Y 2
+
+(cid:32) t(cid:88)
+
+k=1
+
+(cid:33)
+
+(cid:33)
+
+P
+
+λmax
+
+≥ δ
+
+≤ d · exp
+
+Yk
+
+−
+
+ .
+
+(cid:13)(cid:13)(cid:13)
+
+(cid:13)(cid:13)(cid:13)(cid:80)t
+
+δ2
+
+2
+
+k=1 A2
+k
+
+(42)
+
+In order to apply the Matrix Azuma Inequality (42), we ﬁrst show that the sequence of random matrices {Wk }∞
+assumptions of Theorem 5. From the deﬁnition of Wk in Equation (40), it follows that Wk = W (cid:62)
+k for all k ≥ 1. Deﬁne the
+k=1 satisfy the
+ﬁltration Fk = σ(X S
+k+1 , ζ1 , . . . , ζk ) for all k ≥ 1. It immediately follows that Wk is Fk -measurable, conditionally
+
+1 , . . . , X S
+
+symmetric, and E [Wk | Fk−1 ] = 0. We now construct the sequence of deterministic matrices {Ak }∞
+k=1 such that it almost
+surely holds that W 2
+k . Using the fact that the trace of a matrix is equal to the sum of its eigenvalues, it almost surely holds
+that
+
+k (cid:22) A2
+λmax (Wk ) ≤ trace (Wk )
+= 2((1 − ρ)X S
+k + ρ ¯x)(cid:62) (ρH 1/2 ζk ) + ρ2 ζ (cid:62)
+≤ 2((1 − ρ)X S
+k + ρ ¯x)(cid:62) (ρH 1/2 ζk ) + ρ2λmax (H ) − ρ2σ2d,
+
+k H ζk − ρ2 trace
+
+(cid:16)
+
+H 1/2E (cid:2)ζk ζ (cid:62)
+
+k
+
+(cid:3) H 1/2(cid:17)
+
+where the inequality follows from the fact that (cid:107)ζk (cid:107) = 1 for all k ≥ 1 and the deﬁnition of σ2 . Using the fact that (cid:107)X S
+k (cid:107) ≤ L,
+and the Cauchy-Schwarz inequality, it almost surely holds that
+
+where k3 is deﬁned as
+
+Deﬁne Ak = k3 I for all k ≥ 1. Then, it almost surely holds that W 2
+k for all k ≥ 1. Thus, the sequence
+of random matrices {Wk }∞
+k=1 satisﬁes all the assumptions of Theorem 5. Using the Cauchy-Schwarz inequality, we get
+
+λmax (Wk ) ≤ k3 ,
+k3 = 2ρ((1 − ρ)L + ρ(cid:107) ¯x(cid:107))(cid:112)λmax (H ) + ρ2λmax (H ) − ρ2σ2d.
+k (cid:22) λmax (Wk )2 I (cid:22) A2
+(cid:13)(cid:13) ≤ Ntk2
+3 .
+
+A2
+
+k
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)
+(cid:88)
+ (cid:88)
+
+t
+
+k∈N SE
+
+λmax
+
+P
+
+t
+
+k
+
+k∈N SE
+
+(cid:13)(cid:13)(cid:13)(cid:13)(cid:13)(cid:13) ≤ (cid:88)
+(cid:13)(cid:13)A2
+ ≥ δ
+(cid:12)(cid:12)(cid:12)(cid:12) Nt = n
+(cid:12)(cid:12)(cid:12)(cid:12) Nt = n
+
+t
+
+k∈N SE
+
+Wk
+ ≥ (1 − µ)ρ2σ2Nt
+
+(cid:19)
+
+.
+
+− δ2
+2nk2
+
+3
+
+(cid:18)
+
+ ≤ d · exp
+ ≤ d · exp
+
+(cid:18)
+
+− (1 − µ)2ρ4σ4n2
+≤ d · exp (cid:0)−k4 (1 − µ)2n(cid:1) ,
+2nk2
+
+3
+
+(cid:19)
+
+Using the Matrix Azuma Inequality (42), for any δ ≥ 0, it holds that
+
+By setting δ = (1 − µ)ρ2σ2Nt , we get
+
+λmax
+
+ (cid:88)
+
+P
+
+Wk
+
+k∈N SE
+
+t
+
+where k4 is deﬁned as
+
+k4 =
+
+ρ4σ4
+2k2
+
+3
+
+.
+
+

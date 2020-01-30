@@ -1,0 +1,734 @@
+9
+1
+0
+2
+
+v
+o
+
+N
+
+1
+2
+
+]
+
+G
+
+L
+
+.
+
+s
+
+c
+
+[
+
+1
+v
+1
+6
+4
+9
+0
+
+.
+
+1
+1
+9
+1
+
+:
+
+v
+
+i
+
+X
+
+r
+
+a
+
+JANOS : An Integrated Predictive and Prescriptive
+Modeling Framework
+
+David Bergman1 , Teng Huang1 , Philip Brooks2 , Andrea Lodi3 , and Arvind U. Raghunathan4
+
+1Department of Operations and Information Management, School of Business, University of Connecticut,
+United States, {david.bergman, teng.huang}@uconn.edu
+2Optimized Operations, LLC., phil.brooks24@me.com
+3Department of Mathematical and Industrial Engineering, Polytechnique Montreal, Canada,
+andrea.lodi@polymtl.ca
+4Mitsubishi Electric Research Laboratories, raghunathan@merl.com
+
+Abstract
+
+Business research practice is witnessing a surge in the integration of predictive
+modeling and prescriptive analysis. We describe a modeling framework JANOS that
+seamlessly integrates the two streams of analytics, for the ﬁrst time allowing researchers
+and practitioners to embed machine learning models in an optimization framework.
+JANOS allows for specifying a prescriptive model using standard optimization modeling
+elements such as constraints and variables. The key novelty lies in providing modeling
+constructs that allow for the speciﬁcation of commonly used predictive models and
+their features as constraints and variables in the optimization model. The framework
+considers two sets of decision variables; regular and predicted. The relationship between
+the regular and the predicted variables are speciﬁed by the user as pre-trained predictive
+models. JANOS currently supports linear regression, logistic regression, and neural
+network with rectiﬁed linear activation functions, but we plan to expand on this set
+in the future. In this paper, we demonstrate the ﬂexibility of the framework through
+an example on scholarship allocation in a student enrollment problem and provide a
+numeric performance evaluation.
+
+1
+
+Introduction
+
+There has been signiﬁcant proliferation of research in and application of machine learning and
+discrete optimization. These two analytical domains have frequently been used in a single
+business decision-making problem but for diﬀerent purposes. Machine learning techniques
+have typically been used to predict what is likely to happen in the future, while optimization
+methods have been used to strategically search through feasible solutions.
+However, the integration of the two analytics streams is often disjointed. As an example,
+suppose a neural network is built to predict customer churn of a telecommunication com-
+pany, with features consisting of demographic information together with service price to the
+customer (the lower the price, the lower the probability of customer churn). How then should
+
+1
+
+ 
+ 
+ 
+ 
+ 
+ 
+the company set service price in order to maximize revenue? The features of the predictive
+model are variables in the decision problem. In other words, the output of neural networks
+whose features (e.g., service price) are decision variables are part of the ob jective function.
+This makes the optimization problem of maximizing revenue particularly challenging. There
+are few, if any, techniques, much less tools, available for solving such an optimization prob-
+lem. This paper seeks to ﬁll that void by introducing JANOS, a modeling framework for joint
+predictive-and-prescriptive analytics.
+JANOS allows a user to specify portions of an ob jective function as commonly utilized
+predictive models, whose features are ﬁxed or are variables in the optimization model. JANOS
+currently supports predictive models of the following three forms: linear regression, logistic
+regression, and neural networks (NNs) with rectiﬁed linear (ReLU) activation functions.
+These models are commonly used in practice, and the framework is easily extensible to other
+predictive models.
+To embed these predictive models in an optimization model, we utilized linearization
+techniques. For linear regression this is straightforward. For logistic regression, we employ a
+piece-wise linear approximation. Details are provided in Section 4.2. For NNs, we make use
+of recent work that formulates a NN as a mixed integer programming (MIP) problem (Serra
+et al. 2017, Bienstock et al. 2018, Fischetti and Jo 2017); we do not use the MIP to learn
+the NN, but rather utilize the network reformulation to produce outputs of the NN based
+on the input features. Details are provided in Section 4.1.
+A key advantage of JANOS is that it automates the transcription of common predictive
+models into constraints that can be handled by mixed integer programming solvers. Thus,
+researchers and practitioners are relieved of this onerous task of reformulating the predictive
+models into tractable constraints. A diﬀerent model for predictive variables can quickly be
+substituted out without much eﬀort from the modeler, enabling the user to quickly compare
+the optimal decisions when diﬀerent predictive models are used. Additionally, one need not
+worry about modeling all parameters of a predictive model with an optimization model; for
+example, a neural network with 3 layers of 10 nodes each would have hundreds of parameters,
+and JANOS automates that transformation. In future releases, additional predictive models
+will be added as well as more advanced reformulations and algorithmic implementations.
+The framework, which we call JANOS1 , is built in Python and calls Gurobi (Gurobi Op-
+timization 2019) to solve MIPs. A user speciﬁes an optimization model through standard
+modeling constructs that share similarities to those in other common optimization model-
+ing languages, for example Gurobi’s Python interface, Pyomo (Hart et al. 2011) or Julia
+(Bezanson et al. 2017).
+We partition the variables in the model into two sets—the regular variables and the
+predicted variables. The regular variables are used to model operational constraints and
+ob jective function terms as typical variables in MIP. The predicted variables are speciﬁed
+through predictive models wherein some of the features depend on regular variables. The
+predictive models are pre-trained by the user, who can load any of the three permissible
+predictive model forms, together with a mapping between the regular variables and the
+
+1A play on Janus, who according to ancient Roman mythology is the god of beginnings, gates, transitions,
+time, duality, doorways and is usually depicted with two faces one looking to the past (predictive) and one
+to the future (prescriptive). (Source: Wikipedia)
+
+2
+
+features. We eventually plan to integrate automated machine learning (Feurer et al. 2015)
+and have JANOS determine the best predictive model to associate with a given data frame.
+To exhibit how the framework can be used, we present as an example the allocation of
+scholarship oﬀers to admitted students to optimize the enrollment.
+The rest of the paper is organized as follows. We ﬁrst review the literature related to
+the joint reasoning in predictive and prescriptive analysis in Section 2. The general problem
+addressed by JANOS is provided in Section 3. The algorithmic details of how we optimize
+over linear regression models, logistic regression models and NNs are given in Section 4. The
+student enrollment example and a collection of experiments designed to test the eﬃciency
+of JANOS are described in Section 5. We then describe how JANOS can be downloaded and
+installed in Section 6. We conclude in Section 7.
+
+2 Literature Review
+
+Existing studies on the combination of predictive and prescriptive analytics take predic-
+tions as ﬁxed and then make choices based on ﬁxed predictions, for example, predictions
+are parameters in an optimization model (Ferreira et al. 2015). Ferreira et al. (2015) ﬁrst
+predict sales based on a chosen number of price values and then uses those ﬁxed estimates
+to determine the optimal price. In their application, the predicted sales are parameters in
+the optimization model. This modeling approach adapts, but still lacks in full integration
+between the two analytics disciplines. Sales will generally depend on price, and analytical
+methods by which one can optimize decisions that ultimately aﬀect ob jective functions are
+currently lacking in the literature. Approaches using ﬁxed-point estimates of parameters are
+feasible when full enumeration or partial enumeration of the collection of feasible solutions
+is practical. However, in instances where enumeration is not possible, facets of the optimiza-
+tion algorithm need to be integrated into the predictive model. For example, Huang et al.
+(2019) model a real-world problem in such a way, but only propose an exact optimization
+approach when simple linear regression models are used for prediction.
+There are additional streams of research that combine predictive modeling and optimiza-
+tion. First of all, machine learning algorithms are powered by optimization techniques. For
+example, when ﬁtting a simple linear regression model, the ordinary least square method
+determines the unknown parameters by minimizing the sum of the squares of the diﬀer-
+ence between the observed dependent variable values and the ﬁtted values.
+In machine
+learning, various optimization techniques are applied so that the learning process is eﬃcient
+and achieves desired accuracy (Boyd et al. 2011). For example, Koh et al. (2007) propose
+an interior-point method for solving large-scale (cid:96)1 -regularized logistic regression problems;
+ALAMO (Cozad et al. 2014) uses mixed integer optimization to learn algebraic models from
+data; and, linear programming (LP) and integer programming (IP) based methods have
+been proposed to assist training NNs (Serra et al. 2017, Bienstock et al. 2018, Fischetti and
+Jo 2017). Additionally, there have been recent eﬀorts on using machine learning to improve
+optimization algorithms. For example, Cappart et al. (2019) utilize deep reinforcement learn-
+ing to improve optimization bounds, and Khalil et al. (2017) proposes a generic method for
+learning combinatorial optimization over graphs, with a plethora of papers arising in this
+area (Nazari et al. 2018, Lemos et al. 2019, Bengio et al. 2018). These papers either lever-
+
+3
+
+age machine learning to improve optimization, or leverage optimization to improve machine
+learning—in our setting, we integrate the two into a uniﬁed decision-making framework.
+The impact of the JANOS solver on research is twofold. First, framing a problem as op-
+timizing over standard predictive models where the decision variables are features of the
+predictive models requires much attention. Suppose the predictive model is a support vec-
+tor regression with a radial kernel. How does one solve the optimization problem? Each
+predictive model added to JANOS will require research eﬀort to investigate linearizations or
+advanced optimization methodology that lead to eﬃcient solution times.
+More broadly, we envision that JANOS will be used by researchers in ﬁelds other than
+optimization to solve the problems they are interested in to derive the insights they desire.
+Currently, a researcher familiar with optimization who has a machine learning model that
+they would like to optimize over is unable to solve the problem of interest. Contrast that
+with a researcher in logistics that requires the solution of a routing problem to identify how
+many trucks are needed by the company. This researcher can use a standard commercial
+integer programming solver, solve the routing problem to identify the number of trucks that
+are needed by the company, and then make decisions based on that output. The logistics
+researcher need not know how the optimization model is solved, just that the problem of
+interest can be solved. We envision the same thing for the former researcher. JANOS allows
+the researcher to solve an optimization problem with machine learning models so that optimal
+decisions can be identiﬁed for real-world decision making problems that previously could not.
+
+3 Problem Description
+
+JANOS seeks to solve problems formulated as (PROBLEM-ORI):
+
+n2(cid:88)
+k=1
+
+n1(cid:88)
+n1(cid:88)
+j=1
+j=1
+
+max
+
+x
+
+s.t.
+
+cj xj +
+
+dk yk
+
+(PROBLEM-ORI)
+
+j xj ≤ bi ,
+ai
+
+pk
+
+l
+
+yk = gk (αk
+1 , . . . , αk
+αk
+is given,
+l · x,
+αk
+l = ek
+xj ∈ Xj ,
+
+; θk ),
+
+∀i ∈ {1, . . . , m}
+∀k ∈ {1, . . . , n2}
+∀l ∈ {1, . . . , qk } , ∀k ∈ {1, . . . , n2}
+∀l ∈ {(qk + 1), . . . , pk } , ∀k ∈ {1, . . . , n2}
+∀j ∈ {1, . . . , n1} .
+
+(1)
+
+(2)
+
+(3)
+
+(4)
+(5)
+
+The variables x = (x1 , . . . , xn1 ) are regular variables and the variables y = (y1 , . . . , yn2 ) are
+predicted variables. Each variable xj belongs to a ﬁnite or continuous set Xj and are con-
+strained via linear inequalities. Each predicted variable yk is associated with a predictive
+model gk , with features αk = (αk
+1 , . . . , αk
+). Each gk is assumed to be a pre-trained predictive
+model (a linear regression, logistic regression, or neural network with a rectiﬁed linear acti-
+vation function) so that the parameters θk are ﬁt prior to optimization by the user. Model
+). The ﬁrst qk , 1 ≤ qk ≤ pk , features of predictive model gk are
+gk has pk features, (αk
+1 , . . . , αk
+ﬁxed and given, while each of the remaining (pk − qk ) features are regular variables, linked
+
+pk
+
+pk
+
+4
+
+through the function ek
+l , a n1 -length binary unit-vector with a 1 in the coordinate of the
+associated regular variable. Note that a single pre-trained model can be used as multiple
+gk ’s.
+
+4 Algorithmic Details
+
+In this section, we summarize how JANOS handles linear regression, logistic regression, and
+NN models. If yk is determined by a linear regression model, the function g is linear and the
+construction is straightforward. We construct (PROBLEM-ORI) and feed the model to
+Gurobi. If yk is a predicted value of a NN, yk is obtained from a network ﬂow model. The
+details are in Section 4.1. If yk is a predicted value of a logistic regression model, we partition
+the range of the log-odds, i.e., X β as in yk =
+1+e−X β into a collection of intervals, and use
+the mean of the sigmoid value of X β within the corresponding interval to approximate yk
+in the ob jective function. The details are in Section 4.2.
+
+1
+
+4.1 Optimization over Neural Networks
+
+For every predicted variable yk that is determined by a NN prediction, we associate a distinct
+network ﬂow model. A NN can be viewed as a multi-source single-terminal2 arc-weighted
+V1 ∪ · · · ∪ Vl . There is a one-to-one mapping between input features α of g and nodes v ∈ V1 .
+acyclic layered digraph N = (V, A). The node set V is partitioned into a collection of layers
+For any node v ∈ V1 , we denote the corresponding feature by α(v). Set Vl consists of a
+single terminal node t. For j ∈ {2, . . . , l}, every node u ∈ Vj has a bias B(u) learned during
+training.
+Each arc a = (u, v) ∈ A is directed from a node u in layer Vj to a node v in layer Vj+1
+for some j ∈ {1, . . . , l − 1}. Every arc has a weight w(a) learned during training.
+Given values α(v) for all nodes v ∈ V1 , the prediction from a NN with a ReLU activation
+function is calculated recursively by assigning a value Fv to all nodes in the NN via the
+following iterative procedure and returning Ft :
+• For j = 2, . . . , l − 1, ∀v ∈ Vj , Gv = (cid:80)
+• ∀v ∈ V1 , Fv = Gv = α(v);
+• Ft = Gt = (cid:80)
+w ((u, t)) · Fu + B(u).
+Here Gv is the input of the ReLU function, and Fv is the output of the ReLU function.
+We further deﬁne zu ∀u ∈ V as a binary variable indicating if Gu > 0. With this
+interpretation, one can formulate the following model (MOD-NN) to calculate yk based on
+the inputs α(v), ∀v ∈ V1 , that are the features, which can be ﬁxed constants or functions of
+
+w ((u, v)) · Fu + B(v), Fv = max {0, Gv }; and
+
+u∈Vj−1
+
+u∈Vl−1
+
+2The NN does not always have a single terminal. In our case, we only have one output, and so the output
+layer in our trained NN only has one node.
+
+5
+
+the decision variables.
+
+yk = Ft
+Fv = Gv ,
+Gv = α(v),
+
+(cid:88)
+
+u∈Vj−1
+
+w((u, v)) · Fu + B(u),
+Gv =
+− M · (1 − zv ) ≤ Gv ≤ M · zv ,
+Gv − M (1 − zv ) ≤ Fv ≤ Gv + M · (1 − zv ) ,
+0 ≤ Fv ≤ M · zv ,
+yv ∈ {0, 1} ,
+Gv unconstrained,
+Fv unconstrained,
+
+(MOD-NN)
+(6)
+(7)
+
+∀v ∈ V1 ∪ Vl
+∀v ∈ V1
+∀j ∈ {2, . . . , l} , ∀v ∈ Vj
+
+∀v ∈ V2 ∪ · · · ∪ Vl−1
+∀v ∈ V2 ∪ · · · ∪ Vl−1
+∀v ∈ V2 ∪ · · · ∪ Vl−1
+∀v ∈ V
+∀v ∈ V
+
+∀v ∈ V.
+
+(8)
+
+(9)
+(10)
+(11)
+(12)
+(13)
+(14)
+
+Constraints (6) guarantee that the ReLU activation function is not enforced in the input and
+output layers. Constraints (7) enforce that the values of the nodes in the input layer is the
+values of each input variable of the predictive model. These will either be ﬁxed constants or
+the value determined by the optimization model for a single problem variable. Constraints
+(8) compute the input of the ReLU function of each node that is not on the ﬁrst layer.
+Constraints (9) to (11) enforce the ReLU activation function on each hidden layer.
+In (PROBLEM-ORI), α(v) can be a regular variable or a constant, and there will be
+a separate network ﬂow formulation for each of the predicted variables that are outcomes of
+neural networks. We test the impact of the size of the neural network and the number of
+such predicted variables on the performance of JANOS in Section 5.
+
+4.2 Optimization over Logistic Regression Models
+
+1
+1+e−X β
+
+JANOS provides a parameterized discretization for handling logistic regression prediction.
+Speciﬁcally, it represents the nonlinear function of a logistic regression model using a piece-
+wise linear approximation, partitioning the range of the log-odds, i.e., X β as in yk =
+into a collection of mutually exclusive and collectively exhaustive intervals. The number of
+intervals is a parameter that can be speciﬁed by users. This idea is illustrated on Figure 1.
+We partition the range of the log-odds into ∆ intervals, [Lδ , Uδ ], for δ ∈ {1, . . . , ∆}, where
+Lδ+1 = Uδ and we assume that the length of each interval is uniform. The range of the log-
+odds is computed based on the bounds of the features. We use the mean of the sigmoid
+function value within an interval to serve as a piece-wise linear approximation of the actual
+predicted value of the logistic regression model. Speciﬁcally, for interval δ , let
+log(1 + eUδ ) − log(1 + eLδ )
+Vδ =
+Uδ − Lδ
+.
+The value Vδ is the average value of the sigmoid function over all values between Lδ and
+Uδ , where
+
+ea
+1 + ea .
+
+sigmoid(a) =
+
+6
+
+Figure 1: A logistic function curve.
+
+We deﬁne zδ ∀δ ∈ {1, . . . , ∆} as a binary variable indicating if we select a value for yk in
+interval δ . Let F be the vector of features. Let β be the vector of estimated coeﬃcients in the
+logistic regression model. With this interpretation, one can formulate (MOD-LOGIT) to
+maximize over a logistic regression model approximately, using the following transformation:
+
+max
+
+s.t.
+
+yk
+
+∆(cid:88)
+
+δ=1
+
+zδ = 1,
+(Lδ − L1 ) · zδ + L1 ≤ F β ,
+(Uδ − U∆ ) · zδ + U∆ ≥ F β ,
+sigmoid(L1 ) + (Vδ − sigmoid(L1 )) · zδ ≤ yk ,
+sigmoid(Uδ ) + (Vδ − sigmoid(Uδ )) · zδ ≥ yk ,
+zδ ∈ {0, 1} .
+
+(MOD-LOGIT)
+
+∀δ ∈ {1, . . . , ∆}
+∀δ ∈ {1, . . . , ∆}
+∀δ ∈ {1, . . . , ∆}
+∀δ ∈ {1, . . . , ∆}
+∀δ ∈ {1, . . . , ∆}
+
+(15)
+
+(16)
+(17)
+(18)
+(19)
+(20)
+
+The value assumed by yk will be approximately equal to sigmoid(F β ), used as the value
+predicted by a logisitic regression model.
+Constraint (15) ensures that only one interval is selected. Constraints (16) to (17) select
+the interval that contains the linear combination F β . Constraints (18) to (19) make sure that
+yk equals the mean outcome value of the selected interval. Recall that F will be determined
+partially through ﬁxed features and partially through decision variables.
+
+5 Example Applications
+
+In this section, we explore an example of allocating oﬀered scholarship to admitted college
+students to exhibit the capability and ﬂexibility of JANOS. All predictive models were built in
+
+7
+
+Python3.7 using scikit-learn 0.21.3 (Pedregosa et al. 2011) and all optimization models
+were solved with Gurobi Optimizer v8.0 (Gurobi Optimization 2019). All experiments
+were run in MacOS Mojave 10.14.5 on a 2.8 GHz Intel Core i7-4980HQ processor with 16
+GB RAM.
+
+5.1 Problem Description
+
+The Admission Oﬃce of a university wants to oﬀer scholarship to its admitted students in
+order to bolster the class proﬁle, such as academic metric, and often to simply maximize the
+expected class size (Maltz et al. 2007).
+The Admission Oﬃce has collected from previous enrollment years the applicants’ SAT,
+GPA, scholarship oﬀer, and matriculation result, i.e., whether the student accepted the oﬀer
+or not. This year, suppose the school is issuing N oﬀers of admission. Moreover, suppose the
+budget available for oﬀered scholarship is $0.2 · N · 104 , denoted by BUDGET henceforth.
+The amount of scholarship that can be assigned to any particular applicant is between $0
+and $25,000. The Admission Oﬃce wants to maximize the incoming class size.
+To solve this optimization problem using JANOS, one can pre-train a model to predict the
+probability of a candidate accepting an oﬀer given this student’s SAT, GPA and scholarship
+oﬀered. The decision to make is the third feature for each student : the amount of scholarship
+to oﬀer to each student.
+We model this problem as follows (STUDENT-ENROLL):
+
+N(cid:88)
+N(cid:88)
+
+i=1
+
+1 · yi
+
+xi ≤ BUDGET
+
+max
+
+s.t.
+
+(STUDENT-ENROLL)
+
+i=1
+
+yi = g(si , gi , xi ; θ),
+0 ≤ xi ≤ 25, 000,
+
+∀i ∈ {1, . . . , N }
+∀i ∈ {1, . . . , N } ,
+
+(21)
+
+(22)
+(23)
+
+where,
+• xi is the decision variable, i.e., the amount of scholarship assigned to each student
+accepted;
+• si is the SAT score of applicant i (standardized using z -score);
+• gi is the GPA score of applicant i (standardized using z -score);
+• yi is a predicted variable per admitted student, the outcome of a predicted model
+representing the probability of a candidate accepting the oﬀer; and
+• g is a predicted model pre-trained to predict any candidates’ probabilities of accepting
+an oﬀer. The parameters si , gi and xi are the predictive model’s inputs. The vector θ
+represents the parameters of the predictive model, which we assume to be the same for
+each applicant. The function g can be any of the permissible predictive models with θ
+determined prior to optimization.
+
+8
+
+5.2 Experimental Results
+
+We utilize randomly generated realistic student records to train predictive models and test
+the eﬃciency of the solver when solving diﬀerent-sized problems with variations in parameters
+as well. We build the three permissible models (linear regression, logistic regression, and
+neural networks) with various parameter settings, i.e., the number of intervals for logistic
+regression models and the hidden layer sizes for neural networks. Each of the models is
+trained on 20,000 randomly generated student records.
+We then generate sets of random student records of diﬀerent sizes to test the scalability of
+JANOS, 50, 100, 500 and 1,000 admitted students. These experiment instances are produced
+using the same data-generating scheme as was used for building the training set. We doc-
+ument how long it takes JANOS to solve problems of diﬀerent sizes with diﬀerent predictive
+models.
+We ﬁrst provide an analysis of the total runtime using various parameters for each of
+the models. For the linear regression there are not conﬁgurable parameters, and so we
+have only one setting, LinReg. For the logistic regression model, the main parameter of
+interest is the number of intervals in the discretization. For a ﬁxed number of intervals ∆, let
+LogReg(∆) refer to solving the model with logistic regression prediction with ∆ intervals.
+For neural networks, there are several parameters one might tune, most apparent being the
+conﬁguration of the neurons. We ﬁx 10 nodes per hidden layer and vary the number of
+hidden layers to 1, 2, 3. Let NN(h) refer to solving the model with neural networks with h
+hidden layers.
+For each of the predictive model speciﬁcations, we run 5 instances and take the mean
+runtime. Figure 2 depicts the runtimes. On the x-axis we indicate the number of admitted
+students in the admitted pool. On the y -axis we report the runtime in seconds. LinReg
+yields the most eﬃcient model, taking up to a second to solve. LogReg(∆) takes an increas-
+ing amount of time as ∆ grows, as does NN(h) for increasing h, but the runtimes are not
+prohibitively large. Note that largest instances have 1,000 logistic regression approximations
+or 1,000 neural network ﬂow models.
+We also evaluate how well the approximation of the logistic regression performs at obtain
+optimal solutions. We apply the logistic regression approximation for 10 instances with 50
+students. The results are reported on Figure 3. On the x-axis we indicate the number of
+intervals in the approximation, and on the y -axis we report the root mean squared error
+(RMSE) of the probability estimates given by the approximation and the actual learned
+logistic regression evaluation at the optimal solutions obtained by the approximation. As
+the number of intervals increases, the approximation becomes stronger, but as discussed
+earlier, increases runtime. Note that even with only 5 intervals, the average error in the
+estimate of the probability of enrollment in the approximation built is less than 0.02, or 2%.
+In order to evaluate the expected improvement in solutions obtained from JANOS over
+what might be done in practice, we evaluate the solution obtained by JANOS and compare with
+the following heuristic that can be employed for any predictive model g for this application:
+
+1. Sort the accepted students in non-decreasing order of
+g(si , gi , $25, 000|θ) − g(si , gi , $0|θ).
+
+9
+
+Figure 2: The average runtimes of linear regression models, logistic regression models, and
+neural networks with diﬀerent scales.
+
+Figure 3: The quality of the linear approximation of the logistic regression function at
+optimal solutions.
+
+10
+
+2. Following the above order, allocate the maximum permissible aid (i.e., $25,000) until
+reaching the maximum budget.
+
+This is a realistic heuristic because it greedily assigns scholarship to the students in the order
+of those that are most sensitive to scholarship.
+Table 1 reports results from the experimental evaluation. In particular, for logistic regres-
+sion and neural network prediction models, we report for 500 and 1000 admitted students
+the expected number of enrolled students based on the allocation determined by JANOS and
+the heuristic described above. We also report for both models and for each N the percent
+reduction in admitted student declination of admission. The results indicate that simply by
+a more careful assignment of scholarship and making no other changes, JANOS can provide
+a substantial improvement in expected matriculation rates. This example exempliﬁes the
+improvement in decision-making capability that JANOS can obtain.
+
+Table 1: Improvement by JANOS over a basic heuristic.
+
+Logistic regression prediction
+JANOS Heuristic Exp. % red. in declination
+445.02
+437.59
+11.91%
+887.02
+872.26
+11.55%
+
+Neural network prediction
+JANOS Heuristic Exp. % red. in declination
+441.23
+435.56
+8.80%
+879.30
+867.93
+8.61%
+
+N
+500
+1000
+
+There are other ways that a practitioner who is well-versed in both optimization and
+predictive modeling might address a decision problem of this sort. For example, in this
+application, one could discretize the domain of the decision variables to take values D =
+{0, 1, . . . , 25, 000} and then evaluate the predictive model g(·) at each value for each admitted
+student. However, such a transformation results in a pseudo-polynomial size model and also
+admits only an approximation. Note that if desired, one can model the problem in this way
+directly in JANOS by declaring the decision variables as discrete and setting their domain to
+D .
+
+6 Accessing the Solver
+
+JANOS works with Python3 and currently requires Gurobi for optimization and sklearn for
+predictive modeling. You also must have numpy and matplotlib installed. Please refer to
+JANOS’s website (http://janos.opt-operations.com) for more information, where a user
+manual, quick start guide, and examples are provided.
+
+7 Conclusions
+
+We propose a modeling framework JANOS that integrates predictive modeling and prescriptive
+analytics. JANOS is a useful tool both for practitioners and researchers who are seeking to
+integrate machine learning models within a discrete optimization model.
+
+11
+
+References
+
+Bengio Y, Lodi A, Prouvost A (2018) Machine learning for combinatorial optimization: a method-
+ological tour d’horizon. arXiv preprint arXiv:1811.06128 .
+
+Bezanson J, Edelman A, Karpinski S, Shah VB (2017) Julia: A fresh approach to numerical
+computing. SIAM review 59(1):65–98, URL https://doi.org/10.1137/141000671.
+Bienstock D, Mu˜noz G, Pokutta S (2018) Principled deep neural network training through linear
+programming. arXiv preprint arXiv:1810.03218 .
+
+Boyd S, Parikh N, Chu E, Peleato B, Eckstein J, et al. (2011) Distributed optimization and statis-
+tical learning via the alternating direction method of multipliers. Foundations and Trends R(cid:13)
+in Machine learning 3(1):1–122.
+
+Cappart Q, E G, Bergman D, Rousseau L (2019) Improving Optimization Bounds using Machine
+Learning: Decision Diagrams Meet Deep Reinforcement Learning. ArXiv e-prints .
+
+Cozad A, Sahinidis NV, Miller DC (2014) Learning surrogate models for simulation-based opti-
+mization. AIChE Journal 60(6):2211–2227.
+
+Ferreira KJ, Lee BHA, Simchi-Levi D (2015) Analytics for an online retailer: Demand forecasting
+and price optimization. Manufacturing & Service Operations Management 18(1):69–88.
+
+Feurer M, Klein A, Eggensperger K, Springenberg J, Blum M, Hutter F (2015) Eﬃcient and robust
+automated machine learning. Advances in neural information processing systems, 2962–2970.
+
+Fischetti M, Jo J (2017) Deep neural networks as 0-1 mixed integer linear programs: A feasibility
+study. arXiv preprint arXiv:1712.06174 .
+
+Gurobi Optimization L (2019) Gurobi optimizer reference manual. URL http://www.gurobi.com.
+Hart WE, Watson JP, Woodruﬀ DL (2011) Pyomo: modeling and solving mathematical programs
+in python. Mathematical Programming Computation 3(3):219.
+
+Huang T, Bergman D, Gopal R (2019) Predictive and prescriptive analytics for location selection
+of add-on retail products. Production and Operations Management 28(7):1858–1877.
+
+Khalil EB, Dilkina B, Nemhauser GL, Ahmed S, Shao Y (2017) Learning to run heuristics in tree
+search. IJCAI, 659–666.
+
+Koh K, Kim SJ, Boyd S (2007) An interior-point method for large-scale l1-regularized logistic
+regression. Journal of Machine learning research 8(Jul):1519–1555.
+
+Lemos H, Prates M, Avelar P, Lamb L (2019) Graph colouring meets deep learning: Eﬀective graph
+neural network models for combinatorial problems. arXiv preprint arXiv:1903.04598 .
+
+Maltz EN, Murphy KE, Hand ML (2007) Decision support for university enrollment management:
+Implementation and experience. Decision Support Systems 44(1):106–123.
+
+Nazari M, Oroo jlooy A, Snyder L, Tak´ac M (2018) Reinforcement learning for solving the vehicle
+routing problem. Advances in Neural Information Processing Systems, 9839–9849.
+
+Pedregosa F, Varoquaux G, Gramfort A, Michel V, Thirion B, Grisel O, Blondel M, Prettenhofer P,
+Weiss R, Dubourg V, Vanderplas J, Passos A, Cournapeau D, Brucher M, Perrot M, Duchesnay
+E (2011) Scikit-learn: Machine Learning in Python . Journal of Machine Learning Research
+12:2825–2830.
+
+Serra T, Tjandraatmadja C, Ramalingam S (2017) Bounding and counting linear regions of deep
+neural networks. arXiv preprint arXiv:1711.02114 .
+
+12
+
+
